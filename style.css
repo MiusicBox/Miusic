@@ -502,28 +502,37 @@ button:active {
 }
 
 .playlist-play-btn {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border-radius: 0;
-  background: transparent;
-  backdrop-filter: none;
-  border: none;
-  display: flex;
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  width: 50px !important;
+  height: 50px !important;
+  margin: 0 !important;
+  transform: translate(-50%, -50%) !important;
+  border-radius: 50% !important;
+  background: rgba(0, 0, 0, 0.55) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 2px solid rgba(255, 255, 255, 0.9) !important;
+  display: flex !important;
   align-items: center;
   justify-content: center;
-  opacity: 1;
-  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(255, 255, 255, 0.08) !important;
+  opacity: 1 !important;
+  transition: all 0.2s ease !important;
+  cursor: pointer;
+  z-index: 2;
+  right: auto !important;
+  bottom: auto !important;
 }
 
-/* 🔧 แก้ (2026-09-13 รอบ 3 ตามคำขอ: ไอคอนเล่น/หยุดใหญ่ขึ้น + เปลี่ยนสีให้โดดเด่นขึ้น
-   ใช้สี accent ของเว็บ (ม่วง) แทนสีขาวเดิม + ขยายขนาดจาก 22px → 30px */
+/* 🔧 แก้ (2026-09-13): ไอคอนเล่นในเพลย์ลิสต์ สีขาว 22px */
 .playlist-play-btn svg {
-  width: 30px;
-  height: 30px;
-  fill: var(--accent, #7a5cff);
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 3px rgba(255, 255, 255, 0.9));
+  width: 22px !important;
+  height: 22px !important;
+  fill: #fff !important;
+  filter: none !important;
+  margin-left: 3px;
   transition: transform 0.2s ease;
 }
 
@@ -664,31 +673,37 @@ button:active {
 }
 
 .song-cover .play-btn {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border-radius: 0;
-  background: transparent;
-  backdrop-filter: none;
-  display: flex;
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  width: 50px !important;
+  height: 50px !important;
+  margin: 0 !important;
+  transform: translate(-50%, -50%) !important;
+  border-radius: 50% !important;
+  background: rgba(0, 0, 0, 0.55) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex !important;
   align-items: center;
   justify-content: center;
-  box-shadow: none;
-  border: none;
-  top: 0;
-  left: 0;
-  opacity: 1;
-  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(255, 255, 255, 0.08) !important;
+  border: 2px solid rgba(255, 255, 255, 0.9) !important;
+  opacity: 1 !important;
+  transition: all 0.2s ease !important;
+  cursor: pointer;
+  z-index: 2;
+  right: auto !important;
+  bottom: auto !important;
 }
 
-/* 🔧 แก้ (2026-09-13 รอบ 3 ตามคำขอ: ไอคอนเล่น/หยุดใหญ่ขึ้น + เปลี่ยนสีให้โดดเด่นขึ้น
-   ใช้สี accent ของเว็บ (ม่วง) แทนสีขาวเดิม + ขยายขนาดจาก 16px → 30px ให้เห็นชัดตลอดเวลา (ไม่ต้องรอ hover) */
+/* 🔧 แก้ (2026-09-13): ปุ่มเล่นวงกลมกลางรูป + ไอคอนสีขาว + ขนาด 22px */
 .song-cover .play-btn svg {
-  width: 30px;
-  height: 30px;
-  fill: var(--accent, #7a5cff);
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 3px rgba(255, 255, 255, 0.9));
+  width: 22px !important;
+  height: 22px !important;
+  fill: #fff !important;
+  filter: none !important;
+  margin-left: 3px;
   transition: transform 0.2s ease;
 }
 
@@ -1856,11 +1871,10 @@ button:active {
   position: absolute !important;
   top: 50% !important;
   left: 50% !important;
-  inset: auto !important;
   width: 50px !important;
   height: 50px !important;
   margin: 0 !important;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) !important;
   background: rgba(0, 0, 0, 0.55) !important;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -1874,6 +1888,8 @@ button:active {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(255, 255, 255, 0.08) !important;
   cursor: pointer;
   z-index: 2;
+  right: auto !important;
+  bottom: auto !important;
 }
 
 .song-card-row:hover .song-cover .play-btn {
@@ -2121,11 +2137,10 @@ button:active {
   position: absolute !important;
   top: 50% !important;
   left: 50% !important;
-  inset: auto !important;
   width: 50px !important;
   height: 50px !important;
   margin: 0 !important;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) !important;
   background: rgba(0, 0, 0, 0.55) !important;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -2139,6 +2154,8 @@ button:active {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(255, 255, 255, 0.08) !important;
   cursor: pointer;
   z-index: 2;
+  right: auto !important;
+  bottom: auto !important;
 }
 
 .playlist-song-row.song-card-row:hover .playlist-play-btn {
