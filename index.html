@@ -1,528 +1,1803 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
-<title>Music Store</title>
-<link rel="stylesheet" href="style.css?v=44444">
-<style>
-  /* โครงสร้าง Cart เดิมที่ app-cart.js ใช้งาน — คงไว้ในหน้า User */
-  .cart-toggle-wrap { position:relative; margin-left:auto; display:flex; align-items:center; gap:8px; flex-shrink:0; flex-wrap:nowrap; }
-  .cart-toggle-btn { position:relative; display:inline-flex; align-items:center; gap:5px; flex-shrink:0; }
-  .cart-badge { min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:var(--danger,#ff6b6b); color:#fff; font-size:10px; line-height:18px; font-weight:800; }
-  .cart-modal { max-width:560px; }
-  .cart-items { display:flex; flex-direction:column; gap:8px; max-height:48vh; overflow:auto; }
-  .cart-item { display:grid; grid-template-columns:48px minmax(0,1fr) auto auto; gap:10px; align-items:center; padding:9px; border:1px solid rgba(255,255,255,.1); border-radius:10px; }
-  .cart-item-cover { width:48px; height:48px; border-radius:8px; object-fit:cover; background:rgba(255,255,255,.06); }
-  .cart-item-info { min-width:0; }
-  .cart-item-name { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .cart-item-meta { color:var(--text-dim); font-size:12px; margin-top:3px; }
-  .cart-item-total { font-weight:800; white-space:nowrap; }
-  .cart-remove { border:0; background:transparent; color:var(--danger); cursor:pointer; padding:6px; }
-  .cart-empty { text-align:center; padding:24px 8px; color:var(--text-dim); }
-  .cart-summary { margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,.1); }
-  .cart-summary-row { display:flex; justify-content:space-between; gap:12px; margin:5px 0; }
-  .cart-actions { display:flex; gap:8px; margin-top:14px; }
-  .cart-actions > * { flex:1; }
-  .cart-feedback { min-height:20px; margin-top:8px; font-size:13px; }
-  /* รายการเพลงภายใน Playlist ที่แสดงในตะกร้า (ดูอย่างเดียว ไม่คิดราคาแยก) */
-  .cart-item-viewsongs { grid-column:1 / -1; border:0; background:transparent; color:var(--accent-2); font-size:12px; text-align:left; padding:2px 0 0; cursor:pointer; }
-  .cart-item-songs { grid-column:1 / -1; display:none; flex-direction:column; gap:3px; margin-top:4px; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,.05); }
-  .cart-item-songs.is-open { display:flex; }
-  .cart-item-songs-row { font-size:12px; color:var(--text-dim); }
-  @media (max-width:480px) {
-    .cart-item { grid-template-columns:42px minmax(0,1fr) auto; }
-    .cart-item-cover { width:42px; height:42px; }
-    .cart-item-total { grid-column:2; }
-    .cart-remove { grid-column:3; grid-row:1 / span 2; }
+/* ==========================================================================
+   MODERN MUSIC PLAYER UI STYLESHEET
+   - Fonts: IBM Plex Sans Thai & Plus Jakarta Sans
+   - Theme: Premium Modern Dark Mode with Neon Accents
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+  /* Color Palette */
+  --bg: #0b0d14;
+  --surface: #131722;
+  --surface-2: #1c2234;
+  --surface-hover: #262e45;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-focus: rgba(139, 92, 246, 0.5);
+  
+  --text: #f8fafc;
+  --text-dim: #94a3b8;
+  --accent: #8b5cf6;
+  --accent-glow: rgba(139, 92, 246, 0.35);
+  --accent-2: #ec4899;
+  --accent-2-glow: rgba(236, 72, 153, 0.35);
+  
+  --success: #10b981;
+  --danger: #ef4444;
+  
+  /* Layout & Geometry */
+  --radius: 20px;
+  --radius-sm: 12px;
+  --radius-full: 9999px;
+  
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+  
+  /* Shadows */
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-accent: 0 8px 24px var(--accent-glow);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(139, 92, 246, 0.12) 0%, transparent 60%),
+    radial-gradient(circle at 100% 50%, rgba(236, 72, 153, 0.08) 0%, transparent 50%);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: 'Plus Jakarta Sans', 'IBM Plex Sans Thai', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  padding-bottom: calc(105px + var(--safe-bottom));
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+button {
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button:active {
+  transform: scale(0.95);
+}
+
+/* ---------- Container ---------- */
+.container {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+/* ---------- Top Bar ---------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: rgba(11, 13, 20, 0.75);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  padding-top: var(--safe-top);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: -0.3px;
+  background: linear-gradient(135deg, #fff 30%, var(--text-dim));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.logo img {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.search-box {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  max-width: 1080px;
+  margin: 0 auto;
+  transition: all 0.25s ease;
+  border-radius: var(--radius-full);
+  padding: 10px 18px;
+  gap: 10px;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.search-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-glow), inset 0 2px 4px rgba(0, 0, 0, 0.2);
+  background: var(--surface-2);
+}
+
+.search-box input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 14.5px;
+  font-weight: 500;
+}
+
+.search-box input::placeholder {
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+
+/* ---------- Chips (Categories) ---------- */
+.chip-row {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 14px 16px;
+  scrollbar-width: none;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  flex-shrink: 0;
+  padding: 8px 18px;
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.chip:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.chip.active {
+  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: var(--shadow-accent);
+}
+
+/* ---------- DJ Section ---------- */
+.dj-row {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding: 6px 16px 20px;
+  scrollbar-width: none;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.dj-row::-webkit-scrollbar {
+  display: none;
+}
+
+.dj-item {
+  flex-shrink: 0;
+  width: 76px;
+  text-align: center;
+}
+
+.dj-avatar {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 2px solid var(--border);
+  object-fit: cover;
+  margin: 0 auto 8px;
+  padding: 2px;
+  transition: all 0.25s ease;
+}
+
+.dj-item:hover .dj-avatar {
+  border-color: var(--accent-2);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px var(--accent-2-glow);
+}
+
+.dj-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  margin: 10px auto 10px;
+  max-width: 1080px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ---------- Playlist Dropdown Style ---------- */
+.playlist-wrapper {
+  max-width: 1080px;
+  margin: 0 auto 12px;
+  padding: 0 16px;
+}
+
+.playlist-header-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  border: none;
+  padding: 8px 0;
+  color: var(--text);
+  outline: none;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+
+.playlist-header-title {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
+
+.dropdown-icon {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--text-dim);
+}
+
+.dropdown-icon.is-closed {
+  transform: rotate(-90deg);
+}
+
+.playlist-content-box {
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  max-height: 2000px;
+  opacity: 1;
+}
+
+.playlist-content-box.is-closed {
+  max-height: 0;
+  opacity: 0;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+/* ---------- Playlist Row ---------- */
+.playlist-block {
+  margin-bottom: 10px;
+  max-width: 1080px;
+  margin-left: auto;
+  margin-right: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.playlist-folder-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: transparent;
+  border: none;
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+  position: relative; /* เพิ่มใหม่ (2026-09-10): ให้ .playlist-folder-price ยึดมุมขวาล่างของแถวนี้ */
+}
+
+.playlist-folder-btn:hover {
+  background: var(--surface-2);
+}
+
+.playlist-folder-cover {
+  width: 54px;
+  height: 54px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.playlist-folder-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.playlist-folder-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.playlist-folder-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.playlist-folder-count {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* เพิ่มใหม่ (2026-09-10): เผื่อพื้นที่ด้านขวาให้ badge ราคาที่ย้ายไปมุมขวาล่างแล้ว ไม่ทับตัวหนังสือ */
+  padding-right: 110px;
+  box-sizing: border-box;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 4): ลดขนาดราคาหัวเพลย์ลิสต์จาก 19px → 16px + น้ำหนักจาก 900 → 800
+   ให้พอดีไม่ใหญ่เกินไป และเพิ่ม padding-right ให้ชื่อเพลย์ลิสต์ไม่ถูกบัง */
+.playlist-folder-price {
+  flex-shrink: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--success);
+  white-space: nowrap;
+  background: transparent;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  margin-left: 8px;
+  letter-spacing: -0.2px;
+}
+
+/* เอาออก (2026-09-10 รอบ 3): ยกเลิกการย่อขนาดราคาโปรโมชั่น/ลดราคาในนี้ตามที่แจ้ง
+   ให้ตัวหนังสือราคาโปรโมชั่น/ลดราคาที่นี่มีขนาดเท่ากับราคาโปรโมชั่น/ลดราคาของเพลงเดี่ยว (ค่า default ของ .price-original/.price-discounted) */
+
+
+.playlist-folder-arrow {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-left: 6px;
+}
+
+.playlist-folder-arrow.is-closed {
+  transform: rotate(-90deg);
+}
+
+.playlist-row-wrap {
+  max-height: 3000px;
+  opacity: 1;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease;
+}
+
+.playlist-row-wrap.is-closed {
+  max-height: 0;
+  opacity: 0;
+  border-top-color: transparent;
+  pointer-events: none;
+}
+
+.playlist-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0px !important;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 3): ขยายแถวเพลงในเพลย์ลิสต์ให้ใหญ่ขึ้น
+   - padding เพิ่มจาก 6px 10px → 10px 12px
+   - gap เพิ่มจาก 10px → 12px
+   - ให้พื้นที่เพียงพอสำหรับ cover และตัวหนังสือที่ใหญ่ขึ้น */
+.playlist-song-row {
+  background: var(--surface);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0px !important;
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 10px 12px;
+  gap: 12px;
+  box-shadow: none;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.playlist-song-row:last-child {
+  border-bottom: none;
+}
+
+.playlist-song-row:hover {
+  background: var(--surface-2);
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 3): ขยาย cover ของเพลงในเพลย์ลิสต์จาก 50px → 58px
+   ให้สมดุลกับแถวที่ใหญ่ขึ้นและตัวหนังสือที่ขยายขึ้น */
+.playlist-cover {
+  width: 58px;
+  height: 58px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.playlist-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.playlist-song-row:hover .playlist-cover img {
+  transform: scale(1.06);
+}
+
+.playlist-play-btn {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transition: all 0.2s ease;
+}
+
+/* 🔧 แก้ (2026-09-13 รอบ 3 ตามคำขอ: ไอคอนเล่น/หยุดใหญ่ขึ้น + เปลี่ยนสีให้โดดเด่นขึ้น
+   ใช้สี accent ของเว็บ (ม่วง) แทนสีขาวเดิม + ขยายขนาดจาก 22px → 30px */
+.playlist-play-btn svg {
+  width: 30px;
+  height: 30px;
+  fill: var(--accent, #7a5cff);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 3px rgba(255, 255, 255, 0.9));
+  transition: transform 0.2s ease;
+}
+
+.playlist-song-row:hover .playlist-play-btn svg {
+  transform: scale(1.15);
+}
+
+.playlist-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 5): ชื่อเพลงในเพลย์ลิสต์ยืดออก + ตัดเป็น 2 แถว
+   - ลด padding-right จาก 105px → 80px ให้ชื่อยืดยาวขึ้น
+   - เปลี่ยนจาก nowrap (1 แถว) เป็น -webkit-line-clamp: 2 (2 แถว + ตัดด้วย ...) */
+.playlist-item-name {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  width: 100%;
+  padding-right: 80px;
+  box-sizing: border-box;
+  word-break: break-word;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 5): ตัวหนังสือรองของเพลงในเพลย์ลิสต์ยืดออก + padding-right 80px */
+.playlist-item-sub {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+  font-weight: 500;
+  width: 100%;
+  padding-right: 80px;
+  box-sizing: border-box;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 4): ลดขนาดราคารายการเพลงในเพลย์ลิสต์จาก 17px → 14px + น้ำหนักจาก 900 → 800
+   + เอาพื้นหลังออก (background: transparent) + ลด padding ตามที่ขอ
+   + ขยาย padding-right ของชื่อเพลงเพื่อป้ายราคาไม่บังชื่อ */
+.playlist-item-price {
+  position: absolute;
+  right: 0px;
+  bottom: 0px;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--success);
+  white-space: nowrap;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: 0;
+  z-index: 1;
+}
+
+/* ---------- Song List ---------- */
+.song-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0px !important;
+  padding: 0 16px 20px;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 3): ขยายแถวเพลงทั้งหมดให้ใหญ่ขึ้น
+   - padding เพิ่มจาก 6px 10px → 10px 12px
+   - gap เพิ่มจาก 10px → 12px
+   ให้สมดุลกับ cover และตัวหนังสือที่ขยายขึ้น */
+.song-card {
+  background: var(--surface);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0px !important;
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 10px 12px;
+  gap: 12px;
+  box-shadow: none;
+  transition: all 0.2s ease;
+  position: relative; /* เพิ่มใหม่ (2026-09-10 รอบ 3): ให้ .song-footer ยึดมุมขวาล่างของการ์ดนี้ */
+}
+
+.song-card:first-child {
+  border-top-left-radius: var(--radius-sm) !important;
+  border-top-right-radius: var(--radius-sm) !important;
+}
+
+.song-card:last-child {
+  border-bottom-left-radius: var(--radius-sm) !important;
+  border-bottom-right-radius: var(--radius-sm) !important;
+}
+
+.song-card:hover {
+  background: var(--surface-2);
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 3): ขยาย cover ของเพลงเดี่ยวจาก 55px → 62px
+   ให้สมดุลกับแถวที่ใหญ่ขึ้นและราคาที่ใหญ่ขึ้น */
+.song-cover {
+  width: 62px !important;
+  height: 62px !important;
+  flex-shrink: 0;
+  border-radius: 8px;
+  position: relative;
+  background: var(--surface-2);
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.song-cover img {
+  position: static;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.song-card:hover .song-cover img {
+  transform: scale(1.08);
+}
+
+.song-cover .play-btn {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: none;
+  border: none;
+  top: 0;
+  left: 0;
+  opacity: 1;
+  transition: all 0.2s ease;
+}
+
+/* 🔧 แก้ (2026-09-13 รอบ 3 ตามคำขอ: ไอคอนเล่น/หยุดใหญ่ขึ้น + เปลี่ยนสีให้โดดเด่นขึ้น
+   ใช้สี accent ของเว็บ (ม่วง) แทนสีขาวเดิม + ขยายขนาดจาก 16px → 30px ให้เห็นชัดตลอดเวลา (ไม่ต้องรอ hover) */
+.song-cover .play-btn svg {
+  width: 30px;
+  height: 30px;
+  fill: var(--accent, #7a5cff);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 3px rgba(255, 255, 255, 0.9));
+  transition: transform 0.2s ease;
+}
+
+.song-card:hover .play-btn svg {
+  transform: scale(1.15);
+}
+
+.song-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 5): ชื่อเพลงยืดออก + ตัดเป็น 2 แถว
+   - ลด padding-right จาก 105px → 80px ให้ชื่อยืดยาวขึ้น
+   - เปลี่ยนจาก nowrap (1 แถว) เป็น -webkit-line-clamp: 2 (2 แถว + ตัดด้วย ...)
+   ใช้ได้กับทุก browser รวมถึง Safari/iOS */
+.song-name {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  width: 100%;
+  padding-right: 80px;
+  box-sizing: border-box;
+  word-break: break-word;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 5): ตัวหนังสือรองชื่อศิลปินยืดออก + ตัดเป็น 1 แถว
+   - ลด padding-right จาก 105px → 80px ให้เท่ากับชื่อเพลง */
+.song-artist {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+  font-weight: 500;
+  width: 100%;
+  padding-right: 80px;
+  box-sizing: border-box;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 5): ตัวหนังสือ DJ ยืดออก + padding-right 80px ให้เท่ากับชื่อเพลง */
+.song-dj {
+  font-size: 12px;
+  color: var(--accent-2);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 80px;
+  box-sizing: border-box;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 4): เอาพื้นหลังของ .song-footer ออก (เดิมมีพื้นหลัง var(--surface-2))
+   ป้ายราคาเป็น transparent ตามที่ขอ ไม่มีกล่องพื้นหลังบังตัวหนังสืออีกต่อไป */
+.song-footer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  z-index: 1;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 4): ลดขนาดราคาเพลงเดี่ยวจาก 17px → 14px + น้ำหนักจาก 900 → 800
+   ให้พอดีสมดุลกับราคารายการเพลงในเพลย์ลิสต์ */
+.song-price {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--success);
+  white-space: nowrap;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  letter-spacing: -0.2px;
+}
+
+/* เพิ่มใหม่ (แก้บั๊ก 2026-09-10): .cart-add-btn ไม่เคยมี CSS ของตัวเองมาก่อน
+   ทำให้ browser ใช้สไตล์ default ของ <button> (พื้นหลังขาว/เทาเป็นก้อน) จนไปบังชื่อเพลง
+   เพิ่ม base style นี้เพื่อล้าง default ของ browser เท่านั้น ไม่กระทบ class ที่ผสมอยู่แล้ว
+   (.playlist-folder-price / .playlist-add-cart ยังคงทำงานทับได้ตามเดิม) */
+.cart-add-btn {
+  background: transparent;
+  border: none;
+  margin: 0;
+  padding: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--success);
+  cursor: pointer;
+}
+
+.buy-btn {
+  font-size: 11.5px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  color: var(--text);
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.buy-btn:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 12px var(--accent-glow);
+}
+
+/* ---------- Bottom Navigation ---------- */
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  background: rgba(19, 23, 34, 0.88);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-top: 1px solid var(--border);
+  display: flex;
+  padding-bottom: var(--safe-bottom);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.bottom-nav button {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 8px 0 6px;
+  color: var(--text-dim);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  transition: color 0.2s ease;
+}
+
+.bottom-nav button:hover {
+  color: var(--text);
+}
+
+.bottom-nav button.active {
+  color: var(--accent);
+}
+
+/* ---------- Music Player Bar ---------- */
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 6): ปรับ popup เครื่องเล่นเพลงให้เ็กลง + ขยับขึ้นสูงขึ้น ไม่บังเมนูข้างล่าง
+   - bottom เพิ่มจาก 54px → 70px (ขยับขึ้น 16px) เผื่อพื้นที่ให้ bottom-nav
+   - padding ลดจาก 8px 12px 7px → 6px 10px 5px (ลดความสูงของ popup)
+   - gap ลดจาก 3px → 2px
+   - border-radius ลดจาก 12px → 10px
+   - width ลดจาก calc(100% - 24px) → calc(100% - 16px) (เพิ่มพื้นที่ใช้านในมือถือ)
+   - max-width ลดจาก 465px → 420px */
+.player-bar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 16px);
+  max-width: 420px;
+  bottom: calc(70px + var(--safe-bottom));
+  z-index: 60;
+  background: rgba(19, 23, 34, 0.94);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 6px 10px 5px;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 12px var(--accent-glow);
+}
+
+.player-bar.show {
+  display: flex;
+  animation: slideUpPlayer 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUpPlayer {
+  from {
+    transform: translate(-50%, 100%);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}
+
+.player-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 6): ลดขนาดรูปปกเพลงจาก 34px → 30px ให้ popup เ็กลง
+   แต่ยังอ่านรูปเห็นชัด */
+.player-bar img {
+  width: 30px;
+  height: 30px;
+  border-radius: 5px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--surface);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+.player-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 6): ลดขนาดชื่อเพลงจาก 12px → 11.5px + ลดบรรทัดรองจาก 10.5px → 10px
+   ให้ popup เ็กลงแต่ยังอ่านได้ */
+.player-meta .t1 {
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.player-meta .t2 {
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+  font-weight: 500;
+}
+
+/* 🔧 คงเดิม (2026-09-12 รอบ 6): ปุ่ม play/pause เอาขนาดเดิม 36px ตามที่ขอ ไม่เปลี่ยน
+   เพราะต้องการให้กดง่ายบนมือถือ */
+.player-bar .ctrl {
+  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+  box-shadow: var(--shadow-accent);
+  transform: scale(1.05);
+}
+
+.player-bar .ctrl:hover {
+  transform: scale(1.12);
+}
+
+.player-bar .ctrl svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 6): ลดขนาดปุ่มปิด (X) จาก 30px → 28px ให้เ็กลงเป็นสัดส่วนกับ popup ที่เล็กลง */
+.player-close-btn {
+  background: rgba(255, 255, 255, 0.12) !important;
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+  box-shadow: none;
+  transform: scale(1);
+  margin-left: 4px;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+
+.player-close-btn:hover {
+  background: rgba(255, 107, 107, 0.25) !important;
+  transform: scale(1.08);
+}
+
+.player-close-btn:active {
+  transform: scale(0.95);
+}
+
+.player-close-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 6): ลดความสูงของแถว seek bar จาก 22px → 18px + ลด margin
+   ทำให้ popup โดยรวมเ็กลงอีก */
+.player-seek-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 1px;
+}
+
+.player-seek-row .time {
+  font-size: 9.5px;
+  color: var(--text-dim);
+  width: 24px;
+  flex-shrink: 0;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 6): ลดความสูงของ input range จาก 22px → 18px
+   ทำให้ seek bar ไม่หนาเกินไปใน popup ที่เล็กลง */
+.player-seek-row input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 18px !important;
+  background: transparent;
+  margin: 0;
+  cursor: pointer;
+  touch-action: pan-x;
+}
+
+.player-seek-row input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px !important;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.player-seek-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 50%;
+  background: #fff;
+  margin-top: -4px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6), 0 0 6px var(--accent);
+  transition: transform 0.1s ease;
+}
+
+.player-seek-row input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.3);
+}
+
+/* ---------- Common Buttons & Elements ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 12px 20px;
+  font-size: 14.5px;
+  font-weight: 700;
+  width: 100%;
+  min-height: 48px;
+  box-shadow: var(--shadow-accent);
+}
+
+.btn:hover {
+  opacity: 0.95;
+  transform: translateY(-1px);
+}
+
+.btn.secondary {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.btn.secondary:hover {
+  background: var(--surface-hover);
+}
+
+.btn.danger {
+  background: linear-gradient(135deg, var(--danger), #dc2626);
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.35);
+}
+
+.btn.whatsapp {
+  background: linear-gradient(135deg, #25d366, #16a34a);
+  box-shadow: 0 4px 16px rgba(37, 211, 102, 0.35);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* ---------- Modal & Form Elements ---------- */
+.field {
+  margin-bottom: 16px;
+}
+
+.field label {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.field input, .field select, .field textarea {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  color: var(--text);
+  font-size: 14.5px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.field input:focus, .field select:focus, .field textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 90px;
+}
+
+.file-picker {
+  display: block;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.file-picker:hover {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgba(139, 92, 246, 0.04);
+}
+
+.file-picker.filled {
+  border-color: var(--success);
+  color: var(--success);
+  background: rgba(16, 185, 129, 0.04);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 100;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fadeIn 0.2s ease;
+}
+
+.modal-backdrop.show {
+  display: flex;
+}
+
+.modal {
+  background: var(--surface);
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+  border-radius: var(--radius) var(--radius) 0 0;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  padding: 22px 20px calc(24px + var(--safe-bottom));
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--shadow-lg);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@media (min-width: 640px) {
+  .modal-backdrop {
+    align-items: center;
+  }
+  .modal {
+    border-radius: var(--radius);
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.modal-close {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--text-dim);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+/* ---------- Admin Panel UI ---------- */
+.admin-shell {
+  min-height: 100vh;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 16px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px 12px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.stat-card .num {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.stat-card .label {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+
+.quick-actions button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 18px 12px;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.quick-actions button:hover {
+  background: var(--surface-2);
+  border-color: var(--accent);
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin: 0 16px 10px;
+}
+
+.list-row img {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+.list-row .info {
+  flex: 1;
+  min-width: 0;
+}
+
+.list-row .info .n1 {
+  font-size: 14.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list-row .info .n2 {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+}
+
+.icon-btn:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.icon-btn.danger {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: var(--danger);
+}
+
+.icon-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.progress-outer {
+  background: var(--surface-2);
+  border-radius: var(--radius-full);
+  height: 8px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.progress-inner {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  height: 100%;
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(100px + var(--safe-bottom));
+  transform: translateX(-50%) translateY(10px);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 12px 22px;
+  border-radius: var(--radius-full);
+  font-size: 13.5px;
+  font-weight: 600;
+  z-index: 200;
+  opacity: 0;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  box-shadow: var(--shadow-lg);
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.toast.error {
+  background: rgba(239, 68, 68, 0.9);
+  border-color: transparent;
+  color: #fff;
+}
+
+.toast.success {
+  background: rgba(16, 185, 129, 0.9);
+  border-color: transparent;
+  color: #fff;
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 60px 20px;
+  font-size: 14.5px;
+  font-weight: 500;
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  border: 2.5px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* =====================================================================
+   เพิ่มใหม่: utility classes สำหรับระบบลดราคา + โปรโมชั่น + ออเดอร์ของฉัน
+   ใช้ร่วมกันทั้งฝั่งลูกค้า (index.html) และฝั่งแอดมิน (admin.html)
+   ===================================================================== */
+
+/* ---- ราคาปกติ (ขีดฆ่า) ---- */
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 4): ลดขนาดราคาขีดฆ่าจาก 14.5px → 12px + น้ำหนักจาก 700 → 500
+   ให้เล็กกว่าราคาหลังลดชัดเจน และไม่ใหญ่เกินไปตามที่ขอ */
+.price-original {
+  color: var(--text-dim, #999);
+  text-decoration: line-through;
+  font-size: 17px;
+  font-weight: 500;
+  margin-right: 4px;
+  opacity: 1;
+}
+
+/* ---- ราคาหลังลด/โปรโมชั่น ---- */
+/* 🔧 ปรับใหม่ (2026-09-12 รอบ 4): ลดขนาดราคาหลังลดจาก 17px → 14px + น้ำหนักจาก 900 → 800
+   ให้พอดีไม่ใหญ่เกินไป และเท่ากับราคาปกติที่ไม่มีส่วนลด */
+.price-discounted {
+  color: var(--accent-2, #ec4899);
+  font-weight: 800;
+  font-size: 17px;
+  letter-spacing: -0.2px;
+}
+.price-discounted.large {
+  font-size: 16px;
+}
+
+/* ---- badge ส่วนลดขนาดเล็ก ---- */
+.discount-badge {
+  display: inline-block;
+  background: rgba(236, 72, 153, .15);
+  color: var(--accent-2, #ec4899);
+  border-radius: var(--radius-full, 9999px);
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+/* ---- สถานะ discount/promotion ใน list ของแอดมิน ---- */
+.discount-status-badge {
+  display: inline-block;
+  border-radius: var(--radius-full, 9999px);
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+/* ---- แถวใน receipt สำหรับส่วนลด/โปรโมชั่น ---- */
+.receipt-discount-row,
+.receipt-promo-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 12px;
+  color: #555;
+  border-bottom: 1px dashed #ddd;
+}
+.receipt-promo-row {
+  color: #2e7d32;
+  font-weight: 600;
+}
+.receipt-discount-row {
+  color: #c2185b;
+}
+
+/* ---- หน้า "ออเดอร์ของฉัน" (ฝั่งลูกค้า) ---- */
+.my-orders-header {
+  margin-bottom: 16px;
+}
+.my-orders-header h2 {
+  font-size: 20px;
+  font-weight: 800;
+  margin: 0 0 4px;
+}
+.my-orders-header p {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.my-orders-form {
+  background: var(--surface, #131722);
+  border-radius: var(--radius, 20px);
+  padding: 18px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border, rgba(255,255,255,.08));
+}
+.my-orders-form .field {
+  margin-bottom: 12px;
+}
+.my-orders-form .field label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.my-orders-form .field input {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--surface-2, #1c2234);
+  border: 1px solid var(--border, rgba(255,255,255,.08));
+  border-radius: var(--radius-sm, 12px);
+  color: var(--text, #f8fafc);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.my-orders-form .field input:focus {
+  outline: none;
+  border-color: var(--accent, #8b5cf6);
+}
+
+.my-orders-feedback {
+  margin-top: 10px;
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm, 12px);
+  background: rgba(239, 68, 68, .08);
+}
+
+.my-orders-list-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.my-orders-list-header span {
+  flex: 1;
+  min-width: 0;
+}
+
+.my-order-card {
+  background: var(--surface, #131722);
+  border-radius: var(--radius, 20px);
+  padding: 14px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border, rgba(255,255,255,.08));
+  transition: border-color 0.2s;
+}
+.my-order-card.expanded {
+  border-color: rgba(139, 92, 246, .3);
+}
+.my-order-card-header {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.my-order-status-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: var(--radius-full, 9999px);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.my-order-discount-badge {
+  font-size: 11px;
+  font-weight: 600;
+}
+.my-order-item-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border, rgba(255,255,255,.04));
+}
+.my-order-item-row:last-child {
+  border-bottom: none;
+}
+.my-order-zip-info a {
+  text-decoration: none;
+}
+
+/* ---- responsive: 6 ปุ่ม bottom-nav บนจอแคบ ---- */
+@media (max-width: 480px) {
+  .bottom-nav button {
+    font-size: 10px;
+    padding: 6px 4px;
+  }
+  .bottom-nav button svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+/* ---- ปุ่ม quick action grid ที่รองรับ 11 ปุ่ม (เพิ่ม discount/promotion) ---- */
+.quick-actions {
+  /* ถ้า grid มีปุ่มเยอะ ให้แสดง 2 คอลัมน์บนมือถือ / 3 คอลัมน์บนจอกว้าง */
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+@media (min-width: 480px) {
+  .quick-actions { grid-template-columns: repeat(3, 1fr); }
+}
+@media (min-width: 720px) {
+  .quick-actions { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* =====================================================================
+   🔧 ปรับใหม่ (2026-09-12 รอบ 3): responsive สำหรับ iPhone/มือถือขนาดเล็ก
+   ------------------------------------------------------------------------
+   - ปรับขนาดราคาให้พอดีกับหน้าจอ iPhone (375–480px)
+   - หัวเพลย์ลิสต์ใหญ่กว่าราคารายการเพลงนิดหน่อยเสมอ (เพื่อให้ชัดว่าเป็นราคารวม)
+   - ปรับ padding ของ badge ราคาในรายการเพลงเพลย์ลิสต์ให้ไม่บังชื่อเพลงมากเกินไป
+   - ลด padding-right ของชื่อเพลงลงบนจอแคบ เพื่อให้พอดีกับความกว้างจอ iPhone
+   ===================================================================== */
+@media (max-width: 480px) {
+  /* ราคาเพลงเดี่ยว / ราคารายการเพลงในเพลย์ลิสต์ — เท่ากัน */
+  .song-price,
+  .playlist-item-price {
+    font-size: 14px;
+    font-weight: 800;
   }
 
-  /* ---- popup รายละเอียดเพลง (ฝั่ง user) — ปรับใหม่ให้เหมือนฝั่ง admin ---- */
-  /* เพิ่มใหม่: ไม่แตะ CSS เดิม ใช้คลาส scope ภายใน #songModalBackdrop เท่านั้น */
-  #songModalBackdrop .modal { max-width: 440px; }
-  #songModalBackdrop .modal-header { padding-bottom: 10px; }
-  #modalHead { display:flex; gap:12px; align-items:flex-start; margin-bottom:12px; }
-  #modalCoverWrap {
-    width:80px; height:80px; flex-shrink:0; position:relative;
-    overflow:hidden; border-radius:10px; background:rgba(255,255,255,.04);
-  }
-  #modalCover { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; }
-  #modalInfo { flex:1; min-width:0; }
-  #modalName {
-    margin:0 0 2px; font-size:16px; font-weight:800; line-height:1.3;
-    overflow:hidden; text-overflow:ellipsis; display:-webkit-box;
-    -webkit-line-clamp:2; -webkit-box-orient:vertical;
-  }
-  #modalArtist {
-    color:var(--text-dim); font-size:13px; margin-bottom:6px;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-  }
-  #modalBadges { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px; }
-  #modalBadges .badge {
-    display:inline-flex; align-items:center; gap:3px;
-    padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600;
-    background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); color:var(--text);
-  }
-  #modalBadges .badge.dj { color:var(--accent-2, #61dafb); }
-  #modalPrice { font-size:16px; font-weight:800; color:var(--success, #28c76f); margin-top:2px; }
-  #modalDesc {
-    font-size:12px; color:var(--text-dim); margin-bottom:12px; line-height:1.5;
-    max-height:60px; overflow-y:auto; padding:8px 10px;
-    background:rgba(255,255,255,.03); border-radius:8px;
-  }
-  #modalDesc:empty { display:none; }
-
-  /* Player ภายใน popup — เหมือนฝั่ง admin */
-  #modalPlayer {
-    display:flex; flex-direction:column; gap:10px;
-    padding-top:10px; border-top:1px solid rgba(255,255,255,.08);
-  }
-  #modalSeekWrap { display:flex; align-items:center; gap:8px; }
-  #modalSeek {
-    flex:1; -webkit-appearance:none; appearance:none; height:4px;
-    background:rgba(255,255,255,.12); border-radius:999px; outline:none; cursor:pointer;
-  }
-  #modalSeek::-webkit-slider-thumb {
-    -webkit-appearance:none; appearance:none; width:14px; height:14px;
-    border-radius:50%; background:var(--accent, #7a5cff); cursor:pointer; border:0;
-  }
-  #modalSeek::-moz-range-thumb {
-    width:14px; height:14px; border-radius:50%; background:var(--accent, #7a5cff);
-    cursor:pointer; border:0;
-  }
-  #modalCurrTime, #modalDurTime {
-    font-size:11px; color:var(--text-dim); font-variant-numeric:tabular-nums;
-    min-width:32px; text-align:center;
+  /* ราคาหัวเพลย์ลิสต์ — ใหญ่กว่าราคารายการนิดหน่อย */
+  .playlist-folder-price {
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: -0.2px;
   }
 
-  /* ปุ่มกระโดดช่วงเพลง — เหมือนฝั่ง admin (3 ปุ่ม) */
-  #modalJumpRow {
-    display:flex; gap:6px; align-items:center; justify-content:center;
-  }
-  .modal-jump-btn {
-    flex:1; display:flex; flex-direction:column; align-items:center; gap:2px;
-    padding:7px 4px; font-size:10px; font-weight:600;
-    background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12);
-    border-radius:9px; color:var(--text-dim); cursor:pointer;
-    transition:background .15s, color .15s, border-color .15s;
-  }
-  .modal-jump-btn:hover { background:rgba(255,255,255,.08); color:var(--text); }
-  .modal-jump-btn.active {
-    background:rgba(122,92,255,.16); border-color:var(--accent, #7a5cff); color:#fff;
-  }
-  .modal-jump-btn .modal-jump-ico { font-size:14px; line-height:1; }
-  .modal-jump-btn:disabled { opacity:.4; cursor:not-allowed; }
-
-  /* ปุ่มเล่นหลัก (เด่น) — เหมือนฝั่ง admin */
-  #songModalBackdrop #modalPlayBtn {
-    width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
-    padding:11px; font-size:14px; font-weight:700; border-radius:10px;
-    background:var(--accent, #7a5cff); color:#fff; border:0; cursor:pointer;
-  }
-  #modalPlayBtn:disabled { opacity:.5; cursor:not-allowed; }
-  #modalPlayBtn .spinner { display:none; width:16px; height:16px; border-width:2px; }
-  #modalPlayBtn.loading .spinner { display:inline-block; }
-  #modalPlayBtn.loading #modalPlayIconWrap,
-  #modalPlayBtn.loading #modalPlayLabel { display:none; }
-
-  /* ปุ่มเพิ่มเข้าตะกร้า — สีเขียว (ต่างจากปุ่มเล่นที่เป็นสีม่วง) */
-  #songModalBackdrop #modalBuyBtn {
-    width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
-    padding:11px; font-size:14px; font-weight:700; border-radius:10px;
-    background:var(--success, #28c76f); color:#fff; border:0; cursor:pointer;
-    margin-top:8px;
-  }
-  #modalMetaLine {
-    font-size:11px; color:var(--text-dim); text-align:center; line-height:1.5;
+  /* ราคาหลังลด/โปรโมชั่น — เท่ากับราคาเพลงเดี่ยว */
+  .price-discounted {
+    font-size: 14px;
+    font-weight: 800;
   }
 
-  /* ---- เพิ่มใหม่: ปุ่ม + popup ติดตามออเดอร์ (ฝั่งลูกค้า) — ไม่แตะระบบเดิม ใช้คลาส .modal/.field เดิม ---- */
-  .track-order-btn { margin-right:6px; }
-  .track-order-modal .track-order-intro { color:var(--text-dim); font-size:13px; margin-top:0; margin-bottom:16px; }
-  .track-order-result { margin-top:6px; padding-top:14px; border-top:1px solid rgba(255,255,255,.1); }
-  .track-order-status {
-    display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:999px;
-    font-size:12.5px; font-weight:700; margin-bottom:14px;
+  /* ราคาหลังลดขนาดใหญ่ (ใช้ในหัวเพลย์ลิสต์) */
+  .price-discounted.large {
+    font-size: 16px;
+    font-weight: 800;
   }
-  .track-order-row { display:flex; justify-content:space-between; gap:12px; margin:6px 0; font-size:13.5px; }
-  .track-order-row span:first-child { color:var(--text-dim); }
-  .track-order-items { display:flex; flex-direction:column; gap:6px; margin:10px 0; max-height:38vh; overflow:auto; }
-  .track-order-item { display:flex; justify-content:space-between; gap:10px; font-size:13px; padding:8px 10px; border:1px solid rgba(255,255,255,.08); border-radius:9px; }
-  .track-order-item-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .track-order-item-price { white-space:nowrap; color:var(--text-dim); }
-  .track-order-total { margin-top:8px; padding-top:10px; border-top:1px solid rgba(255,255,255,.1); display:flex; justify-content:space-between; font-weight:800; font-size:15px; }
-  .track-order-actions { display:flex; gap:8px; margin-top:16px; }
-  .track-order-actions > * { flex:1; }
 
-  /* ---- เพิ่มใหม่: สลับโหมด + ลิสต์ออเดอร์ทั้งหมดของลูกค้า (เรียลไทม์) — ต่อยอดโมดัลติดตามออเดอร์เดิม ---- */
-  .track-order-mode-switch { display:flex; gap:6px; margin-bottom:16px; background:rgba(255,255,255,.05); border-radius:11px; padding:4px; }
-  .track-order-mode-btn {
-    flex:1; border:0; background:transparent; color:var(--text-dim); font-size:12.5px; font-weight:700;
-    padding:8px 6px; border-radius:8px; cursor:pointer; transition:background .15s,color .15s;
+  /* ราคาขีดฆ่า */
+  .price-original {
+    font-size: 12px;
+    font-weight: 500;
   }
-  .track-order-mode-btn.active { background:var(--accent); color:#fff; }
-  .track-order-all-list { display:flex; flex-direction:column; gap:8px; margin-top:14px; max-height:50vh; overflow:auto; }
-  .track-order-all-card {
-    display:flex; flex-direction:column; gap:6px; padding:12px; border:1px solid var(--border);
-    border-radius:11px; background:rgba(255,255,255,.03); cursor:pointer; text-align:left;
+
+  /* badge ส่วนลด — ขยายนิดหน่อยให้อ่านง่ายบนมือถือ */
+  .discount-badge {
+    font-size: 11px;
+    padding: 2px 8px;
   }
-  .track-order-all-card-top { display:flex; justify-content:space-between; align-items:center; gap:10px; }
-  .track-order-all-card-id { font-size:12.5px; font-weight:700; color:var(--text-dim); }
-  .track-order-all-card-status { font-size:11.5px; font-weight:700; padding:3px 10px; border-radius:999px; white-space:nowrap; }
-  .track-order-all-card-bottom { display:flex; justify-content:space-between; gap:10px; font-size:13px; color:var(--text-dim); }
-  .track-order-all-empty { text-align:center; color:var(--text-dim); font-size:13px; padding:20px 0; }
 
-  /* ---- เพิ่มใหม่: ใบเสร็จหลังสั่งซื้อ (ฝั่งลูกค้า) — คัดลอกสไตล์ .receipt-* จาก admin.html ให้เหมือนกันทุกประการ ---- */
-  #receiptBackdrop .receipt-paper {
-    background:#fff; color:#171717; border-radius:12px; padding:22px; max-width:460px; margin:auto;
+  /* 🔧 ปรับ padding ของ badge ราคาในรายการเพลงเพลย์ลิสต์ — เป็น 0 เพราะเอาพื้นหลังออกแล้ว */
+  .playlist-item-price {
+    padding: 0;
   }
-  #receiptBackdrop .receipt-head { text-align:center; border-bottom:1px dashed #bbb; padding-bottom:14px; }
-  #receiptBackdrop .receipt-head h2 { margin:0 0 4px; font-size:21px; }
-  #receiptBackdrop .receipt-head small { display:block; color:#666; margin-top:3px; }
-  #receiptBackdrop .receipt-customer { padding:14px 0; border-bottom:1px solid #e5e5e5; }
-  #receiptBackdrop .receipt-customer div { display:flex; justify-content:space-between; gap:12px; margin:4px 0; }
-  #receiptBackdrop .receipt-customer span { color:#666; }
-  #receiptBackdrop .receipt-items { padding:10px 0; }
-  #receiptBackdrop .receipt-line { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid #eee; }
-  #receiptBackdrop .receipt-line small { display:block; color:#666; margin-top:3px; }
-  #receiptBackdrop .receipt-total { display:flex; justify-content:space-between; padding-top:14px; font-size:18px; }
-  #receiptBackdrop .receipt-thanks { text-align:center; color:#666; margin-top:20px; font-size:12px; }
-  #receiptBackdrop .receipt-empty { color:#666; text-align:center; padding:12px; }
 
-  /* ---- เพิ่มใหม่: แถบเตือน "ยังไม่ได้แจ้งแอดมิน" ค้างไว้จนกว่าจะกดแจ้งสำเร็จ ---- */
-  .pending-order-banner {
-    position:fixed; left:12px; right:12px; bottom:calc(64px + var(--safe-bottom) + 8px);
-    z-index:60; display:flex; align-items:center; gap:10px;
-    background:rgba(245,180,0,.16); border:1px solid #F5B400; backdrop-filter:blur(10px);
-    border-radius:12px; padding:10px 12px; box-shadow:0 4px 16px rgba(0,0,0,.3);
+  /* 🔧 ปรับ padding-right ของชื่อเพลง/ชื่อรอง ให้พอดีกับ iPhone — ลดลงจาก default เพราะป้ายราคาเล็กลงแล้ว */
+  .song-name,
+  .song-artist,
+  .song-dj {
+    padding-right: 75px;
   }
-  .pending-order-banner[hidden] { display:none; }
-  .pending-order-banner-text { flex:1; font-size:12.5px; line-height:1.4; color:var(--text); }
-  .pending-order-banner-actions { display:flex; align-items:center; gap:6px; }
-  .pending-order-banner-btn {
-    background:#F5B400; color:#171717; border:0; border-radius:8px; padding:8px 12px;
-    font-size:12.5px; font-weight:800; white-space:nowrap; cursor:pointer;
+  .playlist-item-name,
+  .playlist-item-sub {
+    padding-right: 75px;
   }
-  .pending-order-banner-dismiss {
-    background:transparent; border:0; color:var(--text-dim); font-size:16px; padding:4px 6px; cursor:pointer;
+  .playlist-folder-count {
+    padding-right: 95px;
   }
-</style>
-</head>
-<body>
 
-  <div class="topbar">
-    <div class="topbar-inner">
-      <div class="logo">
-        <img id="siteLogo" src="" alt="logo" style="display:none;">
-        <span id="siteName">Music Store</span>
-      </div>
-      <div class="cart-toggle-wrap">
-        <button class="icon-btn track-order-btn" id="trackOrderBtn" type="button" aria-label="ติดตามออเดอร์">
-          📦
-        </button>
-        <button class="icon-btn cart-toggle-btn" id="cartToggleBtn" type="button" aria-label="เปิดตะกร้าสินค้า">
-          🛒 <span id="cartBadge" class="cart-badge" hidden>0</span>
-        </button>
-      </div>
-    </div>
-    <div class="container" style="padding-bottom:10px;">
-      <div class="search-box">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
-        <input id="searchInput" placeholder="ค้นหาเพลง...">
-      </div>
-    </div>
-    <div class="chip-row" id="categoryChips"></div>
-  </div>
+  /* 🔧 ลดขนาด cover บนจอแคบนิดหน่อย เพื่อเผื่อพื้นที่ตัวหนังสือ */
+  .song-cover {
+    width: 58px !important;
+    height: 58px !important;
+  }
+  .playlist-cover {
+    width: 54px;
+    height: 54px;
+  }
 
-  <div id="djSection">
-    <div class="section-title">DJ</div>
-    <div class="dj-row" id="djRow"></div>
-  </div>
+  /* 🔧 ลด padding แถวเพลงบนจอแคบนิดหน่อย */
+  .song-card,
+  .playlist-song-row {
+    padding: 9px 10px;
+    gap: 10px;
+  }
+}
 
-  <!-- ส่วน Playlist แบบ Dropdown -->
-  <div class="playlist-wrapper">
-    <button class="playlist-header-btn" id="playlistToggleBtn">
-      <span class="playlist-header-title">เพลย์ลิสต์</span>
-      <svg class="dropdown-icon" id="dropdownIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
-    </button>
-    <div id="playlistsContainer" class="playlist-content-box"></div>
-  </div>
+/* 🔧 ปรับเพิ่ม: สำหรับ iPhone รุ่นเล็ก (SE, 12 mini, 13 mini — กว้าง ≤ 375px) */
+@media (max-width: 375px) {
+  .song-price,
+  .playlist-item-price {
+    font-size: 13px;
+    font-weight: 800;
+  }
+  .playlist-folder-price {
+    font-size: 15px;
+    font-weight: 800;
+  }
+  .price-discounted {
+    font-size: 13px;
+    font-weight: 800;
+  }
+  .price-discounted.large {
+    font-size: 15px;
+    font-weight: 800;
+  }
+  .price-original {
+    font-size: 11px;
+    font-weight: 500;
+  }
 
-  <div class="section-title" id="gridTitle">เพลงทั้งหมด</div>
-  <div class="song-grid" id="songGrid"></div>
-  <div class="empty-state" id="emptyState" style="display:none;">ไม่พบเพลงที่ค้นหา</div>
+  /* 🔧 ลด cover ลงอีกบนจอเล็กมาก */
+  .song-cover {
+    width: 50px !important;
+    height: 50px !important;
+  }
+  .playlist-cover {
+    width: 46px;
+    height: 46px;
+  }
 
-  <div class="player-bar" id="playerBar">
-    <div class="player-top">
-      <img id="playerCover" src="" alt="">
-      <div class="player-meta">
-        <div class="t1" id="playerTitle">-</div>
-        <div class="t2" id="playerSub">-</div>
-      </div>
-      <button class="ctrl" id="playerToggle">
-        <svg id="playerIcon" width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
-        <div class="spinner" id="playerSpinner" style="display:none;"></div>
-      </button>
-      <!-- 🔧 เพิ่มใหม่ (2026-09-12): ปุ่มปิดเครื่องเล่นเพลง (X) — ให้ลูกค้ากดปิด popup player ได้ -->
-      <button class="ctrl player-close-btn" id="playerClose" type="button" aria-label="ปิดเครื่องเล่น" title="ปิดเครื่องเล่น">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-      </button>
-    </div>
-    <div class="player-seek-row">
-      <span class="time" id="playerCurrentTime">0:00</span>
-      <input type="range" id="playerSeek" min="0" max="100" step="0.1" value="0">
-      <span class="time" id="playerDuration">0:00</span>
-    </div>
-  </div>
-
-  <!-- เพิ่มใหม่: แถบเตือนออเดอร์ที่ยังไม่ได้แจ้งแอดมิน -->
-  <div class="pending-order-banner" id="pendingOrderBanner" hidden>
-    <div class="pending-order-banner-text">คุณมีออเดอร์ที่ยังไม่ได้แจ้งแอดมินเพื่อชำระเงิน</div>
-    <div class="pending-order-banner-actions">
-      <button class="pending-order-banner-btn" id="pendingOrderBannerBtn" type="button">แจ้งแอดมินตอนนี้</button>
-      <button class="pending-order-banner-dismiss" id="pendingOrderBannerDismiss" type="button" aria-label="ซ่อนคำเตือนนี้ชั่วคราว">✕</button>
-    </div>
-  </div>
-
-  <!-- ===== เพิ่มใหม่: view สำหรับ tab "ออเดอร์ของฉัน" (ลูกค้าติดตามออเดอร์) ===== -->
-  <div id="myOrdersView" class="container" style="display:none;padding:14px 16px 100px;"></div>
-
-  <div class="bottom-nav">
-    <button class="active" data-tab="home">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a1 1 0 01-1 1H4a1 1 0 01-1-1z"/></svg>
-      หน้าแรก
-    </button>
-    <button data-tab="playlist">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>
-      เพลย์ลิสต์
-    </button>
-    <button data-tab="category">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-      หมวดหมู่
-    </button>
-    <button data-tab="dj">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
-      DJ
-    </button>
-    <button data-tab="contact">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-      ติดต่อ
-    </button>
-  </div>
-
-  <div class="modal-backdrop" id="songModalBackdrop">
-    <div class="modal">
-      <div class="modal-header">
-        <h3>รายละเอียดเพลง</h3>
-        <button class="modal-close" id="songModalClose">✕</button>
-      </div>
-
-      <!-- แถวหัว: รูปปก 80x80 ซ้าย + ข้อมูลขวา — กระทัดรัด เหมือนฝั่ง admin -->
-      <div id="modalHead">
-        <div id="modalCoverWrap">
-          <img id="modalCover" src="" alt="">
-        </div>
-        <div id="modalInfo">
-          <h3 id="modalName"></h3>
-          <div id="modalArtist"></div>
-          <div id="modalBadges"></div>
-          <div id="modalPrice"></div>
-        </div>
-      </div>
-
-      <!-- DJ + คำอธิบาย -->
-      <div id="modalDj"></div>
-      <div id="modalDesc"></div>
-
-      <!-- Player ภายใน popup — เหมือนฝั่ง admin -->
-      <div id="modalPlayer">
-        <!-- Seek bar -->
-        <div id="modalSeekWrap">
-          <span id="modalCurrTime">0:00</span>
-          <input id="modalSeek" type="range" min="0" max="0" step="0.1" value="0" aria-label="ตำแหน่งเพลง">
-          <span id="modalDurTime">0:00</span>
-        </div>
-
-        <!-- ปุ่มกระโดดช่วงเพลง (3 ปุ่ม) -->
-        <div id="modalJumpRow">
-          <button type="button" class="modal-jump-btn" id="modalJumpToIntro" title="ข้ามไปช่วงต้นเพลง">
-            <span class="modal-jump-ico">⏮</span><span>ต้นเพลง</span>
-          </button>
-          <button type="button" class="modal-jump-btn" id="modalJumpToPreview" title="ข้ามไปช่วง Dance / Preview ที่ AI ตัดไว้">
-            <span class="modal-jump-ico">🎯</span><span>Dance / Preview</span>
-          </button>
-          <button type="button" class="modal-jump-btn" id="modalJumpToOutro" title="ข้ามไปช่วงท้ายเพลง">
-            <span class="modal-jump-ico">⏭</span><span>ท้ายเพลง</span>
-          </button>
-        </div>
-
-        <!-- ปุ่มเล่นหลัก (เด่น) — สีเดียวกับฝั่ง admin -->
-        <button class="btn" id="modalPlayBtn" data-play="">
-          <span id="modalPlayIconWrap" style="display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center;position:relative;flex-shrink:0;">
-            <svg id="modalPlayIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
-            <div class="spinner" id="modalPlaySpinner" style="display:none;width:24px;height:24px;border-width:4px;"></div>
-          </span>
-          <span id="modalPlayLabel">ฟังเพลง</span>
-        </button>
-
-        <div id="modalMetaLine"></div>
-      </div>
-
-      <!-- ปุ่มเพิ่มเข้าตะกร้า — สีเดียวกับปุ่มเล่น (สีม่วง accent) -->
-      <button class="btn" id="modalBuyBtn">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-        <span id="modalBuyLabel">เพิ่มเข้าตะกร้า</span>
-      </button>
-    </div>
-  </div>
-
-  <!-- Cart เดิม: เพิ่มเฉพาะ markup ที่ app-cart.js อ้างถึง ไม่สร้างระบบ Cart ใหม่ -->
-  <div class="modal-backdrop" id="cartBackdrop" aria-hidden="true">
-    <div class="modal cart-modal">
-      <div class="modal-header">
-        <h3>ตะกร้าสินค้า</h3>
-        <button class="modal-close" id="cartCloseBtn" type="button">✕</button>
-      </div>
-      <div id="cartItems" class="cart-items"></div>
-      <div id="cartSummary" class="cart-summary" hidden>
-        <div class="cart-summary-row">
-          <span style="color:var(--text-dim);">จำนวน</span>
-          <strong id="cartTotalQuantity">0 เพลง</strong>
-        </div>
-        <!-- เพิ่มใหม่ (แก้บั๊ก 2026-09-10): ที่ว่างสำหรับแสดงแถวส่วนลด/โปรโมชั่น เติมโดย renderCart() ใน app-cart.js -->
-        <div id="cartDiscountRows"></div>
-        <div class="cart-summary-row">
-          <span style="color:var(--text-dim);">ยอดรวม</span>
-          <strong id="cartTotalPrice" style="color:var(--success);">0 LAK</strong>
-        </div>
-        <div class="cart-actions">
-          <button class="btn secondary" id="clearCartBtn" type="button">ล้างตะกร้า</button>
-          <button class="btn" id="checkoutCartBtn" type="button">สั่งซื้อ</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal-backdrop" id="checkoutBackdrop" aria-hidden="true">
-    <div class="modal cart-modal">
-      <div class="modal-header">
-        <h3>ข้อมูลสำหรับสั่งซื้อ</h3>
-        <button class="modal-close" id="checkoutCloseBtn" type="button">✕</button>
-      </div>
-      <p style="color:var(--text-dim);font-size:13px;margin-top:0;">
-        กรอกข้อมูลเพื่อบันทึก Order และแจ้งรายละเอียดให้ร้านทาง WhatsApp
-      </p>
-      <div class="field">
-        <label for="checkoutCustomerName">ชื่อลูกค้า *</label>
-        <input id="checkoutCustomerName" autocomplete="name" placeholder="ชื่อลูกค้า">
-      </div>
-      <div class="field">
-        <label for="checkoutCustomerWhatsapp">เบอร์ WhatsApp *</label>
-        <input id="checkoutCustomerWhatsapp" autocomplete="tel" placeholder="20XXXXXXXX">
-      </div>
-      <div id="checkoutSummary" class="cart-summary"></div>
-      <button class="btn" id="submitCartOrderBtn" type="button">ยืนยันสั่งซื้อ</button>
-      <div id="checkoutFeedback" class="cart-feedback"></div>
-    </div>
-  </div>
-
-  <!-- เพิ่มใหม่: popup ติดตามออเดอร์ (ฝั่งลูกค้า ไม่ต้อง Login) -->
-  <div class="modal-backdrop" id="trackOrderBackdrop" aria-hidden="true">
-    <div class="modal track-order-modal">
-      <div class="modal-header">
-        <h3>ติดตามออเดอร์</h3>
-        <button class="modal-close" id="trackOrderClose" type="button">✕</button>
-      </div>
-      <p class="track-order-intro">กรอกเลข Order พร้อมชื่อและเบอร์โทร/WhatsApp ที่ใช้ตอนสั่งซื้อ เพื่อตรวจสอบสถานะ</p>
-
-      <!-- เพิ่มใหม่: สลับโหมด ค้นหาออเดอร์เดียว / ดูออเดอร์ทั้งหมดของฉัน — ไม่แตะ field/ปุ่มเดิมด้านล่าง -->
-      <div class="track-order-mode-switch" role="tablist">
-        <button class="track-order-mode-btn active" id="trackOrderModeSingleBtn" type="button" role="tab" aria-selected="true">ค้นหาออเดอร์เดียว</button>
-        <button class="track-order-mode-btn" id="trackOrderModeAllBtn" type="button" role="tab" aria-selected="false">ออเดอร์ทั้งหมดของฉัน</button>
-      </div>
-
-      <div id="trackOrderSingleView">
-        <div id="trackOrderQuick" class="track-order-result" style="margin-top:0;padding-top:0;border-top:0;margin-bottom:16px;" hidden>
-          <button class="btn secondary" id="trackOrderQuickBtn" type="button" style="width:100%;">📄 ดูใบเสร็จออเดอร์ล่าสุดของคุณ (เครื่องนี้)</button>
-        </div>
-
-        <div class="field">
-          <label for="trackOrderId">เลข Order *</label>
-          <input id="trackOrderId" placeholder="เช่น RCPT-20260909-ABC123">
-        </div>
-        <div class="field">
-          <label for="trackOrderName">ชื่อลูกค้า *</label>
-          <input id="trackOrderName" autocomplete="name" placeholder="ชื่อที่ใช้ตอนสั่งซื้อ">
-        </div>
-        <div class="field">
-          <label for="trackOrderPhone">เบอร์โทร/WhatsApp *</label>
-          <input id="trackOrderPhone" autocomplete="tel" placeholder="20XXXXXXXX">
-        </div>
-        <button class="btn" id="trackOrderSubmitBtn" type="button">ค้นหาออเดอร์</button>
-        <div id="trackOrderFeedback" class="cart-feedback"></div>
-
-        <div id="trackOrderResult" class="track-order-result" hidden></div>
-      </div>
-
-      <!-- เพิ่มใหม่: มุมมองออเดอร์ทั้งหมดของลูกค้า (ตามเบอร์โทร) แบบเรียลไทม์ -->
-      <div id="trackOrderAllView" hidden>
-        <div class="field">
-          <label for="trackOrderAllName">ชื่อลูกค้า *</label>
-          <input id="trackOrderAllName" autocomplete="name" placeholder="ชื่อที่ใช้ตอนสั่งซื้อ">
-        </div>
-        <div class="field">
-          <label for="trackOrderAllPhone">เบอร์โทร/WhatsApp *</label>
-          <input id="trackOrderAllPhone" autocomplete="tel" placeholder="20XXXXXXXX">
-        </div>
-        <button class="btn" id="trackOrderAllSubmitBtn" type="button">ดูออเดอร์ทั้งหมด</button>
-        <div id="trackOrderAllFeedback" class="cart-feedback"></div>
-
-        <div id="trackOrderAllList" class="track-order-all-list" hidden></div>
-
-        <div id="trackOrderAllDetail" class="track-order-result" hidden>
-          <button class="btn secondary" id="trackOrderAllBackBtn" type="button" style="width:100%;margin-bottom:12px;">← กลับไปที่ลิสต์ออเดอร์</button>
-          <div id="trackOrderAllDetailContent"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- เพิ่มใหม่: ใบเสร็จหลังสั่งซื้อ (ฝั่งลูกค้า) — โครงสร้างเดียวกับ #receiptBackdrop ในหน้าแอดมิน -->
-  <div class="modal-backdrop" id="receiptBackdrop" aria-hidden="true">
-    <div class="modal">
-      <div class="modal-header">
-        <h3>ใบเสร็จ</h3>
-        <button class="modal-close" id="receiptClose" type="button">✕</button>
-      </div>
-      <div id="receiptContent"></div>
-      <div style="display:flex;gap:8px;margin-top:14px;">
-        <button class="btn secondary" id="receiptWhatsAppBtn" type="button" style="flex:1;">ติดต่อแอดมินผ่าน WhatsApp เพื่อชำระเงิน</button>
-        <button class="btn" id="receiptDownloadImgBtn" type="button" style="flex:1;">ดาวน์โหลดใบเสร็จเป็นรูป</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="toast" id="toast"></div>
-
-  <!-- สคริปต์สลับการ เปิด-ปิด Dropdown -->
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      const toggleBtn = document.getElementById('playlistToggleBtn');
-      const container = document.getElementById('playlistsContainer');
-      const icon = document.getElementById('dropdownIcon');
-
-      if (toggleBtn && container) {
-        toggleBtn.addEventListener('click', () => {
-          container.classList.toggle('is-closed');
-          icon.classList.toggle('is-closed');
-        });
-      }
-    });
-  </script>
-
-  <!-- เปลี่ยนเลข v ทุกครั้งที่อัปโหลดไฟล์ใหม่ เพื่อไม่ให้มือถือใช้ไฟล์ JS จาก cache -->
-  <!-- 🔧 v=20260913-hide-dj-category: แท็บ "หมวดหมู่" ซ่อนส่วน DJ เสมอ (แสดงเฉพาะหน้าแรก/แท็บ DJ) -->
-  <script type="module" src="app-user.js?v=20260913-hide-dj-category"></script>
-</body>
-</html>
+  /* 🔧 ลด padding-right ลงอีกบนจอเล็กมาก เพราะป้ายราคาเล็กลงแล้ว */
+  .song-name,
+  .song-artist,
+  .song-dj {
+    padding-right: 70px;
+  }
+  .playlist-item-name,
+  .playlist-item-sub {
+    padding-right: 70px;
+  }
+}
