@@ -598,7 +598,7 @@ button:active {
 .song-grid {
   display: flex;
   flex-direction: column;
-  gap: 0px !important;
+  gap: 10px !important;
   padding: 0 16px 20px;
   max-width: 1080px;
   margin: 0 auto;
@@ -1799,5 +1799,255 @@ button:active {
   .playlist-item-name,
   .playlist-item-sub {
     padding-right: 70px;
+  }
+}
+
+/* ==========================================================================
+   🎵 NEW: Premium Song Row (Style D - Big Bold Sales Row)
+   - เพิ่มใหม่ (2026-09-13): เปลี่ยนการ์ดเพลง grid 2 คอลัมน์ → แถวแนวนอนพรีเมียม
+   - ใช้ class .song-card-row เพื่อไม่กระทบ .song-card เดิมใน playlist
+   - รักษา ID/class/ฟังก์ชันเดิมทั้งหมด (.song-card, .song-cover, .song-info, .play-btn, .cart-add-btn)
+   ========================================================================== */
+
+/* การ์ดเพลงแบบแถวใหม่ — แทนที่ grid 2 คอลัมน์ */
+.song-card-row {
+  background: linear-gradient(135deg, var(--surface-2), var(--surface)) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 14px !important;
+  margin-bottom: 10px !important;
+  padding: 12px !important;
+  gap: 14px !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25) !important;
+  transition: all 0.25s cubic-bezier(.4, 0, .2, 1) !important;
+  overflow: hidden;
+}
+
+.song-card-row:first-child,
+.song-card-row:last-child {
+  border-radius: 14px !important;
+}
+
+.song-card-row:hover {
+  transform: translateY(-2px);
+  border-color: rgba(139, 92, 246, 0.35) !important;
+  box-shadow: 0 12px 28px rgba(139, 92, 246, 0.2), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  background: linear-gradient(135deg, var(--surface-hover), var(--surface-2)) !important;
+}
+
+/* รูปปกใหญ่ขึ้น + มี glow */
+.song-card-row .song-cover {
+  width: 80px !important;
+  height: 80px !important;
+  border-radius: 12px !important;
+  background: var(--surface-2) !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(139, 92, 246, 0.1) !important;
+}
+
+/* รูปปกเพลง — แสดงเต็มกรอบ ไม่ใช่สีม่วงทึบ */
+.song-card-row .song-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ปุ่มเล่นบนรูปปก */
+.song-card-row .song-cover .play-btn {
+  background: rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(8px);
+  border-radius: 50% !important;
+  width: 40px !important;
+  height: 40px !important;
+  top: 50% !important;
+  left: 50% !important;
+  inset: auto !important;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.25s ease !important;
+  border: 2px solid rgba(255, 255, 255, 0.85) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5) !important;
+}
+
+.song-card-row:hover .song-cover .play-btn {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.05);
+}
+
+.song-card-row .song-cover .play-btn svg {
+  width: 18px !important;
+  height: 18px !important;
+  fill: #fff !important;
+  filter: none !important;
+  margin-left: 2px;
+}
+
+/* ข้อมูลขวา — จัดเป็นคอลัมน์ */
+.song-card-row .song-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 2px 0 !important;
+  gap: 6px;
+}
+
+/* ชื่อเพลงใหญ่เด่น */
+.song-card-row .song-name {
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  line-height: 1.3 !important;
+  padding-right: 0 !important;
+  -webkit-line-clamp: 1 !important;
+  letter-spacing: -0.3px;
+  color: var(--text) !important;
+}
+
+/* แถว meta — DJ tag + ศิลปิน */
+.song-card-row .song-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.song-card-row .song-dj-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--accent) !important;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  white-space: nowrap;
+}
+
+.song-card-row .song-meta-text {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* แถวล่าง — ราคา + ปุ่มตะกร้า */
+.song-card-row .song-footer {
+  position: static !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+/* บล็อกราคา */
+.song-card-row .song-price-block {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* ราคาใหญ่เด่น สีเขียว */
+.song-card-row .song-price {
+  font-size: 17px !important;
+  font-weight: 900 !important;
+  color: var(--success) !important;
+  letter-spacing: -0.5px;
+  white-space: nowrap;
+}
+
+/* ราคาเก่าขีดฆ่า */
+.song-card-row .price-original {
+  font-size: 11px !important;
+  color: var(--text-dim) !important;
+  text-decoration: line-through;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+/* ราคาหลังหัวส่วนลด */
+.song-card-row .price-discounted {
+  font-size: 17px !important;
+  font-weight: 900 !important;
+  color: var(--success) !important;
+  letter-spacing: -0.5px;
+  white-space: nowrap;
+}
+
+/* ปุ่มเพิ่มลงตะกร้าแบบใหม่ — เด่น เป็นปุ่มจริง */
+.song-card-row .cart-add-btn-row {
+  background: linear-gradient(135deg, var(--accent), #7c3aed) !important;
+  border: none !important;
+  color: #fff !important;
+  font-size: 11.5px !important;
+  font-weight: 700;
+  padding: 8px 14px !important;
+  border-radius: 10px !important;
+  display: inline-flex !important;
+  align-items: center;
+  gap: 5px !important;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.4);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0 !important;
+  transition: all 0.2s ease;
+}
+
+.song-card-row .cart-add-btn-row:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(139, 92, 246, 0.55);
+}
+
+.song-card-row .cart-add-btn-row:active {
+  transform: translateY(0);
+}
+
+.song-card-row .cart-add-btn-row svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* ====== Responsive: จอเล็ก ====== */
+@media (max-width: 480px) {
+  .song-card-row {
+    padding: 10px !important;
+    gap: 10px !important;
+  }
+  .song-card-row .song-cover {
+    width: 64px !important;
+    height: 64px !important;
+  }
+  .song-card-row .song-name {
+    font-size: 14px !important;
+  }
+  .song-card-row .song-price,
+  .song-card-row .price-discounted {
+    font-size: 15px !important;
+  }
+  .song-card-row .cart-add-btn-row {
+    padding: 6px 10px !important;
+    font-size: 11px !important;
+  }
+  .song-card-row .cart-add-btn-row span {
+    display: none;
+  }
+  .song-card-row .cart-add-btn-row svg {
+    width: 16px;
+    height: 16px;
   }
 }
