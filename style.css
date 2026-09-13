@@ -510,16 +510,16 @@ button:active {
   margin: 0 !important;
   transform: translate(-50%, -50%) !important;
   border-radius: 50% !important;
-  background: rgba(0, 0, 0, 0.55) !important;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 2px solid rgba(255, 255, 255, 0.9) !important;
+  background: rgba(0, 0, 0, 0.25) !important;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
   display: flex !important;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0, 0, 0, 0.4) !important;
   opacity: 1 !important;
-  transition: all 0.2s ease !important;
+  transition: all 0.25s ease !important;
   cursor: pointer;
   z-index: 2;
   right: auto !important;
@@ -681,16 +681,16 @@ button:active {
   margin: 0 !important;
   transform: translate(-50%, -50%) !important;
   border-radius: 50% !important;
-  background: rgba(0, 0, 0, 0.55) !important;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.25) !important;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex !important;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(255, 255, 255, 0.08) !important;
-  border: 2px solid rgba(255, 255, 255, 0.9) !important;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
   opacity: 1 !important;
-  transition: all 0.2s ease !important;
+  transition: all 0.25s ease !important;
   cursor: pointer;
   z-index: 2;
   right: auto !important;
@@ -1866,7 +1866,7 @@ button:active {
   display: block;
 }
 
-/* ปุ่มเล่นบนรูปปก — แก้ (2026-09-13): แสดงตลอดเวลา + ขยายขนาด + อยู่กลางรูปพอดี */
+/* ปุ่มเล่นบนรูปปก — Style 2 Subtle Glow: พื้นด้ำโปร่งใส + glow ring + hover เป็นม่วง */
 .song-card-row .song-cover .play-btn {
   position: absolute !important;
   top: 50% !important;
@@ -1875,17 +1875,17 @@ button:active {
   height: 50px !important;
   margin: 0 !important;
   transform: translate(-50%, -50%) !important;
-  background: rgba(0, 0, 0, 0.55) !important;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.25) !important;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   border-radius: 50% !important;
   display: flex !important;
   align-items: center;
   justify-content: center;
   opacity: 1 !important;
   transition: all 0.25s ease !important;
-  border: 2px solid rgba(255, 255, 255, 0.9) !important;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0, 0, 0, 0.4) !important;
   cursor: pointer;
   z-index: 2;
   right: auto !important;
@@ -1894,9 +1894,9 @@ button:active {
 
 .song-card-row:hover .song-cover .play-btn {
   transform: translate(-50%, -50%) scale(1.1);
-  background: rgba(139, 92, 246, 0.85) !important;
-  border-color: #fff !important;
-  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.5), 0 0 0 6px rgba(255, 255, 255, 0.1) !important;
+  background: rgba(139, 92, 246, 0.4) !important;
+  border-color: rgba(255, 255, 255, 0.6) !important;
+  box-shadow: 0 0 0 6px rgba(139, 92, 246, 0.15), 0 4px 16px rgba(139, 92, 246, 0.5) !important;
 }
 
 .song-card-row .song-cover .play-btn svg {
@@ -2132,7 +2132,7 @@ button:active {
   transform: scale(1.08);
 }
 
-/* ปุ่มเล่นเพลงในเพลย์ลิสต์ — วงกลมกลางรูป แสดงตลอดเวลา เหมือนเพลงหลัก */
+/* ปุ่มเล่นเพลงในเพลย์ลิสต์ — Style 2 Subtle Glow เหมือนเพลงหลัก */
 .playlist-song-row.song-card-row .playlist-play-btn {
   position: absolute !important;
   top: 50% !important;
@@ -2141,17 +2141,17 @@ button:active {
   height: 50px !important;
   margin: 0 !important;
   transform: translate(-50%, -50%) !important;
-  background: rgba(0, 0, 0, 0.55) !important;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 2px solid rgba(255, 255, 255, 0.9) !important;
+  background: rgba(0, 0, 0, 0.25) !important;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
   border-radius: 50% !important;
   display: flex !important;
   align-items: center;
   justify-content: center;
   opacity: 1 !important;
   transition: all 0.25s ease !important;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0, 0, 0, 0.4) !important;
   cursor: pointer;
   z-index: 2;
   right: auto !important;
@@ -2160,9 +2160,9 @@ button:active {
 
 .playlist-song-row.song-card-row:hover .playlist-play-btn {
   transform: translate(-50%, -50%) scale(1.1);
-  background: rgba(139, 92, 246, 0.85) !important;
-  border-color: #fff !important;
-  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.5), 0 0 0 6px rgba(255, 255, 255, 0.1) !important;
+  background: rgba(139, 92, 246, 0.4) !important;
+  border-color: rgba(255, 255, 255, 0.6) !important;
+  box-shadow: 0 0 0 6px rgba(139, 92, 246, 0.15), 0 4px 16px rgba(139, 92, 246, 0.5) !important;
 }
 
 /* ไอคอนเล่นในเพลย์ลิสต์ — สีขาว ใหญ่ขึ้น */
