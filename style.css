@@ -1826,8 +1826,8 @@ button:active {
 
 /* การ์ดเพลงแบบแถวใหม่ — แทนที่ grid 2 คอลัมน์ */
 .song-card-row {
-  background: linear-gradient(135deg, var(--surface-2), var(--surface)) !important;
-  border: 1px solid var(--border) !important;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(168, 85, 247, 0.15) 40%, rgba(236, 72, 153, 0.12) 70%, rgba(11, 13, 20, 0.95) 100%) !important;
+  border: 1px solid rgba(168, 85, 247, 0.25) !important;
   border-radius: 14px !important;
   margin-bottom: 10px !important;
   padding: 12px !important;
@@ -1844,9 +1844,9 @@ button:active {
 
 .song-card-row:hover {
   transform: translateY(-2px);
-  border-color: rgba(139, 92, 246, 0.35) !important;
-  box-shadow: 0 12px 28px rgba(139, 92, 246, 0.2), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
-  background: linear-gradient(135deg, var(--surface-hover), var(--surface-2)) !important;
+  border-color: rgba(168, 85, 247, 0.5) !important;
+  box-shadow: 0 12px 32px rgba(168, 85, 247, 0.3), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(168, 85, 247, 0.25) 40%, rgba(236, 72, 153, 0.2) 70%, rgba(11, 13, 20, 1) 100%) !important;
 }
 
 /* รูปปกใหญ่ขึ้น + มี glow */
@@ -2088,8 +2088,8 @@ button:active {
 
 /* ปรับ .playlist-song-row ที่มี class song-card-row ให้เป็น Style D */
 .playlist-song-row.song-card-row {
-  background: linear-gradient(135deg, var(--surface-2), var(--surface)) !important;
-  border: 1px solid var(--border) !important;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(168, 85, 247, 0.15) 40%, rgba(236, 72, 153, 0.12) 70%, rgba(11, 13, 20, 0.95) 100%) !important;
+  border: 1px solid rgba(168, 85, 247, 0.25) !important;
   border-radius: 14px !important;
   margin: 10px 12px !important;
   padding: 12px !important;
@@ -2106,9 +2106,9 @@ button:active {
 
 .playlist-song-row.song-card-row:hover {
   transform: translateY(-2px);
-  border-color: rgba(139, 92, 246, 0.35) !important;
-  box-shadow: 0 12px 28px rgba(139, 92, 246, 0.2), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
-  background: linear-gradient(135deg, var(--surface-hover), var(--surface-2)) !important;
+  border-color: rgba(168, 85, 247, 0.5) !important;
+  box-shadow: 0 12px 32px rgba(168, 85, 247, 0.3), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(168, 85, 247, 0.25) 40%, rgba(236, 72, 153, 0.2) 70%, rgba(11, 13, 20, 1) 100%) !important;
 }
 
 /* รูปปกเพลงในเพลย์ลิสต์ — ใหญ่ขึ้น + มี glow เหมือนเพลงหลัก */
