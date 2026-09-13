@@ -604,12 +604,12 @@ button:active {
 }
 
 /* ---------- Song List ---------- */
-/* 🔧 ปรับ (2026-09-14): ลด gap ระหว่างแถวเพลงเดี่ยวจาก 10px → 4px ตามคำสั่งผู้ใช้
+/* 🔧 ปรับ (2026-09-14 รอบ 2): ลด gap ระหว่างแถวเพลงเดี่ยวจาก 4px → 2px ตามคำสั่งผู้ใช้
    - รักษา padding ซ้าย-ขวา เดิมไว้ */
 .song-grid {
   display: flex;
   flex-direction: column;
-  gap: 4px !important;
+  gap: 2px !important;
   padding: 0 16px 20px;
   max-width: 1080px;
   margin: 0 auto;
@@ -1827,12 +1827,12 @@ button:active {
    ========================================================================== */
 
 /* การ์ดเพลงแบบแถวใหม่ — แทนที่ grid 2 คอลัมน์ */
-/* 🔧 ปรับ (2026-09-14): ลด margin-bottom ของการ์ดเพลงเดี่ยวจาก 10px → 4px ตามคำสั่งผู้ใช้ */
+/* 🔧 ปรับ (2026-09-14 รอบ 2): ลด margin-bottom ของการ์ดเพลงเดี่ยวจาก 4px → 2px ตามคำสั่งผู้ใช้ */
 .song-card-row {
   background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(168, 85, 247, 0.15) 40%, rgba(236, 72, 153, 0.12) 70%, rgba(11, 13, 20, 0.95) 100%) !important;
   border: 1px solid rgba(168, 85, 247, 0.25) !important;
   border-radius: 14px !important;
-  margin-bottom: 4px !important;
+  margin-bottom: 2px !important;
   padding: 12px !important;
   gap: 14px !important;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25) !important;
@@ -2093,13 +2093,13 @@ button:active {
    ========================================================================== */
 
 /* ปรับ .playlist-song-row ที่มี class song-card-row ให้เป็น Style D */
-/* 🔧 ปรับ (2026-09-14): ลด margin รอบแถวเพลงในเพลย์ลิสต์จาก 10px → 4px ตามคำสั่งผู้ใช้
+/* 🔧 ปรับ (2026-09-14 รอบ 2): ลด margin รอบแถวเพลงในเพลย์ลิสต์จาก 4px → 2px ตามคำสั่งผู้ใช้
    - รักษา padding ซ้าย-ขวา (12px) เดิมไว้ ไม่กระทบขอบเพลย์ลิสต์ */
 .playlist-song-row.song-card-row {
   background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(168, 85, 247, 0.15) 40%, rgba(236, 72, 153, 0.12) 70%, rgba(11, 13, 20, 0.95) 100%) !important;
   border: 1px solid rgba(168, 85, 247, 0.25) !important;
   border-radius: 14px !important;
-  margin: 4px 12px !important;
+  margin: 2px 12px !important;
   padding: 12px !important;
   gap: 14px !important;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25) !important;
@@ -2109,7 +2109,7 @@ button:active {
 .playlist-song-row.song-card-row:last-child {
   border-bottom: 1px solid var(--border) !important;
   border-radius: 14px !important;
-  margin-bottom: 4px !important;
+  margin-bottom: 2px !important;
 }
 
 .playlist-song-row.song-card-row:hover {
@@ -2216,7 +2216,7 @@ button:active {
   .playlist-song-row.song-card-row {
     padding: 10px !important;
     gap: 10px !important;
-    margin: 4px 8px !important;
+    margin: 2px 8px !important;
   }
   .playlist-song-row.song-card-row .playlist-cover {
     width: 64px !important;
@@ -2286,10 +2286,10 @@ button:active {
   background: rgba(0, 0, 0, 0.15);
 }
 
-/* 🔧 ปรับ (2026-09-14): ลด padding ล่างของ .playlist-row จาก 12px → 4px ตามคำสั่งผู้ใช้
+/* 🔧 ปรับ (2026-09-14 รอบ 2): ลด padding ล่างของ .playlist-row จาก 4px → 2px ตามคำสั่งผู้ใช้
    - รักษา padding บน (4px) เดิมไว้ */
 .playlist-row {
-  padding: 4px 0 4px !important;
+  padding: 4px 0 2px !important;
 }
 
 /* ==========================================================================
