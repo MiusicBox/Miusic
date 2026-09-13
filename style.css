@@ -1366,8 +1366,8 @@ button:active {
 }
 
 .icon-btn {
-  width: 38px;
-  height: 38px;
+  width: 48px;
+  height: 48px;
   border-radius: 10px;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -1376,6 +1376,10 @@ button:active {
   justify-content: center;
   color: var(--text-dim);
 }
+.cart-toggle-btn {
+  color: var(--success);
+}
+
 
 .icon-btn:hover {
   color: var(--text);
