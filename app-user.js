@@ -517,9 +517,11 @@ function togglePlaylistsVisibility() {
   const wrapper = document.querySelector(".playlist-wrapper");
   if (!wrapper) return;
   // แสดงเพลย์ลิสต์เฉพาะหน้าแรกที่เลือก "ทั้งหมด" หรือแท็บเพลย์ลิสต์
+  // 🔧 เพิ่ม (2026-09-14): ถ้าเลือก DJ อยู่ ให้ซ่อนเพลย์ลิสต์ทั้งหมด (รวมหัวข้อ "เพลย์ลิสต์")
+  // - เนื่องจากเพลงของ DJ จะแสดงอยู่ในรายการเพลงหลักอยู่แล้ว ไม่ต้องแสดงเพลย์ลิสต์ซ้ำ
   wrapper.style.display =
-    STATE.currentView === "playlist" ||
-    (STATE.currentView === "home" && STATE.currentCategory === "all")
+    (STATE.currentView === "playlist" ||
+    (STATE.currentView === "home" && STATE.currentCategory === "all")) && !STATE.currentDj
       ? ""
       : "none";
 }
@@ -528,10 +530,14 @@ function setView(view) {
   STATE.currentView = view;
   const showCategory = view === "home" || view === "category";
   // แสดง DJ ในหน้า "ทั้งหมด" หรือหน้า DJ เท่านั้น
-  // เมื่อเลือกหมวดหมู่เฉพาะ ให้ซ่อนส่วน DJ ออกจากหน้านั้น
+  // 🔧 แก้ (2026-09-14): ลบ `view === "category"` ออกจากเงื่อนไข showDj
+  // - ตามคำสั่งผู้ใช้: เมื่อกดเข้าแท็บ "หมวดหมู่" ให้ซ่อน DJ ออกด้วย
+  // - หน้า "หน้าแรก" + category="all" → ยังแสดง DJ เหมือนเดิม
+  // - หน้า "DJ" → ยังแสดง DJ เหมือนเดิม
+  // - หน้า "หมวดหมู่" → ซ่อน DJ ไม่ว่าจะเลือก category ไหน
   const showDj =
     view === "dj" ||
-    ((view === "home" || view === "category") && STATE.currentCategory === "all");
+    (view === "home" && STATE.currentCategory === "all");
   // แท็บ DJ ต้องแสดงเพลงของ DJ ทุกคน หรือเพลงของ DJ ที่เลือก
   const showSongs = view === "home" || view === "category" || view === "dj";
 
