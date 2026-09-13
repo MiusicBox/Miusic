@@ -360,8 +360,22 @@ function renderPlaylists() {
   if (!container) return;
   if (STATE.playlists.length === 0) { container.innerHTML = ""; return; }
 
+  // 🔧 เพิ่ม (2026-09-14): ถ้าเลือก DJ อยู่ → กรองเพลย์ลิสต์/เพลงตาม DJ คนนั้น
+  // - ดึง dj_name จาก DJ ที่เลือก (ปลอดภัยเพราะเป็น null ถ้าไม่ได้เลือก)
+  // - ไม่กระทบกระบวนการเดิม (ค้นหา/toggle/ราคา/ปุ่มซื้อ)
+  const selectedDjName = STATE.currentDj
+    ? (STATE.djs.find(d => d.id === STATE.currentDj)?.dj_name || null)
+    : null;
+
   // กรองเพลย์ลิสต์ตามคำค้นหาด้วย (ถ้าช่องค้นหาตรงกับชื่อเพลย์ลิสต์ จะแสดงเพลย์ลิสต์นั้น)
   const filteredPlaylists = STATE.playlists.filter(pl => {
+    // 🔧 เพิ่ม (2026-09-14): ถ้าเลือก DJ แล้ว เพลย์ลิสต์ต้องมีเพลงของ DJ คนนั้นอย่างน้อย 1 เพลง
+    if (selectedDjName) {
+      const hasDjSong = STATE.songs.some(s =>
+        s.playlist_id === pl.id && s.dj_name === selectedDjName
+      );
+      if (!hasDjSong) return false;
+    }
     if (!STATE.search) return true;
     const q = STATE.search.toLowerCase();
     const matchPlName = pl.playlist_name.toLowerCase().includes(q);
@@ -372,8 +386,21 @@ function renderPlaylists() {
   container.innerHTML = filteredPlaylists.map(pl => {
     const songs = STATE.songs.filter(s => s.playlist_id === pl.id);
     if (songs.length === 0) return "";
+    // 🔧 เพิ่ม (2026-09-14): ถ้าเลือก DJ แล้ว ให้แสดงเฉพาะเพลงของ DJ คนนั้นในเพลย์ลิสต์
+    // - ถ้าไม่ได้เลือก DJ จะแสดงเพลงทั้งหมดในเพลย์ลิสต์เหมือนเดิม
+    const displaySongs = selectedDjName
+      ? songs.filter(s => s.dj_name === selectedDjName)
+      : songs;
+    if (displaySongs.length === 0) return "";
     const isOpen = openPlaylists.has(pl.id) || (STATE.search && STATE.search.length > 0); // เปิดอัตโนมัติเมื่อกำลังค้นหา
+    // 🔧 เพิ่ม (2026-09-14): เมื่อเลือก DJ ให้ auto-expand เพลย์ลิสต์ที่มีเพลงของ DJ คนนั้น เพื่อให้เห็นเพลงเลย
+    const isAutoOpenForDj = !!selectedDjName;
+    const finalIsOpen = isOpen || isAutoOpenForDj;
     const cover = pl.cover_url || songs[0].cover_url || "";
+    // 🔧 เพิ่ม (2026-09-14): ป้ายจำนวนเพลงแสดงเฉพาะเพลงของ DJ คนนั้น ถ้าเลือก DJ
+    const songCountLabel = selectedDjName
+      ? `${displaySongs.length} เพลง`
+      : `${songs.length} เพลง`;
     return `
       <div class="playlist-block" data-playlist-id="${pl.id}">
         <div class="playlist-folder-btn" data-toggle-playlist="${pl.id}">
@@ -382,7 +409,7 @@ function renderPlaylists() {
           </div>
           <div class="playlist-folder-info">
             <div class="playlist-folder-name">${escapeHtml(pl.playlist_name)}</div>
-            <div class="playlist-folder-count">${songs.length} เพลง</div>
+            <div class="playlist-folder-count">${songCountLabel}</div>
             ${pl.price ? `
             <div class="playlist-folder-bottom">
               <div class="playlist-folder-price-block">
@@ -395,11 +422,11 @@ function renderPlaylists() {
             </div>
             ` : ""}
           </div>
-          <svg class="playlist-folder-arrow${isOpen ? "" : " is-closed"}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          <svg class="playlist-folder-arrow${finalIsOpen ? "" : " is-closed"}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
         </div>
-        <div class="playlist-row-wrap${isOpen ? "" : " is-closed"}">
+        <div class="playlist-row-wrap${finalIsOpen ? "" : " is-closed"}">
           <div class="playlist-row">
-            ${songs.map(s => `
+            ${displaySongs.map(s => `
               <div class="playlist-song-row song-card-row" data-id="${s.id}">
                 <div class="playlist-cover song-cover">
                   <img src="${s.cover_url || pl.cover_url || ""}" alt="${escapeHtml(s.song_name)}" onerror="this.style.display='none'">
