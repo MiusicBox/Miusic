@@ -396,22 +396,26 @@ function renderPlaylists() {
         <div class="playlist-row-wrap${isOpen ? "" : " is-closed"}">
           <div class="playlist-row">
             ${songs.map(s => `
-              <div class="playlist-song-row" data-id="${s.id}">
-                <div class="playlist-cover">
-                  <img src="${s.cover_url || pl.cover_url || ""}">
-                  <button class="playlist-play-btn" data-play="${s.id}">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
+              <div class="playlist-song-row song-card-row" data-id="${s.id}">
+                <div class="playlist-cover song-cover">
+                  <img src="${s.cover_url || pl.cover_url || ""}" alt="${escapeHtml(s.song_name)}" onerror="this.style.display='none'">
+                  <button class="playlist-play-btn play-btn" data-play="${s.id}" aria-label="เล่น ${escapeHtml(s.song_name)}">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
                   </button>
                 </div>
-                <div class="playlist-info">
-                  <div class="playlist-item-name">${escapeHtml(s.song_name)}</div>
-                  <div class="playlist-item-sub">${escapeHtml(s.dj_name || s.artist || "")}</div>
-                </div>
-                <div class="playlist-item-price" style="display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; position: absolute; right: 0; bottom: 0;">
-                  <div style="display: inline-flex; align-items: center; gap: 4px;">
-                    <button class="cart-add-btn playlist-add-cart" type="button" data-add-cart-song="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
+                <div class="playlist-info song-info">
+                  <div class="playlist-item-name song-name">${escapeHtml(s.song_name)}</div>
+                  <div class="song-meta-row">
+                    ${s.dj_name ? `<span class="song-dj-tag">🎧 ${escapeHtml(s.dj_name)}</span>` : ""}
+                    ${s.artist ? `<span class="song-meta-text">${escapeHtml(s.artist)}</span>` : ""}
+                  </div>
+                  <div class="song-footer">
+                    <div class="song-price-block">
                       ${renderDiscountedPriceForSong(s)}
+                    </div>
+                    <button class="cart-add-btn playlist-add-cart cart-add-btn-row" type="button" data-add-cart-song="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
+                      <span>เพิ่มลงตะกร้า</span>
                     </button>
                   </div>
                 </div>
