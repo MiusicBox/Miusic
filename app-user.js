@@ -378,18 +378,22 @@ function renderPlaylists() {
       <div class="playlist-block" data-playlist-id="${pl.id}">
         <div class="playlist-folder-btn" data-toggle-playlist="${pl.id}">
           <div class="playlist-folder-cover">
-            <img src="${cover}">
+            <img src="${cover}" alt="${escapeHtml(pl.playlist_name)}" onerror="this.style.display='none'">
           </div>
           <div class="playlist-folder-info">
             <div class="playlist-folder-name">${escapeHtml(pl.playlist_name)}</div>
             <div class="playlist-folder-count">${songs.length} เพลง</div>
-          </div>
-          <!-- แก้ไข (2026-09-10 รอบ 2): ลดขนาดไอคอน + ชิดมุมขวาล่างของแถวมากขึ้น (right:12px ชิดขอบเดียวกับลูกศร) -->
-          <div style="position: absolute; right: 12px; bottom: 5px; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; z-index: 1;">
-            ${pl.price ? `<button type="button" class="cart-add-btn playlist-folder-price" data-add-cart-playlist="${pl.id}" aria-label="เพิ่มเพลย์ลิสต์ ${escapeHtml(pl.playlist_name)} ลงตะกร้า">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
-              ${renderDiscountedPriceForPlaylist(pl)}
-            </button>` : ""}
+            ${pl.price ? `
+            <div class="playlist-folder-bottom">
+              <div class="playlist-folder-price-block">
+                ${renderDiscountedPriceForPlaylist(pl)}
+              </div>
+              <button type="button" class="cart-add-btn playlist-folder-buy-btn" data-add-cart-playlist="${pl.id}" aria-label="ซื้อเพลย์ลิสต์ ${escapeHtml(pl.playlist_name)}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
+                <span>ซื้อทั้งเพลย์ลิสต์</span>
+              </button>
+            </div>
+            ` : ""}
           </div>
           <svg class="playlist-folder-arrow${isOpen ? "" : " is-closed"}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
         </div>
