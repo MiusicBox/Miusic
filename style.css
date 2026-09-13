@@ -2306,7 +2306,7 @@ button:active {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding-right: 24px;
+  padding-right: 8px;
 }
 
 /* ชื่อเพลย์ลิสต์ใหญ่เด่น */
@@ -2338,13 +2338,15 @@ button:active {
   margin-top: 6px;
 }
 
-/* บล็อกราคา */
+/* บล็อกราคา — ชิดขวา เพื่อให้ราคาอยู่ติดปุ่มซื้อทางขวา เหมือนเพลงเดี่ยว */
 .playlist-folder-btn .playlist-folder-price-block {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
+  margin-left: auto;
+  justify-content: flex-end;
 }
 
 /* ราคาปกติในหัวเพลย์ลิสต์ — ม่วงใหญ่ */
