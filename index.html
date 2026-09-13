@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
 <title>Music Store</title>
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=4">
 <style>
   /* โครงสร้าง Cart เดิมที่ app-cart.js ใช้งาน — คงไว้ในหน้า User */
   .cart-toggle-wrap { position:relative; margin-left:auto; display:flex; align-items:center; gap:8px; flex-shrink:0; flex-wrap:nowrap; }
@@ -207,48 +207,6 @@
   .pending-order-banner-dismiss {
     background:transparent; border:0; color:var(--text-dim); font-size:16px; padding:4px 6px; cursor:pointer;
   }
-
-  /* =========================================================================
-     🔧 เพิ่มใหม่ (2026-09-13): ปุ่มไอคอนบนแถบด้านบน (กล่องพัสดุ / ตะกร้า)
-     - เปลี่ยนตะกร้าจากอีโมจิ 🛒 เป็น SVG จริง เพื่อคุมสีได้แน่นอน (currentColor)
-     - badge จำนวนสินค้าเปลี่ยนเป็น position:absolute ลอยอยู่มุมขวาบนของปุ่ม
-       แทนที่จะเป็น flex item ข้างในปุ่ม — ป้องกันไม่ให้ไอคอนขยับ/เลื่อน
-       ทุกครั้งที่ badge โผล่ขึ้นมาหรือตัวเลขเปลี่ยน (เช่น 1 หลัก → 2 หลัก)
-     - ไม่กระทบ #cartBadge เดิมที่ app-cart.js อ้างถึง (ยัง id เดิม, ยัง toggle
-       attribute [hidden] แบบเดิมทุกประการ) เปลี่ยนแค่ตำแหน่งการวางด้วย CSS
-     ========================================================================= */
-  .icon-btn { position: relative; }
-  .icon-btn svg { display: block; }
-
-  .cart-toggle-btn {
-    color: var(--success);
-  }
-
-  .cart-badge {
-    position: absolute;
-    top: -4px;
-    right: -4px;
-    min-width: 20px;
-    height: 20px;
-    padding: 0 5px;
-    border-radius: 999px;
-    background: var(--danger, #ff6b6b);
-    color: #fff;
-    font-size: 11px;
-    line-height: 20px;
-    font-weight: 800;
-    text-align: center;
-    border: 2px solid var(--surface, #131722);
-    box-shadow: 0 2px 6px rgba(0,0,0,.35);
-    /* กันปุ่มขยับ: badge ลอยอิสระ ไม่กินพื้นที่ layout ของไอคอนข้างใน */
-    pointer-events: none;
-  }
-
-  /* 🔧 กันปุ่มไอคอน "ยืด/หด" เวลากด — คงเอฟเฟกต์กดสำหรับปุ่มอื่น
-     แต่ตรึงปุ่มไอคอนตรงนี้ไม่ให้ scale ตอน active เพื่อไม่ให้ดูเหมือนตะกร้ากระโดด */
-  .icon-btn:active {
-    transform: none;
-  }
 </style>
 </head>
 <body>
@@ -264,8 +222,7 @@
           📦
         </button>
         <button class="icon-btn cart-toggle-btn" id="cartToggleBtn" type="button" aria-label="เปิดตะกร้าสินค้า">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-          <span id="cartBadge" class="cart-badge" hidden>0</span>
+          🛒 <span id="cartBadge" class="cart-badge" hidden>0</span>
         </button>
       </div>
     </div>
