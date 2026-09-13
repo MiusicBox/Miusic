@@ -382,7 +382,7 @@ function renderPlaylists() {
           <!-- แก้ไข (2026-09-10 รอบ 2): ลดขนาดไอคอน + ชิดมุมขวาล่างของแถวมากขึ้น (right:12px ชิดขอบเดียวกับลูกศร) -->
           <div style="position: absolute; right: 12px; bottom: 5px; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; z-index: 1;">
             ${pl.price ? `<button type="button" class="cart-add-btn playlist-folder-price" data-add-cart-playlist="${pl.id}" aria-label="เพิ่มเพลย์ลิสต์ ${escapeHtml(pl.playlist_name)} ลงตะกร้า">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
               ${renderDiscountedPriceForPlaylist(pl)}
             </button>` : ""}
           </div>
@@ -395,7 +395,7 @@ function renderPlaylists() {
                 <div class="playlist-cover">
                   <img src="${s.cover_url || pl.cover_url || ""}">
                   <button class="playlist-play-btn" data-play="${s.id}">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
                   </button>
                 </div>
                 <div class="playlist-info">
@@ -405,7 +405,7 @@ function renderPlaylists() {
                 <div class="playlist-item-price" style="display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; position: absolute; right: 0; bottom: 0;">
                   <div style="display: inline-flex; align-items: center; gap: 4px;">
                     <button class="cart-add-btn playlist-add-cart" type="button" data-add-cart-song="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
                       ${renderDiscountedPriceForSong(s)}
                     </button>
                   </div>
