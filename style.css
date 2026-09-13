@@ -2051,3 +2051,200 @@ button:active {
     height: 16px;
   }
 }
+
+/* ==========================================================================
+   🎵 NEW: Playlist Songs ใช้ Style D เหมือนรายการเพลงหลัก
+   - เพิ่มใหม่ (2026-09-13): ทำให้เพลงในเพลย์ลิสต์หน้าตาเหมือนเพลงหลัก
+   - ใช้ selector .song-card-row .playlist-* เพื่อ override CSS เดิมอย่างปลอดภัย
+   - ไม่กระทบ .playlist-folder-btn (หัวเพลย์ลิสต์) ที่ยังคงเดิม
+   ========================================================================== */
+
+/* ปรับ .playlist-song-row ที่มี class song-card-row ให้เป็น Style D */
+.playlist-song-row.song-card-row {
+  background: linear-gradient(135deg, var(--surface-2), var(--surface)) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 14px !important;
+  margin: 10px 12px !important;
+  padding: 12px !important;
+  gap: 14px !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25) !important;
+  transition: all 0.25s cubic-bezier(.4, 0, .2, 1) !important;
+}
+
+.playlist-song-row.song-card-row:last-child {
+  border-bottom: 1px solid var(--border) !important;
+  border-radius: 14px !important;
+  margin-bottom: 12px !important;
+}
+
+.playlist-song-row.song-card-row:hover {
+  transform: translateY(-2px);
+  border-color: rgba(139, 92, 246, 0.35) !important;
+  box-shadow: 0 12px 28px rgba(139, 92, 246, 0.2), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  background: linear-gradient(135deg, var(--surface-hover), var(--surface-2)) !important;
+}
+
+/* รูปปกเพลงในเพลย์ลิสต์ — ใหญ่ขึ้น + มี glow เหมือนเพลงหลัก */
+.playlist-song-row.song-card-row .playlist-cover {
+  width: 80px !important;
+  height: 80px !important;
+  border-radius: 12px !important;
+  background: var(--surface-2) !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(139, 92, 246, 0.1) !important;
+}
+
+/* รูปปกเพลงในเพลย์ลิสต์ — แสดงเต็มกรอบ */
+.playlist-song-row.song-card-row .playlist-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.playlist-song-row.song-card-row:hover .playlist-cover img {
+  transform: scale(1.08);
+}
+
+/* ปุ่มเล่นเพลงในเพลย์ลิสต์ — วงกลมกลางรูป เหมือนเพลงหลัก */
+.playlist-song-row.song-card-row .playlist-play-btn {
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  inset: auto !important;
+  width: 40px !important;
+  height: 40px !important;
+  margin: 0 !important;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(8px);
+  border: 2px solid rgba(255, 255, 255, 0.85) !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.25s ease !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5) !important;
+  cursor: pointer;
+}
+
+.playlist-song-row.song-card-row:hover .playlist-play-btn {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.05);
+}
+
+/* ไอคอนเล่นในเพลย์ลิสต์ — สีขาว ไม่ใช่สีม่วง */
+.playlist-song-row.song-card-row .playlist-play-btn svg {
+  width: 18px !important;
+  height: 18px !important;
+  fill: #fff !important;
+  filter: none !important;
+  margin-left: 2px;
+  transition: transform 0.2s ease;
+}
+
+.playlist-song-row.song-card-row:hover .playlist-play-btn svg {
+  transform: scale(1.1);
+}
+
+/* ข้อมูลขวาในเพลย์ลิสต์ — จัดเป็นคอลัมน์เหมือนเพลงหลัก */
+.playlist-song-row.song-card-row .playlist-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 2px 0 !important;
+  gap: 6px;
+}
+
+/* ชื่อเพลงในเพลย์ลิสต์ — ใหญ่เด่นเหมือนเพลงหลัก */
+.playlist-song-row.song-card-row .playlist-item-name {
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  line-height: 1.3 !important;
+  padding-right: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  letter-spacing: -0.3px;
+  color: var(--text) !important;
+}
+
+/* ====== Responsive: จอเล็ก ====== */
+@media (max-width: 480px) {
+  .playlist-song-row.song-card-row {
+    padding: 10px !important;
+    gap: 10px !important;
+    margin: 8px 8px !important;
+  }
+  .playlist-song-row.song-card-row .playlist-cover {
+    width: 64px !important;
+    height: 64px !important;
+  }
+  .playlist-song-row.song-card-row .playlist-item-name {
+    font-size: 14px !important;
+  }
+  .playlist-song-row.song-card-row .cart-add-btn-row {
+    padding: 6px 10px !important;
+    font-size: 11px !important;
+  }
+  .playlist-song-row.song-card-row .cart-add-btn-row span {
+    display: none;
+  }
+  .playlist-song-row.song-card-row .cart-add-btn-row svg {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+/* ==========================================================================
+   🎵 NEW: ปรับ playlist-folder-btn (หัวเพลย์ลิสต์) ให้สวยขึ้น
+   - เพิ่มใหม่ (2026-09-13): ปรับหัวเพลย์ลิสต์ให้ดูพรีเมียมขึ้น
+   - ใช้ selector ที่ไม่กระทบ .playlist-folder-btn ตัวอื่น (ถ้ามี)
+   ========================================================================== */
+
+.playlist-block {
+  border: 1px solid rgba(139, 92, 246, 0.15) !important;
+  border-radius: 16px !important;
+  background: linear-gradient(135deg, var(--surface), var(--surface-2)) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3) !important;
+  overflow: hidden;
+}
+
+.playlist-folder-btn {
+  border-radius: 0 !important;
+  padding: 14px 14px !important;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), transparent) !important;
+  transition: all 0.2s ease;
+}
+
+.playlist-folder-btn:hover {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(236, 72, 153, 0.08)) !important;
+}
+
+.playlist-folder-cover {
+  width: 60px !important;
+  height: 60px !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(139, 92, 246, 0.15) !important;
+}
+
+.playlist-folder-name {
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.3px;
+}
+
+.playlist-folder-count {
+  padding-right: 110px;
+}
+
+.playlist-row-wrap {
+  border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.playlist-row {
+  padding: 4px 0 12px !important;
+}
