@@ -309,19 +309,24 @@ function renderSongGrid() {
   }
   if (empty) empty.style.display = "none";
   grid.innerHTML = list.map(s => `
-    <div class="song-card" data-id="${s.id}">
+    <div class="song-card song-card-row" data-id="${s.id}">
       <div class="song-cover">
-        <img src="${s.cover_url || ""}">
-        <button class="play-btn" data-play="${s.id}"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg></button>
+        <img src="${s.cover_url || ""}" alt="${escapeHtml(s.song_name)}" onerror="this.style.display='none'">
+        <button class="play-btn" data-play="${s.id}" aria-label="เล่น ${escapeHtml(s.song_name)}"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg></button>
       </div>
       <div class="song-info">
         <div class="song-name">${escapeHtml(s.song_name)}</div>
-        <div class="song-artist">${escapeHtml(s.artist || "")}</div>
-        ${s.dj_name ? `<div class="song-dj">DJ: ${escapeHtml(s.dj_name)}</div>` : ""}
-        <div class="song-footer" style="display: flex; justify-content: flex-end; align-items: center; margin-top: auto;">
-          <button class="cart-add-btn" type="button" data-add-cart="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
+        <div class="song-meta-row">
+          ${s.dj_name ? `<span class="song-dj-tag">🎧 ${escapeHtml(s.dj_name)}</span>` : ""}
+          ${s.artist ? `<span class="song-meta-text">${escapeHtml(s.artist)}</span>` : ""}
+        </div>
+        <div class="song-footer">
+          <div class="song-price-block">
             ${renderDiscountedPriceForSong(s)}
+          </div>
+          <button class="cart-add-btn cart-add-btn-row" type="button" data-add-cart="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
+            <span>เพิ่มลงตะกร้า</span>
           </button>
         </div>
       </div>
