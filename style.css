@@ -875,7 +875,7 @@ button:active {
   transform: translateX(-50%);
   width: calc(100% - 16px);
   max-width: 420px;
-  bottom: calc(70px + var(--safe-bottom));
+  bottom: calc(65px + var(--safe-bottom));
   z-index: 60;
   background: rgba(19, 23, 34, 0.94);
   backdrop-filter: blur(20px) saturate(180%);
@@ -1366,8 +1366,8 @@ button:active {
 }
 
 .icon-btn {
-  width: 38px;
-  height: 38px;
+  width: 45px;
+  height: 45px;
   border-radius: 10px;
   background: var(--surface-2);
   border: 1px solid var(--border);
