@@ -510,14 +510,14 @@ button:active {
   margin: 0 !important;
   transform: translate(-50%, -50%) !important;
   border-radius: 50% !important;
-  background: rgba(0, 0, 0, 0.25) !important;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
   display: flex !important;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+  box-shadow: none !important;
   opacity: 1 !important;
   transition: all 0.25s ease !important;
   cursor: pointer;
@@ -526,12 +526,12 @@ button:active {
   bottom: auto !important;
 }
 
-/* 🔧 แก้ (2026-09-13): ไอคอนเล่นในเพลย์ลิสต์ สีขาว 22px */
+/* 🔧 แก้ (2026-09-13): ไอคอนเล่นในเพลย์ลิสต์ — สีขาว 28px + เงาหนัก (ไม่มีวงกลม) */
 .playlist-play-btn svg {
-  width: 22px !important;
-  height: 22px !important;
+  width: 28px !important;
+  height: 28px !important;
   fill: #fff !important;
-  filter: none !important;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.95)) !important;
   margin-left: 3px;
   transition: transform 0.2s ease;
 }
@@ -681,14 +681,14 @@ button:active {
   margin: 0 !important;
   transform: translate(-50%, -50%) !important;
   border-radius: 50% !important;
-  background: rgba(0, 0, 0, 0.25) !important;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
   display: flex !important;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0, 0, 0, 0.4) !important;
-  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  box-shadow: none !important;
+  border: none !important;
   opacity: 1 !important;
   transition: all 0.25s ease !important;
   cursor: pointer;
@@ -697,12 +697,12 @@ button:active {
   bottom: auto !important;
 }
 
-/* 🔧 แก้ (2026-09-13): ปุ่มเล่นวงกลมกลางรูป + ไอคอนสีขาว + ขนาด 22px */
+/* 🔧 แก้ (2026-09-13): ไอคอนสามเหลี่ยมลอยกลางรูป — สีขาว 28px + เงาหนัก (ไม่มีวงกลม/ขอบ) */
 .song-cover .play-btn svg {
-  width: 22px !important;
-  height: 22px !important;
+  width: 28px !important;
+  height: 28px !important;
   fill: #fff !important;
-  filter: none !important;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.95)) !important;
   margin-left: 3px;
   transition: transform 0.2s ease;
 }
@@ -1866,7 +1866,7 @@ button:active {
   display: block;
 }
 
-/* ปุ่มเล่นบนรูปปก — Style 2 Subtle Glow: พื้นด้ำโปร่งใส + glow ring + hover เป็นม่วง */
+/* ปุ่มเล่นบนรูปปก — Floating Icon: ไม่มีวงกลม/ขอบ/พื้นหลัง เหลือแค่ไอคอนสามเหลี่ยม */
 .song-card-row .song-cover .play-btn {
   position: absolute !important;
   top: 50% !important;
@@ -1875,17 +1875,17 @@ button:active {
   height: 50px !important;
   margin: 0 !important;
   transform: translate(-50%, -50%) !important;
-  background: rgba(0, 0, 0, 0.25) !important;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
   border-radius: 50% !important;
   display: flex !important;
   align-items: center;
   justify-content: center;
   opacity: 1 !important;
   transition: all 0.25s ease !important;
-  border: 1px solid rgba(255, 255, 255, 0.3) !important;
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+  border: none !important;
+  box-shadow: none !important;
   cursor: pointer;
   z-index: 2;
   right: auto !important;
@@ -1893,17 +1893,17 @@ button:active {
 }
 
 .song-card-row:hover .song-cover .play-btn {
-  transform: translate(-50%, -50%) scale(1.1);
-  background: rgba(139, 92, 246, 0.4) !important;
-  border-color: rgba(255, 255, 255, 0.6) !important;
-  box-shadow: 0 0 0 6px rgba(139, 92, 246, 0.15), 0 4px 16px rgba(139, 92, 246, 0.5) !important;
+  transform: translate(-50%, -50%) scale(1.15);
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
 .song-card-row .song-cover .play-btn svg {
-  width: 22px !important;
-  height: 22px !important;
+  width: 28px !important;
+  height: 28px !important;
   fill: #fff !important;
-  filter: none !important;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.95)) !important;
   margin-left: 3px;
   transition: transform 0.2s ease;
 }
@@ -2135,7 +2135,7 @@ button:active {
   transform: scale(1.08);
 }
 
-/* ปุ่มเล่นเพลงในเพลย์ลิสต์ — Style 2 Subtle Glow เหมือนเพลงหลัก */
+/* ปุ่มเล่นเพลงในเพลย์ลิสต์ — Floating Icon เหมือนเพลงหลัก (ไม่มีวงกลม/ขอบ/พื้นหลัง) */
 .playlist-song-row.song-card-row .playlist-play-btn {
   position: absolute !important;
   top: 50% !important;
@@ -2144,17 +2144,17 @@ button:active {
   height: 50px !important;
   margin: 0 !important;
   transform: translate(-50%, -50%) !important;
-  background: rgba(0, 0, 0, 0.25) !important;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
   border-radius: 50% !important;
   display: flex !important;
   align-items: center;
   justify-content: center;
   opacity: 1 !important;
   transition: all 0.25s ease !important;
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+  box-shadow: none !important;
   cursor: pointer;
   z-index: 2;
   right: auto !important;
@@ -2162,18 +2162,18 @@ button:active {
 }
 
 .playlist-song-row.song-card-row:hover .playlist-play-btn {
-  transform: translate(-50%, -50%) scale(1.1);
-  background: rgba(139, 92, 246, 0.4) !important;
-  border-color: rgba(255, 255, 255, 0.6) !important;
-  box-shadow: 0 0 0 6px rgba(139, 92, 246, 0.15), 0 4px 16px rgba(139, 92, 246, 0.5) !important;
+  transform: translate(-50%, -50%) scale(1.15);
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
-/* ไอคอนเล่นในเพลย์ลิสต์ — สีขาว ใหญ่ขึ้น */
+/* ไอคอนเล่นในเพลย์ลิสต์ — สีขาว 28px + เงาหนัก (ไม่มีวงกลม) */
 .playlist-song-row.song-card-row .playlist-play-btn svg {
-  width: 22px !important;
-  height: 22px !important;
+  width: 28px !important;
+  height: 28px !important;
   fill: #fff !important;
-  filter: none !important;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.95)) !important;
   margin-left: 3px;
   transition: transform 0.2s ease;
 }
