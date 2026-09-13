@@ -1986,13 +1986,14 @@ button:active {
   min-width: 0;
 }
 
-/* ราคาใหญ่เด่น สีเขียว */
+/* ราคาใหญ่เด่น สีม่วง (ตาม Style D) */
 .song-card-row .song-price {
   font-size: 17px !important;
   font-weight: 900 !important;
-  color: var(--success) !important;
+  color: #a78bfa !important;
   letter-spacing: -0.5px;
   white-space: nowrap;
+  text-shadow: 0 0 10px rgba(167, 139, 250, 0.4);
 }
 
 /* ราคาเก่าขีดฆ่า */
@@ -2071,13 +2072,13 @@ button:active {
     padding: 6px 10px !important;
     font-size: 11px !important;
   }
-  /* 🔧 แก้ (2026-09-13): บนมือถือให้แสดงข้อความปุ่ม "เพิ่มลงตะกร้า" เต็ม ไม่ซ่อน */
+  /* 🔧 แก้ (2026-09-13 รอบ 2): บนมือถือซ่อนข้อความปุ่ม เหลือแค่ไอคอน เพราะบังราคา */
   .song-card-row .cart-add-btn-row span {
-    display: inline;
+    display: none;
   }
   .song-card-row .cart-add-btn-row svg {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
   }
 }
 
@@ -2223,13 +2224,13 @@ button:active {
     padding: 6px 10px !important;
     font-size: 11px !important;
   }
-  /* 🔧 แก้ (2026-09-13): บนมือถือให้แสดงข้อความปุ่ม "เพิ่มลงตะกร้า" เต็ม ไม่ซ่อน */
+  /* 🔧 แก้ (2026-09-13 รอบ 2): บนมือถือซ่อนข้อความปุ่ม เหลือแค่ไอคอน เพราะบังราคา */
   .playlist-song-row.song-card-row .cart-add-btn-row span {
-    display: inline;
+    display: none;
   }
   .playlist-song-row.song-card-row .cart-add-btn-row svg {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
   }
 }
 
@@ -2346,13 +2347,13 @@ button:active {
   min-width: 0;
 }
 
-/* ราคาปกติในหัวเพลย์ลิสต์ — เขียวใหญ่ */
+/* ราคาปกติในหัวเพลย์ลิสต์ — ม่วงใหญ่ */
 .playlist-folder-btn .playlist-folder-price-block .song-price {
   font-size: 20px !important;
   font-weight: 900 !important;
-  color: var(--success) !important;
+  color: #a78bfa !important;
   letter-spacing: -0.5px;
-  text-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+  text-shadow: 0 0 10px rgba(167, 139, 250, 0.4);
   white-space: nowrap;
 }
 
@@ -2442,9 +2443,9 @@ button:active {
     padding: 8px 12px !important;
     font-size: 11px !important;
   }
-  /* บนมือถือให้แสดงข้อความปุ่ม "ซื้อทั้งเพลย์ลิสต์" เต็ม ไม่ซ่อน */
+  /* 🔧 แก้ (2026-09-13 รอบ 2): บนมือถือซ่อนข้อความปุ่ม "ซื้อทั้งเพลย์ลิสต์" เหลือแค่ไอคอน เพราะบังราคา */
   .playlist-folder-btn .playlist-folder-buy-btn span {
-    display: inline;
+    display: none;
   }
 }
 
