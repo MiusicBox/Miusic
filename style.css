@@ -1481,6 +1481,33 @@ button:active {
   color: #fff;
 }
 
+/* 🔧 (2026-09-16): Badge ตัวเลขสำหรับปุ่ม "🧾 จัดการออเดอร์" — แสดงจำนวนออเดอร์ "รอตรวจสอบการโอน" */
+/* ระดับสีตามจำนวน: 1-2 = เหลือง, 3-5 = ส้ม, 6+ = แดง — เห็นความเร่งด่วนได้ทันที */
+#qaOrders { position: relative; }
+.badge {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.95); /* default = critical (แดง) ถ้าไม่มี class ระดับ */
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,.3);
+  display: none; /* ซ่อนไว้ก่อน จะโชว์ตอนมี count > 0 */
+}
+.badge.show { display: inline-block; }
+/* ระดับสี: 1-2 = เหลือง (warn) — ปกติ, 3-5 = ส้ม (alert) — เริ่มเยอะ, 6+ = แดง (critical) — เยอะมาก */
+.badge.warn { background: rgba(245, 180, 0, 0.95); }
+.badge.alert { background: rgba(255, 140, 0, 0.95); }
+.badge.critical { background: rgba(239, 68, 68, 0.95); }
+
 .empty-state {
   text-align: center;
   color: var(--text-dim);
