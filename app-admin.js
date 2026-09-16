@@ -1,6 +1,6 @@
 // app-admin.js — หน้า Admin: Login (ระบบยืนยันตัวตนของเว็บเองผ่าน Worker) + CRUD (Cloudflare D1) + อัปโหลดไฟล์ (Cloudflare R2)
 // ===================================================
-import { db, auth, uploadToCloudinary } from "./firebase-init.js?v=202609-fix1";
+import { db, auth, uploadToCloudinary } from "./firebase-init.js?v=20260905-fix1";
 import { uploadFullSong, deleteFromStorage } from "./storage-adapter.js?v=20260904-rawzip";
 import {
   collection, addDoc, updateDoc, deleteDoc, doc, getDocs, getDoc, setDoc
@@ -391,6 +391,20 @@ async function loadSongs() {
   selectedSongIds.clear();
   updateSongBulkBar();
   renderSongList(CACHE.songs);
+}
+
+// 🔧 (2026-09-16): Helper สำหรับตรวจเพลงซ้ำใน CACHE.songs
+// ปัญหา: เดิมแอดมินอัปเพลงเดี่ยว/bulk upload ไม่มีการตรวจเพลงซ้ำ → อัปเพลงชื่อเดียวกัน 2 ครั้งได้
+// → เพลงซ้ำในระบบ ลูกค้าสับสน, พื้นที่ R2 สิ้นเปลือง, ตะกร้าออเดอร์อาจเพี้ยน
+// Helper นี้ค้น CACHE.songs (loaded ตอน loadSongs() แล้ว) หาเพลงที่ชื่อตรงกัน (case-insensitive, trim)
+// รับ: songName (ชื่อเพลงที่จะตรวจ), excludeSongId (id ของเพลงที่กำลังแก้ไข เพื่อไม่เช็คตัวเอง)
+// คืน: array ของ { id, song_name, dj_name, created_at } ของเพลงที่ซ้ำ
+function findDuplicateSongsByName(songName, excludeSongId) {
+  const normalized = String(songName || "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) return [];
+  return (CACHE.songs || [])
+    .filter(s => s.id !== excludeSongId)
+    .filter(s => String(s.song_name || "").trim().toLowerCase().replace(/\s+/g, " ") === normalized);
 }
 function populateSelect(id, items, valueKey, labelKey) {
   const sel = document.getElementById(id);
@@ -824,6 +838,16 @@ document.getElementById("reanalyzePreviewBtn").addEventListener("click", async (
 document.getElementById("songSaveBtn").addEventListener("click", async function () {
   const name = document.getElementById("fSongName").value.trim();
   if (!name) { showToast("กรุณากรอกชื่อเพลง", "error"); return; }
+
+  // 🔧 (2026-09-16): ตรวจเพลงซ้ำก่อนอัปโหลด — กันอัปเพลงชื่อเดียวกัน 2 ครั้ง (ฝั่ง single upload ห้ามซ้ำเด็ดขาด)
+  // ถ้าเป็นการแก้ไขเพลงเดิม (editingSongId ไม่เป็น null) → ไม่เช็คตัวเอง
+  const duplicates = findDuplicateSongsByName(name, editingSongId);
+  if (duplicates.length > 0) {
+    const dupNames = duplicates.slice(0, 3).map(d => `"${d.song_name}"`).join(", ");
+    const more = duplicates.length > 3 ? ` และอีก ${duplicates.length - 3} เพลง` : "";
+    showToast(`❌ มีเพลงชื่อนี้อยู่ในระบบแล้ว ${duplicates.length} เพลง: ${dupNames}${more} — ห้ามอัปซ้ำ (เปลี่ยนชื่อหรือแก้ไขเพลงเดิมแทน)`, "error");
+    return;
+  }
 
   // 🔒 Shared-file (Lazy-shared): ถ้าเพลงนี้ไม่มี full_file_url (ไม่ได้อัปโหลดไฟล์เต็มแยก)
   // ระบบจะใช้ file_url (เพลงตัวอย่าง) แทนเป็นเพลงเต็มด้วย — ประหยัดพื้นที่ R2
@@ -1550,6 +1574,76 @@ function showBulkMatchConfirm(matches) {
 document.getElementById("bulkUploadBtn").addEventListener("click", async function () {
   const btn = this;
   if (bulkFiles.length === 0) { showToast("กรุณาเลือกไฟล์เพลงก่อน", "error"); return; }
+
+  // 🔧 (2026-09-16): ตรวจเพลงซ้ำก่อนเริ่มอัปโหลด (ฝั่ง bulk upload — ใช้ option "ถาม confirm ก่อน")
+  // ตรวจ 2 แบบ: (1) ซ้ำกับเพลงที่มีอยู่ใน DB (CACHE.songs)  (2) ซ้ำกันในชุดไฟล์ที่เลือก
+  // ถ้ามีเพลงซ้ำ → ถามผู้ใช้ว่าจะ "skip เพลงซ้ำและอัปเฉพาะเพลงใหม่" หรือ "ยกเลิกทั้งหมด"
+  // ถ้าทุกเพลงในชุดซ้ำ → ไม่ต้องถาม บอกยกเลิกเลย
+  {
+    const bulkSongNames = bulkFiles.map(f => cleanFileNameToSongName(f.name));
+    const duplicatesInDb = [];
+    const duplicatesInBatch = [];
+    const seenNames = new Map(); // normalized name → first file index
+
+    bulkSongNames.forEach((songName, i) => {
+      // (1) ตรวจซ้ำกับ DB
+      const dbDups = findDuplicateSongsByName(songName, null);
+      if (dbDups.length > 0) {
+        duplicatesInDb.push({ fileName: bulkFiles[i].name, songName, existingCount: dbDups.length });
+      }
+      // (2) ตรวจซ้ำในชุด (normalized)
+      const norm = String(songName || "").trim().toLowerCase().replace(/\s+/g, " ");
+      if (seenNames.has(norm)) {
+        duplicatesInBatch.push({
+          fileName: bulkFiles[i].name,
+          songName,
+          firstFileName: bulkFiles[seenNames.get(norm)].name,
+        });
+      } else {
+        seenNames.set(norm, i);
+      }
+    });
+
+    if (duplicatesInDb.length > 0 || duplicatesInBatch.length > 0) {
+      const totalDup = duplicatesInDb.length + duplicatesInBatch.length;
+      const totalNew = bulkFiles.length - totalDup;
+
+      // สร้างข้อความสรุปรายชื่อเพลงซ้ำ
+      let msg = `❌ พบเพลงซ้ำ ${totalDup} เพลง:\n\n`;
+      if (duplicatesInDb.length > 0) {
+        msg += `• ซ้ำกับที่มีในระบบ ${duplicatesInDb.length} เพลง:\n`;
+        duplicatesInDb.slice(0, 5).forEach(d => { msg += `  - "${d.songName}" (จากไฟล์ ${d.fileName})\n`; });
+        if (duplicatesInDb.length > 5) msg += `  - และอีก ${duplicatesInDb.length - 5} เพลง\n`;
+      }
+      if (duplicatesInBatch.length > 0) {
+        msg += `\n• ซ้ำกันในชุด ${duplicatesInBatch.length} ไฟล์:\n`;
+        duplicatesInBatch.slice(0, 5).forEach(d => { msg += `  - "${d.songName}" (ไฟล์ ${d.fileName} ซ้ำกับ ${d.firstFileName})\n`; });
+        if (duplicatesInBatch.length > 5) msg += `  - และอีก ${duplicatesInBatch.length - 5} เพลง\n`;
+      }
+
+      if (totalNew > 0) {
+        // มีเพลงใหม่ที่ไม่ซ้ำ → ถาม confirm ว่าจะ skip และอัปเฉพาะเพลงใหม่ หรือยกเลิก
+        msg += `\nต้องการ skip เพลงซ้ำ ${totalDup} เพลง และอัปเฉพาะเพลงใหม่ ${totalNew} เพลง หรือยกเลิกทั้งหมด?`;
+        const proceed = window.confirm(msg);
+        if (!proceed) {
+          showToast("ยกเลิกการอัปโหลดทั้งชุด", "info");
+          return;
+        }
+        // กรองไฟล์ที่ไม่ซ้ำออกมาอัปโหลดต่อ — ใช้ชื่อไฟล์เป็น key เพราะไม่ซ้ำกันใน OS
+        const duplicateFileNames = new Set([
+          ...duplicatesInDb.map(d => d.fileName),
+          ...duplicatesInBatch.map(d => d.fileName),
+        ]);
+        bulkFiles = bulkFiles.filter(f => !duplicateFileNames.has(f.name));
+        showToast(`ข้ามเพลงซ้ำ ${totalDup} เพลง — กำลังอัปโหลด ${bulkFiles.length} เพลงใหม่`, "info");
+      } else {
+        // ทุกเพลงในชุดซ้ำ → ไม่ต้องถาม บอกยกเลิกเลย
+        msg += `\nทุกเพลงในชุดซ้ำ — ไม่สามารถอัปโหลดได้ กรุณาเปลี่ยนชื่อหรือลบไฟล์ซ้ำออก`;
+        showToast(msg, "error");
+        return;
+      }
+    }
+  }
 
   // ถ้ามีไฟล์เต็มที่เลือกไว้ ให้โชว์ตารางคู่ที่จับได้ให้เช็คก่อนเริ่มอัปโหลดจริง (กันจับคู่ผิดเพลง)
   // ถ้าไม่ได้เลือกไฟล์เต็มเลย ก็ไม่มีอะไรต้องเช็ค ข้ามไปอัปโหลดตามปกติ
