@@ -1,6 +1,6 @@
 // admin-roles.js — ระบบสิทธิ์แอดมิน: แอดมินหลัก vs แอดมินย่อย
 // ===================================================
-// เก็บรายชื่อแอดมินไว้ใน collection "admins" (document id = Firebase Auth UID ของแต่ละคน)
+// เก็บรายชื่อแอดมินไว้ใน collection "admins" (document id = id บัญชีแอดมินของระบบยืนยันตัวตนใหม่ผ่าน Worker)
 // - แอดมินหลัก (role: "main")  : เพิ่ม / ลบ / แก้ไข แอดมินคนอื่นได้ทั้งหมด
 // - แอดมินย่อย (role: "sub")   : ใช้งานเมนูอื่นได้ปกติ (เพลง/หมวดหมู่/DJ/เพลย์ลิสต์/ออเดอร์/ตั้งค่า)
 //                                 แต่จะไม่เห็นเมนู "จัดการแอดมิน" และจัดการแอดมินคนอื่นไม่ได้เลย
@@ -132,11 +132,11 @@ function openEditAdmin(id) {
   editingAdminId = id;
   document.getElementById("adminFormTitle").textContent = "แก้ไขแอดมิน";
   document.getElementById("fAdminEmail").value = a.email || "";
-  document.getElementById("fAdminEmail").disabled = true; // เปลี่ยนอีเมลของบัญชีคนอื่นจากตรงนี้ไม่ได้ (ต้องทำผ่าน Firebase Console)
+  document.getElementById("fAdminEmail").disabled = true; // เปลี่ยนอีเมลของบัญชีคนอื่นจากตรงนี้ไม่ได้ (ต้องให้แอดมินหลักลบบัญชีเดิมและสร้างใหม่)
   document.getElementById("adminPasswordField").style.display = "none"; // ตั้งรหัสผ่านให้คนอื่นจากตรงนี้ไม่ได้เช่นกัน
   document.getElementById("fAdminDisplayName").value = a.display_name || "";
   document.getElementById("fAdminRole").value = a.role === "main" ? "main" : "sub";
-  document.getElementById("adminFormNote").textContent = "แก้ไขได้เฉพาะชื่อที่แสดงและระดับสิทธิ์ — เปลี่ยนอีเมล/รหัสผ่านของบัญชีคนอื่นทำได้ที่ Firebase Console เท่านั้น";
+  document.getElementById("adminFormNote").textContent = "แก้ไขได้เฉพาะชื่อที่แสดงและระดับสิทธิ์ — เปลี่ยนอีเมล/รหัสผ่านของบัญชีคนอื่นไม่ได้จากตรงนี้ (ให้ลบบัญชีเดิมแล้วสร้างใหม่แทน)";
   document.getElementById("adminFormBackdrop").classList.add("show");
 }
 
@@ -211,7 +211,7 @@ function confirmDeleteAdmin(id) {
     return;
   }
   openConfirm(
-    `ต้องการลบสิทธิ์แอดมินของ "${target.email || target.display_name}" หรือไม่? (จะลบสิทธิ์เข้าใช้งานหน้า Admin ทันที — ส่วนบัญชีล็อกอิน Firebase เดิมจะยังอยู่ในระบบ Firebase หากต้องการลบบัญชีจริงต้องลบผ่าน Firebase Console)`,
+    `ต้องการลบสิทธิ์แอดมินของ "${target.email || target.display_name}" หรือไม่? (จะลบสิทธิ์เข้าใช้งานหน้า Admin ทันที — บัญชีนี้จะถูกลบออกจากระบบทั้งหมด ไม่สามารถเข้าสู่ระบบได้อีก)`,
     async () => {
       await deleteDoc(doc(db, "admins", id));
       showToast("ลบสิทธิ์แอดมินแล้ว", "success");
