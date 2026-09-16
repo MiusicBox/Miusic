@@ -229,7 +229,7 @@ async function createOrderZip(orderId) {
       const fetchUrl = r2UrlToProxyUrl(songFileUrl);
       const isUsingProxy = fetchUrl !== songFileUrl;
 
-      orderToast(`กำลังดึง WAV ${index + 1}/${orderSongs.length}...`);
+      orderToast(`กำลังดึง WAV ${index + 1}/${orderSongs.length}...`, "progress");
       let response;
       try {
         response = await fetch(fetchUrl, {
@@ -264,17 +264,17 @@ async function createOrderZip(orderId) {
       zip.file(entryName, wavBlob);
     }
 
-    orderToast("กำลังบีบอัดไฟล์ WAV เป็น ZIP...");
+    orderToast("กำลังบีบอัดไฟล์ WAV เป็น ZIP...", "progress");
     const zipBlob = await zip.generateAsync(
       { type: "blob", compression: "STORE" },
-      (metadata) => orderToast(`กำลังสร้าง ZIP... ${Math.round(metadata.percent)}%`)
+      (metadata) => orderToast(`กำลังสร้าง ZIP... ${Math.round(metadata.percent)}%`, "progress")
     );
     const zipFile = new File([zipBlob], zipFileName, { type: "application/zip" });
 
-    orderToast("กำลังอัปโหลด ZIP ขึ้น Cloud...");
+    orderToast("กำลังอัปโหลด ZIP ขึ้น Cloud...", "progress");
     const uploadResult = await uploadOrderZip(
       zipFile,
-      (percent) => orderToast(`กำลังอัปโหลด ZIP... ${percent}%`)
+      (percent) => orderToast(`กำลังอัปโหลด ZIP... ${percent}%`, "progress")
     );
     if (!uploadResult?.url) {
       throw new Error("Cloud ไม่ส่ง Download Link กลับมา");
@@ -1343,7 +1343,7 @@ async function confirmPaymentAndCreateZip(orderId) {
   const result = await createOrderZip(orderId);
   if (!result.ok) {
     await refreshDashboardAndHistory();
-    orderToast(`ยืนยันโอนไม่สำเร็จ: ${result.error} — ออเดอร์ยังคงรอตรวจสอบ และสามารถกดสร้าง ZIP ใหม่ได้`, "error");
+    orderToast(`ยืนยันโอนไม่สำเร็จ: ${result.error} — ออเดอร์ยังคงรอตรวจสอบ และสามารถกดสร้าง ZIP ใหม่ได้`, "error_long");
     return;
   }
 
@@ -1354,11 +1354,11 @@ async function confirmPaymentAndCreateZip(orderId) {
       updated_at: new Date().toISOString(),
     });
     await refreshDashboardAndHistory();
-    orderToast("ยืนยันการโอนแล้ว และสร้าง Download Link สำหรับ Admin เรียบร้อย", "success");
+    orderToast("ยืนยันการโอนแล้ว และสร้าง Download Link สำหรับ Admin เรียบร้อย", "success_long");
   } catch (err) {
     // ZIP ยังอยู่บน Cloud แต่จะไม่แสดงเป็นออเดอร์ที่ชำระแล้วจนกว่าจะอัปเดตสถานะสำเร็จ
     await refreshDashboardAndHistory();
-    orderToast("สร้าง ZIP สำเร็จ แต่เปลี่ยนสถานะออเดอร์ไม่สำเร็จ: " + err.message, "error");
+    orderToast("สร้าง ZIP สำเร็จ แต่เปลี่ยนสถานะออเดอร์ไม่สำเร็จ: " + err.message, "error_long");
   }
 }
 
@@ -1368,7 +1368,7 @@ async function retryOrderZip(orderId) {
   const result = await createOrderZip(orderId);
   if (!result.ok) {
     await refreshDashboardAndHistory();
-    orderToast("สร้าง ZIP ใหม่ไม่สำเร็จ: " + result.error, "error");
+    orderToast("สร้าง ZIP ใหม่ไม่สำเร็จ: " + result.error, "error_long");
     return;
   }
 
@@ -1377,7 +1377,7 @@ async function retryOrderZip(orderId) {
     await confirmPaymentAndCreateZip(orderId);
   } else {
     await refreshDashboardAndHistory();
-    orderToast("สร้าง ZIP ใหม่และ Download Link เรียบร้อย", "success");
+    orderToast("สร้าง ZIP ใหม่และ Download Link เรียบร้อย", "success_long");
   }
 }
 
