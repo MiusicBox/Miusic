@@ -1272,6 +1272,17 @@ function renderTrackOrderResult(order) {
     <div class="track-order-row"><span>เบอร์โทร</span><strong>${escapeHtml(order.whatsapp || "")}</strong></div>
     <div class="track-order-items">${itemsHtml}</div>
     <div class="track-order-total"><span>ยอดรวม</span><span>${formatPrice(order.total)}</span></div>
+    ${/* 🔧 (2026-09-16): แสดงกล่องดาวน์โหลด ZIP ถ้าออเดอร์มี zip_download_url และสถานะเป็น processing หรือ completed */ ""}
+    ${(order.zip_download_url && (order.status === "processing" || order.status === "completed"))
+      ? `<div class="track-order-zip" style="margin-top:10px;padding:10px;background:rgba(16,185,129,.08);border-radius:10px;">
+          <div style="font-size:12px;color:var(--success);font-weight:600;margin-bottom:6px;">📦 ไฟล์เพลงพร้อมดาวน์โหลด</div>
+          <a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" class="btn" style="display:inline-block;padding:8px 16px;font-size:13px;text-decoration:none;">⬇️ ดาวน์โหลด ZIP (${escapeHtml(order.zip_file_name || 'Order.zip')})</a>
+        </div>`
+      : (order.status === "processing")
+        ? `<div style="margin-top:10px;font-size:12px;color:var(--accent);">⏳ แอดมินกำลังเตรียมไฟล์ ZIP ส่งให้คุณ — รอสักครู่</div>`
+        : (order.status === "pending_verify")
+          ? `<div style="margin-top:10px;font-size:12px;color:var(--text-dim);">⏳ รอแอดมินตรวจสอบการโอนเงิน — หลังยืนยันแล้วไฟล์จะถูกเตรียมให้</div>`
+          : ""}
     <div class="track-order-actions">
       <button class="btn" type="button" id="trackOrderWhatsappBtn">ติดต่อแอดมินผ่าน WhatsApp</button>
       ${canCustomerDeleteOrder(order) ? `<button class="btn danger" type="button" id="trackOrderDeleteBtn">ลบออเดอร์นี้</button>` : ""}
