@@ -334,6 +334,8 @@ async function showAdmin() {
   );
   if (s.exists()) document.getElementById("adminSiteName").textContent = s.data().website_name || "Music Store";
   await withTimeout(loadDashboard(), 20000, "โหลดข้อมูล Dashboard นานเกินไป");
+  // 🔧 (2026-09-16): อัปเดต badge ออเดอร์ "รอตรวจสอบการโอน" หลัง login (loadDashboard ก็เรียกอยู่แล้ว แต่ใส่ซ้ำเผื่อ clear)
+  updateOrdersBadge();
 }
 
 // ---------------- View switching ----------------
@@ -370,7 +372,49 @@ async function loadDashboard() {
   document.getElementById("statCats").textContent = catSnap.size;
   document.getElementById("statDjs").textContent = djSnap.size;
   document.getElementById("statPlaylists").textContent = playlistSnap.size;
+  // 🔧 (2026-09-16): อัปเดต badge ออเดอร์ "รอตรวจสอบการโอน" ทุกครั้งที่กลับหน้า dashboard
+  updateOrdersBadge();
 }
+
+// 🔧 (2026-09-16): อัปเดต badge จำนวนออเดอร์ "รอตรวจสอบการโอน" บนปุ่มเมนู "🧾 จัดการออเดอร์"
+// นับเฉพาะ status === "pending_verify" → แสดง badge ตามระดับสี:
+//   - 1-2 = เหลือง (warn) — ปกติ
+//   - 3-5 = ส้ม (alert) — เริ่มเยอะ
+//   - 6+ = แดง (critical) — เยอะมาก ต้องรีบดู
+//   - 0 = ซ่อน badge
+//
+// รับ optional `orders` array — ถ้าส่งมา จะใช้ตรงๆ ไม่ query DB ซ้ำ (ประหยัด Cloudflare D1 quota)
+// ถ้าไม่ส่ง → จะ query ใหม่ (ใช้ตอน login ครั้งแรก ก่อน state.allOrders จะถูกโหลด)
+// ฟังก์ชันนี้ถูก expose ผ่าน window.__updateOrdersBadge ให้ orders.js เรียกได้หลังเปลี่ยนสถานะ/สร้าง/ลบออเดอร์
+async function updateOrdersBadge(orders) {
+  const badgeEl = document.getElementById("ordersBadge");
+  if (!badgeEl) return;
+  try {
+    let ordersList = orders;
+    if (!ordersList) {
+      // ไม่ได้ส่ง orders มา → query เอง (กรณี login ครั้งแรก หรือกลับหน้า dashboard)
+      const snap = await getDocs(collection(db, "orders"));
+      ordersList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+    // นับเฉพาะออเดอร์ที่ status === "pending_verify"
+    const count = (ordersList || []).filter(o => String(o?.status || "") === "pending_verify").length;
+    // ลบ class ระดับสีเดิมออกก่อน แล้วค่อยตั้งใหม่ตามจำนวน
+    badgeEl.classList.remove("warn", "alert", "critical", "show");
+    if (count > 0) {
+      badgeEl.textContent = String(count);
+      if (count <= 2) badgeEl.classList.add("warn");
+      else if (count <= 5) badgeEl.classList.add("alert");
+      else badgeEl.classList.add("critical");
+      badgeEl.classList.add("show");
+    }
+    // count === 0 → badge ซ่อนไว้ (ไม่มี class "show" → display: none โดย default)
+  } catch (err) {
+    // ไม่ throw — badge พังไม่ควรทำให้ flow หลักพัง
+    console.warn("updateOrdersBadge error:", err?.message || String(err));
+  }
+}
+// Expose ให้ orders.js เรียกได้ (เหมือน window.__showToast pattern ที่มีอยู่แล้ว)
+window.__updateOrdersBadge = updateOrdersBadge;
 
 // ================= SONGS =================
 let songSelectMode = false;
