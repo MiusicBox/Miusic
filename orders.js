@@ -419,7 +419,7 @@ async function createOrderZip(orderId) {
       zip_download_url: downloadUrl,
       zip_file_name: zipFileName,
       zip_public_id: uploadResult.publicId || "",
-      zip_song_count: orderSongs.length,
+      zip_song_count: totalSongs, // 🔧 (2026-09-16): ใช้ totalSongs (รวมเพลงเดี่ยว + ทุกเพลงใน playlist) แทน orderSongs.length ที่ถูกลบไปแล้วตอน refactor
       zip_created_at: new Date().toISOString(),
       zip_error: "",
       updated_at: new Date().toISOString(),
