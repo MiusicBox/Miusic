@@ -1170,6 +1170,14 @@ async function handleSearchMyOrders() {
         myOrders.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
         MY_ORDERS_STATE.myOrders = myOrders;
         renderMyOrdersList(myOrders);
+        // 🔧 (2026-09-17): อัปเดต badge บนปุ่ม "ติดตามออเดอร์" ด้วย — ใช้ข้อมูลเดียวกับที่โหลดมาแล้ว
+        // นับเฉพาะ active: pending_verify + processing
+        if (window.__updateTrackOrderBadge) {
+          const activeCount = myOrders.filter(o =>
+            String(o?.status || "") === "pending_verify" || String(o?.status || "") === "processing"
+          ).length;
+          window.__updateTrackOrderBadge(activeCount);
+        }
       },
       (err) => {
         console.error("myOrders onSnapshot error:", err);
@@ -1191,6 +1199,8 @@ function handleClearMyOrders() {
   MY_ORDERS_STATE.expandedOrderIds = new Set();
   try { localStorage.removeItem(MY_ORDERS_INFO_KEY); } catch (_) {}
   renderMyOrdersForm();
+  // 🔧 (2026-09-17): รีเฟรช badge บนปุ่ม "ติดตามออเดอร์" — ลูกค้าล้างข้อมูล → ไม่รู้จักลูกค้าคนนี้แล้ว → ซ่อน badge
+  if (window.__refreshTrackOrderBadge) window.__refreshTrackOrderBadge();
 }
 
 function renderMyOrdersList(orders) {
