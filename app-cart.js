@@ -1076,6 +1076,11 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     renderCart();
     // เพิ่มใหม่: จำชื่อ+เบอร์โทรไว้ในเครื่อง เพื่อเติมฟอร์มอัตโนมัติให้ลูกค้าตอนสั่งซื้อครั้งถัดไป
     saveCustomerInfo(customerName, whatsapp);
+    // 🔧 (2026-09-17): บันทึก name+whatsapp ลง MY_ORDERS_INFO_KEY ด้วย (key เดียวกับ app-promotion.js + app-user.js badge)
+    // เพื่อให้ badge บนปุ่ม "ติดตามออเดอร์" สามารถ detect ลูกค้าได้ทันทีหลังสั่งซื้อ — ไม่ต้องรอให้ลูกค้าเปิด My Orders ก่อน
+    try { localStorage.setItem("music_store_my_orders_info_v1", JSON.stringify({ name: customerName, whatsapp })); } catch (_) {}
+    // 🔧 (2026-09-17): refresh badge ทันที — listener จะ poll ทันที (delay 0) → แสดง badge "1" ภายใน ~200-500ms
+    if (window.__refreshTrackOrderBadge) window.__refreshTrackOrderBadge();
     if (nameInput) nameInput.value = "";
     if (whatsappInput) whatsappInput.value = "";
     setCheckoutFeedback(`บันทึก Order ${receiptNumber} สำเร็จแล้ว`, "success");
