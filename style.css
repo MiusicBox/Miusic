@@ -1460,6 +1460,27 @@ button:active {
   color: #fff;
 }
 
+/* 🔧 (2026-09-16): toast แบบค้างตลอด ใช้ตอนสร้าง ZIP — ไม่ auto-hide (ดู app-admin.js: showToast) */
+.toast.progress {
+  background: rgba(59, 158, 255, 0.95);
+  border-color: transparent;
+  color: #fff;
+}
+
+/* success_long / error_long — ใช้สีเดียวกับ success/error ปกติ
+   แต่มี auto-hide นานกว่า (4 วิ / 6 วิ ตามลำดับ — ดู app-admin.js: showToast)
+   ใช้ตอนสร้าง ZIP เสร็จ/ล้มเหลว ให้ผู้ใช้ทันเห็น/อ่าน error ทัน */
+.toast.success_long {
+  background: rgba(16, 185, 129, 0.95);
+  border-color: transparent;
+  color: #fff;
+}
+.toast.error_long {
+  background: rgba(239, 68, 68, 0.95);
+  border-color: transparent;
+  color: #fff;
+}
+
 .empty-state {
   text-align: center;
   color: var(--text-dim);
