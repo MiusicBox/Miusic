@@ -857,9 +857,14 @@
         <h3>ไฟล์เพลงเต็มสำหรับส่งลูกค้า</h3>
         <button class="modal-close" id="fullFilesClose">✕</button>
       </div>
-      <p style="color:var(--text-dim);font-size:13px;margin-top:0;">ดาวน์โหลดแล้วส่งให้ลูกค้าทาง WhatsApp ด้วยตัวเอง — ลิงก์นี้สำหรับ Admin เท่านั้น ห้ามส่งลิงก์นี้ตรงให้ลูกค้า</p>
+      <p style="color:var(--text-dim);font-size:13px;margin-top:0;">คัดลอกลิงก์ดาวน์โหลดส่งให้ลูกค้า หรือกดปุ่ม WhatsApp เพื่อส่งตรง — ลูกค้าสามารถดาวน์โหลดได้จากลิงก์นี้</p>
       <div id="fullFilesContent"></div>
-      <button class="btn secondary" id="fullFilesWhatsAppBtn" style="margin-top:14px;width:100%;">เปิด WhatsApp คุยกับลูกค้า (แนบไฟล์ที่ดาวน์โหลดแล้วเอง)</button>
+      <div id="fullFilesZipLinkWrap" style="display:none;margin-top:14px;padding:10px;background:rgba(16,185,129,.08);border-radius:10px;">
+        <div style="font-size:12px;color:var(--success);font-weight:600;margin-bottom:6px;">🔗 ลิงก์ดาวน์โหลดสำหรับลูกค้า</div>
+        <div id="fullFilesZipLinkText" style="font-size:11px;color:var(--text-dim);word-break:break-all;margin-bottom:8px;"></div>
+        <button class="btn" type="button" id="fullFilesCopyLinkBtn" style="width:100%;margin-bottom:8px;">📋 คัดลอกลิงก์ดาวน์โหลด</button>
+      </div>
+      <button class="btn secondary" id="fullFilesWhatsAppBtn" style="margin-top:14px;width:100%;">💬 ส่ง WhatsApp พร้อมลิงก์ดาวน์โหลด</button>
     </div>
   </div>
 
