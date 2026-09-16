@@ -16,7 +16,7 @@
 //   แล้ว db-client.js ค่อยยิง fetch มาที่ endpoint กลุ่มนี้อีกที — ทำให้ app-admin.js/orders.js/ฯลฯ
 //   ไม่ต้องแก้ logic เดิมเลย แก้แค่บรรทัด import ให้ชี้มาที่ไฟล์ในเว็บเราแทน CDN ของ Firebase
 // ===================================================
-import { hashPassword, verifyPassword, getSessionAdmin, createSession, deleteSession, buildSessionCookie, buildClearCookie, getCookie } from "./auth-helpers.js";
+import { hashPassword, verifyPassword, getSessionAdmin, createSession, deleteSession, buildSessionCookie, buildClearCookie, getCookie, cleanupExpiredSessions } from "./auth-helpers.js";
 import { getDocument, listDocuments, queryDocuments, setDocument, updateDocument, deleteDocument } from "./db-helpers.js";
 
 // โฟลเดอร์เหล่านี้เดิมใช้ toCloudinaryDownloadUrl() เติม fl_attachment ให้บังคับดาวน์โหลด
@@ -225,6 +225,10 @@ async function handleAuth(request, env, url) {
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
     const email = String(body.email || "").trim();
     const password = String(body.password || "");
+    // 🔒 Maintenance (2026-09-16): ทำความสะอาด session ที่หมดอายุก่อนสร้าง session ใหม่
+    // ลบ session ของคนที่ไม่เคยกลับมา (ปิดเบราว์เซอร์ไปเลย) ออกจากตาราง sessions
+    // ไม่ทำให้ login พังถ้า cleanup ล้มเหลว (ฟังก์ชัน try/catch ภายในเอง)
+    await cleanupExpiredSessions(env);
     const admin = await env.DB.prepare("SELECT * FROM admin_users WHERE email = ?").bind(email).first();
     if (!admin || !(await verifyPassword(password, admin.password_hash))) {
       return jsonResponse({ error: "อีเมลหรือรหัสผ่านไม่ถูกต้อง", code: "auth/invalid-credential" }, 401);
