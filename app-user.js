@@ -1596,4 +1596,74 @@ if (trackOrderBackdropEl) {
 const trackOrderSubmitBtnEl = document.getElementById("trackOrderSubmitBtn");
 if (trackOrderSubmitBtnEl) trackOrderSubmitBtnEl.addEventListener("click", handleTrackOrderSubmit);
 
+// 🔧 (2026-09-17): Badge บนปุ่ม "ติดตามออเดอร์" (trackOrderBtn) — แสดงจำนวนออเดอร์ที่ "active"
+// นับเฉพาะสถานะ: pending_verify (เหลือง - รอตรวจสอบการโอน) + processing (ฟ้า - โอนแล้ว รอส่งเพลง)
+// ไม่นับ: completed (เขียว - สำเร็จ) + cancelled (แดง - ยกเลิก)
+// เมื่อแอดมินเปลี่ยนสถานะเป็น completed/cancelled → ตัวเลขลดลงอัตโนมัติ (ภายใน 4 วิ)
+// เมื่อลูกค้าลบออเดอร์ → ตัวเลขลดลงอัตโนมัติ (ภายใน 4 วิ)
+// ใช้ listenCustomerOrders polling ทุก 4 วิ (เหมือน onSnapshot เดิม) — ใช้ D1 quota นิดหน่อย
+const TRACK_ORDER_BADGE_INFO_KEY = "music_store_my_orders_info_v1"; // reuse key เดียวกับ app-promotion.js (เก็บ name+whatsapp)
+
+function loadTrackOrderInfoForBadge() {
+  try {
+    const raw = localStorage.getItem(TRACK_ORDER_BADGE_INFO_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) { return null; }
+}
+
+// อัปเดต badge element — รับ count ของออเดอร์ที่ active (pending_verify + processing)
+// count > 0 → แสดงตัวเลข / count === 0 → ซ่อน badge
+function updateTrackOrderBadge(count) {
+  const badgeEl = document.getElementById("trackOrderBadge");
+  if (!badgeEl) return;
+  if (count > 0) {
+    badgeEl.textContent = String(count);
+    badgeEl.hidden = false;
+  } else {
+    badgeEl.hidden = true;
+  }
+}
+
+// ฟังออเดอร์ของลูกค้าแบบ polling (ทุก 4 วิ) — อัปเดต badge อัตโนมัติ
+// ใช้ข้อมูล name+whatsapp จาก localStorage (เดียวกับที่ app-promotion.js ใช้ใน My Orders view)
+// ถ้ายังไม่เคยกรอกข้อมูลใน My Orders → ไม่เริ่ม listener → badge ซ่อนไว้
+let _trackOrderBadgeUnsub = null;
+function initTrackOrderBadgeListener() {
+  // ถ้าเคยเริ่มไปแล้ว → ยกเลิก listener เดิมก่อน (กันซ้ำ)
+  if (_trackOrderBadgeUnsub) {
+    _trackOrderBadgeUnsub();
+    _trackOrderBadgeUnsub = null;
+  }
+  const info = loadTrackOrderInfoForBadge();
+  if (!info || !info.name || !info.whatsapp) {
+    // ยังไม่มีข้อมูลลูกค้า → ซ่อน badge ไว้
+    updateTrackOrderBadge(0);
+    return;
+  }
+  // เริ่ม listener — ใช้ listenCustomerOrders ที่มีอยู่แล้วใน db-client.js
+  _trackOrderBadgeUnsub = listenCustomerOrders(
+    { customerName: info.name, whatsapp: info.whatsapp },
+    (snap) => {
+      // นับเฉพาะออเดอร์ที่ active: pending_verify + processing
+      let count = 0;
+      snap.forEach((d) => {
+        const status = String(d.data()?.status || "");
+        if (status === "pending_verify" || status === "processing") count += 1;
+      });
+      updateTrackOrderBadge(count);
+    },
+    (err) => {
+      // error — ไม่ทำให้ badge พัง แค่ log
+      console.warn("trackOrderBadge listener error:", err?.message || err);
+    }
+  );
+}
+
+// เริ่ม listener หลังโหลดหน้าเว็บเสร็จ — ถ้าเคยใช้ track order จะมี badge แสดงทันที
+initTrackOrderBadgeListener();
+
+// Export ให้ app-promotion.js เรียกเพื่อ refresh badge หลัง customer enters/clears My Orders info
+window.__updateTrackOrderBadge = updateTrackOrderBadge;
+window.__refreshTrackOrderBadge = initTrackOrderBadgeListener;
+
 init().catch(err => showToast("โหลดข้อมูลไม่สำเร็จ: " + err.message, "error"));
