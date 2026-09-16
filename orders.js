@@ -2001,6 +2001,10 @@ async function refreshDashboardAndHistory() {
   renderStats(orders);
   renderFilterPills();
   renderHistory();
+  // 🔧 (2026-09-16): อัปเดต badge จำนวนออเดอร์ "รอตรวจสอบการโอน" บนปุ่ม "🧾 จัดการออเดอร์"
+  // ส่ง state.allOrders เข้าไปเพื่อ reuse ข้อมูลที่โหลดแล้ว → ไม่ต้อง query DB ซ้ำ (ประหยัด Cloudflare D1 quota)
+  // ถ้า app-admin.js ยังไม่โหลด (เช่น หน้า user ไม่มี badge) → __updateOrdersBadge จะเป็น undefined → ข้ามไปเฉยๆ
+  if (window.__updateOrdersBadge) window.__updateOrdersBadge(state.allOrders);
 }
 
 async function handleSubmitOrder() {
