@@ -49,6 +49,23 @@ export async function listDocuments(env, collection) {
 
 // รองรับเฉพาะรูปแบบที่แอปนี้ใช้จริง: where("field","==",value) และ orderBy("field","asc"|"desc")
 // (ตรวจสอบแล้วจากทุกไฟล์ในโปรเจกต์ ไม่มีจุดไหนใช้ operator อื่นของ Firestore เลย)
+//
+// 🔒 Security (2026-09-16): whitelist ชื่อ field ที่อนุญาตให้ส่งเข้า queryDocuments ได้
+// กัน attacker ส่ง crafted JSON ผ่าน endpoint /api/db/:collection/_query แล้ว
+// แทรก SQL เข้าไปใน json_extract(data, '$.<field>') ที่ยัง interpolate ตรงๆ
+// ตรวจสอบจากทุกไฟล์แล้วว่ามี where()/orderBy() ใช้ field เหล่านี้เท่านั้น:
+//   - playlist_id : app-cart.js, orders.js (สร้าง ZIP / query เพลงในเพลย์ลิสต์)
+//   - receipt_number : worker/index.js (endpoint _customer-query ลูกค้าติดตามออเดอร์)
+//   - status : เก็บไว้เผื่ออนาคต (เดิมเคยใช้ใน orders.js แต่ปัจจุบันกรองฝั่ง client แทน)
+//   - created_at : orders.js (orderBy ตอนโหลดประวัติออเดอร์ฝั่งแอดมิน)
+// ถ้าอนาคตต้องการ query field ใหม่ ให้เพิ่มชื่อ field ลงใน Set นี้ก่อน
+const ALLOWED_QUERY_FIELDS = new Set([
+  "playlist_id",
+  "receipt_number",
+  "status",
+  "created_at",
+]);
+
 export async function queryDocuments(env, collection, { wheres = [], orderBy = null } = {}) {
   if (collection === "admins") {
     // ไม่มีจุดไหนในโปรเจกต์ query collection "admins" แบบมีเงื่อนไข — กันไว้เผื่ออนาคตเรียกผิด
@@ -58,10 +75,17 @@ export async function queryDocuments(env, collection, { wheres = [], orderBy = n
   const binds = [collection];
   for (const w of wheres) {
     if (w.op !== "==") throw new Error(`ไม่รองรับ where operator: ${w.op}`);
+    if (!ALLOWED_QUERY_FIELDS.has(w.field)) {
+      // กัน SQL injection ผ่าน field name ที่ attacker ควบคุมได้ — field ต้องอยู่ใน whitelist เท่านั้น
+      throw new Error(`field ไม่ได้รับอนุญาตใน query: ${w.field}`);
+    }
     sql += ` AND json_extract(data, '$.${w.field}') = ?`;
     binds.push(w.value);
   }
   if (orderBy && orderBy.field) {
+    if (!ALLOWED_QUERY_FIELDS.has(orderBy.field)) {
+      throw new Error(`field ไม่ได้รับอนุญาตใน orderBy: ${orderBy.field}`);
+    }
     const dir = orderBy.dir === "desc" ? "DESC" : "ASC";
     sql += ` ORDER BY json_extract(data, '$.${orderBy.field}') ${dir}`;
   }
