@@ -157,7 +157,18 @@ function showToast(message, type) {
   el.textContent = message;
   el.className = "toast show" + (type ? " " + type : "");
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => { el.className = "toast"; }, 2600);
+  // 🔧 (2026-09-16): กำหนดเวลา auto-hide ตาม type
+  // - "progress"      : ไม่ auto-hide (ใช้ตอนสร้าง ZIP — ต้องการให้ผู้ใช้เห็นความคืบหน้าตลอดจนกว่าจะเสร็จ)
+  // - "success_long" : 4 วิ (สำเร็จงานยาว เช่น สร้าง ZIP เสร็จ ให้ผู้ใช้ทันเห็น)
+  // - "error_long"    : 6 วิ (ล้มเหลวงานยาว เช่น สร้าง ZIP ล้มเหลว ให้ผู้ใช้อ่าน error ทัน)
+  // - อื่นๆ (success/error/info/"") : 2.6 วิ (ค่าเริ่มต้นเดิม — ไม่แตะ behavior เดิม)
+  if (type === "progress") {
+    return; // ไม่ตั้ง timeout → ค้างจนกว่าจะมี showToast ครั้งถัดไป
+  }
+  let duration = 2600;
+  if (type === "success_long") duration = 4000;
+  else if (type === "error_long") duration = 6000;
+  showToast._t = setTimeout(() => { el.className = "toast"; }, duration);
 }
 function escapeHtml(str) {
   return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
