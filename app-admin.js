@@ -1,4 +1,4 @@
-// app-admin.js — หน้า Admin: Login (Firebase Auth) + CRUD (Firestore) + อัปโหลดไฟล์ (Cloudinary)
+// app-admin.js — หน้า Admin: Login (ระบบยืนยันตัวตนของเว็บเองผ่าน Worker) + CRUD (Cloudflare D1) + อัปโหลดไฟล์ (Cloudflare R2)
 // ===================================================
 import { db, auth, uploadToCloudinary } from "./firebase-init.js?v=20260905-fix1";
 import { uploadFullSong, deleteFromStorage } from "./storage-adapter.js?v=20260904-rawzip";
@@ -189,7 +189,7 @@ onAuthStateChanged(auth, async (user) => {
     await showAdmin();
   } catch (err) {
     document.getElementById("loginError").textContent =
-      "เปิดหน้า Admin ไม่สำเร็จ: " + (err.message || err) + " — ตรวจสอบอินเทอร์เน็ตและ Firebase Rules";
+      "เปิดหน้า Admin ไม่สำเร็จ: " + (err.message || err) + " — ตรวจสอบอินเทอร์เน็ตและการเชื่อมต่อเซิร์ฟเวอร์";
     showLogin();
     await signOut(auth).catch(() => {});
   }
@@ -299,9 +299,9 @@ async function showAdmin() {
       "ตรวจสอบสิทธิ์ Admin นานเกินไป"
     );
   } catch (err) {
-    // ส่วนใหญ่เกิดจาก Firestore Security Rules ยังไม่อนุญาตให้อ่าน/เขียน collection "admins"
+    // ส่วนใหญ่เกิดจากปัญหาการเชื่อมต่อเซิร์ฟเวอร์หรือฐานข้อมูล D1 ยังไม่พร้อม
     document.getElementById("loginError").textContent =
-      "ตรวจสอบสิทธิ์แอดมินไม่สำเร็จ: " + (err.message || err) + " — ถ้าเพิ่งเพิ่มระบบจัดการแอดมิน ให้ตรวจสอบ Firestore Rules ว่าอนุญาต collection \"admins\" แล้วหรือยัง";
+      "ตรวจสอบสิทธิ์แอดมินไม่สำเร็จ: " + (err.message || err) + " — ถ้าเพิ่งเพิ่มระบบจัดการแอดมิน ให้ตรวจสอบว่ามีแอดมินหลักในระบบแล้วและฐานข้อมูลพร้อมใช้งาน";
     await signOut(auth);
     return;
   }
