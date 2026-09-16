@@ -729,9 +729,14 @@ function ensureFullFilesElements() {
         <h3>ไฟล์เพลงเต็มสำหรับส่งลูกค้า</h3>
         <button class="modal-close" id="fullFilesClose">✕</button>
       </div>
-       <p style="color:var(--text-dim);font-size:13px;margin-top:0;">ระบบจะสร้าง ZIP จาก WAV เต็มให้อัตโนมัติหลังยืนยันโอน — ลิงก์นี้สำหรับ Admin เท่านั้น ห้ามส่งลิงก์นี้ตรงให้ลูกค้า</p>
+       <p style="color:var(--text-dim);font-size:13px;margin-top:0;">คัดลอกลิงก์ดาวน์โหลดส่งให้ลูกค้า หรือกดปุ่ม WhatsApp เพื่อส่งตรง — ลูกค้าสามารถดาวน์โหลดได้จากลิงก์นี้</p>
       <div id="fullFilesContent"></div>
-      <button class="btn secondary" id="fullFilesWhatsAppBtn" type="button" style="margin-top:14px;width:100%;">เปิด WhatsApp คุยกับลูกค้า (แนบไฟล์ที่ดาวน์โหลดแล้วเอง)</button>
+      <div id="fullFilesZipLinkWrap" style="display:none;margin-top:14px;padding:10px;background:rgba(16,185,129,.08);border-radius:10px;">
+        <div style="font-size:12px;color:var(--success);font-weight:600;margin-bottom:6px;">🔗 ลิงก์ดาวน์โหลดสำหรับลูกค้า</div>
+        <div id="fullFilesZipLinkText" style="font-size:11px;color:var(--text-dim);word-break:break-all;margin-bottom:8px;"></div>
+        <button class="btn" type="button" id="fullFilesCopyLinkBtn" style="width:100%;margin-bottom:8px;">📋 คัดลอกลิงก์ดาวน์โหลด</button>
+      </div>
+      <button class="btn secondary" id="fullFilesWhatsAppBtn" type="button" style="margin-top:14px;width:100%;">💬 ส่ง WhatsApp พร้อมลิงก์ดาวน์โหลด</button>
     </div>
   `;
   document.body.appendChild(backdrop);
@@ -1534,6 +1539,38 @@ async function openFullFilesModal(orderId) {
       : "";
   content.innerHTML = zipRow + (rows.join("") || `<div class="empty-state">ไม่มีรายการเพลงในออเดอร์นี้</div>`);
 
+  // 🔧 (2026-09-16): แสดงกล่อง "ลิงก์ดาวน์โหลดสำหรับลูกค้า" + ปุ่ม "คัดลอกลิงก์" ถ้าออเดอร์มี zip_download_url แล้ว
+  // ใช้วิธี A1 — ส่ง R2 public URL ตรงๆ ให้ลูกค้า (R2 security: UUID สุ่ม + ไม่มี directory listing ทำให้ทายไม่ได้)
+  const zipLinkWrap = document.getElementById("fullFilesZipLinkWrap");
+  const zipLinkText = document.getElementById("fullFilesZipLinkText");
+  if (zipLinkWrap && zipLinkText) {
+    if (order.zip_download_url) {
+      zipLinkText.textContent = order.zip_download_url;
+      zipLinkWrap.style.display = "block";
+    } else {
+      zipLinkWrap.style.display = "none";
+    }
+  }
+
+  // 🔧 (2026-09-16): ปุ่ม "คัดลอกลิงก์ดาวน์โหลด" — คัดลอก zip_download_url ไป clipboard
+  // ใช้สำหรับแอดมินที่ไม่อยากส่งผ่าน WhatsApp โดยตรง (เช่น ส่งทางอื่น) หรือต้องการคัดลอกเอง
+  const copyLinkBtn = document.getElementById("fullFilesCopyLinkBtn");
+  if (copyLinkBtn) {
+    copyLinkBtn.onclick = async () => {
+      if (!order.zip_download_url) {
+        orderToast("ยังไม่มีลิงก์ดาวน์โหลด — ออเดอร์นี้ยังไม่ได้สร้าง ZIP", "error");
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(order.zip_download_url);
+        orderToast("📋 คัดลอกลิงก์ดาวน์โหลดแล้ว — ไปวางใน WhatsApp หรือที่อื่นได้เลย", "success");
+      } catch (err) {
+        // fallback ถ้า browser ไม่รองรับ clipboard API (เช่น ไม่ใช่ HTTPS)
+        orderToast("คัดลอกไม่สำเร็จ: " + (err?.message || err) + " — คัดลอกจากกล่องข้อความด้านบนเอง", "error");
+      }
+    };
+  }
+
   const whatsappBtn = document.getElementById("fullFilesWhatsAppBtn");
   if (whatsappBtn) {
     whatsappBtn.onclick = () => {
@@ -1542,10 +1579,23 @@ async function openFullFilesModal(orderId) {
         orderToast("ออเดอร์นี้ไม่มีเบอร์ WhatsApp ของลูกค้า", "error");
         return;
       }
-      // จงใจไม่ใส่ลิงก์ดาวน์โหลดในข้อความ — แอดมินดาวน์โหลดไฟล์ลงเครื่องแล้วแนบส่งเอง
-      // เพื่อไม่ให้ลิงก์ตรง (ไม่มีการป้องกัน) หลุดไปถึงมือคนอื่นที่ไม่ได้ซื้อ
       const receiptNumber = order.receipt_number || getReceiptNumber(order.id, order.created_at);
-      const text = `สวัสดีค่ะ/ครับ นี่คือไฟล์เพลงสำหรับ Order ${receiptNumber} ของคุณค่ะ/ครับ 🎵`;
+      const zipUrl = order.zip_download_url || "";
+      // 🔧 (2026-09-16): แบบที่ 2 — สุภาพ + ขอบคุณ + ลิงก์ดาวน์โหลด (เปลี่ยนจากเดิมที่ไม่ส่งลิงก์)
+      // เพราะ R2 public URL ปลอดภัยพอแล้ว (UUID + no directory listing)
+      // ถ้ายังไม่มี zip_download_url → ส่งแค่ข้อความทักทาย ไม่มีลิงก์
+      let text;
+      if (zipUrl) {
+        text =
+          `สวัสดีค่ะ/ครับ 🎵\n` +
+          `ขอบคุณที่สั่งซื้อกับร้านเรา\n` +
+          `ไฟล์เพลงสำหรับ Order ${receiptNumber} ดาวน์โหลดได้ที่ลิงก์นี้:\n` +
+          `${zipUrl}\n` +
+          `หากมีปัญหาดาวน์โหลด ติดต่อเราได้ตลอดค่ะ/ครับ`;
+      } else {
+        // กรณีออเดอร์ยังไม่มี ZIP (ยังไม่ได้สร้าง หรือสร้างล้มเหลว)
+        text = `สวัสดีค่ะ/ครับ 🎵 เกี่ยวกับ Order ${receiptNumber} ของคุณค่ะ/ครับ`;
+      }
       window.open(buildWhatsAppLink(number, text), "_blank", "noopener");
     };
   }
