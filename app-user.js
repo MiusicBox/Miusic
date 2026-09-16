@@ -1,4 +1,4 @@
-// app-user.js — หน้า User: ดึงข้อมูลจาก Firestore, เล่นเพลงจาก Cloudinary โดยตรง
+// app-user.js — หน้า User: ดึงข้อมูลจาก Cloudflare D1, เล่นเพลงจาก Cloudflare R2 โดยตรง
 // ===================================================
 import { db } from "./firebase-init.js?v=20260905-fix1";
 import { collection, getDocs, doc, getDoc, query, where, onSnapshot, deleteDoc, queryCustomerOrder, listenCustomerOrders } from "./db-client.js";
@@ -1141,7 +1141,7 @@ function hideMyOrdersView() {
 function normalizePhone(v) { return String(v || "").replace(/[^0-9]/g, ""); }
 function normalizeName(v) { return String(v || "").trim().toLowerCase(); }
 
-// เพิ่มใหม่: แปล error ดิบจาก Firebase/เน็ตให้เป็นข้อความที่ลูกค้าอ่านเข้าใจ (แทนที่จะโชว์ err.message ภาษาอังกฤษดิบๆ)
+// เพิ่มใหม่: แปล error ดิบจากระบบ/เน็ตให้เป็นข้อความที่ลูกค้าอ่านเข้าใจ (แทนที่จะโชว์ err.message ภาษาอังกฤษดิบๆ)
 function getFriendlyErrorMessage(err) {
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
     return "ไม่มีสัญญาณอินเทอร์เน็ต กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง";
