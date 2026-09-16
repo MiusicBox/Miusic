@@ -1928,16 +1928,20 @@ async function computeAdminPricing(cartEntries) {
       fetchActivePromotions(true)
     ]);
     // แปลง cartEntries → cartItems format ที่ pricing.js ต้องการ
+    // 🔧 (2026-09-16): รองรับทั้ง snake_case (playlist_id/song_id — จาก app-cart.js)
+    // และ camelCase (playlistId/songId — จาก orders.js addToCart/addToPlaylist)
+    // ก่อนหน้านี้อ่านแค่ snake_case ทำให้ cartEntries ฝั่งแอดมิน (ที่ใช้ camelCase) ส่งค่า
+    // "undefined" เข้า computeCartPricing → findActiveDiscountFor ไม่เจอ → ไม่มีส่วนลด
     const cartItems = cartEntries.map(entry => {
       if (entry.kind === "playlist") {
         return {
           kind: "playlist",
-          playlist_id: entry.playlist_id || String(entry.id || "").replace(/^playlist:/, ""),
+          playlist_id: entry.playlist_id || entry.playlistId || String(entry.id || "").replace(/^playlist:/, ""),
           price: Number(entry.price) || 0
         };
       } else {
         // song — หา category_id จาก state.songs
-        const songId = entry.song_id || String(entry.id || "");
+        const songId = entry.song_id || entry.songId || String(entry.id || "");
         const songData = state.songs.find(s => s.id === songId) || {};
         return {
           kind: "song",
