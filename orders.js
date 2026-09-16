@@ -420,6 +420,53 @@ function sumCartEntries(entries) {
   return (entries || []).reduce((sum, e) => sum + Number(e.price || 0), 0);
 }
 
+// ===== (2026-09-16): Helper สำหรับตรวจเพลงซ้ำในตะกร้าออเดอร์ =====
+// ปัญหา: เดิม addToCart/selectPlaylist เช็คซ้ำแค่ในระดับเดียวกัน (เพลงเดี่ยวซ้ำ / เพลย์ลิสต์ซ้ำ)
+// แต่ไม่เช็คข้ามชนิด — ทำให้เพิ่มเพลง A เดี่ยว + playlist X (ที่มีเพลง A) ได้ → เพลง A ถูกนับ 2 ครั้ง → ลูกค้าเสียเงิน 2 ครั้ง
+//
+// Helper 2 ตัวนี้ใช้ตรวจ "เพลงนี้มีอยู่ใน cartEntries แล้วหรือไม่ (ทั้งในรูปแบบเพลงเดี่ยวและอยู่ใน playlist)"
+// คืนค่าเป็น object ที่บอกชนิดซ้ำ + ชื่อรายการที่ซ้ำ เพื่อใช้ในข้อความ toast ให้ผู้ใช้เข้าใจง่าย
+
+// ตรวจว่า songId นี้อยู่ใน cartEntries แล้วไหม (ทั้งเพลงเดี่ยวและอยู่ใน playlist)
+// คืน { duplicate: true, inKind: "song"|"playlist", inTitle: "..." } หรือ { duplicate: false }
+function findSongInCartEntries(cartEntries, songId) {
+  // เช็คเพลงเดี่ยวก่อน
+  const asSingle = (cartEntries || []).find((e) => e.kind === "song" && (e.songId || e.song_id) === songId);
+  if (asSingle) {
+    return { duplicate: true, inKind: "song", inTitle: asSingle.title || "เพลงเดี่ยว" };
+  }
+  // เช็คใน playlist entries
+  for (const e of (cartEntries || [])) {
+    if (e.kind === "playlist" && Array.isArray(e.songs)) {
+      const found = e.songs.find((s) => (s.songId || s.song_id) === songId);
+      if (found) {
+        return { duplicate: true, inKind: "playlist", inTitle: e.title || "เพลย์ลิสต์" };
+      }
+    }
+  }
+  return { duplicate: false };
+}
+
+// ตรวจเพลงหลายตัวใน playlist ว่าซ้ำกับที่อยู่ใน cartEntries ไหม
+// รับ playlistSongs: array ของ { songId, title }
+// คืน array ของ { songId, songTitle, inKind, inTitle } สำหรับเพลงที่ซ้ำ
+function findPlaylistSongDuplicates(cartEntries, playlistSongs) {
+  const dups = [];
+  for (const ps of (playlistSongs || [])) {
+    const songId = ps.songId || ps.song_id;
+    const result = findSongInCartEntries(cartEntries, songId);
+    if (result.duplicate) {
+      dups.push({
+        songId,
+        songTitle: ps.title || "เพลง",
+        inKind: result.inKind,
+        inTitle: result.inTitle,
+      });
+    }
+  }
+  return dups;
+}
+
 /*
  * แปลงตะกร้าแบบผสมเป็นข้อมูลออเดอร์ที่จะบันทึกลง Firestore
  * ใช้ตรรกะเดียวกับ resolveCartFromDatabase() ใน app-cart.js เพื่อให้ order_type ที่ได้
@@ -642,14 +689,52 @@ function renderCart() {
     state.cartEntries.forEach((entry, index) => {
       const row = document.createElement("div");
       row.className = "list-row";
-      const label = entry.kind === "playlist"
-        ? `🎶 ${escapeHtml(entry.title)} <span style="color:var(--text-dim);font-weight:400;">(${(entry.songs || []).length} เพลง)</span>`
-        : `🎵 ${escapeHtml(entry.title)}`;
-      row.innerHTML = `
-        <div class="info"><div class="n1">${label}</div><div class="n2">${formatLAK(entry.price)}</div></div>
-        <div class="row-actions"><button class="icon-btn danger" data-remove="${index}">🗑</button></div>
-      `;
+      if (entry.kind === "playlist") {
+        // 🔧 (2026-09-16): playlist entries เป็น collapsible dropdown
+        // กด ▸ จะขยายแสดงรายชื่อเพลงทั้งหมดใน playlist พร้อมราคาแต่ละเพลง
+        // กดอีกครั้ง (▾) จะซ่อน — เหมือน dropdown เปิด/ปิด
+        const songCount = (entry.songs || []).length;
+        const songsListHtml = (entry.songs || []).map((s, i) => `
+          <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;color:var(--text-dim);">
+            <span>${i + 1}. 🎵 ${escapeHtml(s.title || "เพลง")}</span>
+            <span>${formatLAK(s.price)}</span>
+          </div>
+        `).join("");
+        row.style.flexDirection = "column";
+        row.style.alignItems = "stretch";
+        row.innerHTML = `
+          <div style="display:flex;align-items:center;gap:8px;width:100%;">
+            <button class="icon-btn" data-toggle="${index}" title="เปิด/ปิดรายชื่อเพลง" style="background:transparent;font-size:14px;padding:4px 8px;line-height:1;">▸</button>
+            <div class="info" style="flex:1;">
+              <div class="n1">🎶 ${escapeHtml(entry.title)} <span style="color:var(--text-dim);font-weight:400;">(${songCount} เพลง)</span></div>
+              <div class="n2">${formatLAK(entry.price)}</div>
+            </div>
+            <div class="row-actions"><button class="icon-btn danger" data-remove="${index}">🗑</button></div>
+          </div>
+          <div class="playlist-songs-list" data-songs="${index}" style="display:none;margin-top:6px;margin-left:32px;padding-left:12px;border-left:2px solid var(--border);">
+            ${songsListHtml || '<div style="font-size:12px;color:var(--text-dim);padding:4px 0;">(ไม่มีเพลงในเพลย์ลิสต์นี้)</div>'}
+          </div>
+        `;
+      } else {
+        row.innerHTML = `
+          <div class="info"><div class="n1">🎵 ${escapeHtml(entry.title)}</div><div class="n2">${formatLAK(entry.price)}</div></div>
+          <div class="row-actions"><button class="icon-btn danger" data-remove="${index}">🗑</button></div>
+        `;
+      }
       container.appendChild(row);
+    });
+    // 🔧 (2026-09-16): event listener สำหรับปุ่ม toggle เปิด/ปิดรายชื่อเพลงใน playlist
+    container.querySelectorAll("[data-toggle]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const idx = btn.getAttribute("data-toggle");
+        const list = container.querySelector(`[data-songs="${idx}"]`);
+        if (list) {
+          const isOpen = list.style.display !== "none";
+          list.style.display = isOpen ? "none" : "block";
+          btn.textContent = isOpen ? "▸" : "▾";
+        }
+      });
     });
     container.querySelectorAll("[data-remove]").forEach((btn) => {
       btn.addEventListener("click", () => removeFromCart(Number(btn.getAttribute("data-remove"))));
@@ -749,9 +834,26 @@ function renderPlaylistSelected() {
 function selectPlaylist(playlistId) {
   const pl = state.playlists.find((p) => p.id === playlistId);
   if (!pl) return;
-  if (state.cartEntries.some((e) => e.kind === "playlist" && e.playlistId === playlistId)) return;
+  if (state.cartEntries.some((e) => e.kind === "playlist" && e.playlistId === playlistId)) {
+    orderToast(`เพลย์ลิสต์ "${getPlaylistName(pl)}" ถูกเพิ่มไปแล้ว — ห้ามเพิ่มซ้ำ`, "error");
+    return;
+  }
 
   const songs = getSongsInPlaylist(pl.id);
+
+  // 🔧 (2026-09-16): ห้ามเพิ่ม playlist ถ้ามีเพลงใน playlist ซ้ำกับที่อยู่ในตะกร้าแล้ว
+  // (เพลงเดี่ยวที่เพิ่มไป หรือ เพลงที่อยู่ใน playlist อื่นในตะกร้า) — กันลูกค้าเสียเงิน 2 ครั้ง
+  const duplicates = findPlaylistSongDuplicates(
+    state.cartEntries,
+    songs.map((s) => ({ songId: s.id, title: s.song_name }))
+  );
+  if (duplicates.length > 0) {
+    const sample = duplicates.slice(0, 3).map((d) => `"${d.songTitle}"`).join(", ");
+    const more = duplicates.length > 3 ? ` และอีก ${duplicates.length - 3} เพลง` : "";
+    orderToast(`ห้ามเพิ่ม — เพลง ${sample}${more} ในเพลย์ลิสต์นี้ซ้ำกับที่อยู่ในตะกร้าแล้ว (กันลูกค้าเสียเงิน 2 ครั้ง)`, "error");
+    return;
+  }
+
   state.cartEntries.push({
     kind: "playlist",
     playlistId: pl.id,
@@ -1529,14 +1631,50 @@ function renderEditCart() {
     state.editCartEntries.forEach((entry, index) => {
       const row = document.createElement("div");
       row.className = "list-row";
-      const label = entry.kind === "playlist"
-        ? `🎶 ${escapeHtml(entry.title)} <span style="color:var(--text-dim);font-weight:400;">(${(entry.songs || []).length} เพลง)</span>`
-        : `🎵 ${escapeHtml(entry.title)}`;
-      row.innerHTML = `
-        <div class="info"><div class="n1">${label}</div><div class="n2">${formatLAK(entry.price)}</div></div>
-        <div class="row-actions"><button class="icon-btn danger" data-eremove="${index}">🗑</button></div>
-      `;
+      if (entry.kind === "playlist") {
+        // 🔧 (2026-09-16): playlist entries เป็น collapsible dropdown (เหมือน renderCart ฝั่งสร้างใหม่)
+        const songCount = (entry.songs || []).length;
+        const songsListHtml = (entry.songs || []).map((s, i) => `
+          <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;color:var(--text-dim);">
+            <span>${i + 1}. 🎵 ${escapeHtml(s.title || "เพลง")}</span>
+            <span>${formatLAK(s.price)}</span>
+          </div>
+        `).join("");
+        row.style.flexDirection = "column";
+        row.style.alignItems = "stretch";
+        row.innerHTML = `
+          <div style="display:flex;align-items:center;gap:8px;width:100%;">
+            <button class="icon-btn" data-etoggle="${index}" title="เปิด/ปิดรายชื่อเพลง" style="background:transparent;font-size:14px;padding:4px 8px;line-height:1;">▸</button>
+            <div class="info" style="flex:1;">
+              <div class="n1">🎶 ${escapeHtml(entry.title)} <span style="color:var(--text-dim);font-weight:400;">(${songCount} เพลง)</span></div>
+              <div class="n2">${formatLAK(entry.price)}</div>
+            </div>
+            <div class="row-actions"><button class="icon-btn danger" data-eremove="${index}">🗑</button></div>
+          </div>
+          <div class="playlist-songs-list" data-esongs="${index}" style="display:none;margin-top:6px;margin-left:32px;padding-left:12px;border-left:2px solid var(--border);">
+            ${songsListHtml || '<div style="font-size:12px;color:var(--text-dim);padding:4px 0;">(ไม่มีเพลงในเพลย์ลิสต์นี้)</div>'}
+          </div>
+        `;
+      } else {
+        row.innerHTML = `
+          <div class="info"><div class="n1">🎵 ${escapeHtml(entry.title)}</div><div class="n2">${formatLAK(entry.price)}</div></div>
+          <div class="row-actions"><button class="icon-btn danger" data-eremove="${index}">🗑</button></div>
+        `;
+      }
       container.appendChild(row);
+    });
+    // 🔧 (2026-09-16): event listener สำหรับปุ่ม toggle เปิด/ปิดรายชื่อเพลงใน playlist (edit modal)
+    container.querySelectorAll("[data-etoggle]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const idx = btn.getAttribute("data-etoggle");
+        const list = container.querySelector(`[data-esongs="${idx}"]`);
+        if (list) {
+          const isOpen = list.style.display !== "none";
+          list.style.display = isOpen ? "none" : "block";
+          btn.textContent = isOpen ? "▸" : "▾";
+        }
+      });
     });
     container.querySelectorAll("[data-eremove]").forEach((btn) => {
       btn.addEventListener("click", () => removeFromEditCart(Number(btn.getAttribute("data-eremove"))));
@@ -1553,7 +1691,16 @@ function renderEditCart() {
 function addToEditCart(songId) {
   const song = state.songs.find((s) => s.id === songId);
   if (!song) return;
-  if (state.editCartEntries.some((e) => e.kind === "song" && e.songId === song.id)) return;
+  // 🔧 (2026-09-16): ห้ามเพิ่มเพลงซ้ำในออเดอร์เดียวเด็ดขาด (เหมือน addToCart ฝั่งสร้างใหม่)
+  const check = findSongInCartEntries(state.editCartEntries, song.id);
+  if (check.duplicate) {
+    if (check.inKind === "song") {
+      orderToast(`เพลง "${song.song_name}" ถูกเพิ่มเป็นเพลงเดี่ยวไปแล้ว — ห้ามเพิ่มซ้ำในออเดอร์เดียวกัน`, "error");
+    } else {
+      orderToast(`เพลง "${song.song_name}" อยู่ในเพลย์ลิสต์ "${check.inTitle}" ในตะกร้าแล้ว — ห้ามเพิ่มซ้ำ (กันลูกค้าเสียเงิน 2 ครั้ง)`, "error");
+    }
+    return;
+  }
   state.editCartEntries.push({ kind: "song", songId: song.id, title: song.song_name, price: Number(song.price || 0) });
   state.editCartTotalEdited = false; // ตะกร้าเปลี่ยน ให้กลับไปคำนวณยอดรวมอัตโนมัติอีกครั้ง
   renderEditCart();
@@ -1635,9 +1782,25 @@ function renderEditPlaylistSelected() {
 function selectEditPlaylist(playlistId) {
   const pl = state.playlists.find((p) => p.id === playlistId);
   if (!pl) return;
-  if (state.editCartEntries.some((e) => e.kind === "playlist" && e.playlistId === playlistId)) return;
+  if (state.editCartEntries.some((e) => e.kind === "playlist" && e.playlistId === playlistId)) {
+    orderToast(`เพลย์ลิสต์ "${getPlaylistName(pl)}" ถูกเพิ่มไปแล้ว — ห้ามเพิ่มซ้ำ`, "error");
+    return;
+  }
 
   const songs = getSongsInPlaylist(pl.id);
+
+  // 🔧 (2026-09-16): ห้ามเพิ่ม playlist ถ้ามีเพลงใน playlist ซ้ำกับที่อยู่ในตะกร้าแล้ว (เหมือน selectPlaylist ฝั่งสร้างใหม่)
+  const duplicates = findPlaylistSongDuplicates(
+    state.editCartEntries,
+    songs.map((s) => ({ songId: s.id, title: s.song_name }))
+  );
+  if (duplicates.length > 0) {
+    const sample = duplicates.slice(0, 3).map((d) => `"${d.songTitle}"`).join(", ");
+    const more = duplicates.length > 3 ? ` และอีก ${duplicates.length - 3} เพลง` : "";
+    orderToast(`ห้ามเพิ่ม — เพลง ${sample}${more} ในเพลย์ลิสต์นี้ซ้ำกับที่อยู่ในตะกร้าแล้ว (กันลูกค้าเสียเงิน 2 ครั้ง)`, "error");
+    return;
+  }
+
   state.editCartEntries.push({
     kind: "playlist",
     playlistId: pl.id,
@@ -1804,7 +1967,18 @@ function handleSearchInput(e) {
 function addToCart(songId) {
   const song = state.songs.find((s) => s.id === songId);
   if (!song) return;
-  if (state.cartEntries.some((e) => e.kind === "song" && e.songId === song.id)) return;
+  // 🔧 (2026-09-16): ห้ามเพิ่มเพลงซ้ำในออเดอร์เดียวเด็ดขาด
+  // ตรวจทั้งกรณี "เพลงเดี่ยวซ้ำ" และ "เพลงนี้อยู่ใน playlist ในตะกร้าแล้ว"
+  // กันลูกค้าเสียเงิน 2 ครั้งในเพลงเดียวกัน
+  const check = findSongInCartEntries(state.cartEntries, song.id);
+  if (check.duplicate) {
+    if (check.inKind === "song") {
+      orderToast(`เพลง "${song.song_name}" ถูกเพิ่มเป็นเพลงเดี่ยวไปแล้ว — ห้ามเพิ่มซ้ำในออเดอร์เดียวกัน`, "error");
+    } else {
+      orderToast(`เพลง "${song.song_name}" อยู่ในเพลย์ลิสต์ "${check.inTitle}" ในตะกร้าแล้ว — ห้ามเพิ่มซ้ำ (กันลูกค้าเสียเงิน 2 ครั้ง)`, "error");
+    }
+    return;
+  }
   state.cartEntries.push({ kind: "song", songId: song.id, title: song.song_name, price: Number(song.price || 0) });
   state.cartTotalEdited = false; // ตะกร้าเปลี่ยน ให้กลับไปคำนวณยอดรวมอัตโนมัติอีกครั้ง
   renderCart();
