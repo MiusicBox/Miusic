@@ -1,6 +1,6 @@
 // app-admin.js — หน้า Admin: Login (ระบบยืนยันตัวตนของเว็บเองผ่าน Worker) + CRUD (Cloudflare D1) + อัปโหลดไฟล์ (Cloudflare R2)
 // ===================================================
-import { db, auth, uploadToCloudinary } from "./firebase-init.js?v=20260905-fix1";
+import { db, auth, uploadToCloudinary } from "./firebase-init.js?v=202609-fix1";
 import { uploadFullSong, deleteFromStorage } from "./storage-adapter.js?v=20260904-rawzip";
 import {
   collection, addDoc, updateDoc, deleteDoc, doc, getDocs, getDoc, setDoc
