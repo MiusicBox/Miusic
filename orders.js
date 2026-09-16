@@ -142,6 +142,107 @@ async function resolveOrderSongs(order) {
   return [...songMap.values()];
 }
 
+// 🔧 (2026-09-16): Helper ใหม่สำหรับจัดกลุ่มเพลงในออเดอร์แยกตาม playlist
+// ใช้ใน createOrderZip เพื่อสร้าง folder แยกให้แต่ละ playlist (เพลงเดี่ยวอยู่ที่ root, เพลง playlist อยู่ใน folder ชื่อ playlist)
+// return { singles: [{id, title}], playlists: [{id, name, songs: [{id, title}]}] }
+// 
+// Logic การจัดกลุ่มตาม order.order_type:
+//   - "single"   → ทุก item ใน order.items เป็นเพลงเดี่ยว (singles)
+//   - "playlist" → ทุก item ใน order.items อยู่ใน playlist เดียว (ใช้ order.playlist_id/playlist_name)
+//   - "mixed"    → items มี kind แยก ("song" = single, "playlist" = playlist group มี song_ids snapshot)
+//                  ถ้า playlist ไม่มี song_ids snapshot (order เก่า) → query จาก playlist_id เอง
+async function resolveOrderSongsGrouped(order) {
+  const singles = [];
+  const playlistMap = new Map(); // playlist_id → { id, name, songs: [] }
+
+  // Helper: ดึงหรือสร้าง playlist group ใน map
+  function getOrCreatePlaylist(playlistId, playlistName) {
+    const key = String(playlistId || "");
+    if (!playlistMap.has(key)) {
+      playlistMap.set(key, {
+        id: key,
+        name: String(playlistName || `Playlist-${key.slice(-6)}`),
+        songs: [],
+      });
+    }
+    return playlistMap.get(key);
+  }
+
+  // วน items ตาม order_type
+  (order?.items || []).forEach((item) => {
+    if (!item) return;
+
+    if (order.order_type === "playlist") {
+      // ทุก item อยู่ใน playlist เดียว (order.playlist_id)
+      const group = getOrCreatePlaylist(order.playlist_id, order.playlist_name);
+      if (item.song_id) {
+        group.songs.push({
+          id: String(item.song_id),
+          title: item.title || "เพลง",
+        });
+      }
+    } else if (order.order_type === "mixed") {
+      // items มี kind แยก — "song" = single, "playlist" = playlist group
+      if (item.kind === "playlist") {
+        const group = getOrCreatePlaylist(item.playlist_id, item.title);
+        // เพิ่มเพลงจาก song_ids snapshot (mixed items เก็บ song_ids ไว้ตอนสั่ง)
+        (item.song_ids || []).forEach((sid) => {
+          if (sid) group.songs.push({ id: String(sid), title: "" });
+        });
+      } else if (item.song_id) {
+        // item.kind === "song" หรือไม่ระบุ kind → single
+        singles.push({
+          id: String(item.song_id),
+          title: item.title || "เพลง",
+        });
+      }
+    } else {
+      // order_type === "single" หรือไม่ระบุ → ทุก item เป็น single
+      if (item.song_id) {
+        singles.push({
+          id: String(item.song_id),
+          title: item.title || "เพลง",
+        });
+      }
+    }
+  });
+
+  // สำหรับ playlist groups ที่ไม่มี song_ids snapshot (order เก่า หรือ playlist ที่ยังไม่ได้ fill)
+  // → query เพิ่มจาก playlist_id เพื่อดึงรายชื่อเพลงใน playlist นั้น
+  for (const [playlistId, group] of playlistMap) {
+    if (group.songs.length === 0 && playlistId) {
+      try {
+        const songsSnap = await getDocs(query(collection(db, "songs"), where("playlist_id", "==", playlistId)));
+        songsSnap.docs.forEach((songDoc) => {
+          const song = songDoc.data();
+          group.songs.push({
+            id: songDoc.id,
+            title: song.song_name || "เพลง",
+          });
+        });
+      } catch (err) {
+        // query ล้มเหลว → ปล่อยให้ group มี songs ว่าง (createOrderZip จะ throw error ตอนนั้น)
+        console.warn(`resolveOrderSongsGrouped: query songs ของ playlist "${playlistId}" ล้มเหลว:`, err?.message || err);
+      }
+    } else if (group.songs.length > 0 && !group.songs[0].title) {
+      // มี song_ids แต่ไม่มี title (กรณี mixed) → query ดึง title ของแต่ละเพลง
+      const songIds = group.songs.map((s) => s.id);
+      const songDocs = await Promise.all(
+        songIds.map((sid) => getDoc(doc(db, "songs", sid)).catch(() => null))
+      );
+      group.songs = songDocs.map((snap, i) => ({
+        id: songIds[i],
+        title: (snap && snap.exists()) ? (snap.data().song_name || "เพลง") : `เพลง ${i + 1}`,
+      }));
+    }
+  }
+
+  return {
+    singles,
+    playlists: [...playlistMap.values()],
+  };
+}
+
 // ⚠️ สำคัญมาก — ห้ามแก้ให้บังคับเป็น .wav เพียงอย่างเดียวอีก
 // ไฟล์เพลงเต็มรองรับทั้ง .wav และ .mp3 (ดู app-admin.js: เงื่อนไข isWav/isMp3)
 // ถ้าบังคับเติม ".wav" ต่อท้ายไฟล์ที่เป็น .mp3 อยู่แล้ว จะได้ไฟล์ผิดนามสกุลซ้อน
@@ -200,19 +301,28 @@ async function createOrderZip(orderId) {
       updated_at: new Date().toISOString(),
     });
 
-    const orderSongs = await resolveOrderSongs(order);
-    if (orderSongs.length === 0) {
+    const orderSongsGrouped = await resolveOrderSongsGrouped(order);
+    const totalSongs = orderSongsGrouped.singles.length
+      + orderSongsGrouped.playlists.reduce((sum, p) => sum + p.songs.length, 0);
+    if (totalSongs === 0) {
       throw new Error("ออเดอร์นี้ไม่มีรายการเพลงสำหรับสร้าง ZIP");
     }
 
     const JSZip = await loadJSZip();
     const zip = new JSZip();
-    const usedNames = new Set();
-    for (let index = 0; index < orderSongs.length; index += 1) {
-      const item = orderSongs[index];
-      const songSnap = await getDoc(doc(db, "songs", item.id));
+    // usedNames แยกสำหรับ root และแต่ละ playlist folder เพื่อกันชื่อไฟล์ซ้ำกันภายใน path เดียวกัน
+    const rootUsedNames = new Set();
+    let songIndex = 0;
+
+    // ===== Helper: ดึงไฟล์เพลงจาก R2 + เพิ่มลง ZIP ใน path ที่กำหนด =====
+    // folderPath = "" → ใส่ที่ root (เพลงเดี่ยว)
+    // folderPath = "PlaylistName" → ใส่ใน folder ของ playlist (เพลง playlist)
+    // usedNames = Set สำหรับ track ชื่อไฟล์ที่ใช้แล้วใน path นั้น เพื่อ unique ชื่อไฟล์
+    async function addSongToZip(songId, songTitle, folderPath, usedNames) {
+      songIndex += 1;
+      const songSnap = await getDoc(doc(db, "songs", songId));
       if (!songSnap.exists()) {
-        throw new Error(`ไม่พบข้อมูลเพลง "${item.title}"`);
+        throw new Error(`ไม่พบข้อมูลเพลง "${songTitle || songId}"`);
       }
       const song = songSnap.data();
       // 🔒 Shared-file (Lazy-shared): ถ้าไม่มี full_file_url ให้ fallback ใช้ file_url แทน
@@ -220,16 +330,17 @@ async function createOrderZip(orderId) {
       // ถ้าไม่มีทั้งคู่ถึงจะ throw error เหมือนเดิม
       const songFileUrl = song.full_file_url || song.file_url;
       if (!songFileUrl) {
-        throw new Error(`เพลง "${song.song_name || item.title}" ยังไม่มีไฟล์เต็ม WAV บน Cloud (ไม่มีทั้ง full_file_url และ file_url)`);
+        throw new Error(`เพลง "${song.song_name || songTitle}" ยังไม่มีไฟล์เต็ม WAV บน Cloud (ไม่มีทั้ง full_file_url และ file_url)`);
       }
 
       // 🔒 R2 CORS Bypass (2026-09-12): แปลง R2 public URL ให้เป็น Worker proxy URL
       // กันโดน CORS block ตอน fetch ไฟล์เพลงมาสร้าง ZIP (R2 pub-*.r2.dev ไม่ได้ตั้ง CORS headers)
       // ถ้าเป็น Cloudinary URL เก่า จะปล่อยผ่านไม่แตะต้อง
       const fetchUrl = r2UrlToProxyUrl(songFileUrl);
-      const isUsingProxy = fetchUrl !== songFileUrl;
 
-      orderToast(`กำลังดึง WAV ${index + 1}/${orderSongs.length}...`, "progress");
+      // คำนวณตำแหน่งปัจจุบันสำหรับ toast
+      const displayPath = folderPath ? ` (ในโฟลเดอร์ ${folderPath})` : "";
+      orderToast(`กำลังดึง WAV ${songIndex}/${totalSongs}${displayPath}...`, "progress");
       let response;
       try {
         response = await fetch(fetchUrl, {
@@ -240,7 +351,7 @@ async function createOrderZip(orderId) {
         // ถ้า fetch ล้มเหลวด้วย network/CORS error — ให้ข้อความชัดเจน
         const reason = fetchErr?.name === "TypeError" ? "CORS/Network" : (fetchErr?.name || "Unknown");
         throw new Error(
-          `ดึงไฟล์ WAV ของเพลง "${song.song_name || item.title}" ไม่สำเร็จ (${reason}) — ` +
+          `ดึงไฟล์ WAV ของเพลง "${song.song_name || songTitle}" ไม่สำเร็จ (${reason}) — ` +
           `ลอง refresh หน้าเว็บแล้วลองใหม่ หรือติดต่อผู้ดูแลระบบ`
         );
       }
@@ -251,17 +362,38 @@ async function createOrderZip(orderId) {
           if (errBody) errDetail += `: ${errBody.slice(0, 200)}`;
         } catch (_) {}
         throw new Error(
-          `ดึงไฟล์ WAV ของเพลง "${song.song_name || item.title}" ไม่สำเร็จ (${errDetail}) — ` +
+          `ดึงไฟล์ WAV ของเพลง "${song.song_name || songTitle}" ไม่สำเร็จ (${errDetail}) — ` +
           `${response.status === 401 ? "กรุณาล็อกอินแอดมินใหม่" : response.status === 404 ? "ไม่พบไฟล์ใน R2" : "ลองอีกครั้ง"}`
         );
       }
       const wavBlob = await response.blob();
       // ใช้ชื่อไฟล์เต็มถ้ามี ไม่งั้น derive จาก file_url + ชื่อเพลง
-      const entryName = uniqueZipFileName(
-        song.full_file_name || `${song.song_name || item.title}.wav`,
+      // uniqueZipFileName จะตรวจชื่อซ้ำใน usedNames แล้วเพิ่ม (2) (3) ต่อท้ายถ้าจำเป็น
+      const baseName = uniqueZipFileName(
+        song.full_file_name || `${song.song_name || songTitle}.wav`,
         usedNames
       );
+      const entryName = folderPath ? `${folderPath}/${baseName}` : baseName;
       zip.file(entryName, wavBlob);
+    }
+
+    // ===== 1. ใส่เพลงเดี่ยวที่ root ของ ZIP (เหมือนเดิม — ไม่สร้าง folder) =====
+    for (const single of orderSongsGrouped.singles) {
+      await addSongToZip(single.id, single.title, "", rootUsedNames);
+    }
+
+    // ===== 2. ใส่เพลง playlist แยก folder ชื่อตาม playlist =====
+    // 🔧 (2026-09-16): แต่ละ playlist สร้าง folder ของตัวเอง — ทุกเพลงใน playlist อยู่ใน folder นั้น
+    // ถ้ามีหลาย playlist → มีหลาย folder (แต่อยู่ใน ZIP ไฟล์เดียวกัน)
+    // ถ้าชื่อ playlist มีอักขระต้องห้ามใน OS (\/:*?"<>|) → แทนด้วย _ เพื่อกัน error ตอนแตก ZIP
+    for (const playlist of orderSongsGrouped.playlists) {
+      const rawFolderName = String(playlist.name || `Playlist-${playlist.id.slice(-6)}`).trim();
+      const safeFolderName = rawFolderName.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim() || `Playlist-${playlist.id.slice(-6)}`;
+      // usedNames สำหรับ folder นี้ (แยกจาก root และ folder อื่น) → กันชื่อไฟล์ซ้ำกันใน folder เดียวกัน
+      const folderUsedNames = new Set();
+      for (const songItem of playlist.songs) {
+        await addSongToZip(songItem.id, songItem.title, safeFolderName, folderUsedNames);
+      }
     }
 
     orderToast("กำลังบีบอัดไฟล์ WAV เป็น ZIP...", "progress");
