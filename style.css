@@ -846,13 +846,31 @@ button:active {
   right: 0;
   bottom: 0;
   z-index: 50;
-  background: rgba(19, 23, 34, 0.88);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  /* 🔧 (2026-09-17): ใช้ workaround สำหรับ iOS Safari bug — แยก blur ออกจาก fixed
+     เดิม: backdrop-filter อยู่บน .bottom-nav (position: fixed) → iOS Safari พัง → scroll ขึ้น bottom-nav ลอยกลางจอ
+     ใหม่: parent ไม่มี backdrop-filter (background: transparent) → fixed ทำงานปกติ
+           blur ย้ายไปที่ ::before pseudo-element (position: absolute) → ไม่ trigger bug แต่ยังมี blur สวยเหมือนเดิม */
+  background: transparent;
   border-top: 1px solid var(--border);
   display: flex;
   padding-bottom: var(--safe-bottom);
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* 🔧 (2026-09-17): pseudo-element สำหรับ blur effect — แยกจาก parent ที่เป็น position: fixed
+   ทำให้ได้ blur สวยเหมือนเดิม แต่ไม่ trigger iOS Safari bug
+   z-index: -1 → อยู่หลังปุ่ม bottom-nav (ปุ่มยังกดได้ปกติ) */
+.bottom-nav::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(19, 23, 34, 0.88);
 }
 
 .bottom-nav button {
