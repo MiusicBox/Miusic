@@ -17,7 +17,7 @@
 //   ไม่ต้องแก้ logic เดิมเลย แก้แค่บรรทัด import ให้ชี้มาที่ไฟล์ในเว็บเราแทน CDN ของ Firebase
 // ===================================================
 import { hashPassword, verifyPassword, getSessionAdmin, createSession, deleteSession, buildSessionCookie, buildClearCookie, getCookie, cleanupExpiredSessions } from "./auth-helpers.js";
-import { getDocument, listDocuments, queryDocuments, setDocument, updateDocument, deleteDocument } from "./db-helpers.js";
+import { getDocument, listDocuments, queryDocuments, setDocument, updateDocument, deleteDocument, countDocuments } from "./db-helpers.js";
 
 // โฟลเดอร์เหล่านี้เดิมใช้ toCloudinaryDownloadUrl() เติม fl_attachment ให้บังคับดาวน์โหลด
 // (ไฟล์เพลงเต็ม/ไฟล์ ZIP ออเดอร์ — ไม่ใช่ไฟล์ที่เปิดเล่น/แสดงผลตรงๆ บนเว็บ)
@@ -359,9 +359,17 @@ async function handleDb(request, env, url) {
     collection === "orders" && parts.length === 2 && request.method === "POST" &&
     (parts[1] === "_customer-query" || parts[1] === "_customer-list");
 
+  // 🔧 (2026-09-17 Phase 1): endpoint สำหรับ count pending orders — ใช้กับ badge บน admin dashboard
+  // เดิม: app-admin.js getDocs(collection(db,"orders")) แล้ว filter ฝั่ง client → โหลด orders ทั้งหมดมาแค่นับ
+  // ใหม่: SELECT COUNT(*) WHERE status = 'pending_verify' → ประหยัด D1 reads มาก
+  // ต้อง login (admin เท่านั้น) เพราะเป็นข้อมูลสรุปฝั่งระบบ
+  const isOrdersCountPendingEndpoint =
+    collection === "orders" && parts.length === 2 && request.method === "POST" &&
+    parts[1] === "_count-pending";
+
   // 🔒 Security (2026-09-11): ดึง admin status เสมอเมื่อเป็น collection "songs" เพื่อตัดสินใจว่าจะ sanitize
   // ฟิลด์ sensitive ออกหรือไม่ — ไม่ใช่แค่ตอน isWrite หรือ non-public collection
-  const needsAdminCheck = isWrite || !PUBLIC_READ_COLLECTIONS.has(collection) || collection === "songs";
+  const needsAdminCheck = isWrite || !PUBLIC_READ_COLLECTIONS.has(collection) || collection === "songs" || isOrdersCountPendingEndpoint;
 
   let admin = null;
   if (needsAdminCheck || isOrdersCustomerEndpoint) {
@@ -377,6 +385,21 @@ async function handleDb(request, env, url) {
   if (!admin && !isOrdersPublicWriteCandidate && !isOrdersCustomerEndpoint && !isSongsPublicGet) {
     if (isWrite || !PUBLIC_READ_COLLECTIONS.has(collection)) {
       return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    }
+  }
+
+  // 🔧 (2026-09-17 Phase 1): /api/db/orders/_count-pending — นับออเดอร์ที่รอตรวจสอบการโอน
+  // ใช้สำหรับ badge บนปุ่ม "จัดการออเดอร์" ใน admin dashboard
+  // คืน { count: <number> } — ถ้าไม่ได้ login คืน 401
+  if (isOrdersCountPendingEndpoint) {
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    try {
+      const count = await countDocuments(env, "orders", {
+        wheres: [{ __type: "where", field: "status", op: "==", value: "pending_verify" }],
+      });
+      return jsonResponse({ count });
+    } catch (err) {
+      return jsonResponse({ error: "นับออเดอร์ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
     }
   }
 
