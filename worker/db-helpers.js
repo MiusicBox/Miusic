@@ -64,6 +64,12 @@ const ALLOWED_QUERY_FIELDS = new Set([
   "receipt_number",
   "status",
   "created_at",
+  // 🔧 แก้บั๊ก Bug #6 (2026-09-17): เพิ่ม whatsapp + customer_name
+  //   ใช้สำหรับ endpoint _customer-list ใน worker/index.js — Server กรอง orders ที่ DB level
+  //   ด้วย where("whatsapp","==",phone) แทนการโหลด orders ทั้งหมดมากรองฝั่ง JS
+  //   ลด D1 reads จาก orders_total → orders_ของเบอร์นั้น (ปกติทำลำดับสิบ)
+  "whatsapp",
+  "customer_name",
 ]);
 
 export async function queryDocuments(env, collection, { wheres = [], orderBy = null } = {}) {
