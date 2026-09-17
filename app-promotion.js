@@ -49,6 +49,16 @@ let _promotionsCache = null;
 let _discountsAllCache = null;
 let _promotionsAllCache = null;
 
+// 🔧 (2026-09-17 Phase 1): TTL สำหรับ cache ฝั่ง admin view — ลด D1 reads ตอนเข้า view ซ้ำ ๆ
+// TTL 60 วินาที — ถ้า admin เพิ่งเข้า view นี้ไม่ถึง 60 วิ จะใช้ cache ไม่ fetch ใหม่
+// ถ้า admin save/delete → clearPricingCache() ล้าง timestamp → fetch ใหม่ทันที
+const ADMIN_VIEW_CACHE_TTL_MS = 60 * 1000;
+let _discountsAllCacheAt = 0;       // timestamp ของ cache ล่าสุด (fetchAllDiscounts)
+let _promotionsAllCacheAt = 0;      // timestamp ของ cache ล่าสุด (fetchAllPromotions)
+let _songsAllCacheAt = 0;           // timestamp ของ SONGS_CACHE ล่าสุด (disc_loadData)
+let _playlistsAllCacheAt = 0;       // timestamp ของ PLAYLISTS_CACHE ล่าสุด (disc_loadData)
+let _categoriesAllCacheAt = 0;      // timestamp ของ CATEGORIES_CACHE ล่าสุด (promo_loadData)
+
 // ---------------- ดึง discount ที่ active ทั้งหมด ----------------
 export async function fetchActiveDiscounts(forceRefresh) {
   if (_discountsCache && !forceRefresh) return _discountsCache;
@@ -93,13 +103,22 @@ export async function fetchActivePromotions(forceRefresh) {
 }
 
 // ---------------- ดึง discounts ทั้งหมด (admin view รวม inactive) ----------------
-export async function fetchAllDiscounts() {
+// 🔧 (2026-09-17 Phase 1): เพิ่มพารามิเตอร์ forceRefresh (optional) และ TTL cache
+//   - ถ้ามี cache และยังไม่หมดอายุ (ภายใน 60 วิ) และไม่ได้บังคับ refresh → คืน cache ไม่ fetch
+//   - ถ้าหมดอายุหรือบังคับ refresh → fetch ใหม่ + อัปเดต timestamp
+//   - signature เดิมยังทำงาน (caller เดิมที่ไม่ส่ง forceRefresh จะได้ behavior เหมือนเดิม + TTL)
+export async function fetchAllDiscounts(forceRefresh) {
+  const now = Date.now();
+  if (_discountsAllCache && !forceRefresh && _discountsAllCacheAt && (now - _discountsAllCacheAt) < ADMIN_VIEW_CACHE_TTL_MS) {
+    return _discountsAllCache;  // ใช้ cache ไม่ fetch ใหม่
+  }
   try {
     const snap = await getDocs(collection(db, "discounts"));
     const items = [];
     snap.forEach(d => items.push({ id: d.id, ...d.data() }));
     items.sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
     _discountsAllCache = items;
+    _discountsAllCacheAt = now;
     return items;
   } catch (err) {
     console.warn("fetchAllDiscounts error:", err);
@@ -107,13 +126,18 @@ export async function fetchAllDiscounts() {
   }
 }
 
-export async function fetchAllPromotions() {
+export async function fetchAllPromotions(forceRefresh) {
+  const now = Date.now();
+  if (_promotionsAllCache && !forceRefresh && _promotionsAllCacheAt && (now - _promotionsAllCacheAt) < ADMIN_VIEW_CACHE_TTL_MS) {
+    return _promotionsAllCache;
+  }
   try {
     const snap = await getDocs(collection(db, "promotions"));
     const items = [];
     snap.forEach(d => items.push({ id: d.id, ...d.data() }));
     items.sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
     _promotionsAllCache = items;
+    _promotionsAllCacheAt = now;
     return items;
   } catch (err) {
     console.warn("fetchAllPromotions error:", err);
@@ -122,11 +146,17 @@ export async function fetchAllPromotions() {
 }
 
 // ---------------- ล้าง cache (หลัง admin save/delete) ----------------
+// 🔧 (2026-09-17 Phase 1): ล้าง timestamp ด้วย เพื่อให้ fetch ครั้งถัดไป fetch ใหม่จริง
 export function clearPricingCache() {
   _discountsCache = null;
   _promotionsCache = null;
   _discountsAllCache = null;
   _promotionsAllCache = null;
+  _discountsAllCacheAt = 0;
+  _promotionsAllCacheAt = 0;
+  _songsAllCacheAt = 0;
+  _playlistsAllCacheAt = 0;
+  _categoriesAllCacheAt = 0;
 }
 
 // ---------------- หา discount ที่ active ของ song/playlist ----------------
@@ -324,21 +354,49 @@ let PLAYLISTS_CACHE = [];
 let editingDiscountId = null;
 let disc_listenersBound = false;
 
+// 🔧 (2026-09-17 Phase 1): disc_loadData ใช้ TTL cache ลด D1 reads
+//   - ถ้า SONGS_CACHE / PLAYLISTS_CACHE / DISCOUNTS_CACHE ยังไม่หมดอายุ (60 วิ) → skip fetch ใช้ cache
+//   - ถ้าหมดอายุ → fetch เฉพาะที่ stale
+//   - ถ้า admin save/delete → clearPricingCache ล้าง timestamp → ครั้งถัดไป fetch ใหม่
+//   ⚠️ Trade-off: admin เพิ่มเพลงใหม่ใน app-admin.js แล้วเข้าหน้า Discounts ภายใน 60 วิ → อาจไม่เห็นเพลงใหม่
+//   แต่ถ้ารอเกิน 60 วิ หรือ refresh หน้า → จะเห็นเพลงใหม่ปกติ
 async function disc_loadData() {
   try {
-    const [songsSnap, plSnap, dSnap] = await Promise.all([
-      getDocs(collection(db, "songs")),
-      getDocs(collection(db, "playlists")),
-      getDocs(collection(db, "discounts"))
-    ]);
-    SONGS_CACHE = songsSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(s => s.status !== "hidden");
-    PLAYLISTS_CACHE = plSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(p => Number(p.price) > 0);
-    DISCOUNTS_CACHE = dSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    DISCOUNTS_CACHE.sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
+    const now = Date.now();
+    const isSongsStale = !SONGS_CACHE.length || !_songsAllCacheAt || (now - _songsAllCacheAt) > ADMIN_VIEW_CACHE_TTL_MS;
+    const isPlaylistsStale = !PLAYLISTS_CACHE.length || !_playlistsAllCacheAt || (now - _playlistsAllCacheAt) > ADMIN_VIEW_CACHE_TTL_MS;
+    const isDiscountsStale = !DISCOUNTS_CACHE.length || !_discountsAllCacheAt || (now - _discountsAllCacheAt) > ADMIN_VIEW_CACHE_TTL_MS;
+
+    // ยิงเฉพาะ fetch ที่ stale แบบ parallel
+    const fetches = [];
+    const fetchKeys = [];  // ดึง index กลับมาใช้ assign
+    if (isSongsStale) { fetches.push(getDocs(collection(db, "songs"))); fetchKeys.push("songs"); }
+    if (isPlaylistsStale) { fetches.push(getDocs(collection(db, "playlists"))); fetchKeys.push("playlists"); }
+    if (isDiscountsStale) { fetches.push(fetchAllDiscounts()); fetchKeys.push("discounts"); }
+
+    if (fetches.length > 0) {
+      const results = await Promise.all(fetches);
+      results.forEach((res, i) => {
+        const key = fetchKeys[i];
+        if (key === "songs") {
+          // res คือ QuerySnapshot จาก getDocs
+          SONGS_CACHE = res.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(s => s.status !== "hidden");
+          _songsAllCacheAt = now;
+        } else if (key === "playlists") {
+          PLAYLISTS_CACHE = res.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(p => Number(p.price) > 0);
+          _playlistsAllCacheAt = now;
+        } else if (key === "discounts") {
+          // res คือ array จาก fetchAllDiscounts (มี sorting ให้แล้ว)
+          DISCOUNTS_CACHE = res;
+          // _discountsAllCacheAt ถูกตั้งใน fetchAllDiscounts แล้ว
+        }
+      });
+    }
+    // ถ้า fetches.length === 0 → ทุก cache fresh → ไม่ fetch อะไรเลย (ประหยัด quota)
     renderDiscountList();
     populateTargetSelects();
   } catch (err) {
@@ -715,15 +773,35 @@ let CATEGORIES_CACHE = [];
 let editingPromoId = null;
 let promo_listenersBound = false;
 
+// 🔧 (2026-09-17 Phase 1): promo_loadData ใช้ TTL cache ลด D1 reads (เหมือน disc_loadData)
+//   - ถ้า PROMOTIONS_CACHE / CATEGORIES_CACHE ยังไม่หมดอายุ (60 วิ) → skip fetch ใช้ cache
+//   - ถ้า admin save/delete → clearPricingCache ล้าง timestamp → ครั้งถัดไป fetch ใหม่
 async function promo_loadData() {
   try {
-    const [pSnap, cSnap] = await Promise.all([
-      getDocs(collection(db, "promotions")),
-      getDocs(collection(db, "categories"))
-    ]);
-    PROMOTIONS_CACHE = pSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    PROMOTIONS_CACHE.sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
-    CATEGORIES_CACHE = cSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const now = Date.now();
+    const isPromosStale = !PROMOTIONS_CACHE.length || !_promotionsAllCacheAt || (now - _promotionsAllCacheAt) > ADMIN_VIEW_CACHE_TTL_MS;
+    const isCatsStale = !CATEGORIES_CACHE.length || !_categoriesAllCacheAt || (now - _categoriesAllCacheAt) > ADMIN_VIEW_CACHE_TTL_MS;
+
+    const fetches = [];
+    const fetchKeys = [];
+    if (isPromosStale) { fetches.push(fetchAllPromotions()); fetchKeys.push("promotions"); }
+    if (isCatsStale) { fetches.push(getDocs(collection(db, "categories"))); fetchKeys.push("categories"); }
+
+    if (fetches.length > 0) {
+      const results = await Promise.all(fetches);
+      results.forEach((res, i) => {
+        const key = fetchKeys[i];
+        if (key === "promotions") {
+          // res คือ array จาก fetchAllPromotions (มี sorting ให้แล้ว)
+          PROMOTIONS_CACHE = res;
+          // _promotionsAllCacheAt ถูกตั้งใน fetchAllPromotions แล้ว
+        } else if (key === "categories") {
+          // res คือ QuerySnapshot จาก getDocs
+          CATEGORIES_CACHE = res.docs.map(d => ({ id: d.id, ...d.data() }));
+          _categoriesAllCacheAt = now;
+        }
+      });
+    }
     renderPromotionList();
     populateCategorySelect();
   } catch (err) {
