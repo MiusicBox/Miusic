@@ -258,3 +258,39 @@ export async function fetchCustomerOrdersOnce({ customerName, whatsapp }) {
   const docs = (res && res.docs) || [];
   return { docs, snap: makeQuerySnap(docs) };
 }
+
+// ===================================================
+// 🔧 (2026-09-17 Phase 2): getDocsByIds — batch fetch documents หลายอันในครั้งเดียว
+// ใช้สำหรับ batch fetch songs ตอนสร้าง ZIP — ลดจำนวน HTTP requests จาก browser → Worker
+//   เดิม: 30 songs = 30 getDoc calls = 30 HTTP requests = 30 Worker invocations
+//   ใหม่: 30 songs = 1 batch call = 1 HTTP request = 1 Worker invocation (query D1 1 ครั้งด้วย IN)
+//
+// พารามิเตอร์:
+//   collection: "songs" | "playlists" | "categories" | "djs" | "orders" | ...
+//   ids: array ของ document id (string)
+// คืนค่า: Map<id, docSnap> เพื่อให้ caller เข้าถึงแบบ O(1) ด้วย id
+//   - ถ้า id ไม่มีอยู่ใน DB → ไม่อยู่ใน Map (caller เช็คเอง)
+//   - แต่ละ docSnap คือ { id, data: () => data, exists: () => true } เหมือน getDoc เดิม
+// ===================================================
+export async function getDocsByIds(collection, ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return new Map();
+  // dedupe ก่อนส่งไป server
+  const uniqueIds = [...new Set(ids.map(id => String(id)).filter(Boolean))];
+  if (uniqueIds.length === 0) return new Map();
+  const res = await apiFetch(`/${encodeURIComponent(collection)}/_batch-get`, {
+    method: "POST",
+    body: JSON.stringify({ ids: uniqueIds }),
+  });
+  const docs = (res && res.docs) || [];
+  // สร้าง Map<id, docSnap> เพื่อให้ caller เข้าถึง O(1)
+  const map = new Map();
+  for (const d of docs) {
+    if (!d || !d.id) continue;
+    map.set(d.id, {
+      id: d.id,
+      exists: () => true,
+      data: () => d.data,
+    });
+  }
+  return map;
+}
