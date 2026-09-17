@@ -163,23 +163,38 @@ async function handleSaveAdmin() {
         btn.disabled = false; btn.textContent = "บันทึก";
         return;
       }
-      // สร้างบัญชี Firebase Auth ใหม่ผ่าน Firebase App ตัวที่สองชั่วคราว
-      // เพื่อไม่ให้ระบบล็อกเอาต์บัญชีแอดมินหลักที่กำลังใช้งานหน้านี้อยู่ (ปัญหาปกติของ createUserWithEmailAndPassword)
-      const secondaryApp = initializeApp(auth.app.options, "AdminCreate_" + Date.now());
-      const secondaryAuth = getAuth(secondaryApp);
-      try {
-        const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-        await setDoc(doc(db, "admins", cred.user.uid), {
-          email,
-          display_name: displayName || email.split("@")[0],
-          role,
-          created_at: new Date().toISOString(),
-          created_by: auth.currentUser ? (auth.currentUser.email || "") : ""
-        });
-        await signOut(secondaryAuth);
-      } finally {
-        await deleteApp(secondaryApp);
-      }
+      // 🔧 แก้บั๊ก (2026-09-17): เด้งออกหลังสร้างแอดมินใหม่
+      // -----------------------------------------------------------
+      // อาการก่อนแก้: กดบันทึกสร้างแอดมินใหม่ → สำเร็จ แต่ระบบเด้งออก (logout)
+      //   แล้วโชว์ toast "บันทึกไม่สำเร็จ" ทั้งที่จริง ๆ บันทึกสำเร็จ
+      //
+      // สาเหตุ: โค้ดเดิมใช้รูปแบบ "secondary Firebase App" เพื่อสร้างบัญชีใหม่โดยไม่
+      //   กระทบ session ปัจจุบัน — เป็น pattern ที่ใช้ตอนยังเป็น Firebase Auth จริง
+      //   แต่หลังย้ายไประบบ Worker + cookie แล้ว:
+      //     - getAuth() return singleton (auth-client.js:128-130) → ไม่มี "secondary auth" จริง
+      //     - signOut() ใน auth-client.js:74-78 ไม่สนพารามิเตอร์ _auth → ยิง /api/auth/logout
+      //       เสมอ → ลบ cookie ปัจจุบันทิ้ง → ทำให้แอดมินหลักถูก logout ทันที
+      //     - พอ logout แล้ว loadAdmins() ที่ตามมาใช้ cookie ที่หายไป → 401 → catch
+      //       → โชว์ toast "บันทึกไม่สำเร็จ" ทั้งที่จริง ๆ บันทึกสำเร็จแล้ว
+      //
+      // วิธีแก้: ลบ secondaryApp/secondaryAuth/signOut/deleteApp ออกทั้ง block
+      //   เพราะ createUserWithEmailAndPassword() ในระบบใหม่ยิง endpoint /api/auth/create-admin
+      //   ซึ่ง server ทำงานแยก session โดยสมบูรณ์ — ไม่แตะ cookie ปัจจุบันเลย
+      //   (ดู auth-client.js:80-90 และ worker/index.js handleAuth "create-admin")
+      //
+      // ผลกระทบต่อระบบเดิม:
+      //   ✅ สร้างแอดมินใหม่ได้ปกติ และไม่เด้งออก
+      //   ✅ ไม่แตะ auth-client.js / worker / ระบบอื่น
+      //   ⚠️ imports ของ initializeApp/getAuth/deleteApp/signOut ยังคงไว้ตามกฎ
+      //      "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน" — เผื่ออนาคตมี caller อื่น
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      await setDoc(doc(db, "admins", cred.user.uid), {
+        email,
+        display_name: displayName || email.split("@")[0],
+        role,
+        created_at: new Date().toISOString(),
+        created_by: auth.currentUser ? (auth.currentUser.email || "") : ""
+      });
       showToast("สร้างแอดมินใหม่แล้ว", "success");
     }
     document.getElementById("adminFormBackdrop").classList.remove("show");
