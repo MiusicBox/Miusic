@@ -746,8 +746,13 @@ document.getElementById("songBulkDeleteBtn").addEventListener("click", () => {
   if (ids.length === 0) return;
   openConfirm(`ต้องการลบเพลงที่เลือกไว้ ${ids.length} เพลงหรือไม่? (เพลงที่มี Order เก่าอยู่แล้วจะถูกปิดการขายแทนการลบ เพื่อไม่ให้ไฟล์เต็มหาย)`, async () => {
     let deletedCount = 0, hiddenCount = 0;
+    // 🔧 แก้บั๊ก (2026-09-17) Bug #4: ใช้ batch endpoint แทนการลูป songHasOrders() N ครั้ง
+    //   เดิม: for (const id of ids) { const hasOrders = await songHasOrders(id); ... }
+    //   → 50 เพลง × 10,000 orders = 500,000 D1 reads
+    //   ใหม่: เรียก songsHaveOrdersBatch(ids) ครั้งเดียว → 1 × orders_total + 1 HTTP request
+    const hasOrdersMap = await songsHaveOrdersBatch(ids);
     for (const id of ids) {
-      const hasOrders = await songHasOrders(id);
+      const hasOrders = !!hasOrdersMap[id];
       if (hasOrders) {
         await updateDoc(doc(db, "songs", id), { status: "hidden", updated_at: new Date().toISOString() });
         hiddenCount++;
@@ -1161,11 +1166,67 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
 });
 
 // เช็คว่าเพลงนี้เคยถูกสั่งซื้อ (มีอยู่ใน Order เก่า) หรือไม่ — ใช้ก่อนลบเพลงจริง
+// 🔧 แก้บั๊ก (2026-09-17) Bug #4: เดิมใช้ getDocs(collection(db,"orders")) โหลด orders ทั้งตาราง
+//   ทุกครั้ง × N เพลงใน bulk delete → D1 quota bomb
+//   ตอนนี้เปลี่ยนไปใช้ endpoint ใหม่ POST /api/db/songs/_has-orders-batch
+//   server โหลด orders ครั้งเดียวแล้ววนลูปใน memory → ลด D1 reads จาก N × orders_total → 1 × orders_total
+//
+//   ฟังก์ชันนี้ยังคงรักษา interface เดิม (รับ songId เดียว → คืน boolean) เพื่อไม่ให้ caller เดิมพัง
+//   แต่ภายในเรียกผ่าน endpoint batch ที่รองรับการส่ง ids หลายตัวพร้อมกัน
+//   (caller ฝั่ง bulk delete ใช้ songsHaveOrdersBatch ตรง ๆ เพื่อประหยัด HTTP requests อีก)
 async function songHasOrders(songId) {
-  const snap = await getDocs(collection(db, "orders"));
-  return snap.docs.some(d => (d.data().items || []).some(item =>
-    item.song_id === songId || (Array.isArray(item.song_ids) && item.song_ids.includes(songId))
-  ));
+  try {
+    const res = await fetch("/api/db/songs/_has-orders-batch", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [String(songId)] }),
+    });
+    if (!res.ok) {
+      // Fallback: ถ้า endpoint ใหม่ยังไม่ deploy หรือ fail → กลับไปใช้วิธีเดิม (โหลดทั้งตาราง)
+      //   เพื่อความเข้ากันได้กับ worker เวอร์ชันเก่า — กัน admin เห็น error หากยังไม่ได้ deploy
+      console.warn("songHasOrders: _has-orders-batch endpoint failed, fallback to legacy method", res.status);
+      const snap = await getDocs(collection(db, "orders"));
+      return snap.docs.some(d => (d.data().items || []).some(item =>
+        item.song_id === songId || (Array.isArray(item.song_ids) && item.song_ids.includes(songId))
+      ));
+    }
+    const data = await res.json();
+    return !!(data && data.results && data.results[String(songId)]);
+  } catch (err) {
+    // Fallback เดียวกัน — ถ้า fetch fail ทั้งหมด (เช่น network) กลับไปวิธีเดิม
+    console.warn("songHasOrders: fetch error, fallback to legacy method", err?.message || err);
+    const snap = await getDocs(collection(db, "orders"));
+    return snap.docs.some(d => (d.data().items || []).some(item =>
+      item.song_id === songId || (Array.isArray(item.song_ids) && item.song_ids.includes(songId))
+    ));
+  }
+}
+
+// 🔧 แก้บั๊ก Bug #4: batch check สำหรับ bulk delete — ลด HTTP requests จาก N → 1
+//   คืน { [songId]: boolean } เหมือนกับ endpoint server
+async function songsHaveOrdersBatch(songIds) {
+  const ids = songIds.map(String).filter(Boolean);
+  if (ids.length === 0) return {};
+  try {
+    const res = await fetch("/api/db/songs/_has-orders-batch", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return (data && data.results) || {};
+  } catch (err) {
+    // Fallback: ถ้า endpoint fail → ใช้ songHasOrders ทีละตัว (ยังช้ากว่าแต่ก็ยังทำงานได้)
+    console.warn("songsHaveOrdersBatch: batch endpoint failed, fallback to per-song method", err?.message || err);
+    const results = {};
+    for (const id of ids) {
+      results[id] = await songHasOrders(id);
+    }
+    return results;
+  }
 }
 
 // ลบไฟล์ของเพลงนี้ออกจาก Cloud (R2) — เรียกหลังลบ doc เพลงสำเร็จแล้วเท่านั้น
@@ -1197,13 +1258,34 @@ async function deleteSongFilesFromStorage(song) {
   }
   if (song.cover_url) {
     try {
-      const [songsSnap, playlistsSnap] = await Promise.all([
-        getDocs(collection(db, "songs")),
-        getDocs(collection(db, "playlists")),
-      ]);
-      const stillUsed =
-        songsSnap.docs.some((d) => d.data().cover_url === song.cover_url) ||
-        playlistsSnap.docs.some((d) => d.data().cover_url === song.cover_url);
+      // 🔧 แก้บั๊ก (2026-09-17) Bug #7: ใช้ endpoint ใหม่ _check-cover-used แทนโหลดทั้งตาราง
+      //   เดิม: getDocs(collection(db,"songs")) + getDocs(collection(db,"playlists"))
+      //   → 1,000 เพลง + 100 playlists = 1,100 D1 reads ต่อครั้ง
+      //   ใหม่: POST /api/db/_meta/_check-cover-used { url } → 1 query × 2 (songs + playlists)
+      //   server ทำ query ด้วย json_extract ที่ DB level ใช้ index ได้
+      let stillUsed = false;
+      try {
+        const res = await fetch("/api/db/_meta/_check-cover-used", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: song.cover_url }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        stillUsed = !!(data && data.used);
+      } catch (err) {
+        // Fallback: ถ้า endpoint ใหม่ยังไม่ deploy → กลับไปใช้วิธีเดิม (โหลดทั้งตาราง)
+        //   เพื่อความเข้ากันได้กับ worker เวอร์ชันเก่า — กัน admin เห็น error หากยังไม่ได้ deploy
+        console.warn("deleteSongFilesFromStorage: _check-cover-used endpoint failed, fallback to legacy method", err?.message || err);
+        const [songsSnap, playlistsSnap] = await Promise.all([
+          getDocs(collection(db, "songs")),
+          getDocs(collection(db, "playlists")),
+        ]);
+        stillUsed =
+          songsSnap.docs.some((d) => d.data().cover_url === song.cover_url) ||
+          playlistsSnap.docs.some((d) => d.data().cover_url === song.cover_url);
+      }
       if (!stillUsed) jobs.push(deleteFromStorage({ url: song.cover_url }));
     } catch (err) {
       console.error("ตรวจสอบการใช้งานรูปปกร่วมไม่สำเร็จ ข้ามการลบรูปปกเพื่อความปลอดภัย:", err);
