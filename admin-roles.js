@@ -39,8 +39,14 @@ function openConfirm(text, onOk) {
 }
 function isMainAdmin() { return window.__currentAdminRole === "main"; }
 
-// ---------------- ตรวจสอบ/บูตสแตรป สิทธิ์ของบัญชีที่ล็อกอินอยู่ ----------------
+// ---------------- ตรวจสอบสิทธิ์ของบัญชีที่ล็อกอินอยู่ ----------------
 // return { role: "main" | "sub" } ถ้าอนุญาตให้เข้าใช้งาน, หรือ null ถ้าไม่อนุญาต
+//
+// 🔒 Security (2026-09-17 P1): ลบ dead code ที่ auto-promote เป็น "main" admin
+//   เดิม: ถ้า getDocs(collection(db,"admins")) คืน empty → auto-promote เป็น main admin
+//   ปัญหา: ในระบบใหม่ (Worker + D1) login สำเร็จ = มี row ใน admin_users → snap.exists() จะ true เสมอ
+//   แต่ถ้า D1 มีปัญหาชั่วคราว → getDocs อาจคืน empty → ทำให้ auto-promote ทำงาน → privilege escalation
+//   แก้: ลบ auto-bootstrap path ออก → bootstrap ทำที่ Worker /api/auth/bootstrap เท่านั้น
 export async function resolveCurrentAdminRole(user) {
   if (!user) return null;
   const ref = doc(db, "admins", user.uid);
@@ -49,20 +55,9 @@ export async function resolveCurrentAdminRole(user) {
     const role = snap.data().role === "main" ? "main" : "sub";
     return { role };
   }
-  // ยังไม่มีเอกสารของบัญชีนี้ — เช็คว่าระบบแอดมินมีใครอยู่แล้วหรือยัง
-  const allSnap = await getDocs(collection(db, "admins"));
-  if (allSnap.empty) {
-    // ยังไม่เคยตั้งค่าระบบแอดมินเลย -> ตั้งบัญชีที่ล็อกอินสำเร็จคนนี้เป็นแอดมินหลักคนแรกอัตโนมัติ
-    await setDoc(ref, {
-      email: user.email || "",
-      display_name: user.email ? user.email.split("@")[0] : "Admin",
-      role: "main",
-      created_at: new Date().toISOString(),
-      created_by: "bootstrap"
-    });
-    return { role: "main" };
-  }
-  return null; // มีระบบแอดมินอยู่แล้ว แต่บัญชีนี้ไม่ได้อยู่ในรายชื่อ -> ไม่อนุญาต
+  // ไม่พบ role ของบัญชีนี้ → ไม่อนุญาต (null)
+  // bootstrap admin คนแรกทำที่หน้า login → ปุ่ม "ตั้งค่าแอดมินคนแรก" → Worker /api/auth/bootstrap
+  return null;
 }
 
 // ---------------- Manage Admins view ----------------
