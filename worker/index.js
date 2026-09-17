@@ -17,7 +17,7 @@
 //   ไม่ต้องแก้ logic เดิมเลย แก้แค่บรรทัด import ให้ชี้มาที่ไฟล์ในเว็บเราแทน CDN ของ Firebase
 // ===================================================
 import { hashPassword, verifyPassword, getSessionAdmin, createSession, deleteSession, buildSessionCookie, buildClearCookie, getCookie, cleanupExpiredSessions } from "./auth-helpers.js";
-import { getDocument, listDocuments, queryDocuments, setDocument, updateDocument, deleteDocument, countDocuments } from "./db-helpers.js";
+import { getDocument, listDocuments, queryDocuments, setDocument, updateDocument, deleteDocument, countDocuments, getDocumentsByIds } from "./db-helpers.js";
 
 // โฟลเดอร์เหล่านี้เดิมใช้ toCloudinaryDownloadUrl() เติม fl_attachment ให้บังคับดาวน์โหลด
 // (ไฟล์เพลงเต็ม/ไฟล์ ZIP ออเดอร์ — ไม่ใช่ไฟล์ที่เปิดเล่น/แสดงผลตรงๆ บนเว็บ)
@@ -367,9 +367,17 @@ async function handleDb(request, env, url) {
     collection === "orders" && parts.length === 2 && request.method === "POST" &&
     parts[1] === "_count-pending";
 
+  // 🔧 (2026-09-17 Phase 2): endpoint สำหรับ batch get documents หลายอันพร้อมกัน
+  // ใช้สำหรับ batch fetch songs ตอนสร้าง ZIP — ลดจำนวน HTTP requests จาก browser → Worker
+  // ต้อง login (admin เท่านั้น) เพราะเป็น endpoint ใหม่ที่ใช้ใน ZIP flow
+  // request: POST /api/db/:collection/_batch-get body: { ids: ["id1", "id2", ...] }
+  // response: { docs: [{ id, data }, ...] }
+  const isBatchGetEndpoint =
+    parts.length === 2 && request.method === "POST" && parts[1] === "_batch-get";
+
   // 🔒 Security (2026-09-11): ดึง admin status เสมอเมื่อเป็น collection "songs" เพื่อตัดสินใจว่าจะ sanitize
   // ฟิลด์ sensitive ออกหรือไม่ — ไม่ใช่แค่ตอน isWrite หรือ non-public collection
-  const needsAdminCheck = isWrite || !PUBLIC_READ_COLLECTIONS.has(collection) || collection === "songs" || isOrdersCountPendingEndpoint;
+  const needsAdminCheck = isWrite || !PUBLIC_READ_COLLECTIONS.has(collection) || collection === "songs" || isOrdersCountPendingEndpoint || isBatchGetEndpoint;
 
   let admin = null;
   if (needsAdminCheck || isOrdersCustomerEndpoint) {
@@ -400,6 +408,25 @@ async function handleDb(request, env, url) {
       return jsonResponse({ count });
     } catch (err) {
       return jsonResponse({ error: "นับออเดอร์ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+    }
+  }
+
+  // 🔧 (2026-09-17 Phase 2): /api/db/:collection/_batch-get — batch get documents หลายอัน
+  // ใช้สำหรับ batch fetch songs ตอนสร้าง ZIP — ลดจำนวน HTTP requests จาก browser → Worker
+  // request: POST body { ids: ["id1", "id2", ...] }
+  // response: { docs: [{ id, data }, ...] }
+  // 🔒 Security: ต้อง login admin เท่านั้น — เพราะ response อาจมี full_file_url ของ songs (sensitive field)
+  if (isBatchGetEndpoint) {
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+    const ids = Array.isArray(body?.ids) ? body.ids : [];
+    if (ids.length === 0) return jsonResponse({ docs: [] });
+    try {
+      const docs = await getDocumentsByIds(env, collection, ids);
+      return jsonResponse({ docs });
+    } catch (err) {
+      return jsonResponse({ error: "batch get ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
     }
   }
 
