@@ -107,11 +107,15 @@ export async function reauthenticateWithCredential(_user, credential) {
   return true;
 }
 
-export async function updatePassword(_user, newPassword) {
+// 🔒 Security (2026-09-17 P0): เพิ่มพารามิเตอร์ currentPassword — ส่งไป verify ฝั่ง server ด้วย
+//   เดิม: ส่งแค่ newPassword → server ไม่ verify เดิม (ถ้ามีคนขโมย cookie เปลี่ยนได้ทันที)
+//   ใหม่: ส่ง currentPassword ไปด้วย → server verify ก่อนเปลี่ยน (กัน session theft)
+//   caller (app-admin.js) ต้องส่ง currentPassword มาด้วย — ถ้าไม่ส่ง server จะ reject (400)
+export async function updatePassword(_user, newPassword, currentPassword) {
   const res = await fetch("/api/auth/change-password", {
     method: "POST", credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ newPassword }),
+    body: JSON.stringify({ newPassword, currentPassword }),
   });
   const body = await safeJson(res);
   if (!res.ok) throw apiError(body, "เปลี่ยนรหัสผ่านไม่สำเร็จ", "auth/unknown-error");
