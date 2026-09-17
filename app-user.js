@@ -1,7 +1,11 @@
 // app-user.js — หน้า User: ดึงข้อมูลจาก Cloudflare D1, เล่นเพลงจาก Cloudflare R2 โดยตรง
 // ===================================================
 import { db } from "./firebase-init.js?v=20260905-fix1";
-import { collection, getDocs, doc, getDoc, query, where, onSnapshot, deleteDoc, queryCustomerOrder, listenCustomerOrders } from "./db-client.js";
+import {
+  collection, getDocs, doc, getDoc, query, where, onSnapshot, deleteDoc, queryCustomerOrder, listenCustomerOrders,
+  // 🔧 (2026-09-17): เพิ่ม fetchCustomerOrdersOnce สำหรับ one-shot fetch (ไม่ polling) ลด D1 quota
+  fetchCustomerOrdersOnce
+} from "./db-client.js";
 import { initCart } from "./app-cart.js?v=20260912-login-fix";
 // ===== ลดราคา + โปรโมชั่น + ออเดอร์ของฉัน (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import {
@@ -1364,11 +1368,16 @@ async function handleTrackOrderSubmit() {
 
 // ===== เพิ่มใหม่: ดูออเดอร์ทั้งหมดของฉัน แบบเรียลไทม์ (ฝั่งลูกค้า ไม่ต้อง Login) — ไม่แตะระบบเดิมด้านบน =====
 // ใช้เบอร์โทร/WhatsApp ที่ผูกกับทุกออเดอร์อยู่แล้วเป็นตัวระบุ + เทียบชื่อคู่กันเหมือนโหมดค้นหาออเดอร์เดียว
-let trackOrderAllUnsub = null;      // เก็บฟังก์ชันยกเลิก onSnapshot listener ปัจจุบัน
+let trackOrderAllUnsub = null;      // เก็บฟังก์ชันยกเลิก onSnapshot listener ปัจจุบัน (legacy — ยังคงไว้, ปัจจุบันไม่ใช้)
 let trackOrderAllOrders = [];       // เก็บผลลัพธ์ล่าสุดไว้ใช้ตอนกดดูรายละเอียดในลิสต์
 let trackOrderAllSlowTimer = null;  // เพิ่มใหม่: ตัวจับเวลาแจ้งเตือน "เน็ตช้า" ของ listener ปัจจุบัน
+// 🔧 (2026-09-17): เก็บ name+phone ปัจจุบันไว้ใช้ตอน visibility เปลี่ยน (กลับเข้า tab ใหม่)
+let trackOrderAllCurrentName = null;
+let trackOrderAllCurrentPhone = null;
+let trackOrderAllVisibilityHandler = null;  // visibility listener ของ Track Order All
 
 function stopTrackOrderAllListener() {
+  // 🔧 (2026-09-17): ไม่มี unsubscribe อีกต่อไป (one-shot fetch) — แต่ล้าง handler เก่าถ้ามี
   if (trackOrderAllUnsub) {
     try { trackOrderAllUnsub(); } catch (err) { /* เพิกเฉย ถ้ายกเลิกซ้ำ */ }
     trackOrderAllUnsub = null;
@@ -1377,6 +1386,14 @@ function stopTrackOrderAllListener() {
     clearTimeout(trackOrderAllSlowTimer);
     trackOrderAllSlowTimer = null;
   }
+  // ล้าง visibility listener ด้วย (ตั้งไว้ใน startTrackOrderAllListener)
+  if (trackOrderAllVisibilityHandler) {
+    document.removeEventListener("visibilitychange", trackOrderAllVisibilityHandler);
+    trackOrderAllVisibilityHandler = null;
+  }
+  // ล้าง state ปัจจุบันเพื่อกัน refresh โดยไม่ตั้งใจ
+  trackOrderAllCurrentName = null;
+  trackOrderAllCurrentPhone = null;
 }
 
 function setTrackOrderAllFeedback(message, type) {
@@ -1484,9 +1501,10 @@ function openTrackOrderAllDetail(order) {
   const deleteBtn = document.getElementById("trackOrderAllDeleteBtn");
   if (deleteBtn) {
     deleteBtn.onclick = () => {
-      // เพิ่มใหม่: ลบแล้วปิดหน้า detail กลับไปที่ลิสต์ — listener เรียลไทม์ (onSnapshot) จะอัปเดตลิสต์ให้เองอัตโนมัติ
+      // 🔧 (2026-09-17): ลบแล้วปิดหน้า detail กลับไปที่ลิสต์ + ยิง refresh ทันที (เดิมใช้ polling อัปเดตเอง)
       handleCustomerDeleteOrder(order, () => {
         closeTrackOrderAllDetail();
+        fetchTrackOrderAllOnce();  // one-shot refresh ลิสต์หลังลบ
       });
     };
   }
@@ -1506,40 +1524,62 @@ function startTrackOrderAllListener(name, phone) {
   if (listEl) listEl.hidden = true;
   if (detailEl) detailEl.hidden = true;
 
+  // 🔧 (2026-09-17): บันทึก name+phone ไว้ใช้ตอน visibility เปลี่ยน (กลับเข้า tab ใหม่)
+  trackOrderAllCurrentName = name;
+  trackOrderAllCurrentPhone = phone;
+
   // เพิ่มใหม่: ถ้ายังไม่ได้รับข้อมูล snapshot แรกภายในเวลาที่กำหนด แจ้งลูกค้าว่าเน็ตช้า (ยังฟังต่อเบื้องหลัง ไม่ยกเลิก)
-  let firstSnapshotReceived = false;
   trackOrderAllSlowTimer = setTimeout(() => {
-    if (!firstSnapshotReceived) {
-      setTrackOrderAllFeedback("เชื่อมต่อระบบช้ากว่าปกติ กรุณาตรวจสอบอินเทอร์เน็ต (ระบบกำลังลองเชื่อมต่ออยู่)", "error");
-    }
+    setTrackOrderAllFeedback("เชื่อมต่อระบบช้ากว่าปกติ กรุณาตรวจสอบอินเทอร์เน็ต (ระบบกำลังลองเชื่อมต่ออยู่)", "error");
   }, 15000);
 
-  // 🔒 Security (2026-09-11): ใช้ listenCustomerOrders แทน onSnapshot บน collection "orders" ทั้งหมด
-  // Server กรองเฉพาะออเดอร์ของลูกค้าคนนี้ส่งกลับมา (เทียบชื่อ+เบอร์แบบ normalize ฝั่ง Server)
-  // กัน browser เห็นข้อมูลคนอื่นทั้งหมด (เดิมโหลด collection "orders" มากรองเองฝั่ง client)
-  // พารามิเตอร์ `phone` ที่ส่งเข้ามาเป็นค่าที่ normalize แล้ว (จาก handleTrackOrderAllSubmit)
-  // Server จะ normalize ซ้ำอีกครั้ง (idempotent — ไม่เปลี่ยนค่า) แล้วเทียบกับ order.whatsapp ที่ normalize แล้วเหมือนเดิม
-  trackOrderAllUnsub = listenCustomerOrders(
-    { customerName: name, whatsapp: phone },
-    (snap) => {
-      firstSnapshotReceived = true;
-      clearTimeout(trackOrderAllSlowTimer);
-      trackOrderAllSlowTimer = null;
-      const matched = snap.docs
-        .map((d) => ({ ...d.data(), _docId: d.id }));
-      matched.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-      trackOrderAllOrders = matched;
-      setTrackOrderAllFeedback("");
-      renderTrackOrderAllList(matched);
-    },
-    (err) => {
-      firstSnapshotReceived = true;
-      clearTimeout(trackOrderAllSlowTimer);
-      trackOrderAllSlowTimer = null;
-      console.error("startTrackOrderAllListener error:", err);
-      setTrackOrderAllFeedback(getFriendlyErrorMessage(err));
-    }
-  );
+  // ยิง one-shot fetch ครั้งแรก
+  fetchTrackOrderAllOnce();
+
+  // 🔧 (2026-09-17): เพิ่ม visibility listener — เมื่อลูกค้าสลับ tab แล้วกลับมา (ขณะ modal เปิดอยู่) ให้ refresh ทันที
+  // กัน listener ซ้ำ: เก็บไว้ใน trackOrderAllVisibilityHandler แล้วลบก่อนผูกใหม่
+  if (trackOrderAllVisibilityHandler) {
+    document.removeEventListener("visibilitychange", trackOrderAllVisibilityHandler);
+  }
+  trackOrderAllVisibilityHandler = () => {
+    if (document.visibilityState !== "visible") return;
+    if (!trackOrderAllCurrentName || !trackOrderAllCurrentPhone) return;
+    // ตรวจว่า modal ยังเปิดอยู่ก่อน refresh กัน refresh ที่ไม่จำเป็น
+    const backdrop = document.getElementById("trackOrderBackdrop");
+    if (!backdrop || !backdrop.classList.contains("show")) return;
+    fetchTrackOrderAllOnce();
+  };
+  document.addEventListener("visibilitychange", trackOrderAllVisibilityHandler);
+}
+
+// 🔧 (2026-09-17): แยก fetchTrackOrderAllOnce ออกมาจาก startTrackOrderAllListener เพื่อ reuse
+//   (ใช้ทั้งตอนเริ่ม, ตอน visibility เปลี่ยน, และตอนหลังลบออเดอร์)
+// ทำงาน: ดึงออเดอร์ทั้งหมดของลูกค้าครั้งเดียว (one-shot) → render ลิสต์
+// ไม่มี polling ต่อเนื่อง — ลด D1 quota อย่างมาก
+async function fetchTrackOrderAllOnce() {
+  if (!trackOrderAllCurrentName || !trackOrderAllCurrentPhone) return;
+  try {
+    // 🔒 Security (2026-09-11): ใช้ fetchCustomerOrdersOnce แทน listenCustomerOrders polling
+    // Server กรองเฉพาะออเดอร์ของลูกค้าคนนี้ส่งกลับมา (เทียบชื่อ+เบอร์แบบ normalize ฝั่ง Server)
+    // กัน browser เห็นข้อมูลคนอื่นทั้งหมด (เดิมโหลด collection "orders" มากรองเองฝั่ง client)
+    const { snap } = await fetchCustomerOrdersOnce({
+      customerName: trackOrderAllCurrentName,
+      whatsapp: trackOrderAllCurrentPhone,
+    });
+    clearTimeout(trackOrderAllSlowTimer);
+    trackOrderAllSlowTimer = null;
+    const matched = snap.docs
+      .map((d) => ({ ...d.data(), _docId: d.id }));
+    matched.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    trackOrderAllOrders = matched;
+    setTrackOrderAllFeedback("");
+    renderTrackOrderAllList(matched);
+  } catch (err) {
+    clearTimeout(trackOrderAllSlowTimer);
+    trackOrderAllSlowTimer = null;
+    console.error("fetchTrackOrderAllOnce error:", err);
+    setTrackOrderAllFeedback(getFriendlyErrorMessage(err));
+  }
 }
 
 async function handleTrackOrderAllSubmit() {
@@ -1599,9 +1639,13 @@ if (trackOrderSubmitBtnEl) trackOrderSubmitBtnEl.addEventListener("click", handl
 // 🔧 (2026-09-17): Badge บนปุ่ม "ติดตามออเดอร์" (trackOrderBtn) — แสดงจำนวนออเดอร์ที่ "active"
 // นับเฉพาะสถานะ: pending_verify (เหลือง - รอตรวจสอบการโอน) + processing (ฟ้า - โอนแล้ว รอส่งเพลง)
 // ไม่นับ: completed (เขียว - สำเร็จ) + cancelled (แดง - ยกเลิก)
-// เมื่อแอดมินเปลี่ยนสถานะเป็น completed/cancelled → ตัวเลขลดลงอัตโนมัติ (ภายใน 4 วิ)
-// เมื่อลูกค้าลบออเดอร์ → ตัวเลขลดลงอัตโนมัติ (ภายใน 4 วิ)
-// ใช้ listenCustomerOrders polling ทุก 4 วิ (เหมือน onSnapshot เดิม) — ใช้ D1 quota นิดหน่อย
+//
+// ⚠️ 2026-09-17 (แก้ Future 4): เดิม polling ทุก 4 วิตลอดเวลา → กิน D1 quota มาก
+//   เปลี่ยนเป็น one-shot fetch + visibility listener:
+//   - ดึงครั้งเดียวตอนโหลดหน้า
+//   - ดึงครั้งเดียวหลัง checkout (ผ่าน window.__refreshTrackOrderBadge)
+//   - ดึงครั้งเดียวตอนลูกค้ากลับเข้า tab (visibilitychange)
+//   ไม่มี polling ต่อเนื่อง — ลด quota ได้มาก
 const TRACK_ORDER_BADGE_INFO_KEY = "music_store_my_orders_info_v1"; // reuse key เดียวกับ app-promotion.js (เก็บ name+whatsapp)
 
 function loadTrackOrderInfoForBadge() {
@@ -1624,39 +1668,65 @@ function updateTrackOrderBadge(count) {
   }
 }
 
-// ฟังออเดอร์ของลูกค้าแบบ polling (ทุก 4 วิ) — อัปเดต badge อัตโนมัติ
+// 🔧 (2026-09-17): ดึง badge count ครั้งเดียว (one-shot) — ไม่ polling
 // ใช้ข้อมูล name+whatsapp จาก localStorage (เดียวกับที่ app-promotion.js ใช้ใน My Orders view)
-// ถ้ายังไม่เคยกรอกข้อมูลใน My Orders → ไม่เริ่ม listener → badge ซ่อนไว้
-let _trackOrderBadgeUnsub = null;
+// ถ้ายังไม่เคยกรอกข้อมูลใน My Orders → ซ่อน badge ไว้
+let _trackOrderBadgeUnsub = null;       // legacy — ยังคงไว้, ปัจจุบันไม่ใช้
+let _trackOrderBadgeVisibilityHandler = null;  // visibility listener ของ badge
 function initTrackOrderBadgeListener() {
-  // ถ้าเคยเริ่มไปแล้ว → ยกเลิก listener เดิมก่อน (กันซ้ำ)
+  // ล้าง visibility handler เดิมถ้ามี (กันซ้ำ)
+  if (_trackOrderBadgeVisibilityHandler) {
+    document.removeEventListener("visibilitychange", _trackOrderBadgeVisibilityHandler);
+    _trackOrderBadgeVisibilityHandler = null;
+  }
+  // legacy cleanup (ถ้ายังมี unsubscribe เก่าค้างอยู่ — ปัจจุบันไม่สร้างใหม่แล้ว)
   if (_trackOrderBadgeUnsub) {
-    _trackOrderBadgeUnsub();
+    try { _trackOrderBadgeUnsub(); } catch (_) {}
     _trackOrderBadgeUnsub = null;
   }
+
   const info = loadTrackOrderInfoForBadge();
   if (!info || !info.name || !info.whatsapp) {
     // ยังไม่มีข้อมูลลูกค้า → ซ่อน badge ไว้
     updateTrackOrderBadge(0);
     return;
   }
-  // เริ่ม listener — ใช้ listenCustomerOrders ที่มีอยู่แล้วใน db-client.js
-  _trackOrderBadgeUnsub = listenCustomerOrders(
-    { customerName: info.name, whatsapp: info.whatsapp },
-    (snap) => {
-      // นับเฉพาะออเดอร์ที่ active: pending_verify + processing
-      let count = 0;
-      snap.forEach((d) => {
-        const status = String(d.data()?.status || "");
-        if (status === "pending_verify" || status === "processing") count += 1;
-      });
-      updateTrackOrderBadge(count);
-    },
-    (err) => {
-      // error — ไม่ทำให้ badge พัง แค่ log
-      console.warn("trackOrderBadge listener error:", err?.message || err);
-    }
-  );
+
+  // ยิง one-shot fetch ครั้งแรก
+  fetchTrackOrderBadgeOnce();
+
+  // 🔧 (2026-09-17): เพิ่ม visibility listener — เมื่อลูกค้าสลับ tab แล้วกลับมา → refresh ทันที
+  _trackOrderBadgeVisibilityHandler = () => {
+    if (document.visibilityState !== "visible") return;
+    fetchTrackOrderBadgeOnce();
+  };
+  document.addEventListener("visibilitychange", _trackOrderBadgeVisibilityHandler);
+}
+
+// 🔧 (2026-09-17): แยก fetchTrackOrderBadgeOnce ออกมาจาก init เพื่อ reuse
+//   (ใช้ทั้งตอน init, ตอน visibility เปลี่ยน, และตอนหลัง checkout ผ่าน __refreshTrackOrderBadge)
+async function fetchTrackOrderBadgeOnce() {
+  const info = loadTrackOrderInfoForBadge();
+  if (!info || !info.name || !info.whatsapp) {
+    updateTrackOrderBadge(0);
+    return;
+  }
+  try {
+    const { snap } = await fetchCustomerOrdersOnce({
+      customerName: info.name,
+      whatsapp: info.whatsapp,
+    });
+    // นับเฉพาะออเดอร์ที่ active: pending_verify + processing
+    let count = 0;
+    snap.forEach((d) => {
+      const status = String(d.data()?.status || "");
+      if (status === "pending_verify" || status === "processing") count += 1;
+    });
+    updateTrackOrderBadge(count);
+  } catch (err) {
+    // error — ไม่ทำให้ badge พัง แค่ log
+    console.warn("fetchTrackOrderBadgeOnce error:", err?.message || err);
+  }
 }
 
 // เริ่ม listener หลังโหลดหน้าเว็บเสร็จ — ถ้าเคยใช้ track order จะมี badge แสดงทันที
