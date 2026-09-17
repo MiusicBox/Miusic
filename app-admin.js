@@ -19,6 +19,28 @@ import {
 import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261101-promo1";
 
 const CACHE = { songs: [], categories: [], djs: [], playlists: [] };
+// 🔧 (2026-09-17 Phase 1): TTL cache สำหรับ admin views — ลด D1 reads ตอนเข้า view ซ้ำ ๆ
+// TTL 60 วินาที — ถ้า admin เพิ่งเข้า view นี้ไม่ถึง 60 วิ จะใช้ cache ไม่ fetch ใหม่
+// ถ้า admin save/delete → invalidateAdminCache() ล้าง timestamp → fetch ใหม่ทันที
+// แยก timestamp ตาม collection เพื่อ optimize — ถ้าแก้แค่ songs ไม่ต้อง fetch categories ใหม่
+const ADMIN_CACHE_TTL_MS = 60 * 1000;
+const CACHE_AT = { songs: 0, categories: 0, djs: 0, playlists: 0 };
+function invalidateAdminCache(collection) {
+  // collection = "songs" | "categories" | "djs" | "playlists" | undefined (undefined = ล้างทั้งหมด)
+  if (collection && CACHE_AT.hasOwnProperty(collection)) {
+    CACHE_AT[collection] = 0;
+  } else {
+    CACHE_AT.songs = 0;
+    CACHE_AT.categories = 0;
+    CACHE_AT.djs = 0;
+    CACHE_AT.playlists = 0;
+  }
+}
+// Helper: ตรวจว่า cache ของ collection นี้ยัง fresh หรือไม่ (อายุ < 60 วิ)
+function isAdminCacheFresh(collection) {
+  if (!CACHE_AT[collection]) return false;
+  return (Date.now() - CACHE_AT[collection]) < ADMIN_CACHE_TTL_MS;
+}
 let currentAdminRole = null; // "main" | "sub" — ของบัญชีที่ล็อกอินอยู่ตอนนี้
 let editingSongId = null, editingCatId = null, editingDjId = null, editingPlaylistId = null;
 let pendingSongFile = null, pendingCoverFile = null, pendingDjImageFile = null, existingDjImageUrl = "";
@@ -364,14 +386,38 @@ document.getElementById("qaPromotions").addEventListener("click", () => {
   showView("view-promotions"); initPromotionsView();
 });
 
+// 🔧 (2026-09-17 Phase 1): loadDashboard ใช้ TTL cache ลด D1 reads
+//   - ถ้า CACHE ของ collection ยัง fresh (60 วิ) → skip fetch ใช้ cache
+//   - ถ้า stale → fetch เฉพาะที่ stale แบบ parallel
+//   - ถ้า admin save/delete → invalidateAdminCache ล้าง timestamp → ครั้งถัดไป fetch ใหม่
 async function loadDashboard() {
-  const [songsSnap, catSnap, djSnap, playlistSnap] = await Promise.all([
-    getDocs(collection(db, "songs")), getDocs(collection(db, "categories")), getDocs(collection(db, "djs")), getDocs(collection(db, "playlists"))
-  ]);
-  document.getElementById("statSongs").textContent = songsSnap.size;
-  document.getElementById("statCats").textContent = catSnap.size;
-  document.getElementById("statDjs").textContent = djSnap.size;
-  document.getElementById("statPlaylists").textContent = playlistSnap.size;
+  // ตัดสินใจว่า collection ไหนต้อง fetch ใหม่
+  const needSongs = !isAdminCacheFresh("songs");
+  const needCats = !isAdminCacheFresh("categories");
+  const needDjs = !isAdminCacheFresh("djs");
+  const needPlaylists = !isAdminCacheFresh("playlists");
+
+  const fetches = [];
+  const fetchKeys = [];
+  if (needSongs) { fetches.push(getDocs(collection(db, "songs"))); fetchKeys.push("songs"); }
+  if (needCats) { fetches.push(getDocs(collection(db, "categories"))); fetchKeys.push("categories"); }
+  if (needDjs) { fetches.push(getDocs(collection(db, "djs"))); fetchKeys.push("djs"); }
+  if (needPlaylists) { fetches.push(getDocs(collection(db, "playlists"))); fetchKeys.push("playlists"); }
+
+  if (fetches.length > 0) {
+    const now = Date.now();
+    const results = await Promise.all(fetches);
+    results.forEach((snap, i) => {
+      const key = fetchKeys[i];
+      CACHE[key] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      CACHE_AT[key] = now;
+    });
+  }
+
+  document.getElementById("statSongs").textContent = CACHE.songs.length;
+  document.getElementById("statCats").textContent = CACHE.categories.length;
+  document.getElementById("statDjs").textContent = CACHE.djs.length;
+  document.getElementById("statPlaylists").textContent = CACHE.playlists.length;
   // 🔧 (2026-09-16): อัปเดต badge ออเดอร์ "รอตรวจสอบการโอน" ทุกครั้งที่กลับหน้า dashboard
   updateOrdersBadge();
 }
@@ -385,19 +431,46 @@ async function loadDashboard() {
 //
 // รับ optional `orders` array — ถ้าส่งมา จะใช้ตรงๆ ไม่ query DB ซ้ำ (ประหยัด Cloudflare D1 quota)
 // ถ้าไม่ส่ง → จะ query ใหม่ (ใช้ตอน login ครั้งแรก ก่อน state.allOrders จะถูกโหลด)
+//
+// 🔧 (2026-09-17 Phase 1): เปลี่ยนจาก getDocs(collection(db,"orders")) → ยิง endpoint ใหม่ _count-pending
+//   เดิม: load orders ทั้งหมดมา browser แล้ว filter ฝั่ง client → กิน D1 reads มาก (10,000 orders = 10,000 reads)
+//   ใหม่: SELECT COUNT(*) WHERE status='pending_verify' → D1 คืนแค่ 1 row
+//   fallback: ถ้า endpoint ใหม่ error → ใช้วิธีเดิม (getDocs + filter) ไม่ทำให้ badge พัง
 // ฟังก์ชันนี้ถูก expose ผ่าน window.__updateOrdersBadge ให้ orders.js เรียกได้หลังเปลี่ยนสถานะ/สร้าง/ลบออเดอร์
 async function updateOrdersBadge(orders) {
   const badgeEl = document.getElementById("ordersBadge");
   if (!badgeEl) return;
   try {
-    let ordersList = orders;
-    if (!ordersList) {
-      // ไม่ได้ส่ง orders มา → query เอง (กรณี login ครั้งแรก หรือกลับหน้า dashboard)
-      const snap = await getDocs(collection(db, "orders"));
-      ordersList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    let count;
+    if (Array.isArray(orders)) {
+      // กรณี orders.js ส่ง orders มาให้ → ใช้ตรงๆ ไม่ query DB (ประหยัด quota สุด)
+      count = orders.filter(o => String(o?.status || "") === "pending_verify").length;
+    } else {
+      // กรณีไม่ได้ส่ง orders มา → ยิง count endpoint ใหม่ (ใช้ตอน login ครั้งแรก)
+      try {
+        const res = await fetch("/api/db/orders/_count-pending", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+        });
+        if (res.ok) {
+          const body = await res.json();
+          count = Number(body?.count) || 0;
+        } else {
+          // fallback: ถ้า endpoint ใหม่ error (เช่น deploy ไม่ครบ) → ใช้วิธีเดิม
+          console.warn("updateOrdersBadge: _count-pending endpoint failed, falling back to getDocs", res.status);
+          const snap = await getDocs(collection(db, "orders"));
+          const ordersList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          count = ordersList.filter(o => String(o?.status || "") === "pending_verify").length;
+        }
+      } catch (fetchErr) {
+        // fallback: ถ้า fetch throw (network error) → ใช้วิธีเดิม
+        console.warn("updateOrdersBadge: _count-pending fetch error, falling back to getDocs", fetchErr?.message);
+        const snap = await getDocs(collection(db, "orders"));
+        const ordersList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        count = ordersList.filter(o => String(o?.status || "") === "pending_verify").length;
+      }
     }
-    // นับเฉพาะออเดอร์ที่ status === "pending_verify"
-    const count = (ordersList || []).filter(o => String(o?.status || "") === "pending_verify").length;
     // ลบ class ระดับสีเดิมออกก่อน แล้วค่อยตั้งใหม่ตามจำนวน
     badgeEl.classList.remove("warn", "alert", "critical", "show");
     if (count > 0) {
@@ -421,14 +494,30 @@ let songSelectMode = false;
 const selectedSongIds = new Set();
 let currentSongListView = [];
 
+// 🔧 (2026-09-17 Phase 1): loadSongs ใช้ TTL cache ลด D1 reads (เหมือน loadDashboard)
+// ถ้า admin เข้าหน้า "จัดการเพลง" หลายครั้งภายใน 60 วิ → skip fetch ใช้ cache
 async function loadSongs() {
-  const [songsSnap, catSnap, djSnap, playlistSnap] = await Promise.all([
-    getDocs(collection(db, "songs")), getDocs(collection(db, "categories")), getDocs(collection(db, "djs")), getDocs(collection(db, "playlists"))
-  ]);
-  CACHE.songs = songsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  CACHE.categories = catSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  CACHE.djs = djSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  CACHE.playlists = playlistSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const needSongs = !isAdminCacheFresh("songs");
+  const needCats = !isAdminCacheFresh("categories");
+  const needDjs = !isAdminCacheFresh("djs");
+  const needPlaylists = !isAdminCacheFresh("playlists");
+
+  const fetches = [];
+  const fetchKeys = [];
+  if (needSongs) { fetches.push(getDocs(collection(db, "songs"))); fetchKeys.push("songs"); }
+  if (needCats) { fetches.push(getDocs(collection(db, "categories"))); fetchKeys.push("categories"); }
+  if (needDjs) { fetches.push(getDocs(collection(db, "djs"))); fetchKeys.push("djs"); }
+  if (needPlaylists) { fetches.push(getDocs(collection(db, "playlists"))); fetchKeys.push("playlists"); }
+
+  if (fetches.length > 0) {
+    const now = Date.now();
+    const results = await Promise.all(fetches);
+    results.forEach((snap, i) => {
+      const key = fetchKeys[i];
+      CACHE[key] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      CACHE_AT[key] = now;
+    });
+  }
   populateSelect("fCategory", CACHE.categories, "id", "category_name");
   populateSelect("fDj", CACHE.djs, "id", "dj_name");
   populateSelect("fPlaylist", CACHE.playlists, "id", "playlist_name");
@@ -636,6 +725,7 @@ document.getElementById("songBulkDeleteBtn").addEventListener("click", () => {
     document.getElementById("songSelectModeBtn").style.background = "";
     document.getElementById("songSelectModeBtn").style.color = "";
     showToast(`ลบแล้ว ${deletedCount} เพลง${hiddenCount > 0 ? ` · ปิดการขาย ${hiddenCount} เพลง (มี Order เก่า)` : ""}`, "success");
+    invalidateAdminCache("songs");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
     loadSongs();
     loadDashboard();
   });
@@ -1010,6 +1100,7 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
     hideCancelButton("fullSongUploadProgressWrap");
     showToast("บันทึกเพลงสำเร็จ", "success");
     document.getElementById("songFormBackdrop").classList.remove("show");
+    invalidateAdminCache("songs");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
     loadSongs();
     loadDashboard();
   } catch (err) {
@@ -1093,6 +1184,7 @@ async function confirmDeleteSong(id) {
       async () => {
         await updateDoc(doc(db, "songs", id), { status: "hidden", updated_at: new Date().toISOString() });
         showToast("ปิดการขายเพลงนี้แล้ว (ไม่ได้ลบไฟล์)", "success");
+        invalidateAdminCache("songs");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
         loadSongs();
         loadDashboard();
       }
@@ -1106,15 +1198,22 @@ async function confirmDeleteSong(id) {
     // ลบไฟล์ cloud แบบ background — ไม่รอ/ไม่ block UI และไม่ทำให้การลบเพลงล้มเหลวถ้าไฟล์ cloud ลบไม่สำเร็จ
     deleteSongFilesFromStorage(songData);
     showToast("ลบเพลงแล้ว", "success");
+    invalidateAdminCache("songs");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
     loadSongs();
     loadDashboard();
   });
 }
 
 // ================= CATEGORIES =================
+// 🔧 (2026-09-17 Phase 1): loadCategories ใช้ TTL cache (60 วิ) ลด D1 reads
 async function loadCategories() {
-  const snap = await getDocs(collection(db, "categories"));
-  CACHE.categories = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (isAdminCacheFresh("categories")) {
+    // ใช้ cache — skip fetch
+  } else {
+    const snap = await getDocs(collection(db, "categories"));
+    CACHE.categories = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    CACHE_AT.categories = Date.now();
+  }
   const wrap = document.getElementById("catList");
   if (CACHE.categories.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีหมวดหมู่</div>'; return; }
   wrap.innerHTML = CACHE.categories.map(c => `
@@ -1132,7 +1231,9 @@ async function loadCategories() {
   wrap.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
     openConfirm("ลบหมวดหมู่นี้หรือไม่?", async () => {
       await deleteDoc(doc(db, "categories", b.getAttribute("data-del")));
-      showToast("ลบแล้ว", "success"); loadCategories(); loadDashboard();
+      showToast("ลบแล้ว", "success");
+      invalidateAdminCache("categories");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
+      loadCategories(); loadDashboard();
     });
   }));
 }
@@ -1152,14 +1253,20 @@ document.getElementById("catSaveBtn").addEventListener("click", async () => {
   try {
     if (editingCatId) await updateDoc(doc(db, "categories", editingCatId), payload);
     else { payload.created_at = new Date().toISOString(); await addDoc(collection(db, "categories"), payload); }
-    showToast("บันทึกแล้ว", "success"); document.getElementById("catFormBackdrop").classList.remove("show"); loadCategories(); loadDashboard();
+    showToast("บันทึกแล้ว", "success"); document.getElementById("catFormBackdrop").classList.remove("show");
+    invalidateAdminCache("categories");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
+    loadCategories(); loadDashboard();
   } catch (err) { showToast("บันทึกไม่สำเร็จ: " + err.message, "error"); }
 });
 
 // ================= DJs =================
+// 🔧 (2026-09-17 Phase 1): loadDjs ใช้ TTL cache (60 วิ) ลด D1 reads
 async function loadDjs() {
-  const snap = await getDocs(collection(db, "djs"));
-  CACHE.djs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (!isAdminCacheFresh("djs")) {
+    const snap = await getDocs(collection(db, "djs"));
+    CACHE.djs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    CACHE_AT.djs = Date.now();
+  }
   const wrap = document.getElementById("djList");
   if (CACHE.djs.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มี DJ</div>'; return; }
   wrap.innerHTML = CACHE.djs.map(d => `
@@ -1177,7 +1284,9 @@ async function loadDjs() {
   wrap.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
     openConfirm("ลบ DJ นี้หรือไม่?", async () => {
       await deleteDoc(doc(db, "djs", b.getAttribute("data-del")));
-      showToast("ลบแล้ว", "success"); loadDjs(); loadDashboard();
+      showToast("ลบแล้ว", "success");
+      invalidateAdminCache("djs");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
+      loadDjs(); loadDashboard();
     });
   }));
 }
@@ -1219,7 +1328,9 @@ document.getElementById("djSaveBtn").addEventListener("click", async function ()
     const payload = { dj_name: name, description: document.getElementById("fDjDesc").value.trim(), image_url: imageUrl };
     if (editingDjId) await updateDoc(doc(db, "djs", editingDjId), payload);
     else { payload.created_at = new Date().toISOString(); await addDoc(collection(db, "djs"), payload); }
-    showToast("บันทึกแล้ว", "success"); document.getElementById("djFormBackdrop").classList.remove("show"); loadDjs(); loadDashboard();
+    showToast("บันทึกแล้ว", "success"); document.getElementById("djFormBackdrop").classList.remove("show");
+    invalidateAdminCache("djs");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
+    loadDjs(); loadDashboard();
   } catch (err) {
     showToast("บันทึกไม่สำเร็จ: " + err.message, "error");
   }
@@ -1227,9 +1338,13 @@ document.getElementById("djSaveBtn").addEventListener("click", async function ()
 });
 
 // ================= PLAYLISTS =================
+// 🔧 (2026-09-17 Phase 1): loadPlaylists ใช้ TTL cache (60 วิ) ลด D1 reads
 async function loadPlaylists() {
-  const snap = await getDocs(collection(db, "playlists"));
-  CACHE.playlists = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (!isAdminCacheFresh("playlists")) {
+    const snap = await getDocs(collection(db, "playlists"));
+    CACHE.playlists = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    CACHE_AT.playlists = Date.now();
+  }
   const wrap = document.getElementById("playlistList");
   if (CACHE.playlists.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีเพลย์ลิสต์</div>'; return; }
   wrap.innerHTML = CACHE.playlists.map(p => `
@@ -1247,7 +1362,9 @@ async function loadPlaylists() {
   wrap.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
     openConfirm("ลบเพลย์ลิสต์นี้หรือไม่? (เพลงในเพลย์ลิสต์จะไม่ถูกลบ แค่ไม่ได้อยู่ในเพลย์ลิสต์นี้อีก)", async () => {
       await deleteDoc(doc(db, "playlists", b.getAttribute("data-del")));
-      showToast("ลบแล้ว", "success"); loadPlaylists(); loadDashboard();
+      showToast("ลบแล้ว", "success");
+      invalidateAdminCache("playlists");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
+      loadPlaylists(); loadDashboard();
     });
   }));
 }
@@ -1456,7 +1573,9 @@ document.getElementById("playlistSaveBtn").addEventListener("click", async funct
     };
     if (editingPlaylistId) await updateDoc(doc(db, "playlists", editingPlaylistId), payload);
     else { payload.created_at = new Date().toISOString(); await addDoc(collection(db, "playlists"), payload); }
-    showToast("บันทึกแล้ว", "success"); document.getElementById("playlistFormBackdrop").classList.remove("show"); loadPlaylists(); loadDashboard();
+    showToast("บันทึกแล้ว", "success"); document.getElementById("playlistFormBackdrop").classList.remove("show");
+    invalidateAdminCache("playlists");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
+    loadPlaylists(); loadDashboard();
   } catch (err) {
     showToast("บันทึกไม่สำเร็จ: " + err.message, "error");
   }
