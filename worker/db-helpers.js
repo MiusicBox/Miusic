@@ -93,6 +93,31 @@ export async function queryDocuments(env, collection, { wheres = [], orderBy = n
   return results.map((row) => ({ id: row.id, data: JSON.parse(row.data) }));
 }
 
+// ===================================================
+// 🔧 (2026-09-17 Phase 1): countDocuments — นับ documents ตาม where clause
+// ใช้สำหรับ count pending orders badge — ประหยัด D1 reads มาก (1 read แทน 10,000+)
+//   เดิม: getDocs(collection(db,"orders")) → load ทุก row มาที่ browser แล้ว filter
+//   ใหม่: SELECT COUNT(*) → D1 คืนแค่ตัวเลข 1 row
+// ใช้ same field whitelist + same where format เหมือน queryDocuments
+// ===================================================
+export async function countDocuments(env, collection, { wheres = [] } = {}) {
+  if (collection === "admins") {
+    throw new Error("collection admins ไม่รองรับการ count แบบมีเงื่อนไข");
+  }
+  let sql = "SELECT COUNT(*) AS c FROM documents WHERE collection = ?";
+  const binds = [collection];
+  for (const w of wheres) {
+    if (w.op !== "==") throw new Error(`ไม่รองรับ where operator: ${w.op}`);
+    if (!ALLOWED_QUERY_FIELDS.has(w.field)) {
+      throw new Error(`field ไม่ได้รับอนุญาตใน count: ${w.field}`);
+    }
+    sql += ` AND json_extract(data, '$.${w.field}') = ?`;
+    binds.push(w.value);
+  }
+  const row = await env.DB.prepare(sql).bind(...binds).first();
+  return (row && row.c) || 0;
+}
+
 // setDoc: สร้างใหม่หรือเขียนทับทั้งเอกสาร (merge=false) หรือ shallow-merge ฟิลด์ที่ส่งมาเข้ากับของเดิม (merge=true)
 // — พฤติกรรมเหมือน Firestore setDoc(ref, data, {merge:true}) ทุกประการ (shallow merge ระดับ field บนสุด)
 export async function setDocument(env, collection, id, data, merge, actorEmail) {
