@@ -44,6 +44,8 @@ export async function verifyPassword(password, stored) {
     keyMaterial, 256
   );
   const gotHashB64 = bytesToBase64(new Uint8Array(bits));
+  // เทียบความยาวเท่ากันก่อนเพื่อลด timing side-channel เบื้องต้น (ไม่ใช่ constant-time เต็มรูปแบบ
+  // แต่เพียงพอสำหรับ use case นี้ ซึ่งเดิม Firebase Auth ก็ไม่ได้เปิดเผยรายละเอียดการเทียบนี้ให้ client อยู่แล้ว)
   return gotHashB64.length === expectedHashB64.length && gotHashB64 === expectedHashB64;
 }
 
@@ -80,6 +82,7 @@ export async function deleteSession(env, token) {
   await env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(token).run();
 }
 
+// คืนค่า admin_users row (ไม่รวม password_hash) ของ session ปัจจุบัน หรือ null ถ้าไม่ได้ login/session หมดอายุ
 export async function getSessionAdmin(request, env) {
   const token = getCookie(request, "session_token");
   if (!token) return null;
@@ -97,11 +100,21 @@ export async function getSessionAdmin(request, env) {
   return admin || null;
 }
 
+// 🔒 Maintenance (2026-09-16): ทำความสะอาด session ที่หมดอายุทั้งหมดออกจากตาราง sessions
+// เหตุผล: getSessionAdmin() ด้านบนลบเฉพาะ session ของคนที่กลับมาใช้เท่านั้น — session ของคนที่
+// ไม่เคยกลับมา (เช่น ปิดเบราว์เซอร์ไปเลย) จะค้างใน DB ตลอด สะสมเป็นขยะ
+// ฟังก์ชันนี้ลบทั้งหมดที่ expires_at < ตอนนี้ กันตาราง sessions บวมโดยไม่จำเป็น
+//
+// ความปลอดภัย: try/catch ภายใน — ถ้า cleanup พัง (เช่น DB ชั่วคราว) จะไม่ throw ออกไป
+// ทำให้ caller (login handler ใน worker/index.js) ไม่พังไปด้วย — คนยัง login ได้ปกติ
+// เรียกครั้งเดียวตอน login (ดู worker/index.js: handleAuth "login") พอ — ไม่ต้องเรียกทุก request
 export async function cleanupExpiredSessions(env) {
   try {
     await env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?")
       .bind(new Date().toISOString()).run();
   } catch (err) {
+    // ไม่ throw — cleanup ไม่สำเร็จไม่ควรทำให้ login พัง (เป็น background maintenance)
+    // Worker ไม่มี console ที่ user เห็น แต่ค่า console.* ยังถูกเก็บใน Worker logs ของ Cloudflare
     console.error("cleanupExpiredSessions error:", err?.message || String(err));
   }
 }
