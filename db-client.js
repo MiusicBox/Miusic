@@ -197,6 +197,10 @@ export async function queryCustomerOrder({ receiptNumber, customerName, whatsapp
 // ฟังออเดอร์ทั้งหมดของลูกค้าคนหนึ่ง แบบ polling ทุก 4 วิ (เหมือน onSnapshot เดิม)
 // Server กรองเฉพาะออเดอร์ที่เป็นของลูกค้าคนนี้ส่งกลับมา ไม่ส่งข้อมูลคนอื่นมาให้ browser
 // คืนฟังก์ชัน unsubscribe — โครงสร้างเหมือน onSnapshot ทุกประการ เพื่อให้สลับเข้าแทนได้ง่าย
+//
+// ⚠️ 2026-09-17: ปัจจุบัน caller ทั้งหมดย้ายไปใช้ fetchCustomerOrdersOnce แทนแล้ว (เพื่อลด D1 quota)
+//   แต่ยังคงไว้ในไฟล์นี้้ไม่ลบ (กฎ "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน") เผื่ออนาคตต้องการ
+//   realtime แบบ polling กลับมาใช้ในจุดอื่น
 export function listenCustomerOrders({ customerName, whatsapp }, onNext, onError) {
   let stopped = false;
   let lastSerialized = null;
@@ -230,4 +234,27 @@ export function listenCustomerOrders({ customerName, whatsapp }, onNext, onError
     stopped = true;
     clearTimeout(timer);
   };
+}
+
+// ===================================================
+// 🔧 (2026-09-17): One-shot fetch สำหรับเรียกดูออเดอร์ของลูกค้า — ไม่ polling
+// เป้าหมาย: ลด D1 read quota ที่บวมจากการ polling ทุก 4 วิตลอดเวลา
+//   เดิม listenCustomerOrders polling ทุก 4 วิตตลอดที่หน้าเว็บเปิด → กิน quota มาก
+//   ใหม่: ดึงครั้งเดียวเมื่อ user action (โหลดหน้า / เข้าแท็บ / กดรีเฟรช / checkout / กลับเข้า tab)
+//   ไม่มี polling ต่อเนื่อง — ลูกค้าที่รอ WhatsApp บอกอยู่แล้วไม่ต้องเห็นข้อมูล realtime
+//
+// คืนค่า: { docs: [{ id, data }], snap: QuerySnap } — snap สำหรับความเข้ากันได้กับ caller เดิม
+//   ที่ใช้ snap.forEach(...) / snap.docs / snap.empty / snap.size
+// throw error ถ้า fetch ไม่สำเร็จ (caller ต้อง try/catch เอง)
+// ===================================================
+export async function fetchCustomerOrdersOnce({ customerName, whatsapp }) {
+  const res = await apiFetch(`/orders/_customer-list`, {
+    method: "POST",
+    body: JSON.stringify({
+      customer_name: customerName,
+      whatsapp: whatsapp,
+    }),
+  });
+  const docs = (res && res.docs) || [];
+  return { docs, snap: makeQuerySnap(docs) };
 }
