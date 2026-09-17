@@ -4,8 +4,10 @@
 // ===================================================
 import { db } from "./firebase-init.js?v=20260905-fix1";
 import {
-  collection, getDocs, getDoc, setDoc, query, orderBy, where, doc, updateDoc, deleteDoc
-} from "./db-client.js";
+  collection, getDocs, getDoc, setDoc, query, orderBy, where, doc, updateDoc, deleteDoc,
+  // 🔧 (2026-09-17 Phase 2): เพิ่ม getDocsByIds สำหรับ batch fetch songs (ลด HTTP requests + Worker invocations)
+  getDocsByIds
+} from "./db-client.js?v=20260917-polling-fix";
 import { uploadOrderZip, deleteFromStorage } from "./storage-adapter.js?v=20260904-rawzip";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่) — import มาจาก app-promotion.js กลาง (รวมไฟล์เดียว) =====
 import {
@@ -308,6 +310,24 @@ async function createOrderZip(orderId) {
       throw new Error("ออเดอร์นี้ไม่มีรายการเพลงสำหรับสร้าง ZIP");
     }
 
+    // 🔧 (2026-09-17 Phase 2): Pre-fetch ทุกเพลงในครั้งเดียวแบบ batch
+    //   เดิม: แต่ละเพลงยิง getDoc ทีละอัน = N HTTP requests = N Worker invocations (ช้า)
+    //   ใหม่: ยิง batch endpoint ครั้งเดียว = 1 HTTP request = 1 Worker invocation (เร็วขึ้นมาก)
+    //   D1 rows read เท่าเดิม แต่ลด Worker invocations และ latency อย่างมาก
+    const allSongIds = [
+      ...orderSongsGrouped.singles.map(s => s.id),
+      ...orderSongsGrouped.playlists.flatMap(p => p.songs.map(s => s.id)),
+    ];
+    let songSnapMap = new Map();
+    if (allSongIds.length > 0) {
+      try {
+        songSnapMap = await getDocsByIds("songs", allSongIds);
+      } catch (err) {
+        // fallback: ถ้า batch endpoint พัง → ใช้ getDoc ทีละอันเหมือนเดิม (เก็บเป็น Map ว่าง → addSongToZip จะยิง getDoc เอง)
+        console.warn("createOrderZip: batch getDocsByIds failed, falling back to per-song getDoc", err?.message || err);
+      }
+    }
+
     const JSZip = await loadJSZip();
     const zip = new JSZip();
     // usedNames แยกสำหรับ root และแต่ละ playlist folder เพื่อกันชื่อไฟล์ซ้ำกันภายใน path เดียวกัน
@@ -318,9 +338,15 @@ async function createOrderZip(orderId) {
     // folderPath = "" → ใส่ที่ root (เพลงเดี่ยว)
     // folderPath = "PlaylistName" → ใส่ใน folder ของ playlist (เพลง playlist)
     // usedNames = Set สำหรับ track ชื่อไฟล์ที่ใช้แล้วใน path นั้น เพื่อ unique ชื่อไฟล์
+    // 🔧 (2026-09-17 Phase 2): ใช้ songSnapMap (pre-fetched) ถ้ามี แทนการยิง getDoc ทีละอัน
     async function addSongToZip(songId, songTitle, folderPath, usedNames) {
       songIndex += 1;
-      const songSnap = await getDoc(doc(db, "songs", songId));
+      // 🔧 (2026-09-17 Phase 2): ใช้ cache จาก batch fetch ก่อน ถ้ามี
+      let songSnap = songSnapMap.get(songId);
+      if (!songSnap) {
+        // fallback: ถ้า batch fetch พัง หรือ id ไม่อยู่ใน cache → ยิง getDoc ทีละอันเหมือนเดิม
+        songSnap = await getDoc(doc(db, "songs", songId));
+      }
       if (!songSnap.exists()) {
         throw new Error(`ไม่พบข้อมูลเพลง "${songTitle || songId}"`);
       }
@@ -1488,9 +1514,37 @@ async function openFullFilesModal(orderId) {
   const items = order.items || [];
   // แต่ละ item ปกติแทนเพลง 1 เพลง (มี song_id) — ยกเว้น item ที่เป็น "playlist" (มาจาก Order ผสมที่สั่งจาก
   // ตะกร้าฝั่งลูกค้า) ซึ่งไม่มี song_id ตรงๆ ต้องขยายเป็นรายเพลงจาก song_ids ที่ snapshot ไว้ตอนสั่งซื้อก่อน
+
+  // 🔧 (2026-09-17 Phase 2): Pre-fetch ทุกเพลงแบบ batch ก่อน แทนการยิง getDoc ทีละอัน
+  //   ลด HTTP requests + Worker invocations + latency ตอนเปิด modal
+  const allSongIdsInModal = [];
+  items.forEach((item) => {
+    if (item?.kind === "playlist") {
+      if (Array.isArray(item.song_ids)) {
+        allSongIdsInModal.push(...item.song_ids);
+      }
+    } else if (item?.song_id) {
+      allSongIdsInModal.push(item.song_id);
+    }
+  });
+  let songSnapMapModal = new Map();
+  if (allSongIdsInModal.length > 0) {
+    try {
+      songSnapMapModal = await getDocsByIds("songs", allSongIdsInModal);
+    } catch (err) {
+      // fallback: ถ้า batch พัง → downloadRowsOf จะยิง getDoc เองเหมือนเดิม
+      console.warn("openFullFilesModal: batch getDocsByIds failed, falling back to per-song getDoc", err?.message || err);
+    }
+  }
+
   const downloadRowsOf = async (songId, fallbackTitle) => {
     try {
-      const snap = await getDoc(doc(db, "songs", songId));
+      // 🔧 (2026-09-17 Phase 2): ใช้ cache จาก batch fetch ก่อน ถ้ามี
+      let snap = songSnapMapModal.get(songId);
+      if (!snap) {
+        // fallback: ถ้า batch fetch พัง หรือ id ไม่อยู่ใน cache → ยิง getDoc ทีละอันเหมือนเดิม
+        snap = await getDoc(doc(db, "songs", songId));
+      }
       const song = snap.exists() ? snap.data() : null;
       // 🔒 Shared-file (Lazy-shared): ถ้าไม่มี full_file_url ให้ fallback ใช้ file_url แทน
       // เพราะเพลงใหม่บางเพลงใช้ไฟล์เดียวกันทั้งตอน preview และตอนส่งลูกค้า เพื่อประหยัดพื้นที่ R2
@@ -1617,7 +1671,9 @@ async function handleStatusChange(orderId, newStatus) {
   }
   try {
     await updateDoc(doc(db, "orders", orderId), { status: newStatus, updated_at: new Date().toISOString() });
-    await refreshDashboardAndHistory();
+    // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client แทน re-fetch ทั้งหมด (ลด D1 reads)
+    await updateOrderInState(orderId, { status: newStatus, updated_at: new Date().toISOString() });
+    renderFromState();
   } catch (err) {
     alert("เปลี่ยนสถานะไม่สำเร็จ: " + err.message);
   }
@@ -1626,18 +1682,41 @@ async function handleStatusChange(orderId, newStatus) {
 async function confirmPaymentAndCreateZip(orderId) {
   const result = await createOrderZip(orderId);
   if (!result.ok) {
-    await refreshDashboardAndHistory();
+    // 🔧 (2026-09-17 Phase 2): ใช้ renderFromState แทน refreshDashboardAndHistory (ออเดอร์ยังอยู่ status เดิม)
+    //   เพราะ createOrderZip อัปเดต zip_status='failed' ภายในตัวมันเอง → state ต้อง sync ด้วย
+    //   แต่ fallback: ถ้า updateOrderInState ไม่เจอ order → จะเรียก refreshDashboardAndHistory เอง
+    await updateOrderInState(orderId, {
+      zip_status: "failed",
+      zip_error: result.error,
+      updated_at: new Date().toISOString(),
+    });
+    renderFromState();
     orderToast(`ยืนยันโอนไม่สำเร็จ: ${result.error} — ออเดอร์ยังคงรอตรวจสอบ และสามารถกดสร้าง ZIP ใหม่ได้`, "error_long");
     return;
   }
 
   try {
+    const now = new Date().toISOString();
     await updateDoc(doc(db, "orders", orderId), {
       status: "processing",
-      payment_verified_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      payment_verified_at: now,
+      updated_at: now,
     });
-    await refreshDashboardAndHistory();
+    // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client แทน re-fetch ทั้งหมด (ลด D1 reads)
+    //   รวมถึง zip fields ที่ createOrderZip ตั้งไว้ (zip_status, zip_download_url, etc.)
+    //   เพื่อให้ list แสดง ZIP link ใหม่ทันที
+    const order = state.allOrders.find(o => o.id === orderId);
+    await updateOrderInState(orderId, {
+      status: "processing",
+      payment_verified_at: now,
+      updated_at: now,
+      // sync zip fields จาก result ด้วย (createOrderZip คืน url กลับมา)
+      ...(result.url ? { zip_download_url: result.url } : {}),
+      ...(result.publicId ? { zip_public_id: result.publicId } : {}),
+      zip_status: "ready",
+      zip_error: "",
+    });
+    renderFromState();
     orderToast("ยืนยันการโอนแล้ว และสร้าง Download Link สำหรับ Admin เรียบร้อย", "success_long");
   } catch (err) {
     // ZIP ยังอยู่บน Cloud แต่จะไม่แสดงเป็นออเดอร์ที่ชำระแล้วจนกว่าจะอัปเดตสถานะสำเร็จ
@@ -1651,7 +1730,13 @@ async function retryOrderZip(orderId) {
   if (!order || zipJobs.has(orderId)) return;
   const result = await createOrderZip(orderId);
   if (!result.ok) {
-    await refreshDashboardAndHistory();
+    // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client (zip_status='failed') แทน re-fetch
+    await updateOrderInState(orderId, {
+      zip_status: "failed",
+      zip_error: result.error,
+      updated_at: new Date().toISOString(),
+    });
+    renderFromState();
     orderToast("สร้าง ZIP ใหม่ไม่สำเร็จ: " + result.error, "error_long");
     return;
   }
@@ -1660,7 +1745,15 @@ async function retryOrderZip(orderId) {
   if (order.status === "pending_verify") {
     await confirmPaymentAndCreateZip(orderId);
   } else {
-    await refreshDashboardAndHistory();
+    // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client (zip_status='ready' + url ใหม่) แทน re-fetch
+    await updateOrderInState(orderId, {
+      zip_status: "ready",
+      zip_download_url: result.url || order.zip_download_url,
+      zip_public_id: result.publicId || order.zip_public_id,
+      zip_error: "",
+      updated_at: new Date().toISOString(),
+    });
+    renderFromState();
     orderToast("สร้าง ZIP ใหม่และ Download Link เรียบร้อย", "success_long");
   }
 }
@@ -1722,7 +1815,18 @@ async function handleDeleteOrderZip(orderId) {
       zip_error: "",
       updated_at: new Date().toISOString(),
     });
-    await refreshDashboardAndHistory();
+    // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client แทน re-fetch (ลด D1 reads)
+    await updateOrderInState(orderId, {
+      zip_status: "",
+      zip_download_url: "",
+      zip_file_name: "",
+      zip_public_id: "",
+      zip_song_count: 0,
+      zip_created_at: "",
+      zip_error: "",
+      updated_at: new Date().toISOString(),
+    });
+    renderFromState();
     orderToast("ลบไฟล์ ZIP ออกจาก Cloud แล้ว", "success");
   } catch (err) {
     orderToast("ลบไฟล์ ZIP ไม่สำเร็จ: " + (err.message || err), "error");
@@ -1754,7 +1858,9 @@ async function handleDeleteOrder(orderId) {
     } else if (orderData?.zip_download_url) {
       deleteFromStorage({ url: orderData.zip_download_url });
     }
-    await refreshDashboardAndHistory();
+    // 🔧 (2026-09-17 Phase 2): ลบ order ออกจาก state ฝั่ง client แทน re-fetch (ลด D1 reads)
+    removeOrderFromState(orderId);
+    renderFromState();
   } catch (err) {
     alert("ลบออเดอร์ไม่สำเร็จ: " + err.message);
   }
@@ -2123,7 +2229,17 @@ async function handleUpdateOrder() {
   try {
     await updateDoc(doc(db, "orders", orderId), updatedData);
     closeEditOrderModal();
-    await refreshDashboardAndHistory();
+    // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client แทน re-fetch (ลด D1 reads)
+    //   updatedData มีทุก field ที่จำเป็น (items, total, status, zip fields, ฯลฯ) อยู่แล้ว
+    //   รวมถึง id (คงเดิมจาก orderId) + created_at + receipt_number + store_name ที่อาจไม่ได้ส่งใน updatedData
+    //   → ใช้ existingOrder (state.allOrders.find) เป็น base แล้ว merge updatedData เข้าไป
+    const updatedOrderState = {
+      ...(existingOrder || {}),
+      ...updatedData,
+      id: orderId,
+    };
+    await updateOrderInState(orderId, updatedOrderState);
+    renderFromState();
     openReceipt(orderId);
   } catch (err) {
     feedback.textContent = "บันทึกไม่สำเร็จ: " + err.message;
@@ -2187,6 +2303,47 @@ async function refreshDashboardAndHistory() {
   // ส่ง state.allOrders เข้าไปเพื่อ reuse ข้อมูลที่โหลดแล้ว → ไม่ต้อง query DB ซ้ำ (ประหยัด Cloudflare D1 quota)
   // ถ้า app-admin.js ยังไม่โหลด (เช่น หน้า user ไม่มี badge) → __updateOrdersBadge จะเป็น undefined → ข้ามไปเฉยๆ
   if (window.__updateOrdersBadge) window.__updateOrdersBadge(state.allOrders);
+}
+
+// ===================================================
+// 🔧 (2026-09-17 Phase 2): State update helpers — อัปเดต state.allOrders ฝั่ง client
+// เป้าหมาย: หลัง admin action (status change/delete/create/edit) → อัปเดต state ตรง ๆ
+//   แทนการ re-fetch orders ทั้งหมด → ลด D1 reads มาก (15,000 reads/วัน → ~30 reads/วัน)
+//   ความเสีย: ถ้ามีหลายแอดมิน หรือ customer ลบออเดอร์จากฝั่ง user → admin อื่นจะไม่เห็นจนกว่าจะ refresh
+//   แต่ music store ของคุณมี admin สูงสุด 3 คน → ผลกระทบต่ำ
+//   กรณี state ผิดพลาด → กด refresh หน้าเว็บ (F5) → refreshDashboardAndHistory จะ fetch ใหม่ให้
+// ===================================================
+
+// Re-render จาก state.allOrders โดยไม่ re-fetch (ใช้หลัง update/remove/add order)
+function renderFromState() {
+  renderStats(state.allOrders);
+  renderFilterPills();
+  renderHistory();
+  if (window.__updateOrdersBadge) window.__updateOrdersBadge(state.allOrders);
+}
+
+// อัปเดต order ใน state.allOrders (merge patch เข้าไป)
+// ถ้าไม่เจอ order ใน state (เกิดจาก multi-admin race) → fallback เรียก refreshDashboardAndHistory
+async function updateOrderInState(orderId, patch) {
+  const idx = state.allOrders.findIndex(o => o.id === orderId);
+  if (idx === -1) {
+    // fallback: order ไม่อยู่ใน state (อาจถูกลบไปแล้วจากอีก admin) → re-fetch ใหม่
+    console.warn("updateOrderInState: order not found in state, falling back to full refresh", orderId);
+    await refreshDashboardAndHistory();
+    return;
+  }
+  state.allOrders[idx] = { ...state.allOrders[idx], ...patch };
+}
+
+// ลบ order ออกจาก state.allOrders
+function removeOrderFromState(orderId) {
+  state.allOrders = state.allOrders.filter(o => o.id !== orderId);
+}
+
+// เพิ่ม order ใหม่เข้าไปด้านหน้า state.allOrders (ใหม่สุดอยู่บนสุดของ list ที่ sort ตาม created_at desc)
+function addOrderToState(order) {
+  if (!order || !order.id) return;
+  state.allOrders.unshift(order);
 }
 
 async function handleSubmitOrder() {
@@ -2267,7 +2424,10 @@ async function handleSubmitOrder() {
     feedback.style.color = "var(--success)";
     feedback.textContent = `บันทึกออเดอร์ของ ${customerName} เรียบร้อยแล้ว ✓`;
 
-    await refreshDashboardAndHistory();
+    // 🔧 (2026-09-17 Phase 2): เพิ่ม order ใหม่เข้า state ฝั่ง client แทน re-fetch (ลด D1 reads)
+    //   order ที่บันทึกมี id (orderRef.id), created_at, receipt_number, items, status='pending_verify', ฯลฯ ครบ
+    addOrderToState({ id: orderRef.id, ...order });
+    renderFromState();
     openReceipt(orderRef.id);
   } catch (err) {
     feedback.textContent = "บันทึกไม่สำเร็จ: " + err.message;
