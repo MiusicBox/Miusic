@@ -726,6 +726,21 @@ function playSong(songId) {
   }).catch(() => {
     showToast("แตะปุ่มเล่นที่แถบด้านล่างอีกครั้ง");
     STATE.currentLoadingId = null;
+    // 🔧 แก้บั๊ก (2026-09-17) Bug #8: ล้าง currentPlayingId ด้วยเมื่อ play fail
+    // -----------------------------------------------------------
+    // ปัญหาก่อนแก้: เมื่อ browser block play (เช่น autoplay policy ของ Chrome/Safari)
+    //   โค้ดล้างแค่ currentLoadingId แต่ไม่ล้าง currentPlayingId
+    //   → ครั้งถัดไปที่คลิก play ของเพลงเดิม → เข้าเส้นทาง toggle แทนโหลดใหม่
+    //   แต่ AUDIO.paused = true (เพราะ play fail) → toggle สั่ง AUDIO.play() ที่อาจ fail อีก
+    //   → ลูกค้าเห็นปุ่มเป็น "หยุดเพลง" ทั้งที่จริง ๆ เสียงไม่ได้เล่น
+    //
+    // วิธีแก้: ล้าง currentPlayingId ด้วย → ปุ่มจะกลับเป็น "ฟังเพลง"
+    //   ลูกค้ากดปุ่มอีกครั้ง → จะโหลดเพลงใหม่แทน toggle (ที่ถูกต้อง)
+    //
+    // ผลกระทบต่อระบบเดิม: 0%
+    //   - ถ้า play สำเร็จ → then block ทำงาน (ไม่ถูกแตะ) — ปกติเหมือนเดิม
+    //   - ถ้า play fail → ปุ่มจะกลับเป็น "ฟังเพลง" แทน "หยุดเพลง" (ที่ถูกต้อง)
+    STATE.currentPlayingId = null;
     updatePlayButtonsUI();
   });
 }
