@@ -414,8 +414,33 @@ async function handleDb(request, env, url) {
   //   - isOrdersPublicWriteCandidate: ลูกค้า checkout/ยกเลิกออเดอร์ตัวเอง (เช็คเพิ่มเติมในแต่ละ branch)
   //   - isOrdersCustomerEndpoint: ลูกค้าค้นหาออเดอร์ตัวเองผ่าน endpoint ใหม่
   //   - songs GET request: อนุญาตให้ non-admin อ่าน แต่จะ sanitize ฟิลด์ sensitive ออก
+  //   - songs POST _query: อนุญาตให้ non-admin query (เช่น where playlist_id) — sanitize เหมือน GET
   const isSongsPublicGet = collection === "songs" && !isWrite && request.method === "GET";
-  if (!admin && !isOrdersPublicWriteCandidate && !isOrdersCustomerEndpoint && !isSongsPublicGet) {
+  // 🔧 แก้บั๊ก (2026-09-17): ลูกค้าเช็คเอาต์ playlist พัง เพราะ POST /api/db/songs/_query ถูกบล็อก
+  // -----------------------------------------------------------
+  // อาการก่อนแก้: ลูกค้าที่ไม่ได้ login (เว็บนี้ไม่มีระบบ login ลูกค้า) เพิ่ม playlist ลงตะกร้า
+  //   แล้วกดสั่งซื้อ → app-cart.js:509 เรียก getDocs(query(collection(db,"songs"),
+  //   where("playlist_id","==",playlistId))) → db-client.js แปลงเป็น POST /api/db/songs/_query
+  //   → Worker บล็อกด้วย 401 "ยังไม่ได้เข้าสู่ระบบ" เพราะ isWrite=true, isSongsPublicGet=false
+  //   → ลูกค้าเห็น toast "บันทึก Order ไม่สำเร็จ" ทั้งที่จริง ๆ ไม่ได้ login ก็ควรซื้อได้
+  //
+  // วิธีแก้: เพิ่ม exception สำหรับ POST /api/db/songs/_query ให้ผ่านสำหรับ non-admin
+  //   เหมือน GET /api/db/songs ปกติ โดยยังคง sanitize ฟิลด์ sensitive (full_file_url,
+  //   full_file_public_id, full_file_name) ออกเหมือนเดิม (ดูบรรทัด ~525 ที่ handler)
+  //
+  // ผลกระทบต่อ security: ต่ำมาก
+  //   - ฟิลด์ sensitive ยังถูก sanitize ออกเสมอ ถ้าเป็น non-admin
+  //   - ฟิลด์ที่ query ได้ถูก whitelist ใน db-helpers.js (ALLOWED_QUERY_FIELDS)
+  //     ตอนนี้มีเฉพาะ playlist_id, receipt_number, status, created_at เท่านั้น
+  //   - ลูกค้าสามารถ query เพลงใน playlist ใด ๆ ได้ (ซึ่งปกติ playlist ที่ไม่ถูกซ่อนก็ดูได้อยู่แล้ว
+  //     ทางหน้าเว็บ / GET /api/db/songs ปกติ)
+  //
+  // ผลกระทบต่อระบบเดิม: 0%
+  //   - ไม่แตะ endpoints อื่น (orders, admins, auth, _count-pending, _batch-get)
+  //   - ไม่เปิดช่องโหว่ใหม่
+  const isSongsPublicQuery =
+    collection === "songs" && parts.length === 2 && parts[1] === "_query" && request.method === "POST";
+  if (!admin && !isOrdersPublicWriteCandidate && !isOrdersCustomerEndpoint && !isSongsPublicGet && !isSongsPublicQuery) {
     if (isWrite || !PUBLIC_READ_COLLECTIONS.has(collection)) {
       return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
     }
