@@ -265,6 +265,24 @@ async function handleAuth(request, env, url) {
     if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
     let body;
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+
+    // 🔒 Security (2026-09-17 P0): ตรวจรหัสผ่านปัจจุบันฝั่ง server ก่อนอนุญาตให้เปลี่ยน
+    //   เดิม: server แค่เช็ค session แล้วอัปเดต password_hash ได้เลย
+    //   ปัญหา: ถ้ามีคนขโมย session cookie (XSS, เครื่องถูกขโมย) → เปลี่ยนรหัสผ่านได้ทันที
+    //     โดยไม่ต้องรู้รหัสเดิม → ล็อกเจ้าของบัญชีออกจากระบบถาวร
+    //   ใหม่: server ต้อง verify currentPassword ด้วย — กัน attacker ที่มีแค่ cookie
+    //   ฝั่ง client (app-admin.js) ยังคง reauthenticate ผ่าน verify-password ก่อน (UX check เร็ว)
+    //   แต่ server-side verification ทำซ้ำอีกทีเพื่อ security จริง
+    const currentPassword = String(body.currentPassword || "");
+    if (!currentPassword) {
+      return jsonResponse({ error: "กรุณากรอกรหัสผ่านปัจจุบัน", code: "auth/current-password-required" }, 400);
+    }
+    const full = await env.DB.prepare("SELECT password_hash FROM admin_users WHERE id = ?").bind(admin.id).first();
+    const currentOk = await verifyPassword(currentPassword, full?.password_hash);
+    if (!currentOk) {
+      return jsonResponse({ error: "รหัสผ่านปัจจุบันไม่ถูกต้อง", code: "auth/wrong-password" }, 401);
+    }
+
     const newPassword = String(body.newPassword || "");
     if (newPassword.length < 6) return jsonResponse({ error: "รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร" }, 400);
     const passwordHash = await hashPassword(newPassword);
@@ -526,6 +544,38 @@ async function handleDb(request, env, url) {
           // กันไม่ให้เขียนทับออเดอร์ที่มีอยู่แล้วของคนอื่นโดยไม่ login
           const existing = await getDocument(env, collection, id);
           if (existing) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+
+          // 🔒 Security (2026-09-17 P0): Validate + sanitize ออเดอร์ที่ลูกค้าสร้างเอง
+          //   เดิม: server รับ body.data ตรง ๆ → ลูกค้าสามารถส่ง status='completed' หรือ total=-100
+          //   ทำให้ bypass การตรวจสอบเงินโอนของ admin (เพราะ admin filter เฉพาะ pending_verify)
+          //   ใหม่: server บังคับ status='pending_verify' + validate required fields + total >= 0
+          //   admin จะเห็นออเดอร์นี้ใน "รอตรวจสอบ" เสมอ → ต้องเช็คเงินโอนเองทุกครั้ง
+          const data = body.data || {};
+
+          // ตรวจ required fields — กันสคริปต์ส่งข้อมูลไม่ครบ
+          if (!data.customer_name || typeof data.customer_name !== "string" || !data.customer_name.trim()) {
+            return jsonResponse({ error: "ข้อมูลไม่ครบ — ต้องมี customer_name" }, 400);
+          }
+          if (!data.whatsapp || typeof data.whatsapp !== "string" || !data.whatsapp.trim()) {
+            return jsonResponse({ error: "ข้อมูลไม่ครบ — ต้องมี whatsapp" }, 400);
+          }
+          if (!Array.isArray(data.items) || data.items.length === 0) {
+            return jsonResponse({ error: "ต้องมีรายการสินค้า (items)" }, 400);
+          }
+          // ตรวจ total — ต้องเป็นจำนวนเงิน >= 0 (admin จะเช็คเองอีกทีตอนยืนยัน)
+          if (typeof data.total !== "number" || !Number.isFinite(data.total) || data.total < 0) {
+            return jsonResponse({ error: "ยอดรวมไม่ถูกต้อง (ต้องเป็นจำนวนเงินที่ >= 0)" }, 400);
+          }
+
+          // 🔒 Force status='pending_verify' — ลูกค้าตั้ง status เองไม่ได้
+          //   กัน bypass การตรวจสอบเงินโอน (เช่น ตั้ง status='completed' ตรง ๆ)
+          //   ค่าอื่น ๆ ที่ลูกค้าตั้งเองได้: created_at, receipt_number, store_name,
+          //   order_type, playlist_id, playlist_name, items, total, subtotal,
+          //   discount_amount, promotion_applied, final_total (snapshot การคำนวณราคา)
+          //   ส่วน status บังคับเป็น "pending_verify" เสมอ → admin ต้องเปลี่ยนเอง
+          data.status = "pending_verify";
+
+          body.data = data;
         }
         const result = await setDocument(env, collection, id, body.data || {}, !!body.merge, admin?.email);
         return jsonResponse(result);
