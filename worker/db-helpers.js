@@ -93,7 +93,29 @@ export async function queryDocuments(env, collection, { wheres = [], orderBy = n
       throw new Error(`field ไม่ได้รับอนุญาตใน orderBy: ${orderBy.field}`);
     }
     const dir = orderBy.dir === "desc" ? "DESC" : "ASC";
-    sql += ` ORDER BY json_extract(data, '$.${orderBy.field}') ${dir}`;
+    // 🔧 แก้บั๊ก (2026-09-17) Bug #9: orderBy("created_at") ใช้ column ตรง ๆ แทน json_extract
+    // -----------------------------------------------------------
+    // ปัญหาก่อนแก้: ใช้ json_extract(data, '$.created_at') → D1 ไม่สามารถใช้ index ได้
+    //   → scan ทั้งตาราง + sort ใน memory — 10,000 orders ช้าหลายวินาที
+    //
+    // วิธีแก้: ถ้า orderBy.field === "created_at" → ใช้ column ตรง ๆ ของ documents table
+    //   (column created_at เป็น TEXT ที่มีอยู่แล้วใน schema.sql — บรรทัด 19)
+    //   เป็น ISO 8601 string (setDocument ใช้ new Date().toISOString()) → sort ด้วย string ได้ถูกต้อง
+    //
+    // ผลกระทบ:
+    //   - ถ้ามี index idx_documents_collection_created_at (เพิ่มใน schema.sql) → query เร็วขึ้นมาก
+    //   - ถ้าไม่มี index (DB เก่าก่อน run SQL ใหม่) → ยังใช้ column ตรง ๆ แต่ sort ใน memory (เหมือน json_extract)
+    //   - ทำงานเหมือนเดิม 100% แต่เร็วขึ้น — ไม่ทำให้ caller ฝั่ง client เปลี่ยน
+    //
+    // สำหรับ field อื่น ๆ (playlist_id, receipt_number, status, whatsapp, customer_name)
+    //   ยังคงใช้ json_extract เหมือนเดิม — เพราะเป็นฟิลด์ใน JSON blob ไม่ใช่ column จริง
+    if (orderBy.field === "created_at") {
+      // ใช้ column ตรง ๆ ของ documents table (เป็น TEXT ISO 8601 string — sort ด้วย string ได้ถูกต้อง)
+      sql += ` ORDER BY created_at ${dir}`;
+    } else {
+      // fallback: ใช้ json_extract สำหรับฟิลด์ JSON อื่น ๆ (เหมือนเดิม)
+      sql += ` ORDER BY json_extract(data, '$.${orderBy.field}') ${dir}`;
+    }
   }
   const { results } = await env.DB.prepare(sql).bind(...binds).all();
   return results.map((row) => ({ id: row.id, data: JSON.parse(row.data) }));
