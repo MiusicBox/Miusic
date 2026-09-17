@@ -1,7 +1,7 @@
 // db-client.js
 // ===================================================
 // เลียนแบบหน้าตา Firestore Web SDK เฉพาะฟังก์ชันที่โปรเจกต์นี้ใช้จริง (ตรวจสอบครบทุกไฟล์แล้ว):
-// collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot
+// collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy
 // แต่ข้างในยิง fetch() ไปที่ /api/db/* บน Worker (คุย Cloudflare D1) แทน Firestore จริง
 //
 // เหตุผลที่ทำแบบนี้: ไฟล์ app-admin.js/app-cart.js/app-promotion.js/app-user.js/orders.js/admin-roles.js
@@ -12,11 +12,37 @@
 // ขอบเขตที่รองรับ (เท่าที่แอปนี้ใช้จริง เท่านั้น — ไม่ใช่ Firestore SDK เต็มรูปแบบ):
 //   - where(field, "==", value) เท่านั้น (ไม่มีจุดไหนในแอปใช้ operator อื่น)
 //   - orderBy(field, "asc"|"desc")
-//   - onSnapshot ใช้กับ query(collection(db,"orders")) แบบไม่มีเงื่อนไขเท่านั้น -> จำลอง realtime
-//     ด้วยการ poll ทุก 4 วินาทีแทน (D1/Worker ไม่มี realtime push แบบ Firestore)
-// ===================================================
+//
+// ────────────────────────────────────────────────────────────────────
+// ⚠️  สำหรับ Dev ใหม่: โปรดอ่านส่วนนี้ก่อนแก้ไฟล์นี้  ────────────────
+// ────────────────────────────────────────────────────────────────────
+// onSnapshot() และ listenCustomerOrders() ยังคง export อยู่ที่ด้านล่างของไฟล์นี้
+// แต่ ณ 2026-09-17: **ไม่มี caller จริงในโปรเจกต์แล้ว** (ยืนยันด้วย grep ทั้งโปรเจกต์)
+//
+//   ประวัติ:
+//     - ก่อน 2026-09-17: ใช้ polling ทุก 4 วินาที (SNAPSHOT_POLL_MS) เพื่อจำลอง realtime
+//       ตามแบบ Firestore onSnapshot → กิน D1 read quota มาก (1 client = 15 reads/นาที)
+//     - 2026-09-17: ทุก caller ย้ายไปใช้ fetchCustomerOrdersOnce() แบบ one-shot แทน
+//       (ดึงครั้งเดียวเมื่อ user action: โหลดหน้า / เข้าแท็บ / กดรีเฟรช / checkout)
+//
+//   ที่ไม่ลบทิ้ง:
+//     - กฎของโปรเจกต์: "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+//     - เผื่ออนาคตต้องการ realtime แบบ polling กลับมาใช้ในจุดอื่น
+//
+//   ⚠️ ถ้าจะใช้ onSnapshot/listenCustomerOrders: ระวัง!
+//     - มัน polling ทุก 4 วิ (SNAPSHOT_POLL_MS) ต่อ client ตลอดที่หน้าเปิด
+//     - ถ้ามี 100 concurrent clients = 25 req/s → D1 quota หมดเร็ว
+//     - แนะนำใช้ fetchCustomerOrdersOnce() แทนถ้าไม่จำเป็นต้อง realtime จริง ๆ
+//
+//   imports ใน app-user.js (บรรทัด 5) และ app-promotion.js (บรรทัด 22) ยัง import
+//   onSnapshot + listenCustomerOrders อยู่ด้วย — เป็น "dead imports" (import แต่ไม่เรียกใช้)
+//   ถ้าจะลบ export ออกจากไฟล์นี้ ต้องลบ imports ใน 2 ไฟล์นั้นด้วยพร้อมกัน
+//   ไม่งั้น browser โหลด module ไม่ได้ (SyntaxError: missing export)
+// ────────────────────────────────────────────────────────────────────
 
 const API_BASE = "/api/db";
+// ⚠️ ใช้เฉพาะใน onSnapshot() และ listenCustomerOrders() ด้านล่าง — ทั้งสองฟังก์ชันไม่มี caller จริงแล้ว
+//    ถ้าอนาคตจะใช้ polling กลับมา: ลดค่านี้ลง (เช่น 30000 = 30 วิ) เพื่อลด D1 quota
 const SNAPSHOT_POLL_MS = 4000;
 
 async function apiFetch(path, options = {}) {
@@ -141,8 +167,40 @@ export async function deleteDoc(ref, options = {}) {
   await apiFetch(`/${encodeURIComponent(ref.path)}/${encodeURIComponent(ref.id)}`, fetchOpts);
 }
 
-// ---------------- onSnapshot (จำลอง realtime ด้วย polling — D1/Worker ไม่มี push แบบ Firestore) ----------------
-// ใช้เฉพาะกับ query(collection(db,"orders")) แบบไม่มีเงื่อนไขในแอปนี้ (ตรวจสอบแล้วทั้งโปรเจกต์)
+// ============================================================================
+// onSnapshot — ⚠️ DEAD CODE (NO CALLER) — อ่านคอมเมนต์ก่อนใช้/ลบ
+// ============================================================================
+// จำลอง realtime ด้วย polling — D1/Worker ไม่มี push แบบ Firestore จึงใช้ setTimeout
+// เรียก fetchDocs() ทุก ๆ SNAPSHOT_POLL_MS (4 วินาที) แล้วเทียบ JSON.stringify เพื่อ
+// เรียก callback เฉพาะเมื่อข้อมูลเปลี่ยน (ลดการ re-render ฝั่ง browser)
+//
+// ประวัติการใช้งาน:
+//   - ก่อน 2026-09-17: เคยใช้กับ query(collection(db,"orders")) แบบไม่มีเงื่อนไข
+//     ในฝั่งลูกค้า (track order all list) + ฝั่งแอดมิน (dashboard)
+//   - 2026-09-17: ทุก caller ย้ายไปใช้ fetchCustomerOrdersOnce() แบบ one-shot แทน
+//     (ลด D1 read quota จาก ~21,600 reads/วัน/listener เหลือ ~1 read ต่อ user action)
+//
+// สถานะปัจจุบัน (ยืนยันด้วย grep ทั้งโปรเจกต์ ณ 2026-09-17):
+//   ❌ ไม่มี caller จริงใน codebase ทั้งหมด
+//   ⚠️ แต่ยังถูก import อยู่ใน:
+//      - app-user.js บรรทัด 5 (dead import — import เข้ามาแต่ไม่เรียกใช้)
+//      - app-promotion.js บรรทัด 22 (dead import — เหมือนกัน)
+//
+// ที่ไม่ลบทิ้ง:
+//   - กฎของโปรเจกต์: "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+//   - เผื่ออนาคตต้องการฟีเจอร์ realtime กลับมา (เช่น notification สถานะออเดอร์)
+//
+// ⚠️ คำเตือนสำหรับ Dev ใหม่:
+//   1. ถ้าจะใช้ onSnapshot() จริง ๆ:
+//      - ระวัง D1 quota: 1 listener = 1 read ทุก 4 วิ = 900 reads/ชม. = 21,600 reads/วัน
+//      - แนะนำเพิ่มช่วย fallback: ถ้า fetchDocs() fail 3 ครั้งติด → unsubscribe อัตโนมัติ
+//      - แนะนำลด SNAPSHOT_POLL_MS จาก 4000 → 30000 (30 วิ) เพื่อลด quota 3 เท่า
+//
+//   2. ถ้าจะลบ onSnapshot() ทิ้ง:
+//      - ต้องลบ imports ใน app-user.js บรรทัด 5 และ app-promotion.js บรรทัด 22 ด้วย
+//      - ไม่งั้น browser error: "The requested module does not provide an export named 'onSnapshot'"
+//      - และลบ SNAPSHOT_POLL_MS (บรรทัด 46) ด้วยเพราะใช้เฉพาะในฟังก์ชันนี้
+// ============================================================================
 export function onSnapshot(refOrQuery, onNext, onError) {
   let stopped = false;
   let lastSerialized = null;
@@ -175,7 +233,10 @@ export function onSnapshot(refOrQuery, onNext, onError) {
 // ใช้ endpoint ใหม่ /api/db/orders/_customer-query และ _customer-list ที่ Server กรองเจ้าของให้
 // แทนการโหลด collection "orders" ทั้งหมดมากรองฝั่ง browser แบบเดิม
 // (เดิมใช้ getDocs/onSnapshot กับ query(collection(db,"orders")) ทำให้ browser เห็นข้อมูลคนอื่นทั้งหมด)
-// ใช้เฉพาะฝั่งลูกค้า (app-user.js, app-promotion.js) เท่านั้น — ฝั่งแอดมินยังใช้ getDocs/onSnapshot เดิม
+//
+// ใช้เฉพาะฝั่งลูกค้า (app-user.js, app-promotion.js) เท่านั้น
+// ฝั่งแอดมินยังใช้ getDocs() เท่านั้น (one-shot) — ไม่ได้ใช้ onSnapshot อีกแล้ว
+//   (ดูคอมเมนต์ "DEAD CODE" ที่ฟังก์ชัน onSnapshot ด้านบนสำหรับรายละเอียด)
 // ===================================================
 
 // ค้นหาออเดอร์เดียวด้วย receipt_number + customer_name + whatsapp
@@ -194,13 +255,38 @@ export async function queryCustomerOrder({ receiptNumber, customerName, whatsapp
   return { exists: true, id: res.id, data: res.data };
 }
 
-// ฟังออเดอร์ทั้งหมดของลูกค้าคนหนึ่ง แบบ polling ทุก 4 วิ (เหมือน onSnapshot เดิม)
+// ============================================================================
+// listenCustomerOrders — ⚠️ DEAD CODE (NO CALLER) — อ่านคอมเมนต์ก่อนใช้/ลบ
+// ============================================================================
+// เดิมเคยใช้: ฟังออเดอร์ทั้งหมดของลูกค้าคนหนึ่ง แบบ polling ทุก 4 วิ (เหมือน onSnapshot เดิม)
 // Server กรองเฉพาะออเดอร์ที่เป็นของลูกค้าคนนี้ส่งกลับมา ไม่ส่งข้อมูลคนอื่นมาให้ browser
 // คืนฟังก์ชัน unsubscribe — โครงสร้างเหมือน onSnapshot ทุกประการ เพื่อให้สลับเข้าแทนได้ง่าย
 //
-// ⚠️ 2026-09-17: ปัจจุบัน caller ทั้งหมดย้ายไปใช้ fetchCustomerOrdersOnce แทนแล้ว (เพื่อลด D1 quota)
-//   แต่ยังคงไว้ในไฟล์นี้้ไม่ลบ (กฎ "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน") เผื่ออนาคตต้องการ
-//   realtime แบบ polling กลับมาใช้ในจุดอื่น
+// สถานะปัจจุบัน (ยืนยันด้วย grep ทั้งโปรเจกต์ ณ 2026-09-17):
+//   ❌ ไม่มี caller จริงใน codebase ทั้งหมด — ทุก caller ย้ายไปใช้ fetchCustomerOrdersOnce() แทน
+//   ⚠️ แต่ยังถูก import อยู่ใน:
+//      - app-user.js บรรทัด 5 (dead import — import เข้ามาแต่ไม่เรียกใช้)
+//      - app-promotion.js บรรทัด 22 (dead import — เหมือนกัน)
+//
+// ที่ไม่ลบทิ้ง:
+//   - กฎของโปรเจกต์: "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+//   - เผื่ออนาคตต้องการ realtime แบบ polling กลับมาใช้ในจุดอื่น
+//
+// ⚠️ คำเตือนสำหรับ Dev ใหม่:
+//   1. ถ้าจะใช้ listenCustomerOrders() จริง ๆ:
+//      - ระวัง D1 quota (เหมือน onSnapshot: 1 listener = 900 reads/ชม.)
+//      - แต่ลดเรื่อง privacy risk เพราะ Server กรองเจ้าของให้ (ไม่เหมือน onSnapshot ที่โหลดทั้ง collection)
+//      - แนะนำเพิ่ม fallback: ถ้า fetch  fail 3 ครั้งติด → unsubscribe อัตโนมัติ
+//
+//   2. ถ้าจะลบ listenCustomerOrders() ทิ้ง:
+//      - ต้องลบ imports ใน app-user.js บรรทัด 5 และ app-promotion.js บรรทัด 22 ด้วย
+//      - ไม่งั้น browser error: "The requested module does not provide an export named 'listenCustomerOrders'"
+//
+//   3. ความแตกต่างจาก fetchCustomerOrdersOnce():
+//      - listenCustomerOrders: polling ต่อเนื่องทุก 4 วิ (realtime)
+//      - fetchCustomerOrdersOnce: one-shot ครั้งเดียว (caller เรียกเองเมื่อต้องการ)
+//      - ทั้งสองใช้ endpoint เดียวกัน: POST /api/db/orders/_customer-list
+// ============================================================================
 export function listenCustomerOrders({ customerName, whatsapp }, onNext, onError) {
   let stopped = false;
   let lastSerialized = null;
