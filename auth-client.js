@@ -133,13 +133,18 @@ export async function deleteApp(_app) {
 }
 
 // ---------------- ใหม่: สำหรับหน้าจอ "ตั้งค่าแอดมินคนแรก" (แทนที่ขั้นตอนสร้างบัญชีผ่าน Firebase Console เดิม) ----------------
+// 🔒 Security (2026-09-17 P1): เปลี่ยน error fallback จาก return true → return null
+//   เดิม: ถ้า fetch error → return true (สมมุติมี admin) → user เข้าโหมด login ปกติ
+//   ปัญหา: ถ้า DB ไม่มี admin จริง ๆ และ network พัง → user ติดหน้า login ไม่มีทาง bootstrap
+//   ใหม่: ถ้า fetch error → return null (unknown) → app-admin.js แสดงทั้ง login + ปุ่ม bootstrap
+//   คืนค่า: true = มี admin, false = ไม่มี, null = ไม่แน่ใจ (error)
 export async function checkHasAdmin() {
   try {
     const res = await fetch("/api/auth/has-admin", { credentials: "same-origin" });
     const body = await safeJson(res);
-    return body.hasAdmin !== false; // เผื่อ error ระหว่างเช็ค ให้ fallback เป็นโหมด login ปกติ (ปลอดภัยกว่า)
+    return body.hasAdmin !== false; // true หรือ false
   } catch {
-    return true;
+    return null; // 🔧 (2026-09-17 P1): คืน null แทน true → app-admin.js จะแสดงทั้ง login + bootstrap
   }
 }
 export async function bootstrapFirstAdmin(email, password, displayName) {
