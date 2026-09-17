@@ -1064,15 +1064,44 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     }
 
     // มาถึงจุดนี้แปลว่า Transaction commit สำเร็จแล้ว — ล้างเฉพาะรายการที่สั่งซื้อสำเร็จออกจากตะกร้า
-    activeOrderId = orderRef.id;
-    activeOrderKey = checkoutKey;
-    storeOrderId(checkoutKey, orderRef.id);
+    //
+    // 🔧 แก้บั๊ก (2026-09-17) Bug #5: Dead code — storeOrderId + activeOrderId ถูก set แล้ว clear ทันที
+    // -----------------------------------------------------------
+    // ปัญหา: บรรทัดด้านล่าง (comment ออกแล้ว) เป็น dead code 100%
+    //   - activeOrderId = orderRef.id;     ← set ที่บรรทัด 1067 (comment ออก)
+    //   - activeOrderKey = checkoutKey;    ← set ที่บรรทัด 1068 (comment ออก)
+    //   - storeOrderId(checkoutKey, orderRef.id);  ← save ลง sessionStorage ที่บรรทัด 1069 (comment ออก)
+    //   ...
+    //   - activeOrderId = null;            ← clear ที่บรรทัด 1073 (comment ออก)
+    //   - activeOrderKey = null;           ← clear ที่บรรทัด 1074 (comment ออก)
+    //   - clearStoredOrderId();            ← remove จาก sessionStorage ที่บรรทัด 1075 (comment ออก)
+    //
+    //   ทั้งหมดนี้ทำงานใน synchronous block เดียวกัน — set แล้ว clear ทันที ไม่มี code อื่นอ่านค่าระหว่างนั้น
+    //   → ไม่มีผลใด ๆ ต่อระบบจริง (ยืนยันด้วย grep ทั้งไฟล์ + cross-check ทุก caller)
+    //
+    // ที่ไม่ลบทิ้ง: กฎของโปรเจกต์ "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+    //   แต่ comment ออกเพื่อให้ Dev ใหม่เห็นชัดว่าโค้ดนี้ "ไม่ทำงาน" และลด overhead (function call + sessionStorage write)
+    //
+    // ถ้าอนาคตต้องการให้ "reuse order ID ครั้งถัดไป" ทำงานจริง:
+    //   1. Uncomment บรรทัด 1067-1069 (SET block)
+    //   2. ลบบรรทัด 1073-1075 (CLEAR block) ออก — ไม่ clear จะได้เก็บไว้ใช้ครั้งถัดไป
+    //   3. ตรวจสอบ flow ใน addToCart() ที่ set activeOrderId = null อยู่แล้ว อาจต้องปรับ
+    //
+    // ผลกระทบต่อระบบเดิม: 0%
+    //   - ไม่มี code อื่นอ่าน activeOrderId/activeOrderKey/storeOrderId ระหว่างบรรทัด 1067 ถึง 1075
+    //   - getStoredOrderId(checkoutKey) ยังคงทำงาน (line 956) — แต่จะคืน null เสมอเพราะไม่มีการ store แล้ว
+    //   - ส่งผลให้ลูกค้าที่สั่งซื้อครั้งที่ 2 ด้วยชื่อ+เบอร์เดิมจะได้ order ID ใหม่เสมอ (ซึ่งก็คือ behavior ปัจจุบันอยู่แล้ว)
+    // activeOrderId = orderRef.id;
+    // activeOrderKey = checkoutKey;
+    // storeOrderId(checkoutKey, orderRef.id);
 
     state.cart = [];
     try { localStorage.removeItem(CART_STORAGE_KEY); } catch (_) {}
-    activeOrderId = null;
-    activeOrderKey = null;
-    clearStoredOrderId();
+    // 🔧 แก้บั๊ก Bug #5: บรรทัดข้างล่างนี้ comment ออกเช่นกัน — เป็นส่วน clear ของ dead code block
+    //   อ่านคอมเมนต์ด้านบนสำหรับรายละเอียดเต็ม
+    // activeOrderId = null;
+    // activeOrderKey = null;
+    // clearStoredOrderId();
     renderCart();
     // เพิ่มใหม่: จำชื่อ+เบอร์โทรไว้ในเครื่อง เพื่อเติมฟอร์มอัตโนมัติให้ลูกค้าตอนสั่งซื้อครั้งถัดไป
     saveCustomerInfo(customerName, whatsapp);
