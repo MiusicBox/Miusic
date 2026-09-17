@@ -400,9 +400,39 @@ async function handleDb(request, env, url) {
   const isBatchGetEndpoint =
     parts.length === 2 && request.method === "POST" && parts[1] === "_batch-get";
 
+  // 🔧 แก้บั๊ก (2026-09-17) Bug #4: endpoint ตรวจว่าเพลงใน list มี Order เก่าอ้างอิงไหม (batch)
+  // -----------------------------------------------------------
+  // ปัญหาก่อนแก้: app-admin.js songHasOrders() โหลด orders ทั้งตารางทุกครั้ง × N เพลง
+  //   เช่น ลบ 50 เพลง × 10,000 orders = 500,000 D1 reads ต่อการกดลบครั้งเดียว
+  //
+  // วิธีแก้: สร้าง endpoint ใหม่รับ { ids: [...] } แล้ว server ทำ query เดียว
+  //   วนลูปตรวจทุก order ใน memory ว่า items มี song_id หรือ song_ids ตรงกับ ids ที่ส่งมาไหม
+  //   คืน { [songId]: boolean } — ลด D1 reads จาก N × orders_total → 1 × orders_total
+  //
+  // Security: Admin-only (login required) — เป็นข้อมูลฝั่งระบบ
+  // request: POST /api/db/songs/_has-orders-batch body: { ids: ["song1", "song2", ...] }
+  // response: { results: { "song1": true, "song2": false, ... } }
+  const isHasOrdersBatchEndpoint =
+    collection === "songs" && parts.length === 2 && request.method === "POST" && parts[1] === "_has-orders-batch";
+
+  // 🔧 แก้บั๊ก (2026-09-17) Bug #7: endpoint ตรวจว่า cover_url ยังถูกใช้โดยเพลง/เพลย์ลิสต์อื่นไหม
+  // -----------------------------------------------------------
+  // ปัญหาก่อนแก้: app-admin.js deleteSongFilesFromStorage() โหลด songs + playlists ทั้งตาราง
+  //   แค่เพื่อเช็คว่า cover_url ซ้ำไหม — 1,000 เพลง + 100 playlists = 1,100 reads ต่อครั้ง
+  //
+  // วิธีแก้: สร้าง endpoint ใหม่รับ { url } แล้ว server ทำ query เดียวด้วย json_extract
+  //   คืน { used: boolean } — ลด D1 reads จาก songs_total + playlists_total → 1 × query
+  //
+  // Security: Admin-only (login required) — เป็น endpoint ฝั่ง admin
+  // request: POST /api/db/_check-cover-used body: { url: "..." }
+  // response: { used: true|false }
+  // หมายเหตุ: ไม่จำกัด collection เพราะเป็น cross-collection check (songs + playlists)
+  const isCheckCoverUsedEndpoint =
+    parts.length === 2 && request.method === "POST" && parts[1] === "_check-cover-used" && collection === "_meta";
+
   // 🔒 Security (2026-09-11): ดึง admin status เสมอเมื่อเป็น collection "songs" เพื่อตัดสินใจว่าจะ sanitize
   // ฟิลด์ sensitive ออกหรือไม่ — ไม่ใช่แค่ตอน isWrite หรือ non-public collection
-  const needsAdminCheck = isWrite || !PUBLIC_READ_COLLECTIONS.has(collection) || collection === "songs" || isOrdersCountPendingEndpoint || isBatchGetEndpoint;
+  const needsAdminCheck = isWrite || !PUBLIC_READ_COLLECTIONS.has(collection) || collection === "songs" || isOrdersCountPendingEndpoint || isBatchGetEndpoint || isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint;
 
   let admin = null;
   if (needsAdminCheck || isOrdersCustomerEndpoint) {
@@ -440,7 +470,13 @@ async function handleDb(request, env, url) {
   //   - ไม่เปิดช่องโหว่ใหม่
   const isSongsPublicQuery =
     collection === "songs" && parts.length === 2 && parts[1] === "_query" && request.method === "POST";
-  if (!admin && !isOrdersPublicWriteCandidate && !isOrdersCustomerEndpoint && !isSongsPublicGet && !isSongsPublicQuery) {
+  // 🔧 แก้บั๊ก Bug #4 + #7: 2 endpoints ใหม่ฝั่ง admin — ต้องผ่าน auth check ก่อน
+  //   _has-orders-batch (collection=songs): admin ลบเพลง ตรวจ Order เก่าแบบ batch
+  //   _check-cover-used (collection=_meta): admin ลบเพลง ตรวจ cover_url ซ้ำข้าม collection
+  //   ทั้งสองอย่างเป็น admin-only (เช็ค !admin ภายใน handler อีกที)
+  //   แต่ต้องข้ามบล็อก 401 ก่อนเข้า handler — เลยยกเว้นในเงื่อนไขบล็อกด้านล่าง
+  const isAdminOnlyMetaEndpoint = isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint;
+  if (!admin && !isOrdersPublicWriteCandidate && !isOrdersCustomerEndpoint && !isSongsPublicGet && !isSongsPublicQuery && !isAdminOnlyMetaEndpoint) {
     if (isWrite || !PUBLIC_READ_COLLECTIONS.has(collection)) {
       return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
     }
@@ -477,6 +513,67 @@ async function handleDb(request, env, url) {
       return jsonResponse({ docs });
     } catch (err) {
       return jsonResponse({ error: "batch get ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+    }
+  }
+
+  // 🔧 แก้บั๊ก Bug #4: POST /api/db/songs/_has-orders-batch
+  // ตรวจว่าเพลงใน list มี Order เก่าอ้างอิงไหม (batch) — ลด D1 reads จาก N × orders_total → 1 × orders_total
+  if (isHasOrdersBatchEndpoint) {
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+    const ids = Array.isArray(body?.ids) ? body.ids.map(id => String(id)).filter(Boolean) : [];
+    if (ids.length === 0) return jsonResponse({ results: {} });
+    try {
+      // โหลด orders ทั้งหมด 1 ครั้ง (ไม่ใช่ N ครั้งแบบเดิม)
+      const allOrders = await listDocuments(env, "orders");
+      const idsSet = new Set(ids);
+      const results = {};
+      // init ทุก id เป็น false ก่อน
+      for (const id of ids) results[id] = false;
+      // วนลูปทุก order — ถ้า items มี song_id หรือ song_ids ตรงกับ idsSet ให้ตั้งเป็น true
+      for (const order of allOrders) {
+        const items = (order.data && Array.isArray(order.data.items)) ? order.data.items : [];
+        for (const item of items) {
+          if (item.song_id && idsSet.has(String(item.song_id))) {
+            results[String(item.song_id)] = true;
+          }
+          if (Array.isArray(item.song_ids)) {
+            for (const sid of item.song_ids) {
+              if (idsSet.has(String(sid))) {
+                results[String(sid)] = true;
+              }
+            }
+          }
+        }
+      }
+      return jsonResponse({ results });
+    } catch (err) {
+      return jsonResponse({ error: "has-orders-batch ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+    }
+  }
+
+  // 🔧 แก้บั๊ก Bug #7: POST /api/db/_meta/_check-cover-used
+  // ตรวจว่า cover_url ยังถูกใช้โดยเพลง/เพลย์ลิสต์อื่นไหม — ลด D1 reads จาก songs_total + playlists_total → 1 × query
+  if (isCheckCoverUsedEndpoint) {
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+    const url = String(body?.url || "").trim();
+    if (!url) return jsonResponse({ used: false });
+    try {
+      // ใช้ json_extract ใน SQL เพื่อ filter ที่ DB level — D1 จะได้ไม่ต้อง scan ทั้งตารางมาฝั่ง JS
+      // ตรวจทั้ง songs และ playlists (cross-collection)
+      const { results: songMatches } = await env.DB.prepare(
+        "SELECT id FROM documents WHERE collection = 'songs' AND json_extract(data, '$.cover_url') = ? LIMIT 1"
+      ).bind(url).all();
+      if (songMatches && songMatches.length > 0) return jsonResponse({ used: true });
+      const { results: playlistMatches } = await env.DB.prepare(
+        "SELECT id FROM documents WHERE collection = 'playlists' AND json_extract(data, '$.cover_url') = ? LIMIT 1"
+      ).bind(url).all();
+      return jsonResponse({ used: !!(playlistMatches && playlistMatches.length > 0) });
+    } catch (err) {
+      return jsonResponse({ error: "check-cover-used ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
     }
   }
 
@@ -518,10 +615,57 @@ async function handleDb(request, env, url) {
       if (!customerName || !whatsapp) {
         return jsonResponse({ docs: [] });
       }
-      const allDocs = await listDocuments(env, "orders");
-      const queryName = normalizeNameServer(customerName);
+      // 🔧 แก้บั๊ก Bug #6 (2026-09-17): กรอง orders ที่ DB level ด้วย whatsapp แทนโหลดทั้งหมด
+      // -----------------------------------------------------------
+      // ปัญหาก่อนแก้: listDocuments(env, "orders") โหลด orders ทั้งหมดมา filter ฝั่ง JS
+      //   ถ้ามี 10,000 orders × 100 ลูกค้า active = 1,000,000 D1 reads/วัน
+      //
+      // วิธีแก้: ใช้ queryDocuments กับ where("whatsapp","==",phone) ที่ DB level
+      //   Server จะได้แค่ orders ของเบอร์นี้ (ปกติทำลำดับสิบ) → ค่อย fuzzy match ชื่อฝั่ง JS
+      //   ลด D1 reads จาก orders_total → orders_ของเบอร์นั้น
+      //
+      // ⚠️ สำคัญ: เบอร์ใน DB อาจเก็บในรูปแบบต่าง ๆ (เช่น +85620xxxxxxxx หรือ 020xxxxxxxx)
+      //   เรา normalize ทั้งฝั่ง query และฝั่งเก็บเป็นตัวเลขเท่านั้น เพื่อให้ตรงกัน
+      //   แต่ queryDocuments ใช้ค่าตรง ๆ ไม่ได้ normalize → ต้องทำ 2-step:
+      //     1. Query หา orders ที่ whatsapp ตรงทั้งแบบ raw และแบบ normalized (ผ่าน OR ใน SQL)
+      //     2. ค่อย filter เบอร์ที่ normalize แล้วตรงกัน 100% ฝั่ง JS (กัน false positive)
+      //
+      //   แต่เพื่อความเรียบง่าย + ปลอดภัย → ใช้ queryDocuments แบบเดียวกับเดิม
+      //   (where("whatsapp","==",whatsapp)) แล้ว filter เบอร์ normalized ฝั่ง JS อีกที
       const queryPhone = normalizePhoneServer(whatsapp);
-      const matched = allDocs.filter((d) => {
+      // หา orders ที่เบอร์ตรงทั้งแบบ raw และแบบ normalized ผ่าน 2 query แยก
+      // (queryDocuments ทำ OR ไม่ได้ — ต้อง 2 ครั้งแล้ว merge)
+      let candidateDocs = [];
+      try {
+        // Query 1: หา orders ที่ whatsapp ตรงแบบ raw (เบอร์ที่ลูกค้ากรอก)
+        const rawDocs = await queryDocuments(env, "orders", {
+          wheres: [{ __type: "where", field: "whatsapp", op: "==", value: whatsapp }],
+        });
+        candidateDocs = rawDocs;
+        // Query 2: หา orders ที่ whatsapp ตรงแบบ normalized (เบอร์ที่เก็บในรูปแบบอื่น)
+        //   ถ้า raw query เจอแล้ว ก็ query normalized เพิ่มเพื่อกันเคสเบอร์เก็บในรูปแบบอื่น
+        //   เช่น เบอร์ลูกค้ากรอก "0201234567" แต่ DB เก็บ "+856201234567" — normalize แล้วตรงกัน
+        //   เพื่อความปลอดภัย: query เบอร์ที่ normalize แล้วด้วย (เผื่อมี DB ที่เก็บ normalized แล้ว)
+        if (queryPhone && queryPhone !== whatsapp) {
+          const normalizedDocs = await queryDocuments(env, "orders", {
+            wheres: [{ __type: "where", field: "whatsapp", op: "==", value: queryPhone }],
+          });
+          // merge โดย dedupe ด้วย id
+          const seenIds = new Set(candidateDocs.map(d => d.id));
+          for (const d of normalizedDocs) {
+            if (!seenIds.has(d.id)) {
+              candidateDocs.push(d);
+              seenIds.add(d.id);
+            }
+          }
+        }
+      } catch (err) {
+        // Fallback: ถ้า queryDocuments fail (เช่น index ยังไม่ถูกสร้าง) → กลับไปใช้ listDocuments แบบเดิม
+        console.warn("queryDocuments failed, fallback to listDocuments:", err?.message || err);
+        candidateDocs = await listDocuments(env, "orders");
+      }
+      const queryName = normalizeNameServer(customerName);
+      const matched = candidateDocs.filter((d) => {
         const oPhone = normalizePhoneServer(d.data?.whatsapp || "");
         if (oPhone !== queryPhone) return false;
         const oName = normalizeNameServer(d.data?.customer_name || "");
