@@ -11,10 +11,17 @@
 //
 // ทำไมต้องมี /api/db/*:
 //   D1 คุยจาก browser ตรงๆ ไม่ได้เลย (ต้องผ่าน Worker ที่มี binding เท่านั้น เหมือน R2)
-//   ฝั่ง browser จึงเรียกผ่าน db-client.js (หน้าตาเหมือน Firestore SDK เดิมทุกฟังก์ชันที่แอปนี้ใช้
-//   คือ collection/doc/getDoc/getDocs/addDoc/setDoc/updateDoc/deleteDoc/query/where/orderBy/onSnapshot)
+//   ฝั่ง browser จึงเรียกผ่าน db-client.js (หน้าตาเหมือน Firestore SDK เดิมทุกฟังก์ชันที่แอปนี้ใช้จริง
+//   คือ collection/doc/getDoc/getDocs/addDoc/setDoc/updateDoc/deleteDoc/query/where/orderBy)
 //   แล้ว db-client.js ค่อยยิง fetch มาที่ endpoint กลุ่มนี้อีกที — ทำให้ app-admin.js/orders.js/ฯลฯ
 //   ไม่ต้องแก้ logic เดิมเลย แก้แค่บรรทัด import ให้ชี้มาที่ไฟล์ในเว็บเราแทน CDN ของ Firebase
+//
+//   ⚠️ หมายเหตุ (2026-09-17):
+//     ก่อนหน้านี้บรรทัดนี้เคยระบุ onSnapshot รวมอยู่ใน list ของ "ฟังก์ชันที่แอปนี้ใช้จริง"
+//     แต่จริง ๆ แล้ว onSnapshot ไม่มี caller จริงใน codebase แล้ว (ย้ายไปใช้ fetchCustomerOrdersOnce)
+//     ดูคอมเมนต์ "DEAD CODE" ที่ฟังก์ชัน onSnapshot ใน db-client.js สำหรับรายละเอียดเต็ม
+//     ฟังก์ชัน onSnapshot/listenCustomerOrders ยัง export อยู่ใน db-client.js ตามกฎ
+//     "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน" — เผื่ออนาคตต้องการ realtime กลับมา
 // ===================================================
 import { hashPassword, verifyPassword, getSessionAdmin, createSession, deleteSession, buildSessionCookie, buildClearCookie, getCookie, cleanupExpiredSessions } from "./auth-helpers.js";
 import { getDocument, listDocuments, queryDocuments, setDocument, updateDocument, deleteDocument, countDocuments, getDocumentsByIds } from "./db-helpers.js";
