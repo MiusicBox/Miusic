@@ -1,9 +1,30 @@
 // app-user.js — หน้า User: ดึงข้อมูลจาก Cloudflare D1, เล่นเพลงจาก Cloudflare R2 โดยตรง
 // ===================================================
 import { db } from "./firebase-init.js?v=20260905-fix1";
+// ────────────────────────────────────────────────────────────────────────────
+// ⚠️  สำหรับ Dev ใหม่: อ่านก่อนแก้ import block นี้  ────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// onSnapshot และ listenCustomerOrders ใน import ด้านล่างเป็น "DEAD IMPORTS"
+// คือ import เข้ามาแต่ **ไม่มีการเรียกใช้จริง** ในไฟล์ app-user.js ทั้งหมด (ยืนยันด้วย grep)
+//
+//   ประวัติ:
+//     - ก่อน 2026-09-17: เคยใช้ onSnapshot/listenCustomerOrders สำหรับ realtime polling
+//       ออเดอร์ของลูกค้า (track order all list + badge)
+//     - 2026-09-17: ย้ายไปใช้ fetchCustomerOrdersOnce() แบบ one-shot แทน (ลด D1 quota)
+//
+//   ที่ไม่ลบ imports ทิ้ง:
+//     - กฎของโปรเจกต์: "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+//     - เผื่ออนาคตจะใช้ onSnapshot/listenCustomerOrders จริง ๆ
+//
+//   ⚠️ ถ้าจะลบ imports ทิ้ง:
+//      - ต้องลบ exports ใน db-client.js ด้วย (บรรทัด 204 และ 290 ของ db-client.js)
+//      - และลบ imports ใน app-promotion.js บรรทัด 22 ด้วย (มี dead imports เหมือนกัน)
+//      - ไม่งั้นไม่พัง (เพราะไม่ได้ใช้) แต่เป็น code smell ถ้าเหลืออยู่ฝั่งเดียว
+// ────────────────────────────────────────────────────────────────────────────
 import {
   collection, getDocs, doc, getDoc, query, where, onSnapshot, deleteDoc, queryCustomerOrder, listenCustomerOrders,
   // 🔧 (2026-09-17): เพิ่ม fetchCustomerOrdersOnce สำหรับ one-shot fetch (ไม่ polling) ลด D1 quota
+  //    ↑ ↑ ↑ ฟังก์ชันนี้แหละที่ใช้จริงในไฟล์นี้ (แทน listenCustomerOrders เดิม)
   fetchCustomerOrdersOnce
 // 🔧 (2026-09-17 v2): เพิ่ม ?v=20260917-polling-fix บังคับ browser โหลด db-client.js ใหม่ (กัน cache เก่า)
 } from "./db-client.js?v=20260917-polling-fix";
@@ -1369,7 +1390,15 @@ async function handleTrackOrderSubmit() {
 
 // ===== เพิ่มใหม่: ดูออเดอร์ทั้งหมดของฉัน แบบเรียลไทม์ (ฝั่งลูกค้า ไม่ต้อง Login) — ไม่แตะระบบเดิมด้านบน =====
 // ใช้เบอร์โทร/WhatsApp ที่ผูกกับทุกออเดอร์อยู่แล้วเป็นตัวระบุ + เทียบชื่อคู่กันเหมือนโหมดค้นหาออเดอร์เดียว
-let trackOrderAllUnsub = null;      // เก็บฟังก์ชันยกเลิก onSnapshot listener ปัจจุบัน (legacy — ยังคงไว้, ปัจจุบันไม่ใช้)
+//
+// ⚠️ DEAD CODE (NO CALLER): trackOrderAllUnsub ด้านล่างเป็น dead state field
+//   - เดิมเคยเก็บฟังก์ชัน unsubscribe ที่ได้จาก listenCustomerOrders() หรือ onSnapshot()
+//   - 2026-09-17: ทุก caller ย้ายไปใช้ fetchCustomerOrdersOnce() (one-shot, ไม่มี unsubscribe)
+//   - ปัจจุบัน: trackOrderAllUnsub ถูก set เป็น null เสมอ, ไม่เคยถูก assign ฟังก์ชัน unsubscribe จริง
+//   - ที่ไม่ลบ: กฎของโปรเจกต์ "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+//   - ถ้าอนาคตจะใช้ polling กลับมา: ต้อง assign ฟังก์ชัน unsubscribe จาก listenCustomerOrders()
+//     ให้ trackOrderAllUnsub จริง ๆ ใน startTrackOrderAllListener() ถึงจะทำงาน
+let trackOrderAllUnsub = null;      // ← DEAD CODE — ดูคอมเมนต์ด้านบน
 let trackOrderAllOrders = [];       // เก็บผลลัพธ์ล่าสุดไว้ใช้ตอนกดดูรายละเอียดในลิสต์
 let trackOrderAllSlowTimer = null;  // เพิ่มใหม่: ตัวจับเวลาแจ้งเตือน "เน็ตช้า" ของ listener ปัจจุบัน
 // 🔧 (2026-09-17): เก็บ name+phone ปัจจุบันไว้ใช้ตอน visibility เปลี่ยน (กลับเข้า tab ใหม่)
@@ -1379,6 +1408,14 @@ let trackOrderAllVisibilityHandler = null;  // visibility listener ของ Tra
 
 function stopTrackOrderAllListener() {
   // 🔧 (2026-09-17): ไม่มี unsubscribe อีกต่อไป (one-shot fetch) — แต่ล้าง handler เก่าถ้ามี
+  //
+  // ⚠️ DEAD CODE BLOCK: if (trackOrderAllUnsub) { ... } ด้านล่าง — ไม่มีทางทำงานจริง
+  //   - trackOrderAllUnsub ถูก set เป็น null เสมอ, ไม่เคยถูก assign ฟังก์ชัน unsubscribe จริง
+  //   - เดิมเคยใช้ตอน listener เป็น polling (listenCustomerOrders/onSnapshot)
+  //   - ปัจจุบัน: ทุก caller ใช้ fetchCustomerOrdersOnce() แบบ one-shot, ไม่มี unsubscribe ต้องล้าง
+  //   - ที่ไม่ลบ: กฎของโปรเจกต์ "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+  //   - ถ้าจะลบ: ลบได้ทั้ง block (บรรทัด if ถึง } ปิด) และ field declaration ด้านบน (trackOrderAllUnsub)
+  //     ไม่กระทบระบบเดิมเพราะไม่มี caller จริง — แต่ต้องลบทั้งคู่พร้อมกัน
   if (trackOrderAllUnsub) {
     try { trackOrderAllUnsub(); } catch (err) { /* เพิกเฉย ถ้ายกเลิกซ้ำ */ }
     trackOrderAllUnsub = null;
@@ -1672,7 +1709,15 @@ function updateTrackOrderBadge(count) {
 // 🔧 (2026-09-17): ดึง badge count ครั้งเดียว (one-shot) — ไม่ polling
 // ใช้ข้อมูล name+whatsapp จาก localStorage (เดียวกับที่ app-promotion.js ใช้ใน My Orders view)
 // ถ้ายังไม่เคยกรอกข้อมูลใน My Orders → ซ่อน badge ไว้
-let _trackOrderBadgeUnsub = null;       // legacy — ยังคงไว้, ปัจจุบันไม่ใช้
+//
+// ⚠️ DEAD CODE (NO CALLER): _trackOrderBadgeUnsub ด้านล่างเป็น dead state field
+//   - เดิมเคยเก็บฟังก์ชัน unsubscribe ที่ได้จาก listenCustomerOrders() หรือ onSnapshot()
+//   - 2026-09-17: ทุก caller ย้ายไปใช้ fetchTrackOrderBadgeOnce() (one-shot, ไม่มี unsubscribe)
+//   - ปัจจุบัน: _trackOrderBadgeUnsub ถูก set เป็น null เสมอ, ไม่เคยถูก assign ฟังก์ชัน unsubscribe จริง
+//   - ที่ไม่ลบ: กฎของโปรเจกต์ "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+//   - ถ้าอนาคตจะใช้ polling กลับมา: ต้อง assign ฟังก์ชัน unsubscribe จาก listenCustomerOrders()
+//     ให้ _trackOrderBadgeUnsub จริง ๆ ใน initTrackOrderBadgeListener() ถึงจะทำงาน
+let _trackOrderBadgeUnsub = null;       // ← DEAD CODE — ดูคอมเมนต์ด้านบน
 let _trackOrderBadgeVisibilityHandler = null;  // visibility listener ของ badge
 function initTrackOrderBadgeListener() {
   // ล้าง visibility handler เดิมถ้ามี (กันซ้ำ)
@@ -1680,7 +1725,13 @@ function initTrackOrderBadgeListener() {
     document.removeEventListener("visibilitychange", _trackOrderBadgeVisibilityHandler);
     _trackOrderBadgeVisibilityHandler = null;
   }
-  // legacy cleanup (ถ้ายังมี unsubscribe เก่าค้างอยู่ — ปัจจุบันไม่สร้างใหม่แล้ว)
+  // ⚠️ DEAD CODE BLOCK: if (_trackOrderBadgeUnsub) { ... } ด้านล่าง — ไม่มีทางทำงานจริง
+  //   - _trackOrderBadgeUnsub ถูก set เป็น null เสมอ, ไม่เคยถูก assign ฟังก์ชัน unsubscribe จริง
+  //   - เดิมเคยใช้ตอน listener เป็น polling (listenCustomerOrders/onSnapshot)
+  //   - ปัจจุบัน: ใช้ fetchTrackOrderBadgeOnce() แบบ one-shot, ไม่มี unsubscribe ต้องล้าง
+  //   - ที่ไม่ลบ: กฎของโปรเจกต์ "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+  //   - ถ้าจะลบ: ลบได้ทั้ง block (บรรทัด if ถึง } ปิด) และ field declaration ด้านบน (_trackOrderBadgeUnsub)
+  //     ไม่กระทบระบบเดิมเพราะไม่มี caller จริง — แต่ต้องลบทั้งคู่พร้อมกัน
   if (_trackOrderBadgeUnsub) {
     try { _trackOrderBadgeUnsub(); } catch (_) {}
     _trackOrderBadgeUnsub = null;
