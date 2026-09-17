@@ -24,6 +24,26 @@ CREATE TABLE IF NOT EXISTS documents (
 -- ใช้เร่งความเร็วตอน getDocs(collection(db, "..")) แบบไม่มีเงื่อนไข (ดึงทั้ง collection)
 CREATE INDEX IF NOT EXISTS idx_documents_collection ON documents(collection);
 
+-- 🔧 แก้บั๊ก Bug #6 (2026-09-17): index สำหรับ query orders ด้วย whatsapp
+-- ใช้ตอน endpoint /api/db/orders/_customer-list — ลูกค้าดูออเดอร์ของตัวเอง
+-- โดยที่ไม่ต้อง scan orders ทั้งหมดมากรองฝั่ง JS
+-- D1 รองรับ expression index บน json_extract — ทำให้ query WHERE json_extract(data, '$.whatsapp') = ?
+-- สามารถใช้ index ได้โดยตรง
+CREATE INDEX IF NOT EXISTS idx_documents_orders_whatsapp
+  ON documents(collection, json_extract(data, '$.whatsapp'))
+  WHERE collection = 'orders';
+
+-- 🔧 แก้บั๊ก Bug #7 (2026-09-17): index สำหรับ query cover_url ใน songs และ playlists
+-- ใช้ตอน endpoint /api/db/_meta/_check-cover-used — ตรวจว่า cover_url ยังถูกใช้อยู่ไหม
+-- ทำให้ query json_extract(data, '$.cover_url') = ? ใช้ index ได้โดยตรง
+CREATE INDEX IF NOT EXISTS idx_documents_songs_cover
+  ON documents(json_extract(data, '$.cover_url'))
+  WHERE collection = 'songs';
+
+CREATE INDEX IF NOT EXISTS idx_documents_playlists_cover
+  ON documents(json_extract(data, '$.cover_url'))
+  WHERE collection = 'playlists';
+
 CREATE TABLE IF NOT EXISTS admin_users (
   id             TEXT PRIMARY KEY, -- เทียบเท่า Firebase Auth UID เดิม
   email          TEXT NOT NULL UNIQUE,
