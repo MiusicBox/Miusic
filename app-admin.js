@@ -232,19 +232,54 @@ onAuthStateChanged(auth, async (user) => {
 // แทนที่ขั้นตอนสร้างบัญชีผ่าน Firebase Console เดิม — เช็คตอนโหลดหน้าว่ามีแอดมินในระบบหรือยัง
 // ถ้ายังไม่มีเลย จะสลับหน้าจอ Login เป็นฟอร์มตั้งค่าแอดมินหลักคนแรกแทน (ไม่กระทบหน้าตา/พฤติกรรม
 // การ login ปกติของระบบเดิมเลยเมื่อมีแอดมินอยู่แล้ว)
+//
+// 🔒 Security (2026-09-17 P1): แก้ Bug 4 — ถ้า checkHasAdmin() error → แสดงทั้ง login + ปุ่ม bootstrap
+//   เดิม: error → return true → โหมด login ปกติ → ถ้าไม่มี admin → user ติดหน้า login ไม่มีทางออก
+//   ใหม่: error → return null → แสดง login form + เพิ่มปุ่ม "ตั้งค่าแอดมินคนแรก" ให้เลือกเอง
 let LOGIN_BOOTSTRAP_MODE = false;
 (async () => {
   try {
     const hasAdmin = await checkHasAdmin();
-    if (!hasAdmin) {
+    if (hasAdmin === false) {
+      // ไม่มี admin แน่นอน → โหมด bootstrap (เหมือนเดิม)
       LOGIN_BOOTSTRAP_MODE = true;
       document.getElementById("loginTitle").textContent = "ตั้งค่าแอดมินคนแรก";
       document.getElementById("loginSubtitle").textContent = "ยังไม่มีแอดมินในระบบ — สร้างบัญชีแอดมินหลักคนแรกที่นี่";
       document.getElementById("loginDisplayNameField").style.display = "block";
       document.getElementById("loginBtn").textContent = "สร้างแอดมินคนแรก";
+    } else if (hasAdmin === null) {
+      // 🔧 (2026-09-17 P1): checkHasAdmin error → แสดง login + ปุ่ม bootstrap ให้เลือก
+      //   ไม่ติดหน้า login ถ้าไม่มี admin จริง ๆ
+      const loginError = document.getElementById("loginError");
+      if (loginError) {
+        loginError.textContent = "⚠️ ไม่สามารถตรวจสอบสถานะระบบได้ — หากยังไม่มีแอดมิน ให้คลิกปุ่มด้านล่าง";
+        loginError.style.color = "var(--text-dim)";
+      }
+      // เพิ่มปุ่ม "ตั้งค่าแอดมินคนแรก" ใต้ปุ่ม login
+      const loginBtn = document.getElementById("loginBtn");
+      if (loginBtn && !document.getElementById("bootstrapFallbackBtn")) {
+        const bootstrapBtn = document.createElement("button");
+        bootstrapBtn.id = "bootstrapFallbackBtn";
+        bootstrapBtn.type = "button";
+        bootstrapBtn.className = "btn secondary";
+        bootstrapBtn.style.cssText = "margin-top:10px;width:100%;font-size:13px;";
+        bootstrapBtn.textContent = "ตั้งค่าแอดมินคนแรก (ถ้ายังไม่มี)";
+        bootstrapBtn.addEventListener("click", () => {
+          LOGIN_BOOTSTRAP_MODE = true;
+          document.getElementById("loginTitle").textContent = "ตั้งค่าแอดมินคนแรก";
+          document.getElementById("loginSubtitle").textContent = "สร้างบัญชีแอดมินหลักคนแรกที่นี่";
+          document.getElementById("loginDisplayNameField").style.display = "block";
+          document.getElementById("loginBtn").textContent = "สร้างแอดมินคนแรก";
+          bootstrapBtn.style.display = "none";
+          if (loginError) loginError.textContent = "";
+        });
+        loginBtn.parentNode.insertBefore(bootstrapBtn, loginBtn.nextSibling);
+      }
     }
+    // hasAdmin === true → โหมด login ปกติ (ไม่ต้องทำอะไร)
   } catch (err) {
-    console.error("checkHasAdmin error:", err); // เช็คไม่สำเร็จ -> ปล่อยเป็นโหมด login ปกติ (ปลอดภัยกว่า)
+    console.error("checkHasAdmin error:", err);
+    // fallback: ปล่อยเป็นโหมด login ปกติ (ถ้ามี admin อยู่แล้ว login ได้ปกติ)
   }
 })();
 
