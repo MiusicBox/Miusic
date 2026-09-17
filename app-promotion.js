@@ -19,7 +19,9 @@
 // ===================================================
 import { db, auth } from "./firebase-init.js?v=20260905-fix1";
 import {
-  collection, doc, getDocs, setDoc, updateDoc, deleteDoc, query, onSnapshot, listenCustomerOrders
+  collection, doc, getDocs, setDoc, updateDoc, deleteDoc, query, onSnapshot, listenCustomerOrders,
+  // 🔧 (2026-09-17): เพิ่ม fetchCustomerOrdersOnce สำหรับ one-shot fetch (ไม่ polling) ลด D1 quota
+  fetchCustomerOrdersOnce
 } from "./db-client.js";
 
 // ============================================================================
@@ -1073,7 +1075,7 @@ function renderMyOrdersForm() {
   container.innerHTML = `
     <div class="my-orders-header">
       <h2>📦 ออเดอร์ของฉัน</h2>
-      <p>กรอกชื่อและเบอร์ WhatsApp ที่ใช้สั่งซื้อ — ระบบจะแสดงออเดอร์ทั้งหมดของคุณแบบ realtime</p>
+      <p>กรอกชื่อและเบอร์ WhatsApp ที่ใช้สั่งซื้อ — กด "รีเฟรช" เพื่อดูข้อมูลล่าสุด (ระบบจะอัปเดตอัตโนมัติเมื่อคุณกลับเข้าหน้านี้ใหม่)</p>
     </div>
     <div class="my-orders-form">
       <div class="field">
@@ -1100,14 +1102,76 @@ function renderMyOrdersForm() {
   const searchBtn = document.getElementById("myOrdersSearchBtn");
   if (searchBtn) searchBtn.addEventListener("click", handleSearchMyOrders);
   const refreshBtn = document.getElementById("myOrdersRefreshBtn");
+  // 🔧 (2026-09-17): เปลี่ยนจากแค่โชว์ toast → ยิง fetch จริง (ลด D1 quota ไม่มี polling ต่อเนื่อง)
   if (refreshBtn) refreshBtn.addEventListener("click", () => {
-    myOrders_showToast("ข้อมูลอัปเดตอัตโนมัติอยู่แล้ว", "success");
+    if (MY_ORDERS_STATE.customerName && MY_ORDERS_STATE.customerWhatsapp) {
+      myOrders_showToast("กำลังรีเฟรช...", "info");
+      fetchMyOrdersOnce();
+    } else {
+      myOrders_showToast("กรอกชื่อและเบอร์ WhatsApp ก่อน", "error");
+    }
   });
   const clearBtn = document.getElementById("myOrdersClearBtn");
   if (clearBtn) clearBtn.addEventListener("click", handleClearMyOrders);
 
   if (savedName && savedWhatsapp) {
     setTimeout(() => handleSearchMyOrders(), 100);
+  }
+
+  // 🔧 (2026-09-17): เพิ่ม visibility listener — เมื่อลูกค้าสลับ tab ไปอื่นแล้วกลับมา ให้ refresh ทันที
+  // ทำงานคู่กับ fetchMyOrdersOnce (one-shot) ไม่ใช่ polling
+  // กัน listener ซ้ำ: เก็บไว้ใน MY_ORDERS_STATE._visibilityHandler แล้วลบก่อนผูกใหม่
+  if (MY_ORDERS_STATE._visibilityHandler) {
+    document.removeEventListener("visibilitychange", MY_ORDERS_STATE._visibilityHandler);
+  }
+  MY_ORDERS_STATE._visibilityHandler = () => {
+    // ถ้า tab กลับมา visible + ลูกค้าเคยกรอกข้อมูล + ยังอยู่ใน My Orders view → refresh ทันที
+    if (document.visibilityState !== "visible") return;
+    if (!MY_ORDERS_STATE.customerName || !MY_ORDERS_STATE.customerWhatsapp) return;
+    // ตรวจว่ายังอยู่ใน My Orders view (container ยังโชว์อยู่) ก่อน refresh กัน refresh ที่ไม่จำเป็น
+    const container = document.getElementById("myOrdersView");
+    if (!container || container.style.display === "none") return;
+    const listContainer = document.getElementById("myOrdersListContainer");
+    if (!listContainer || listContainer.style.display === "none") return;
+    fetchMyOrdersOnce();
+  };
+  document.addEventListener("visibilitychange", MY_ORDERS_STATE._visibilityHandler);
+}
+
+// 🔧 (2026-09-17): แยก fetchMyOrdersOnce ออกมาจาก handleSearchMyOrders เพื่อ reuse
+//   (ใช้ทั้งตอน search ครั้งแรก, ตอนกดปุ่ม refresh, และตอน visibility เปลี่ยน)
+// ทำงาน: ดึงออเดอร์ทั้งหมดของลูกค้าครั้งเดียว (one-shot) → render ลิสต์ + อัปเดต badge
+// ไม่มี polling ต่อเนื่อง — ลด D1 quota อย่างมาก
+async function fetchMyOrdersOnce() {
+  const listEl = document.getElementById("myOrdersList");
+  // โชว์ loading state เฉพาะถ้าลิสต์ว่างอยู่ (กันกระพริบตอน refresh ซ้ำ)
+  if (listEl && (!MY_ORDERS_STATE.myOrders || MY_ORDERS_STATE.myOrders.length === 0)) {
+    listEl.innerHTML = '<div class="empty-state">⏳ กำลังค้นหาออเดอร์ของคุณ...</div>';
+  }
+  try {
+    // 🔒 Security (2026-09-11): ใช้ fetchCustomerOrdersOnce แทน listenCustomerOrders polling
+    // Server กรองเฉพาะออเดอร์ของลูกค้าคนนี้ส่งกลับมา (เบอร์ต้องตรง 100%, ชื่อเปิดให้ fuzzy match)
+    // กัน browser เห็นข้อมูลคนอื่นทั้งหมด (เดิมโหลด collection "orders" มากรองเองฝั่ง client)
+    const { snap } = await fetchCustomerOrdersOnce({
+      customerName: MY_ORDERS_STATE.customerName,
+      whatsapp: MY_ORDERS_STATE.customerWhatsapp,
+    });
+    const myOrders = [];
+    snap.forEach(d => myOrders.push({ _docId: d.id, ...d.data() }));
+    myOrders.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+    MY_ORDERS_STATE.myOrders = myOrders;
+    renderMyOrdersList(myOrders);
+    // 🔧 (2026-09-17): อัปเดต badge บนปุ่ม "ติดตามออเดอร์" ด้วย — ใช้ข้อมูลเดียวกับที่โหลดมาแล้ว
+    // นับเฉพาะ active: pending_verify + processing
+    if (window.__updateTrackOrderBadge) {
+      const activeCount = myOrders.filter(o =>
+        String(o?.status || "") === "pending_verify" || String(o?.status || "") === "processing"
+      ).length;
+      window.__updateTrackOrderBadge(activeCount);
+    }
+  } catch (err) {
+    console.error("fetchMyOrdersOnce error:", err);
+    if (listEl) listEl.innerHTML = `<div class="empty-state">⚠️ โหลดออเดอร์ไม่สำเร็จ: ${myOrders_escapeHtml(err.message || "")}</div>`;
   }
 }
 
@@ -1145,54 +1209,25 @@ async function handleSearchMyOrders() {
   MY_ORDERS_STATE.customerName = name;
   MY_ORDERS_STATE.customerWhatsapp = phone;
 
+  // 🔧 (2026-09-17): ไม่มี unsubscribe อีกต่อไป (one-shot fetch) — แต่เก็บไว้สำหรับ back-compat
+  // ถ้ามี handler เก่า (visibilitychange) ค้างอยู่ก็ลบก่อน
   if (MY_ORDERS_STATE.unsubscribe) {
-    MY_ORDERS_STATE.unsubscribe();
+    try { MY_ORDERS_STATE.unsubscribe(); } catch (_) {}
     MY_ORDERS_STATE.unsubscribe = null;
   }
 
   const listContainer = document.getElementById("myOrdersListContainer");
   if (listContainer) listContainer.style.display = "block";
 
-  const listEl = document.getElementById("myOrdersList");
-  if (listEl) listEl.innerHTML = '<div class="empty-state">⏳ กำลังค้นหาออเดอร์ของคุณ...</div>';
-
-  try {
-    // 🔒 Security (2026-09-11): ใช้ listenCustomerOrders แทน onSnapshot บน collection "orders" ทั้งหมด
-    // Server กรองเฉพาะออเดอร์ของลูกค้าคนนี้ส่งกลับมา (เบอร์ต้องตรง 100%, ชื่อเปิดให้ fuzzy match
-    // แบบ contains เหมือนโค้ดเดิม — กันลูกค้าพิมพ์ชื่อต่างจากตอนสั่งซื้อนิดหน่อยแล้วหาไม่เจอ)
-    // กัน browser เห็นข้อมูลคนอื่นทั้งหมด (เดิมโหลด collection "orders" มากรองเองฝั่ง client)
-    // ส่ง whatsapp (raw) ให้ Server แล้ว Server จะ normalize เอง — เหมือนเดิมทุกประการ
-    MY_ORDERS_STATE.unsubscribe = listenCustomerOrders(
-      { customerName: name, whatsapp: whatsapp },
-      (snap) => {
-        const myOrders = [];
-        snap.forEach(d => myOrders.push({ _docId: d.id, ...d.data() }));
-        myOrders.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
-        MY_ORDERS_STATE.myOrders = myOrders;
-        renderMyOrdersList(myOrders);
-        // 🔧 (2026-09-17): อัปเดต badge บนปุ่ม "ติดตามออเดอร์" ด้วย — ใช้ข้อมูลเดียวกับที่โหลดมาแล้ว
-        // นับเฉพาะ active: pending_verify + processing
-        if (window.__updateTrackOrderBadge) {
-          const activeCount = myOrders.filter(o =>
-            String(o?.status || "") === "pending_verify" || String(o?.status || "") === "processing"
-          ).length;
-          window.__updateTrackOrderBadge(activeCount);
-        }
-      },
-      (err) => {
-        console.error("myOrders onSnapshot error:", err);
-        if (listEl) listEl.innerHTML = `<div class="empty-state">⚠️ โหลดออเดอร์ไม่สำเร็จ: ${myOrders_escapeHtml(err.message || "")}</div>`;
-      }
-    );
-  } catch (err) {
-    console.error("handleSearchMyOrders error:", err);
-    if (listEl) listEl.innerHTML = `<div class="empty-state">⚠️ โหลดออเดอร์ไม่สำเร็จ: ${myOrders_escapeHtml(err.message || "")}</div>`;
-  }
+  // รีเซ็ต myOrders เพื่อให้ fetchMyOrdersOnce โชว์ loading state
+  MY_ORDERS_STATE.myOrders = [];
+  await fetchMyOrdersOnce();
 }
 
 function handleClearMyOrders() {
+  // 🔧 (2026-09-17): ไม่มี unsubscribe อีกต่อไป (one-shot fetch) — แต่ล้าง handler เก่าถ้ามี
   if (MY_ORDERS_STATE.unsubscribe) {
-    MY_ORDERS_STATE.unsubscribe();
+    try { MY_ORDERS_STATE.unsubscribe(); } catch (_) {}
     MY_ORDERS_STATE.unsubscribe = null;
   }
   MY_ORDERS_STATE.myOrders = [];
@@ -1208,7 +1243,8 @@ function renderMyOrdersList(orders) {
   const countEl = document.getElementById("myOrdersCountText");
   if (!listEl) return;
   if (countEl) {
-    countEl.textContent = `พบ ${orders.length} ออเดอร์ · อัปเดตอัตโนมัติเรียลไทม์`;
+    // 🔧 (2026-09-17): เปลี่ยนข้อความเพราะไม่ใช่ realtime อีกต่อไป — กดรีเฟรชเอง หรือกลับเข้า tab ใหม่
+    countEl.textContent = `พบ ${orders.length} ออเดอร์ · กด "รีเฟรช" เพื่อดูข้อมูลล่าสุด`;
   }
   if (orders.length === 0) {
     listEl.innerHTML = `
@@ -1355,8 +1391,14 @@ export function initMyOrdersView() {
 }
 
 export function cleanupMyOrdersView() {
+  // 🔧 (2026-09-17): ไม่มี unsubscribe อีกต่อไป (one-shot fetch) — แต่ล้าง handler เก่าถ้ามี
   if (MY_ORDERS_STATE.unsubscribe) {
-    MY_ORDERS_STATE.unsubscribe();
+    try { MY_ORDERS_STATE.unsubscribe(); } catch (_) {}
     MY_ORDERS_STATE.unsubscribe = null;
+  }
+  // ล้าง visibility listener ด้วย (ตั้งไว้ใน renderMyOrdersForm)
+  if (MY_ORDERS_STATE._visibilityHandler) {
+    document.removeEventListener("visibilitychange", MY_ORDERS_STATE._visibilityHandler);
+    MY_ORDERS_STATE._visibilityHandler = null;
   }
 }
