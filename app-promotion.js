@@ -18,9 +18,30 @@
 //   - field ใหม่: subtotal, discount_amount, promotion_applied (object หรือ null), final_total
 // ===================================================
 import { db, auth } from "./firebase-init.js?v=20260905-fix1";
+// ────────────────────────────────────────────────────────────────────────────
+// ⚠️  สำหรับ Dev ใหม่: อ่านก่อนแก้ import block นี้  ────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// onSnapshot และ listenCustomerOrders ใน import ด้านล่างเป็น "DEAD IMPORTS"
+// คือ import เข้ามาแต่ **ไม่มีการเรียกใช้จริง** ในไฟล์ app-promotion.js ทั้งหมด (ยืนยันด้วย grep)
+//
+//   ประวัติ:
+//     - ก่อน 2026-09-17: เคยใช้ listenCustomerOrders ในส่วน PART 4: MY ORDERS VIEW
+//       (สำหรับ polling ออเดอร์ของลูกค้าแบบ realtime)
+//     - 2026-09-17: ย้ายไปใช้ fetchCustomerOrdersOnce() แบบ one-shot แทน (ลด D1 quota)
+//
+//   ที่ไม่ลบ imports ทิ้ง:
+//     - กฎของโปรเจกต์: "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+//     - เผื่ออนาคตจะใช้ onSnapshot/listenCustomerOrders จริง ๆ
+//
+//   ⚠️ ถ้าจะลบ imports ทิ้ง:
+//      - ต้องลบ exports ใน db-client.js ด้วย (ดูคอมเมนต์ DEAD CODE ใน db-client.js)
+//      - และลบ imports ใน app-user.js บรรทัด 5 ด้วย (มี dead imports เหมือนกัน)
+//      - ไม่งั้นไม่พัง (เพราะไม่ได้ใช้) แต่เป็น code smell ถ้าเหลืออยู่ฝั่งเดียว
+// ────────────────────────────────────────────────────────────────────────────
 import {
   collection, doc, getDocs, setDoc, updateDoc, deleteDoc, query, onSnapshot, listenCustomerOrders,
   // 🔧 (2026-09-17): เพิ่ม fetchCustomerOrdersOnce สำหรับ one-shot fetch (ไม่ polling) ลด D1 quota
+  //    ↑ ↑ ↑ ฟังก์ชันนี้แหละที่ใช้จริงในไฟล์นี้ (แทน listenCustomerOrders เดิม) ใน PART 4: MY ORDERS VIEW
   fetchCustomerOrdersOnce
 // 🔧 (2026-09-17 v2): เพิ่ม ?v=20260917-polling-fix บังคับ browser โหลด db-client.js ใหม่ (กัน cache เก่า)
 } from "./db-client.js?v=20260917-polling-fix";
@@ -1096,10 +1117,22 @@ export function initPromotionsView() {
 // ============================================================================
 // PART 4: MY ORDERS VIEW (ลูกค้าติดตามออเดอร์ของตัวเองแบบ realtime)
 // ============================================================================
+//
+// ⚠️ DEAD CODE: MY_ORDERS_STATE.unsubscribe (field ด้านล่าง) — ไม่มีทางทำงานจริง
+//   - เดิมเคยเก็บฟังก์ชัน unsubscribe ที่ได้จาก listenCustomerOrders() หรือ onSnapshot()
+//     (ตอนที่ PART 4 ใช้ polling ทุก 4 วิ)
+//   - 2026-09-17: ย้ายไปใช้ fetchMyOrdersOnce() แบบ one-shot แทน (ลด D1 quota)
+//   - ปัจจุบัน: unsubscribe ถูก set เป็น null เสมอ, ไม่เคยถูก assign ฟังก์ชัน unsubscribe จริง
+//   - ที่ไม่ลบ: กฎของโปรเจกต์ "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+//   - ถ้าอนาคตจะใช้ polling กลับมา: ต้อง assign ฟังก์ชัน unsubscribe จาก listenCustomerOrders()
+//     ให้ MY_ORDERS_STATE.unsubscribe จริง ๆ ใน handleSearchMyOrders() ถึงจะทำงาน
+//   - ถ้าจะลบ: ลบได้ทั้ง field + cleanup blocks ใน 3 ฟังก์ชันด้านล่าง
+//     (handleSearchMyOrders บรรทัด 1314-1316, handleClearMyOrders บรรทัด 1329-1331, cleanupMyOrdersView บรรทัด 1495-1497)
+//     ไม่กระทบระบบเดิมเพราะไม่มี caller จริง — แต่ต้องลบทั้ง 4 จุดพร้อมกัน (field + 3 cleanup blocks)
 
 let MY_ORDERS_STATE = {
   initialized: false,
-  unsubscribe: null,
+  unsubscribe: null,    // ← DEAD CODE — ดูคอมเมนต์ด้านบน
   customerName: "",
   customerWhatsapp: "",
   allOrders: [],
@@ -1290,6 +1323,14 @@ async function handleSearchMyOrders() {
 
   // 🔧 (2026-09-17): ไม่มี unsubscribe อีกต่อไป (one-shot fetch) — แต่เก็บไว้สำหรับ back-compat
   // ถ้ามี handler เก่า (visibilitychange) ค้างอยู่ก็ลบก่อน
+  //
+  // ⚠️ DEAD CODE BLOCK: if (MY_ORDERS_STATE.unsubscribe) { ... } ด้านล่าง — ไม่มีทางทำงานจริง
+  //   - MY_ORDERS_STATE.unsubscribe ถูก set เป็น null เสมอ, ไม่เคยถูก assign ฟังก์ชัน unsubscribe จริง
+  //   - เดิมเคยใช้ตอน listener เป็น polling (listenCustomerOrders/onSnapshot)
+  //   - ปัจจุบัน: ใช้ fetchMyOrdersOnce() แบบ one-shot, ไม่มี unsubscribe ต้องล้าง
+  //   - ที่ไม่ลบ: กฎของโปรเจกต์ "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+  //   - ดูคอมเมนต์ DEAD CODE ที่ MY_ORDERS_STATE declaration ด้านบนสำหรับรายละเอียดเต็ม
+  //     (รวมวิธีลบแบบปลอดภัยถ้าอนาคตต้องการ)
   if (MY_ORDERS_STATE.unsubscribe) {
     try { MY_ORDERS_STATE.unsubscribe(); } catch (_) {}
     MY_ORDERS_STATE.unsubscribe = null;
@@ -1305,6 +1346,13 @@ async function handleSearchMyOrders() {
 
 function handleClearMyOrders() {
   // 🔧 (2026-09-17): ไม่มี unsubscribe อีกต่อไป (one-shot fetch) — แต่ล้าง handler เก่าถ้ามี
+  //
+  // ⚠️ DEAD CODE BLOCK: if (MY_ORDERS_STATE.unsubscribe) { ... } ด้านล่าง — ไม่มีทางทำงานจริง
+  //   - MY_ORDERS_STATE.unsubscribe ถูก set เป็น null เสมอ, ไม่เคยถูก assign ฟังก์ชัน unsubscribe จริง
+  //   - เดิมเคยใช้ตอน listener เป็น polling (listenCustomerOrders/onSnapshot)
+  //   - ปัจจุบัน: ใช้ fetchMyOrdersOnce() แบบ one-shot, ไม่มี unsubscribe ต้องล้าง
+  //   - ที่ไม่ลบ: กฎของโปรเจกต์ "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+  //   - ดูคอมเมนต์ DEAD CODE ที่ MY_ORDERS_STATE declaration ด้านบนสำหรับรายละเอียดเต็ม
   if (MY_ORDERS_STATE.unsubscribe) {
     try { MY_ORDERS_STATE.unsubscribe(); } catch (_) {}
     MY_ORDERS_STATE.unsubscribe = null;
@@ -1471,6 +1519,16 @@ export function initMyOrdersView() {
 
 export function cleanupMyOrdersView() {
   // 🔧 (2026-09-17): ไม่มี unsubscribe อีกต่อไป (one-shot fetch) — แต่ล้าง handler เก่าถ้ามี
+  //
+  // ⚠️ DEAD CODE BLOCK: if (MY_ORDERS_STATE.unsubscribe) { ... } ด้านล่าง — ไม่มีทางทำงานจริง
+  //   - MY_ORDERS_STATE.unsubscribe ถูก set เป็น null เสมอ, ไม่เคยถูก assign ฟังก์ชัน unsubscribe จริง
+  //   - เดิมเคยใช้ตอน listener เป็น polling (listenCustomerOrders/onSnapshot)
+  //   - ปัจจุบัน: ใช้ fetchMyOrdersOnce() แบบ one-shot, ไม่มี unsubscribe ต้องล้าง
+  //   - ที่ไม่ลบ: กฎของโปรเจกต์ "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+  //   - ดูคอมเมนต์ DEAD CODE ที่ MY_ORDERS_STATE declaration ด้านบนสำหรับรายละเอียดเต็ม
+  //   - ⚠️ ข้อควรระวัง: cleanupMyOrdersView ถูกเรียกจาก app-user.js (บรรทัด 1072, 1083, 1090, 1101)
+  //     ในตอน switch tab — ถ้าจะลบ block นี้ต้องเก็บฟังก์ชัน cleanupMyOrdersView ไว้
+  //     ลบได้แค่ block ของ unsubscribe ด้านใน อย่าลบทั้งฟังก์ชัน
   if (MY_ORDERS_STATE.unsubscribe) {
     try { MY_ORDERS_STATE.unsubscribe(); } catch (_) {}
     MY_ORDERS_STATE.unsubscribe = null;
