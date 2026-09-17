@@ -24,6 +24,17 @@ CREATE TABLE IF NOT EXISTS documents (
 -- ใช้เร่งความเร็วตอน getDocs(collection(db, "..")) แบบไม่มีเงื่อนไข (ดึงทั้ง collection)
 CREATE INDEX IF NOT EXISTS idx_documents_collection ON documents(collection);
 
+-- 🔧 แก้บั๊ก Bug #9 (2026-09-17): index สำหรับ orderBy("created_at", ...) บน documents column
+-- ใช้ตอน endpoint /api/db/orders/_query (ฝั่งแอดมิน) — orders.js เรียก
+--   query(collection(db,"orders"), orderBy("created_at","desc"))
+--   db-helpers.js ใช้ column ตรง ๆ (documents.created_at) แทน json_extract
+--   → index ตัวนี้ทำให้ ORDER BY created_at DESC ใช้ index ได้โดยตรง
+-- ก่อนหน้านี้ใช้ json_extract(data, '$.created_at') ทำให้ D1 ไม่สามารถใช้ index ได้
+--   → scan ทั้งตาราง + sort ใน memory — 10,000 orders ช้าหลายวินาที
+-- index นี้ใช้ได้กับทุก collection (orders, songs, playlists, ...) — ไม่จำกัดเฉพาะ orders
+CREATE INDEX IF NOT EXISTS idx_documents_collection_created_at
+  ON documents(collection, created_at);
+
 -- 🔧 แก้บั๊ก Bug #6 (2026-09-17): index สำหรับ query orders ด้วย whatsapp
 -- ใช้ตอน endpoint /api/db/orders/_customer-list — ลูกค้าดูออเดอร์ของตัวเอง
 -- โดยที่ไม่ต้อง scan orders ทั้งหมดมากรองฝั่ง JS
