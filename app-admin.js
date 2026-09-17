@@ -308,13 +308,19 @@ document.getElementById("changePasswordSaveBtn").addEventListener("click", async
     // Firebase บังคับให้ล็อกอินสดๆ ก่อนเปลี่ยนรหัสผ่าน (sensitive operation) จึงต้อง reauthenticate ด้วยรหัสผ่านเดิมก่อนเสมอ
     const credential = EmailAuthProvider.credential(user.email, currentPassword);
     await reauthenticateWithCredential(user, credential);
-    await updatePassword(user, newPassword);
+    // 🔒 Security (2026-09-17 P0): ส่ง currentPassword ไปที่ updatePassword ด้วย
+    //   เดิม: ส่งแค่ newPassword → server ไม่ verify เดิม
+    //   ใหม่: ส่ง currentPassword ไปด้วย → server verify อีกทีก่อนเปลี่ยน (กัน session theft)
+    //   reauthenticateWithCredential ข้างบนเป็นแค่ client-side UX check (early failure เร็ว)
+    //   แต่ server-side verification จริง ๆ ทำใน /api/auth/change-password อีกที
+    await updatePassword(user, newPassword, currentPassword);
     feedback.style.color = "var(--success)";
     feedback.textContent = "เปลี่ยนรหัสผ่านสำเร็จแล้ว ✓";
     showToast("เปลี่ยนรหัสผ่านสำเร็จ", "success");
     setTimeout(() => { document.getElementById("changePasswordBackdrop").classList.remove("show"); }, 1000);
   } catch (err) {
     if (err && err.code === "auth/wrong-password") feedback.textContent = "รหัสผ่านปัจจุบันไม่ถูกต้อง";
+    else if (err && err.code === "auth/current-password-required") feedback.textContent = "กรุณากรอกรหัสผ่านปัจจุบัน";
     else if (err && err.code === "auth/too-many-requests") feedback.textContent = "ลองผิดหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่";
     else feedback.textContent = "เปลี่ยนรหัสผ่านไม่สำเร็จ: " + (err.message || err);
   }
