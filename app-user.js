@@ -850,6 +850,12 @@ function openSongModal(songId) {
   const song = findSong(songId);
   if (!song) return;
 
+  // 🔧 แก้บั๊ก (2026-09-17): Modal seek/jump กระทบเพลงผิด
+  //   เก็บ ID ของเพลงที่ modal เปิดอยู่ปัจจุบัน — ใช้ใน updateModalSeekUI และปุ่ม jump
+  //   ถ้า modalCurrentSongId !== STATE.currentPlayingId → modal เปิดอยู่ที่เพลงอื่น
+  //   ที่ไม่ใช่เพลงที่กำลังเล่น → ห้ามกระทบ AUDIO ของเพลงที่เล่นอยู่
+  modalCurrentSongId = songId;
+
   const coverEl = document.getElementById("modalCover");
   const nameEl = document.getElementById("modalName");
   const artistEl = document.getElementById("modalArtist");
@@ -944,6 +950,22 @@ function openSongModal(songId) {
 // ===== เพิ่มใหม่: helper สำหรับ popup ใหม่ — เหมือนฝั่ง admin (ไม่แตะระบบเดิม) =====
 // state สำหรับ seek bar ภายใน popup
 let modalIsSeeking = false;
+// 🔧 แก้บั๊ก (2026-09-17): Modal seek/jump กระทบเพลงผิด
+// -----------------------------------------------------------
+// อาการก่อนแก้: ลูกค้าเปิด modal เพลง B ระหว่างเพลง A กำลังเล่น → seek bar และปุ่ม jump
+//   (ต้นเพลง/Dance/ท้ายเพลง) ใน modal B จะกระทบเพลง A ที่กำลังเล่น ไม่ใช่เพลง B ที่ดูอยู่
+//
+// สาเหตุ: openSongModal() ไม่ได้เก็บ ID ของเพลงที่ modal เปิดอยู่ → updateModalSeekUI()
+//   และปุ่ม jump ทั้ง 3 ใช้ STATE.currentPlayingId/STATE.currentPreview ของเพลงที่กำลังเล่น
+//   โดยไม่เช็คว่าตรงกับเพลงใน modal ไหม
+//
+// วิธีแก้: เพิ่ม modalCurrentSongId เก็บ ID ของเพลงที่ modal เปิดอยู่ปัจจุบัน
+//   - ใน updateModalSeekUI: ถ้าไม่ตรงกับเพลงที่เล่น → reset seek bar เป็น 0:00/0:00
+//   - ในปุ่ม jump ทั้ง 3: ถ้าไม่ตรง → เริ่มเล่นเพลงใน modal แทน + seek ไปจุดที่ต้องการ
+//   - ใน modalSeek change: ถ้าไม่ตรง → ไม่ seek (กันกระทบเพลงที่กำลังเล่น)
+//
+// ผลกระทบต่อระบบเดิม: 0% — เปลี่ยนเฉพาะ modal UI flow ไม่แตะระบบอื่น
+let modalCurrentSongId = null;
 
 // ไอคอนเล่น/หยุดของปุ่มใน popup (ใช้ SVG เดียวกับของเดิม)
 function modalPlayIconSvg() { return '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>'; }
@@ -972,6 +994,18 @@ function updateModalSeekUI() {
   const backdrop = document.getElementById("songModalBackdrop");
   if (!backdrop || !backdrop.classList.contains("show")) return;
 
+  // 🔧 แก้บั๊ก (2026-09-17): ถ้าเพลงใน modal ไม่ใช่เพลงที่กำลังเล่น → reset seek bar
+  //   กัน seek bar แสดงเวลาของเพลงอื่นที่กำลังเล่นอยู่ (เช่น เปิด modal B ระหว่างเพลง A เล่น)
+  //   แสดง 0:00/0:00 แทน เพื่อบอกผู้ใช้ว่า "เพลงนี้ยังไม่ได้เล่น" อย่างชัดเจน
+  if (modalCurrentSongId !== STATE.currentPlayingId) {
+    seekEl.min = 0;
+    seekEl.max = 0;
+    seekEl.value = 0;
+    if (currEl) currEl.textContent = "0:00";
+    if (durEl) durEl.textContent = "0:00";
+    return;
+  }
+
   const preview = STATE.currentPreview;
   if (preview) {
     seekEl.min = preview.start;
@@ -991,7 +1025,59 @@ function updateModalSeekUI() {
 // ===== เพิ่มใหม่: event listeners สำหรับ popup ใหม่ — เหมือนฝั่ง admin =====
 // ปุ่มกระโดดช่วงเพลง (3 ปุ่ม) — เหมือน jumpToIntro / jumpToPreview / jumpToOutro ฝั่ง admin
 // ใช้ AUDIO ตัวเดิมของฝั่ง user — ไม่สร้าง Audio ใหม่
+
+// 🔧 แก้บั๊ก (2026-09-17): helper สำหรับ "เล่นเพลงใน modal + seek ไปจุดที่ต้องการ"
+// -----------------------------------------------------------
+// ใช้เมื่อผู้ใช้กดปุ่ม jump ใน modal ที่ไม่ใช่เพลงที่กำลังเล่นอยู่
+//   เช่น เปิด modal B ระหว่างเพลง A เล่น → กด "Dance" → ต้องเริ่มเล่นเพลง B แล้ว seek ไป Dance
+//
+// flow:
+//   1. playSong(songId) โหลดเพลงใหม่ (AUDIO.src ถูกเปลี่ยน)
+//   2. รอ loadedmetadata event (AUDIO.duration พร้อมใช้)
+//   3. ตั้ง AUDIO.currentTime = targetSec (seek ไปจุดที่ต้องการ)
+//   4. ตั้ง setModalJumpActive(section) เพื่อ highlight ปุ่มที่กด
+//
+// ⚠️ ถ้า targetSec เป็น null/undefined → ไม่ seek (ใช้ตอน "ต้นเพลง" ที่เริ่มจาก 0 อยู่แล้ว)
+function playSongAndSeekTo(songId, targetSec, section) {
+  const song = findSong(songId);
+  if (!song || !song.file_url) {
+    showToast("ไม่พบไฟล์เพลง", "error");
+    return;
+  }
+
+  // กรณีเพลงที่จะเล่น = เพลงที่กำลังเล่นอยู่แล้ว → ไม่ต้องโหลดใหม่ แค่ seek
+  if (STATE.currentPlayingId === songId && AUDIO.src) {
+    if (targetSec != null && isFinite(targetSec) && targetSec >= 0) {
+      try { AUDIO.currentTime = targetSec; } catch (e) {}
+    }
+    if (section) setModalJumpActive(section);
+    if (AUDIO.paused) AUDIO.play().then(updatePlayButtonsUI).catch(() => {});
+    return;
+  }
+
+  // กรณีต้องโหลดเพลงใหม่ → ตั้ง pendingSeek ไว้รอ loadedmetadata
+  const pendingSeek = (targetSec != null && isFinite(targetSec) && targetSec >= 0) ? targetSec : null;
+  const onLoadedMetadata = () => {
+    AUDIO.removeEventListener("loadedmetadata", onLoadedMetadata);
+    if (pendingSeek != null) {
+      try { AUDIO.currentTime = pendingSeek; } catch (e) {}
+    }
+    if (section) setModalJumpActive(section);
+  };
+  AUDIO.addEventListener("loadedmetadata", onLoadedMetadata);
+
+  // เริ่มเล่นเพลงใหม่ (playSong จะตั้ง STATE.currentPlayingId/preview)
+  playSong(songId);
+}
+
 document.getElementById("modalJumpToIntro").addEventListener("click", () => {
+  // 🔧 แก้บั๊ก (2026-09-17): ถ้า modal เปิดอยู่ที่เพลงอื่น → เริ่มเล่นเพลงใน modal แทน
+  if (modalCurrentSongId !== STATE.currentPlayingId) {
+    // "ต้นเพลง" = วินาที 0 → ไม่ต้อง seek (playSong เริ่มจาก 0 อยู่แล้ว)
+    playSongAndSeekTo(modalCurrentSongId, null, "intro");
+    return;
+  }
+  // กรณี modal เปิดอยู่ที่เพลงที่กำลังเล่น — โค้ดเดิม
   if (!STATE.currentPlayingId) {
     showToast("กดปุ่ม ฟังเพลง ก่อน เพื่อเริ่มเล่น", "info");
     return;
@@ -1004,6 +1090,21 @@ document.getElementById("modalJumpToIntro").addEventListener("click", () => {
 });
 
 document.getElementById("modalJumpToPreview").addEventListener("click", () => {
+  // 🔧 แก้บั๊ก (2026-09-17): ถ้า modal เปิดอยู่ที่เพลงอื่น → เริ่มเล่นเพลงใน modal แทน + seek
+  if (modalCurrentSongId !== STATE.currentPlayingId) {
+    const song = findSong(modalCurrentSongId);
+    const preview = song && song.preview_status === "ok" && song.preview_start_sec != null && song.preview_end_sec != null
+      ? { start: Number(song.preview_start_sec), end: Number(song.preview_end_sec) }
+      : null;
+    if (!preview) {
+      showToast("เพลงนี้ยังไม่ได้วิเคราะห์ช่วง Preview — เริ่มเล่นจากต้นแทน", "info");
+      playSongAndSeekTo(modalCurrentSongId, null, "intro");
+      return;
+    }
+    playSongAndSeekTo(modalCurrentSongId, preview.start, "preview");
+    return;
+  }
+  // กรณี modal เปิดอยู่ที่เพลงที่กำลังเล่น — โค้ดเดิม
   const preview = STATE.currentPreview;
   if (!preview) {
     showToast("เพลงนี้ยังไม่ได้วิเคราะห์ช่วง Preview — กระโดดไปช่วงต้นแทน", "info");
@@ -1022,6 +1123,19 @@ document.getElementById("modalJumpToPreview").addEventListener("click", () => {
 });
 
 document.getElementById("modalJumpToOutro").addEventListener("click", () => {
+  // 🔧 แก้บั๊ก (2026-09-17): ถ้า modal เปิดอยู่ที่เพลงอื่น → เริ่มเล่นเพลงใน modal แทน + seek
+  if (modalCurrentSongId !== STATE.currentPlayingId) {
+    const song = findSong(modalCurrentSongId);
+    const preview = song && song.preview_status === "ok" && song.preview_start_sec != null && song.preview_end_sec != null
+      ? { start: Number(song.preview_start_sec), end: Number(song.preview_end_sec) }
+      : null;
+    // ท้ายเพลง = (preview.end + 30s) หรือ (dur - 15) ถ้าไม่มี preview — เหมือนฝั่ง admin
+    //   แต่ตอนนี้ยังไม่รู้ duration เพราะยังไม่ได้โหลด → ใช้ค่าประมาณ: preview.end + 30 หรือ 0 (รอ loadedmetadata)
+    const outroTarget = preview ? preview.end + 30 : 0;
+    playSongAndSeekTo(modalCurrentSongId, outroTarget >= 0 ? outroTarget : null, "outro");
+    return;
+  }
+  // กรณี modal เปิดอยู่ที่เพลงที่กำลังเล่น — โค้ดเดิม
   if (!STATE.currentPlayingId) {
     showToast("กดปุ่ม ฟังเพลง ก่อน เพื่อเริ่มเล่น", "info");
     return;
@@ -1052,6 +1166,13 @@ if (modalSeekEl) {
     if (currEl) currEl.textContent = formatTime(shown);
   });
   modalSeekEl.addEventListener("change", () => {
+    // 🔧 แก้บั๊ก (2026-09-17): ถ้า modal เปิดอยู่ที่เพลงอื่น → ไม่ seek
+    //   กันลาก seek bar ใน modal B แล้วกระทบเพลง A ที่กำลังเล่นอยู่
+    //   (seek bar ควรจะถูก reset เป็น 0:00/0:00 โดย updateModalSeekUI อยู่แล้ว)
+    if (modalCurrentSongId !== STATE.currentPlayingId) {
+      modalIsSeeking = false;
+      return;
+    }
     const preview = STATE.currentPreview;
     let target = Number(modalSeekEl.value);
     // clamp ให้อยู่ในช่วง preview (เหมือนฝั่ง admin)
