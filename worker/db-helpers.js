@@ -118,6 +118,44 @@ export async function countDocuments(env, collection, { wheres = [] } = {}) {
   return (row && row.c) || 0;
 }
 
+// ===================================================
+// 🔧 (2026-09-17 Phase 2): getDocumentsByIds — batch fetch documents หลายอันในครั้งเดียว
+// ใช้สำหรับ batch fetch songs ตอนสร้าง ZIP — ลดจำนวน HTTP requests จาก browser → Worker
+//   เดิม: 30 songs = 30 HTTP requests (Worker invocations) = 30 D1 reads
+//   ใหม่: 30 songs = 1 HTTP request = 1 D1 query (ยังอ่าน 30 rows แต่ใน query เดียว)
+//   จริง ๆ D1 rows read เท่าเดิม แต่ Worker invocations ลดลงมาก + latency ต่ำกว่า
+//
+// ⚠️ ข้อจำกัด: D1 จำกัด bind parameters ต่อ query ประมาณ 100 ตัว
+//   ถ้า ids ยาวเกิน 100 → แบ่ง batch อัตโนมัติ (chunk by 100)
+//
+// ⚠️ Security: ไม่จำเป็นต้อง whitelist field เพราะ query ใช้ id column (ไม่ใช่ json_extract)
+//   ids ผูกเป็น bind parameter → กัน SQL injection
+//   แต่ collection ผูกเป็น bind parameter เหมือนกัน → ปลอดภัย
+// ===================================================
+export async function getDocumentsByIds(env, collection, ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  if (collection === "admins") {
+    throw new Error("collection admins ไม่รองรับการ batch get");
+  }
+  // กรอง id ที่ไม่ใช่ string ออก + dedupe
+  const uniqueIds = [...new Set(ids.map(id => String(id)).filter(Boolean))];
+  if (uniqueIds.length === 0) return [];
+
+  // แบ่ง batch ทีละ 100 (D1 bind parameter limit)
+  const BATCH_SIZE = 100;
+  const results = [];
+  for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
+    const chunk = uniqueIds.slice(i, i + BATCH_SIZE);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const sql = `SELECT id, data FROM documents WHERE collection = ? AND id IN (${placeholders})`;
+    const { results: chunkResults } = await env.DB.prepare(sql).bind(collection, ...chunk).all();
+    for (const row of chunkResults) {
+      results.push({ id: row.id, data: JSON.parse(row.data) });
+    }
+  }
+  return results;
+}
+
 // setDoc: สร้างใหม่หรือเขียนทับทั้งเอกสาร (merge=false) หรือ shallow-merge ฟิลด์ที่ส่งมาเข้ากับของเดิม (merge=true)
 // — พฤติกรรมเหมือน Firestore setDoc(ref, data, {merge:true}) ทุกประการ (shallow merge ระดับ field บนสุด)
 export async function setDocument(env, collection, id, data, merge, actorEmail) {
