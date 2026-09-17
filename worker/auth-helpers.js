@@ -1,120 +1,156 @@
-// worker/auth-helpers.js
+// auth-client.js
 // ===================================================
-// ฟังก์ชันช่วยสำหรับระบบยืนยันตัวตนใหม่ (แทน Firebase Auth) — รัน server-side ใน Worker เท่านั้น
-// - Hash รหัสผ่านด้วย PBKDF2-SHA256 (Web Crypto ที่ Workers runtime รองรับในตัว ไม่ต้องพึ่ง library ภายนอก)
-// - จัดการ session token (สุ่ม 32 ไบต์) เก็บใน D1 ตาราง sessions + คุกกี้ HttpOnly
+// เลียนแบบหน้าตา Firebase Auth SDK เฉพาะฟังก์ชันที่โปรเจกต์นี้ใช้จริง (ตรวจสอบครบทุกไฟล์แล้ว):
+// signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword,
+// reauthenticateWithCredential, EmailAuthProvider.credential, updatePassword, getAuth,
+// initializeApp, deleteApp — ข้างในยิง fetch() ไปที่ /api/auth/* บน Worker (คุย D1) แทน Firebase Auth จริง
+// ระบบ session ใช้คุกกี้ HttpOnly ฝั่ง Worker (ดู worker/auth-helpers.js) จึงไม่มี token ให้จัดการฝั่ง
+// browser เลย — เพราะเหตุนี้ getAuth/initializeApp/deleteApp (ของเดิมใช้ทำ "secondary app" กันไม่ให้
+// สร้างแอดมินใหม่แล้วเด้งตัวเองออกจากระบบ) จึงเป็นแค่ stub เฉยๆ ในระบบใหม่ (ปัญหานั้นไม่มีอยู่แล้ว
+// เพราะสร้างแอดมินใหม่ผ่าน endpoint /api/auth/create-admin ซึ่งไม่แตะ session ของคนที่ล็อกอินอยู่เลย)
 // ===================================================
 
-const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 วัน
-const PBKDF2_ITERATIONS = 100000;
+const listeners = [];
 
-function bytesToBase64(bytes) {
-  let binary = "";
-  bytes.forEach((b) => { binary += String.fromCharCode(b); });
-  return btoa(binary);
-}
-function base64ToBytes(b64) {
-  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-}
+export const auth = {
+  currentUser: null,
+  app: { options: {} }, // เก็บไว้เพื่อความเข้ากันได้กับ admin-roles.js (auth.app.options)
+};
 
-export async function hashPassword(password) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]
-  );
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
-    keyMaterial, 256
-  );
-  return `pbkdf2$${PBKDF2_ITERATIONS}$${bytesToBase64(salt)}$${bytesToBase64(new Uint8Array(bits))}`;
+function toUser(body) {
+  if (!body || !body.uid) return null;
+  return { uid: body.uid, email: body.email, displayName: body.displayName };
 }
-
-export async function verifyPassword(password, stored) {
-  if (!stored) return false;
-  const parts = stored.split("$");
-  if (parts.length !== 4 || parts[0] !== "pbkdf2") return false;
-  const iterations = parseInt(parts[1], 10);
-  const salt = base64ToBytes(parts[2]);
-  const expectedHashB64 = parts[3];
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]
-  );
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
-    keyMaterial, 256
-  );
-  const gotHashB64 = bytesToBase64(new Uint8Array(bits));
-  // เทียบความยาวเท่ากันก่อนเพื่อลด timing side-channel เบื้องต้น (ไม่ใช่ constant-time เต็มรูปแบบ
-  // แต่เพียงพอสำหรับ use case นี้ ซึ่งเดิม Firebase Auth ก็ไม่ได้เปิดเผยรายละเอียดการเทียบนี้ให้ client อยู่แล้ว)
-  return gotHashB64.length === expectedHashB64.length && gotHashB64 === expectedHashB64;
+function notify() {
+  for (const cb of listeners.slice()) cb(auth.currentUser);
+}
+async function safeJson(res) {
+  try { return await res.json(); } catch { return {}; }
+}
+function apiError(body, fallbackMessage, fallbackCode) {
+  const err = new Error((body && body.error) || fallbackMessage);
+  err.code = (body && body.code) || fallbackCode;
+  return err;
 }
 
-export function getCookie(request, name) {
-  const header = request.headers.get("Cookie") || "";
-  for (const part of header.split(";")) {
-    const idx = part.indexOf("=");
-    if (idx === -1) continue;
-    const key = part.slice(0, idx).trim();
-    if (key === name) return decodeURIComponent(part.slice(idx + 1).trim());
-  }
-  return null;
-}
-
-export function buildSessionCookie(token) {
-  return `session_token=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}`;
-}
-export function buildClearCookie() {
-  return `session_token=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
-}
-
-export async function createSession(env, adminId) {
-  const token = bytesToBase64(crypto.getRandomValues(new Uint8Array(32))).replace(/[+/=]/g, "");
-  const now = new Date();
-  const expires = new Date(now.getTime() + SESSION_TTL_SECONDS * 1000);
-  await env.DB.prepare(
-    "INSERT INTO sessions (token, admin_id, created_at, expires_at) VALUES (?, ?, ?, ?)"
-  ).bind(token, adminId, now.toISOString(), expires.toISOString()).run();
-  return token;
-}
-
-export async function deleteSession(env, token) {
-  if (!token) return;
-  await env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(token).run();
-}
-
-// คืนค่า admin_users row (ไม่รวม password_hash) ของ session ปัจจุบัน หรือ null ถ้าไม่ได้ login/session หมดอายุ
-export async function getSessionAdmin(request, env) {
-  const token = getCookie(request, "session_token");
-  if (!token) return null;
-  const session = await env.DB.prepare(
-    "SELECT admin_id, expires_at FROM sessions WHERE token = ?"
-  ).bind(token).first();
-  if (!session) return null;
-  if (new Date(session.expires_at).getTime() < Date.now()) {
-    await deleteSession(env, token);
-    return null;
-  }
-  const admin = await env.DB.prepare(
-    "SELECT id, email, display_name, role, created_at, created_by FROM admin_users WHERE id = ?"
-  ).bind(session.admin_id).first();
-  return admin || null;
-}
-
-// 🔒 Maintenance (2026-09-16): ทำความสะอาด session ที่หมดอายุทั้งหมดออกจากตาราง sessions
-// เหตุผล: getSessionAdmin() ด้านบนลบเฉพาะ session ของคนที่กลับมาใช้เท่านั้น — session ของคนที่
-// ไม่เคยกลับมา (เช่น ปิดเบราว์เซอร์ไปเลย) จะค้างใน DB ตลอด สะสมเป็นขยะ
-// ฟังก์ชันนี้ลบทั้งหมดที่ expires_at < ตอนนี้ กันตาราง sessions บวมโดยไม่จำเป็น
-//
-// ความปลอดภัย: try/catch ภายใน — ถ้า cleanup พัง (เช่น DB ชั่วคราว) จะไม่ throw ออกไป
-// ทำให้ caller (login handler ใน worker/index.js) ไม่พังไปด้วย — คนยัง login ได้ปกติ
-// เรียกครั้งเดียวตอน login (ดู worker/index.js: handleAuth "login") พอ — ไม่ต้องเรียกทุก request
-export async function cleanupExpiredSessions(env) {
+// ---------------- ตรวจสอบ session ปัจจุบันตอนโหลดหน้าเว็บครั้งแรก (เทียบเท่า Firebase ตรวจ token ที่เก็บไว้) ----------------
+let initialCheckDone = false;
+const initialCheckPromise = (async () => {
   try {
-    await env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?")
-      .bind(new Date().toISOString()).run();
-  } catch (err) {
-    // ไม่ throw — cleanup ไม่สำเร็จไม่ควรทำให้ login พัง (เป็น background maintenance)
-    // Worker ไม่มี console ที่ user เห็น แต่ค่า console.* ยังถูกเก็บใน Worker logs ของ Cloudflare
-    console.error("cleanupExpiredSessions error:", err?.message || String(err));
+    const res = await fetch("/api/auth/me", { credentials: "same-origin" });
+    auth.currentUser = res.ok ? toUser(await safeJson(res)) : null;
+    // เก็บ role ไว้ใน currentUser ด้วย เผื่อโค้ดเดิมบางจุดอยากอ่านตรงๆ (ของเดิม Firebase ไม่มี role
+    // ใน user object แต่ resolveCurrentAdminRole() จะ query เพิ่มเองอยู่แล้วเหมือนเดิมทุกจุด)
+  } catch {
+    auth.currentUser = null;
   }
+  initialCheckDone = true;
+  notify();
+})();
+
+export function onAuthStateChanged(_auth, callback) {
+  listeners.push(callback);
+  if (initialCheckDone) callback(auth.currentUser);
+  else initialCheckPromise.then(() => callback(auth.currentUser));
+  return function unsubscribe() {
+    const i = listeners.indexOf(callback);
+    if (i >= 0) listeners.splice(i, 1);
+  };
+}
+
+export async function signInWithEmailAndPassword(_auth, email, password) {
+  const res = await fetch("/api/auth/login", {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const body = await safeJson(res);
+  if (!res.ok) throw apiError(body, "เข้าสู่ระบบไม่สำเร็จ", "auth/invalid-credential");
+  auth.currentUser = toUser(body);
+  notify();
+  return { user: auth.currentUser };
+}
+
+export async function signOut(_auth) {
+  await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
+  auth.currentUser = null;
+  notify();
+}
+
+// ใช้ตอนแอดมินหลักเพิ่มแอดมินใหม่ (admin-roles.js) — ไม่แตะ session ของบัญชีที่ล็อกอินอยู่เลย
+export async function createUserWithEmailAndPassword(_auth, email, password) {
+  const res = await fetch("/api/auth/create-admin", {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const body = await safeJson(res);
+  if (!res.ok) throw apiError(body, "สร้างบัญชีไม่สำเร็จ", "auth/unknown-error");
+  return { user: { uid: body.uid, email: body.email } };
+}
+
+// credential เป็นแค่ตัวห่อรหัสผ่านเดิมไว้ส่งไปยืนยันฝั่ง server (ไม่ใช่ token จริงแบบ Firebase)
+export const EmailAuthProvider = {
+  credential(email, password) {
+    return { email, password };
+  },
+};
+
+export async function reauthenticateWithCredential(_user, credential) {
+  const res = await fetch("/api/auth/verify-password", {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: credential.password }),
+  });
+  const body = await safeJson(res);
+  if (!res.ok) throw apiError(body, "รหัสผ่านปัจจุบันไม่ถูกต้อง", "auth/wrong-password");
+  return true;
+}
+
+// 🔒 Security (2026-09-17 P0): เพิ่มพารามิเตอร์ currentPassword — ส่งไป verify ฝั่ง server ด้วย
+//   เดิม: ส่งแค่ newPassword → server ไม่ verify เดิม (ถ้ามีคนขโมย cookie เปลี่ยนได้ทันที)
+//   ใหม่: ส่ง currentPassword ไปด้วย → server verify ก่อนเปลี่ยน (กัน session theft)
+//   caller (app-admin.js) ต้องส่ง currentPassword มาด้วย — ถ้าไม่ส่ง server จะ reject (400)
+export async function updatePassword(_user, newPassword, currentPassword) {
+  const res = await fetch("/api/auth/change-password", {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ newPassword, currentPassword }),
+  });
+  const body = await safeJson(res);
+  if (!res.ok) throw apiError(body, "เปลี่ยนรหัสผ่านไม่สำเร็จ", "auth/unknown-error");
+}
+
+// ---------------- stub เฉยๆ (ของเดิมใช้ทำ "secondary app" — ระบบใหม่ไม่ต้องใช้แล้ว แต่คงชื่อไว้ให้ import ได้) ----------------
+export function initializeApp(options) {
+  return { options: options || {}, name: "app-" + Date.now() };
+}
+export function getAuth(_app) {
+  return auth; // ใช้ session/คุกกี้เดียวกันเสมอ ไม่มีแนวคิด "หลาย auth instance" แบบ Firebase แล้ว
+}
+export async function deleteApp(_app) {
+  // no-op — ไม่มีทรัพยากรอะไรต้องเก็บกวาดในระบบใหม่
+}
+
+// ---------------- ใหม่: สำหรับหน้าจอ "ตั้งค่าแอดมินคนแรก" (แทนที่ขั้นตอนสร้างบัญชีผ่าน Firebase Console เดิม) ----------------
+export async function checkHasAdmin() {
+  try {
+    const res = await fetch("/api/auth/has-admin", { credentials: "same-origin" });
+    const body = await safeJson(res);
+    return body.hasAdmin !== false; // เผื่อ error ระหว่างเช็ค ให้ fallback เป็นโหมด login ปกติ (ปลอดภัยกว่า)
+  } catch {
+    return true;
+  }
+}
+export async function bootstrapFirstAdmin(email, password, displayName) {
+  const res = await fetch("/api/auth/bootstrap", {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, displayName }),
+  });
+  const body = await safeJson(res);
+  if (!res.ok) throw apiError(body, "ตั้งค่าแอดมินคนแรกไม่สำเร็จ", "auth/unknown-error");
+  auth.currentUser = toUser(body);
+  notify();
+  return { user: auth.currentUser };
 }
