@@ -1079,6 +1079,34 @@ async function deleteOrderZipJob(env, jobId) {
   } catch (_) { /* ถ้าตารางไม่มี → ข้าม */ }
 }
 
+// 🔧 (2026-09-18 v5): Helper สำหรับ parse parts JSON จาก D1
+// รองรับ 2 formats:
+//   - v4 (เก่า): array ของ song entries → แปลงเป็น { songs: <array>, finalizeState: null }
+//   - v5 (ใหม่): object { songs: [...], finalizeState: {...}|null }
+// ทำให้ migration จาก v4 เป็น v5 ราบรื่น — job เดิมที่ append ด้วย v4 ยังใช้กับ v5 ได้
+function parsePartsJson(partsString) {
+  let parsed;
+  try { parsed = JSON.parse(partsString || "{}"); } catch { parsed = {}; }
+  if (Array.isArray(parsed)) {
+    // v4 format: array → convert
+    return { songs: parsed, finalizeState: null };
+  }
+  if (parsed && typeof parsed === "object") {
+    return {
+      songs: Array.isArray(parsed.songs) ? parsed.songs : [],
+      finalizeState: parsed.finalizeState || null,
+    };
+  }
+  return { songs: [], finalizeState: null };
+}
+
+// 🔧 (2026-09-18 v5): Helper สำหรับ cleanup partial buffer R2 object + temp objects
+// ใช้ตอน abort หรือ finalize-compose เสร็จแล้ว
+async function cleanupPartialBuffer(env, finalizeState) {
+  if (!env.BUCKET || !finalizeState || !finalizeState.partialBufferKey) return;
+  try { await env.BUCKET.delete(finalizeState.partialBufferKey); } catch (_) {}
+}
+
 // ---------------- POST /api/order-zip/start ----------------
 // รับ: { orderId }
 // ทำ:
@@ -1272,14 +1300,19 @@ async function handleOrderZipStart(request, env) {
   }
 
   // ===== บันทึก state ลง D1 =====
+  // 🔧 (2026-09-18 v5): เปลี่ยน parts JSON จาก array → object { songs: [], finalizeState: null }
+  //   - songs: array ของ song entries (เพิ่มโดย /api/order-zip/append)
+  //   - finalizeState: state ของ finalize-build (เริ่มต้นเป็น null — ถูกตั้งตอน finalize-build ครั้งแรก)
+  //   ⚠️ รองรับ format เดิม (array): ถ้าอ่านจาก D1 เจอ array จะ convert เป็น { songs: <array>, finalizeState: null }
   const jobId = mpu.uploadId;
   const now = new Date().toISOString();
+  const initialParts = JSON.stringify({ songs: [], finalizeState: null });
   try {
     await env.DB.prepare(
       "INSERT INTO order_zip_jobs (job_id, order_id, bucket_key, parts, total_songs, status, error, created_at, updated_at) " +
-      "VALUES (?, ?, ?, '[]', ?, 'preparing', '', ?, ?) " +
-      "ON CONFLICT(job_id) DO UPDATE SET order_id = excluded.order_id, bucket_key = excluded.bucket_key, parts = '[]', total_songs = excluded.total_songs, status = 'preparing', error = '', updated_at = excluded.updated_at"
-    ).bind(jobId, orderId, bucketKey, totalSongs, now, now).run();
+      "VALUES (?, ?, ?, ?, ?, 'preparing', '', ?, ?) " +
+      "ON CONFLICT(job_id) DO UPDATE SET order_id = excluded.order_id, bucket_key = excluded.bucket_key, parts = excluded.parts, total_songs = excluded.total_songs, status = 'preparing', error = '', updated_at = excluded.updated_at"
+    ).bind(jobId, orderId, bucketKey, initialParts, totalSongs, now, now).run();
   } catch (err) {
     // ถ้า insert ล้มเหลว → abort multipart upload เพื่อไม่ให้ค้างใน R2
     try { await mpu.abort(); } catch (_) {}
@@ -1390,8 +1423,9 @@ async function handleOrderZipAppend(request, env) {
 
   // ===== สร้างชื่อไฟล์ใน ZIP =====
   // ใช้ logic เดียวกับ orders.js (safeZipFileName + uniqueZipFileName)
-  let parts;
-  try { parts = JSON.parse(jobRow.parts || "[]"); } catch { parts = []; }
+  // 🔧 (2026-09-18 v5): parse parts JSON ผ่าน parsePartsJson (รองรับ format เก่า v4 + ใหม่ v5)
+  const partsData = parsePartsJson(jobRow.parts);
+  const parts = partsData.songs;  // alias สำหรับใช้ในฟังก์ชัน uniqueZipFileName ด้านล่าง
 
   const usedNames = new Set(
     parts.filter((p) => (p.folderPath || "") === folderPath).map((p) => p.filename)
@@ -1454,9 +1488,10 @@ async function handleOrderZipAppend(request, env) {
 
   const now = new Date().toISOString();
   try {
+    // 🔧 (2026-09-18 v5): บันทึกทั้ง object รวม finalizeState (ถ้ามี — ปกติ append จะ null ตอนนี้)
     await env.DB.prepare(
       "UPDATE order_zip_jobs SET parts = ?, updated_at = ? WHERE job_id = ?"
-    ).bind(JSON.stringify(parts), now, jobId).run();
+    ).bind(JSON.stringify(partsData), now, jobId).run();
   } catch (err) {
     return jsonResponse({ error: "บันทึกข้อมูล entry ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
   }
@@ -1527,6 +1562,11 @@ async function handleOrderZipFinalize(request, env) {
 
   let parts;
   try { parts = JSON.parse(jobRow.parts || "[]"); } catch { parts = []; }
+  // 🔧 (2026-09-18 v5): รองรับ parts JSON ที่เป็น object format ใหม่ด้วย
+  //   v4 finalize ยังใช้ array format → ถ้าเจอ object ให้ดึงเฉพาะ songs
+  if (!Array.isArray(parts)) {
+    parts = (parts && Array.isArray(parts.songs)) ? parts.songs : [];
+  }
   if (parts.length === 0) {
     return jsonResponse({ error: "ยังไม่มี entry ใดถูกเพิ่ม ไม่สามารถ finalize ได้" }, 400);
   }
@@ -1711,6 +1751,442 @@ async function handleOrderZipFinalize(request, env) {
   });
 }
 
+// ===================================================
+// 🔧 (2026-09-18 v5): /api/order-zip/finalize-build + finalize-compose
+// -----------------------------------------------------------
+// Split Finalize Approach — แบ่ง finalize ออกเป็นหลาย Worker invocations
+// เพื่อหลีกเลี่ยง CPU time limit 30s ของ Free plan สำหรับออเดอร์ขนาดใหญ่
+//
+// Flow:
+//   1) POST /api/order-zip/start
+//   2) POST /api/order-zip/append × N  (บันทึก metadata เท่านั้น ไม่ยิง R2)
+//   3) POST /api/order-zip/finalize-build × M  (แต่ละรอบ process 10 เพลง + upload parts 8MB)
+//   4) POST /api/order-zip/finalize-compose  (build CD+EOCD + upload trailing chunk + complete)
+//
+// State persistence (เก็บใน D1 order_zip_jobs.parts JSON):
+//   {
+//     songs: [...],                  // array ของ song entries (เพิ่มโดย append)
+//     finalizeState: {               // null ตอนเริ่ม finalize-build ครั้งแรก
+//       nextSongIdx: 0,              // index ของเพลงถัดไปที่จะ process
+//       partialBufferKey: "...",     // R2 key ของ partial chunk buffer (8MB)
+//       partialBufferLen: 0,        // ขนาดปัจจุบันของ partial buffer (bytes)
+//       nextPartNumber: 1,           // R2 multipart part number ถัดไป
+//       uploadedParts: [],          // array ของ { partNumber, etag } ที่อัปโหลดแล้ว (สำหรับ complete)
+//     }
+//   }
+//
+// ⚠️ R2's rule: "All non-trailing parts must have the same length"
+//   ทุก part (ยกเว้น trailing) ต้องมีขนาด 8MB เท่ากัน
+//   Trailing part สามารถมีขนาดใดก็ได้
+//   ดังนั้น partial buffer ที่เหลือจากแต่ละรอบจะถูก save กลับ R2 (temp object)
+//   รอบถัดไปจะอ่านมา continue จนกว่าจะเต็ม 8MB → upload เป็น part → reset
+//   ตอน finalize-compose จะ append CD+EOCD ลง partial buffer สุดท้าย → trailing chunk
+// ===================================================
+
+// Constants สำหรับ v5 split finalize
+const ZIP_FINALIZE_SONGS_PER_ROUND = 10;        // จำนวนเพลงต่อ 1 Worker invocation
+const ZIP_FINALIZE_CHUNK_SIZE = 8 * 1024 * 1024;  // 8MB (R2 minimum 5MB)
+
+// ---------------- POST /api/order-zip/finalize-build ----------------
+// รับ: { jobId } (รอบถัดไปอัตโนมัติจาก state ใน D1)
+// ทำ:
+//   - ตรวจ admin session
+//   - โหลด state จาก D1 (songs, finalizeState)
+//   - อ่าน partial chunk buffer จาก R2 (ถ้ามี — ขนาด < 8MB ตกมาจากรอบก่อน)
+//   - For next N songs (หรือจนกว่าจะถึง CPU budget):
+//     - อ่าน WAV จาก R2 → คำนวณ CRC32 → build entry bytes (LFH + WAV + DD)
+//     - Append เข้า chunk buffer (8MB) → เมื่อเต็ม upload เป็น R2 multipart part
+//   - Save remaining partial buffer กลับ R2 (สำหรับรอบถัดไป)
+//   - Update D1: songs CRCs + finalizeState (nextSongIdx, partialBufferLen, nextPartNumber)
+// Response: { ok, processedCount, totalProcessed, totalSongs, done: boolean }
+async function handleOrderZipFinalizeBuild(request, env) {
+  const admin = await getSessionAdmin(request, env);
+  if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+  if (!env.BUCKET) return jsonResponse({ error: "ยังไม่ได้ผูก R2 bucket (binding: BUCKET) ใน wrangler.jsonc" }, 500);
+  if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
+
+  let body;
+  try { body = await request.json(); } catch {
+    return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400);
+  }
+  const jobId = String(body?.jobId || "").trim();
+  if (!jobId) return jsonResponse({ error: "กรุณาระบุ jobId" }, 400);
+
+  let jobRow;
+  try {
+    jobRow = await env.DB.prepare(
+      "SELECT job_id, order_id, bucket_key, parts, total_songs, status FROM order_zip_jobs WHERE job_id = ?"
+    ).bind(jobId).first();
+  } catch (err) {
+    return jsonResponse({ error: "อ่านสถานะ ZIP job ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+  }
+  if (!jobRow) {
+    return jsonResponse({ error: "ไม่พบ ZIP job นี้" }, 404);
+  }
+  if (jobRow.status !== "preparing") {
+    return jsonResponse({ error: `ZIP job นี้อยู่ในสถานะ "${jobRow.status}" ไม่สามารถ finalize-build ได้` }, 400);
+  }
+
+  // Parse state
+  const partsData = parsePartsJson(jobRow.parts);
+  const songs = partsData.songs;
+  if (songs.length === 0) {
+    return jsonResponse({ error: "ยังไม่มี entry ใดถูกเพิ่ม ไม่สามารถ finalize-build ได้" }, 400);
+  }
+
+  // Initialize finalizeState ถ้ายังเป็น null
+  if (!partsData.finalizeState) {
+    partsData.finalizeState = {
+      nextSongIdx: 0,
+      partialBufferKey: `order-zips-tmp/${jobId}/partial.bin`,
+      partialBufferLen: 0,
+      nextPartNumber: 1,
+      uploadedParts: [],  // 🔧 track etag ของทุก part สำหรับ complete() ใน finalize-compose
+    };
+  }
+  const state = partsData.finalizeState;
+  // Migration safety: ถ้า state เก่าไม่มี uploadedParts field → เพิ่ม
+  if (!Array.isArray(state.uploadedParts)) state.uploadedParts = [];
+
+  // ตรวจว่า process ครบทุกเพลงแล้ว
+  if (state.nextSongIdx >= songs.length) {
+    return jsonResponse({
+      ok: true,
+      alreadyDone: true,
+      processedCount: 0,
+      totalProcessed: state.nextSongIdx,
+      totalSongs: songs.length,
+      done: true,
+    });
+  }
+
+  // Resume multipart upload
+  let mpu;
+  try {
+    mpu = env.BUCKET.resumeMultipartUpload(jobRow.bucket_key, jobId);
+  } catch (err) {
+    return jsonResponse({ error: "resume multipart upload ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
+  }
+
+  // ===== Allocate chunk buffer 8MB + load partial buffer จาก R2 =====
+  const chunkBuffer = new Uint8Array(ZIP_FINALIZE_CHUNK_SIZE);
+  let chunkLen = 0;
+  if (state.partialBufferLen > 0) {
+    let partialObj;
+    try {
+      partialObj = await env.BUCKET.get(state.partialBufferKey);
+    } catch (err) {
+      return jsonResponse({ error: `อ่าน partial buffer จาก R2 ไม่สำเร็จ: ` + (err?.message || String(err)) }, 502);
+    }
+    if (!partialObj) {
+      return jsonResponse({ error: `ไม่พบ partial buffer ใน R2 (key: ${state.partialBufferKey})` }, 404);
+    }
+    let partialBytes;
+    try {
+      const partialBuf = await partialObj.arrayBuffer();
+      partialBytes = new Uint8Array(partialBuf);
+    } catch (err) {
+      return jsonResponse({ error: `อ่าน partial buffer เข้า memory ไม่สำเร็จ: ` + (err?.message || String(err)) }, 500);
+    }
+    if (partialBytes.byteLength > ZIP_FINALIZE_CHUNK_SIZE) {
+      return jsonResponse({ error: `partial buffer ใหญ่เกิน chunk size (${partialBytes.byteLength} > ${ZIP_FINALIZE_CHUNK_SIZE})` }, 500);
+    }
+    chunkBuffer.set(partialBytes);
+    chunkLen = partialBytes.byteLength;
+  }
+
+  // ===== Helper: flush chunk → upload เป็น R2 part =====
+  async function flushChunk() {
+    if (chunkLen === 0) return;
+    const chunkBytes = new Uint8Array(chunkLen);
+    chunkBytes.set(chunkBuffer.subarray(0, chunkLen));
+    try {
+      const uploaded = await mpu.uploadPart(state.nextPartNumber, chunkBytes);
+      // 🔧 track etag ของทุก part ใน state → finalize-compose จะใช้ list นี้ส่ง complete()
+      state.uploadedParts.push({ partNumber: state.nextPartNumber, etag: uploaded.etag });
+      state.nextPartNumber += 1;
+      chunkLen = 0;
+    } catch (err) {
+      throw new Error(`อัปโหลด part ${state.nextPartNumber} ไม่สำเร็จ: ` + (err?.message || String(err)));
+    }
+  }
+
+  // ===== Helper: append bytes → auto-flush when full =====
+  async function appendBytes(bytes) {
+    let off = 0;
+    while (off < bytes.byteLength) {
+      const remaining = ZIP_FINALIZE_CHUNK_SIZE - chunkLen;
+      const toAdd = Math.min(remaining, bytes.byteLength - off);
+      chunkBuffer.set(bytes.subarray(off, off + toAdd), chunkLen);
+      chunkLen += toAdd;
+      off += toAdd;
+      if (chunkLen === ZIP_FINALIZE_CHUNK_SIZE) {
+        await flushChunk();
+      }
+    }
+  }
+
+  // ===== Process songs =====
+  let processedCount = 0;
+  try {
+    const endIdx = Math.min(state.nextSongIdx + ZIP_FINALIZE_SONGS_PER_ROUND, songs.length);
+    for (let i = state.nextSongIdx; i < endIdx; i += 1) {
+      const p = songs[i];
+
+      // อ่าน WAV จาก R2
+      let wavObject;
+      try {
+        wavObject = await env.BUCKET.get(p.r2Key);
+      } catch (err) {
+        throw new Error(`อ่านไฟล์ WAV ของเพลง "${p.songName}" จาก R2 ไม่สำเร็จ (key: ${p.r2Key}): ` + (err?.message || String(err)));
+      }
+      if (!wavObject) {
+        throw new Error(`ไม่พบไฟล์ WAV ของเพลง "${p.songName}" ใน R2 (key: ${p.r2Key})`);
+      }
+
+      // อ่าน WAV ทั้งไฟล์เข้า memory (เพลงเดียว < 50MB → ปลอดภัย)
+      let wavBytes;
+      try {
+        const wavBuf = await wavObject.arrayBuffer();
+        wavBytes = new Uint8Array(wavBuf);
+      } catch (err) {
+        throw new Error(`อ่าน WAV ของเพลง "${p.songName}" เข้า memory ไม่สำเร็จ: ` + (err?.message || String(err)));
+      }
+
+      // คำนวณ CRC32 ของ WAV bytes
+      let crc = 0;
+      const CRC_CHUNK = 65536;
+      for (let j = 0; j < wavBytes.byteLength; j += CRC_CHUNK) {
+        const e = Math.min(j + CRC_CHUNK, wavBytes.byteLength);
+        crc = crc32Update(crc, wavBytes.subarray(j, e));
+      }
+      songs[i].crc32 = crc;
+
+      // Build entry bytes: [LFH + WAV + DD]
+      const filenameInZip = p.folderPath ? `${p.folderPath}/${p.filename}` : p.filename;
+      const filenameBytes = encodeFilename(filenameInZip);
+      const lfhBytes = buildLocalFileHeader(filenameBytes);
+      await appendBytes(lfhBytes);
+      await appendBytes(wavBytes);
+      const ddBytes = buildDataDescriptor(crc, wavBytes.byteLength);
+      await appendBytes(ddBytes);
+
+      // คืน memory
+      wavBytes = null;
+
+      state.nextSongIdx += 1;
+      processedCount += 1;
+    }
+
+    // ===== Save partial buffer กลับ R2 (สำหรับรอบถัดไป หรือ compose) =====
+    if (chunkLen > 0) {
+      const partialBytes = new Uint8Array(chunkLen);
+      partialBytes.set(chunkBuffer.subarray(0, chunkLen));
+      try {
+        await env.BUCKET.put(state.partialBufferKey, partialBytes);
+      } catch (err) {
+        throw new Error(`บันทึก partial buffer ลง R2 ไม่สำเร็จ: ` + (err?.message || String(err)));
+      }
+    } else {
+      // ลบ partial buffer ถ้าไม่มี
+      try { await env.BUCKET.delete(state.partialBufferKey); } catch (_) {}
+    }
+    state.partialBufferLen = chunkLen;
+  } catch (err) {
+    // ⚠️ ถ้าเกิด error ระหว่าง build → อัปเดต D1 state (เก็บ CRC + index ที่ทำถึง)
+    //   ไม่ abort multipart เพราะจะได้ resume ได้ (แอดมินกด retry จะ continue จากจุดเดิม)
+    partsData.finalizeState = state;
+    try {
+      await env.DB.prepare(
+        "UPDATE order_zip_jobs SET parts = ?, updated_at = ? WHERE job_id = ?"
+      ).bind(JSON.stringify(partsData), new Date().toISOString(), jobId).run();
+    } catch (_) {}
+    return jsonResponse({
+      error: "finalize-build ไม่สำเร็จ: " + (err?.message || String(err)),
+      processedCount,
+      totalProcessed: state.nextSongIdx,
+      totalSongs: songs.length,
+    }, 500);
+  }
+
+  // ===== บันทึก state ลง D1 =====
+  partsData.finalizeState = state;
+  try {
+    await env.DB.prepare(
+      "UPDATE order_zip_jobs SET parts = ?, updated_at = ? WHERE job_id = ?"
+    ).bind(JSON.stringify(partsData), new Date().toISOString(), jobId).run();
+  } catch (err) {
+    return jsonResponse({ error: "บันทึก state ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+  }
+
+  const done = state.nextSongIdx >= songs.length;
+  return jsonResponse({
+    ok: true,
+    processedCount,
+    totalProcessed: state.nextSongIdx,
+    totalSongs: songs.length,
+    done,
+  });
+}
+
+// ---------------- POST /api/order-zip/finalize-compose ----------------
+// รับ: { jobId }
+// ทำ:
+//   - ตรวจ admin session
+//   - ตรวจว่า finalize-build ทำครบแล้ว (nextSongIdx >= songs.length)
+//   - อ่าน partial buffer สุดท้ายจาก R2 (ถ้ามี — ขนาด < 8MB)
+//   - Build CD + EOCD bytes (จาก entries ทั้งหมด รวม CRC32 ที่ถูกคำนวณใน finalize-build)
+//   - Append CD+EOCD bytes เข้า partial buffer → trailing chunk
+//   - Upload trailing chunk เป็น final part
+//   - completeMultipartUpload
+//   - ลบ partial buffer + job row
+//   - อัปเดต order doc: zip_status='ready'
+// Response: { ok, url, publicId, zipFileName, songCount }
+async function handleOrderZipFinalizeCompose(request, env) {
+  const admin = await getSessionAdmin(request, env);
+  if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+  if (!env.BUCKET) return jsonResponse({ error: "ยังไม่ได้ผูก R2 bucket (binding: BUCKET) ใน wrangler.jsonc" }, 500);
+  if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
+
+  let body;
+  try { body = await request.json(); } catch {
+    return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400);
+  }
+  const jobId = String(body?.jobId || "").trim();
+  if (!jobId) return jsonResponse({ error: "กรุณาระบุ jobId" }, 400);
+
+  let jobRow;
+  try {
+    jobRow = await env.DB.prepare(
+      "SELECT job_id, order_id, bucket_key, parts, total_songs, status FROM order_zip_jobs WHERE job_id = ?"
+    ).bind(jobId).first();
+  } catch (err) {
+    return jsonResponse({ error: "อ่านสถานะ ZIP job ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+  }
+  if (!jobRow) return jsonResponse({ error: "ไม่พบ ZIP job นี้" }, 404);
+  if (jobRow.status !== "preparing") {
+    return jsonResponse({ error: `ZIP job นี้อยู่ในสถานะ "${jobRow.status}" ไม่สามารถ finalize-compose ได้` }, 400);
+  }
+
+  // Parse state
+  const partsData = parsePartsJson(jobRow.parts);
+  const songs = partsData.songs;
+  const state = partsData.finalizeState;
+  if (songs.length === 0) {
+    return jsonResponse({ error: "ยังไม่มี entry" }, 400);
+  }
+  if (!state) {
+    return jsonResponse({ error: "ยังไม่ได้เรียก finalize-build กรุณาเรียกก่อน" }, 400);
+  }
+  if (state.nextSongIdx < songs.length) {
+    return jsonResponse({
+      error: `ยังประมวลผลไม่ครบ (${state.nextSongIdx}/${songs.length} เพลง) กรุณาเรียก finalize-build อีก`,
+    }, 400);
+  }
+
+  // Build CD + EOCD bytes
+  const entries = songs.map((p) => ({
+    filename: p.folderPath ? `${p.folderPath}/${p.filename}` : p.filename,
+    crc32: p.crc32 || 0,
+    size: p.size,
+    offset: p.offset,
+    partSize: p.partSize,
+  }));
+  const cdBytes = buildCentralDirectoryBytes(entries);
+
+  // Resume multipart upload
+  let mpu;
+  try {
+    mpu = env.BUCKET.resumeMultipartUpload(jobRow.bucket_key, jobId);
+  } catch (err) {
+    return jsonResponse({ error: "resume multipart upload ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
+  }
+
+  try {
+    // อ่าน partial buffer จาก R2 (ถ้ามี)
+    let trailingBytes;
+    if (state.partialBufferLen > 0) {
+      const partialObj = await env.BUCKET.get(state.partialBufferKey);
+      if (!partialObj) {
+        throw new Error(`ไม่พบ partial buffer ใน R2 (key: ${state.partialBufferKey})`);
+      }
+      const partialBuf = await partialObj.arrayBuffer();
+      const partialBytes = new Uint8Array(partialBuf);
+      // concat partial + CD+EOCD → trailing chunk
+      trailingBytes = new Uint8Array(partialBytes.byteLength + cdBytes.byteLength);
+      trailingBytes.set(partialBytes);
+      trailingBytes.set(cdBytes, partialBytes.byteLength);
+    } else {
+      // ไม่มี partial buffer → trailing chunk คือแค่ CD+EOCD
+      trailingBytes = cdBytes;
+    }
+
+    // Upload trailing chunk เป็น final part
+    const trailingPartNumber = state.nextPartNumber;
+    const trailingUploaded = await mpu.uploadPart(trailingPartNumber, trailingBytes);
+
+    // Build list ของ parts ทั้งหมด = state.uploadedParts + trailing part
+    // (R2's complete() API ต้องการ list ของ parts ทั้งหมด พร้อม etag จริง)
+    const allParts = [
+      ...(state.uploadedParts || []),
+      { partNumber: trailingPartNumber, etag: trailingUploaded.etag },
+    ].sort((a, b) => a.partNumber - b.partNumber);
+
+    // Complete multipart upload
+    await mpu.complete(allParts);
+  } catch (err) {
+    // cleanup: abort multipart + ลบ partial buffer
+    try { await mpu.abort(); } catch (_) {}
+    await cleanupPartialBuffer(env, state);
+    await deleteOrderZipJob(env, jobId);
+    try {
+      await updateDocument(env, "orders", jobRow.order_id, {
+        zip_status: "failed",
+        zip_error: "finalize-compose ไม่สำเร็จ: " + String(err?.message || err),
+        zip_download_url: "",
+        zip_file_name: "",
+        updated_at: new Date().toISOString(),
+      });
+    } catch (_) {}
+    return jsonResponse({ error: "finalize-compose ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+  }
+
+  // อัปเดต order doc
+  const base = env.R2_PUBLIC_BASE_URL.replace(/\/+$/, "");
+  const url = `${base}/${jobRow.bucket_key.split("/").map(encodeURIComponent).join("/")}`;
+  const zipFileName = jobRow.bucket_key.split("/").pop() || `Order-${jobRow.order_id}.zip`;
+  const totalSongs = Number(jobRow.total_songs || songs.length);
+  const now = new Date().toISOString();
+  try {
+    await updateDocument(env, "orders", jobRow.order_id, {
+      zip_status: "ready",
+      zip_download_url: url,
+      zip_file_name: zipFileName,
+      zip_public_id: jobRow.bucket_key,
+      zip_song_count: totalSongs,
+      zip_created_at: now,
+      zip_error: "",
+      updated_at: now,
+    });
+  } catch (err) {
+    return jsonResponse({
+      error: "อัปเดตออเดอร์ด้วยลิงก์ ZIP ไม่สำเร็จ (แต่ไฟล์ ZIP ถูกสร้างใน R2 แล้ว — bucket key: " + jobRow.bucket_key + "): " + (err?.message || String(err)),
+    }, 500);
+  }
+
+  // Cleanup
+  await cleanupPartialBuffer(env, state);
+  await deleteOrderZipJob(env, jobId);
+
+  return jsonResponse({
+    ok: true,
+    url,
+    publicId: jobRow.bucket_key,
+    zipFileName,
+    songCount: totalSongs,
+  });
+}
+
 // ---------------- POST /api/order-zip/abort (เผื่อใช้ในอนาคต ถ้าต้องการ cancel) ----------------
 // ไม่ได้เรียกจาก orders.js ใน v1 นี้ — แต่เก็บไว้เผื่ออนาคตต้องการปุ่ม "ยกเลิกการสร้าง ZIP"
 // ทำ: abort multipart upload + ลบ job row + อัปเดต order doc zip_status=''
@@ -1787,8 +2263,18 @@ export default {
     if (url.pathname === "/api/order-zip/append" && request.method === "POST") {
       return handleOrderZipAppend(request, env);
     }
+    // 🔧 (2026-09-18 v4): finalize แบบ single-call (ใช้สำหรับออเดอร์เล็ก — < 100MB)
+    // คงไว้ตามกฎ #7 (ห้ามลบเพียงเพราะคิดว่าไม่ใช้ — เผื่อใช้ในอนาคต)
     if (url.pathname === "/api/order-zip/finalize" && request.method === "POST") {
       return handleOrderZipFinalize(request, env);
+    }
+    // 🔧 (2026-09-18 v5): finalize แบบ split (ใช้สำหรับออเดอร์ใหญ่ — หลาย GB บน Free plan)
+    //   finalize-build × M → finalize-compose × 1
+    if (url.pathname === "/api/order-zip/finalize-build" && request.method === "POST") {
+      return handleOrderZipFinalizeBuild(request, env);
+    }
+    if (url.pathname === "/api/order-zip/finalize-compose" && request.method === "POST") {
+      return handleOrderZipFinalizeCompose(request, env);
     }
     if (url.pathname === "/api/order-zip/abort" && request.method === "POST") {
       return handleOrderZipAbort(request, env);
