@@ -37,13 +37,28 @@ export async function getDocument(env, collection, id) {
   return { id, data: JSON.parse(row.data) };
 }
 
-export async function listDocuments(env, collection) {
+export async function listDocuments(env, collection, options = {}) {
   if (collection === "admins") {
     const { results } = await env.DB.prepare(`SELECT ${ADMIN_SAFE_COLUMNS} FROM admin_users`).all();
     return results.map((row) => rowToAdminDoc(row));
   }
-  const { results } = await env.DB.prepare("SELECT id, data FROM documents WHERE collection = ?")
-    .bind(collection).all();
+  // 🔧 (2026-09-18 v6 perf): รองรับ pagination ผ่าน options.limit + options.offset
+  //   ถ้าไม่ส่งมา → default behavior เดิม (no limit) — backward compat
+  //   ถ้าส่ง limit เท่านั้น → LIMIT ? (no offset)
+  //   ถ้าส่งทั้ง limit + offset → LIMIT ? OFFSET ?
+  //   ใช้กับ /api/db/:collection?limit=N&offset=M ของ customer page (เพลง 5000+ ตัว)
+  const { limit, offset } = options;
+  let sql = "SELECT id, data FROM documents WHERE collection = ?";
+  const binds = [collection];
+  if (Number.isInteger(limit) && limit > 0) {
+    sql += " LIMIT ?";
+    binds.push(limit);
+    if (Number.isInteger(offset) && offset > 0) {
+      sql += " OFFSET ?";
+      binds.push(offset);
+    }
+  }
+  const { results } = await env.DB.prepare(sql).bind(...binds).all();
   return results.map((row) => ({ id: row.id, data: JSON.parse(row.data) }));
 }
 
