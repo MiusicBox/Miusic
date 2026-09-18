@@ -402,11 +402,42 @@ async function createOrderZip(orderId) {
       }
     }
 
-    // ===== Step 3: finalize — สร้าง Central Directory + complete multipart upload =====
+    // ===== Step 3: finalize-build หลายรอบ (แต่ละรอบ process 10 เพลง) =====
+    // 🔧 (2026-09-18 v5): แทนที่ finalize 1 ครั้งด้วย finalize-build × M + finalize-compose × 1
+    //   เหตุผล: ออเดอร์ใหญ่ > 100MB finalize 1 ครั้งจะเกิน Worker CPU time limit 30s ของ Free plan
+    //   วิธีแก้: แบ่ง finalize ออกเป็นหลาย Worker invocations → แต่ละรอบใช้ CPU ~5 วินาที
+    //   รองรับออเดอร์ขนาดหลาย GB บน Free plan โดยไม่เสียเงิน
+    let finalizeDone = false;
+    while (!finalizeDone) {
+      orderToast("กำลังประมวลผลเพลง (split finalize)...", "progress");
+      let buildRes;
+      try {
+        buildRes = await fetch("/api/order-zip/finalize-build", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ jobId }),
+        });
+      } catch (err) {
+        throw new Error(`finalize-build ไม่สำเร็จ (network): ${err?.message || err}`);
+      }
+      let buildData;
+      try { buildData = await buildRes.json(); } catch {
+        throw new Error(`อ่านผลลัพธ์จาก Worker ไม่สำเร็จ (HTTP ${buildRes.status})`);
+      }
+      if (!buildRes.ok || !buildData.ok) {
+        throw new Error(buildData?.error || `finalize-build ไม่สำเร็จ (HTTP ${buildRes.status})`);
+      }
+      finalizeDone = !!buildData.done;
+      const progressMsg = `กำลังสร้าง ZIP ${buildData.totalProcessed}/${buildData.totalSongs} เพลง...`;
+      orderToast(progressMsg, "progress");
+    }
+
+    // ===== Step 4: finalize-compose — build CD+EOCD + upload trailing chunk + complete =====
     orderToast("กำลังสร้างลิงก์ดาวน์โหลด...", "progress");
-    let finalizeRes;
+    let composeRes;
     try {
-      finalizeRes = await fetch("/api/order-zip/finalize", {
+      composeRes = await fetch("/api/order-zip/finalize-compose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
@@ -415,20 +446,20 @@ async function createOrderZip(orderId) {
     } catch (err) {
       throw new Error(`สร้างลิงก์ดาวน์โหลด ZIP ไม่สำเร็จ (network): ${err?.message || err}`);
     }
-    let finalizeData;
-    try { finalizeData = await finalizeRes.json(); } catch {
-      throw new Error(`อ่านผลลัพธ์จาก Worker ไม่สำเร็จ (HTTP ${finalizeRes.status})`);
+    let composeData;
+    try { composeData = await composeRes.json(); } catch {
+      throw new Error(`อ่านผลลัพธ์จาก Worker ไม่สำเร็จ (HTTP ${composeRes.status})`);
     }
-    if (!finalizeRes.ok || !finalizeData.ok) {
-      throw new Error(finalizeData?.error || `สร้างลิงก์ดาวน์โหลด ZIP ไม่สำเร็จ (HTTP ${finalizeRes.status})`);
+    if (!composeRes.ok || !composeData.ok) {
+      throw new Error(composeData?.error || `สร้างลิงก์ดาวน์โหลด ZIP ไม่สำเร็จ (HTTP ${composeRes.status})`);
     }
 
     // Worker อัปเดต order doc ฝั่ง server แล้ว (zip_status='ready' + zip_download_url + ...)
     // ฝั่ง client แค่ return url + publicId ให้ caller ใช้ sync state.allOrders
     return {
       ok: true,
-      url: finalizeData.url,
-      publicId: finalizeData.publicId || "",
+      url: composeData.url,
+      publicId: composeData.publicId || "",
     };
   } catch (err) {
     const errorMessage = err?.message || String(err);
