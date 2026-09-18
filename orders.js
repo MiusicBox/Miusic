@@ -2342,7 +2342,11 @@ function removeFromCart(index) {
   renderPlaylistSearchResults();
 }
 
-async function refreshDashboardAndHistory() {
+/* ---------------- Init (เรียกทุกครั้งที่เปิดหน้า "จัดการออเดอร์") ---------------- */
+// 🔧 แก้บั๊ก I11 (2026-09-18): export refreshDashboardAndHistory ให้เรียกจากปุ่ม "รีเฟรช" ได้
+//   เดิม: refreshDashboardAndHistory ไม่ถูก export → admin ต้องกด F5 เพื่อ sync ข้อมูล
+//   แก้: export ให้ → ปุ่ม "รีเฟรช" ใน admin.html สามารถเรียกได้ → โหลดออเดอร์ล่าสุดโดยไม่ต้อง F5
+export async function refreshDashboardAndHistory() {
   const orders = await loadOrdersFromDatabase();
   state.allOrders = orders;
   renderStats(orders);
@@ -2567,6 +2571,30 @@ export async function initOrdersView() {
     document.getElementById("ordSongSearch").addEventListener("input", debounce(handleSearchInput, 200));
     document.getElementById("ordSubmitBtn").addEventListener("click", handleSubmitOrder);
     document.getElementById("ordPlaylistSearch").addEventListener("input", debounce(handlePlaylistSearchInput, 200));
+
+    // 🔧 แก้บั๊ก I11 (2026-09-18): ปุ่ม "รีเฟรช" — โหลดออเดอร์ล่าสุดจาก DB โดยไม่ต้อง F5
+    //   ใช้เมื่อ: สงสัยว่าข้อมูลไม่ใช่ล่าสุด / อยากเช็คว่ามีออเดอร์ใหม่ไหม / ก่อน action สำคัญ
+    //   ทำงาน: เรียก refreshDashboardAndHistory() → โหลด orders ทั้งหมดจาก DB ใหม่ → render ใหม่
+    const ordersRefreshBtnEl = document.getElementById("ordersRefreshBtn");
+    if (ordersRefreshBtnEl) {
+      ordersRefreshBtnEl.addEventListener("click", async () => {
+        // แสดงสถานะ "กำลังรีเฟรช..." ขณะโหลด (กัน user กดซ้ำ)
+        ordersRefreshBtnEl.style.opacity = "0.5";
+        ordersRefreshBtnEl.style.pointerEvents = "none";
+        try {
+          await refreshDashboardAndHistory();
+          // ใช้ toast ของ app-admin.js (ถ้ามี) หรือ console.log (fallback)
+          if (window.__showToast) window.__showToast("รีเฟรชออเดอร์แล้ว", "success");
+          else console.log("✅ รีเฟรชออเดอร์แล้ว");
+        } catch (err) {
+          console.error("รีเฟรชออเดอร์ไม่สำเร็จ:", err);
+          if (window.__showToast) window.__showToast("รีเฟรชไม่สำเร็จ: " + (err?.message || err), "error");
+        } finally {
+          ordersRefreshBtnEl.style.opacity = "";
+          ordersRefreshBtnEl.style.pointerEvents = "";
+        }
+      });
+    }
 
     // ---- ค้นหาในประวัติออเดอร์ (เพิ่มใหม่ — ไม่กระทบระบบเดิม) ----
     const ordHistorySearchEl = document.getElementById("ordHistorySearch");
