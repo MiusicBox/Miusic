@@ -1422,72 +1422,57 @@ async function handleOrderZipAppend(request, env) {
   const filename = uniqueZipFileName(baseName);
   const zipEntryName = folderPath ? `${folderPath}/${filename}` : filename;
 
-  // ===== คำนวณ partSize ล่วงหน้า (สำหรับ FixedLengthStream) =====
-  // ⚠️ สำคัญ: R2 Multipart Upload API ต้องการ stream ที่มี "known length"
-  //   ถ้าใช้ ReadableStream แบบ pull-based ปกติ R2 จะ reject:
-  //   "Provided readable stream must have a known length (... FixedLengthStream)"
-  //   วิธีแก้: ใช้ FixedLengthStream ซึ่งรู้ขนาดรวมล่วงหน้า
-  //   คำนวณ partSize จาก:
-  //     LFH_size = 30 + filename_bytes_len (filename ใน ZIP = folderPath + "/" + filename)
-  //     WAV_size = wavObject.size (จาก R2 object metadata — ทราบทันทีหลัง get())
-  //     DD_size = 16 (always 16 bytes for data descriptor with signature)
+  // ===== อ่าน WAV ทั้งไฟล์เข้า memory แล้วสร้าง Uint8Array รวมทั้ง part =====
+  // ทำไมไม่ใช้ streaming/FixedLengthStream:
+  //   - R2 multipart uploadPart ต้องการ known length ที่เชื่อถือได้
+  //   - FixedLengthStream + writer มี edge cases ที่ทำงานผิดพลาดในบางสถานการณ์
+  //   - WAV ปกติ 4-5 นาที = 40-60MB → ใส่ memory ได้สบาย (Worker memory limit 128MB)
+  //   - Uint8Array มี known length อัตโนมัติ → R2 รับได้แน่นอน
+  //
+  // ข้อจำกัด: ถ้า WAV เดียว > ~100MB (เพลงยาว 90+ นาที) → อาจเกิน Worker memory
+  //   → แจ้ง error และให้แอดมิน retry หรือพิจารณา Paid plan
   const filenameInZip = folderPath ? `${folderPath}/${filename}` : filename;
   const filenameBytes = encodeFilename(filenameInZip);
   const filenameBytesLen = filenameBytes.byteLength;
   const LFH_SIZE = 30 + filenameBytesLen;
   const DD_SIZE = 16;
-  const wavSize = wavObject.size || 0;  // จาก R2 object metadata — known ทันที
+
+  // อ่าน WAV ทั้งไฟล์เข้า memory
+  let wavBytes;
+  try {
+    const wavBuf = await wavObject.arrayBuffer();
+    wavBytes = new Uint8Array(wavBuf);
+  } catch (err) {
+    return jsonResponse({
+      error: `อ่านไฟล์ WAV ของเพลง "${song.song_name || songName}" เข้า memory ไม่สำเร็จ (อาจไฟล์ใหญ่เกิน Worker memory limit 128MB): ` + (err?.message || String(err)),
+    }, 500);
+  }
+  const wavSize = wavBytes.byteLength;
   const partSize = LFH_SIZE + wavSize + DD_SIZE;
   // offset ของ entry นี้ = ผลรวม partSize ของ parts ก่อนหน้า (ทั้งหมด)
   const offset = parts.reduce((sum, p) => sum + Number(p.partSize || 0), 0);
 
-  // ===== สร้าง FixedLengthStream ที่มี known length =====
-  // เราจะ:
-  //   1. สร้าง writer + readable คู่กัน (FixedLengthStream)
-  //   2. เขียน LFH (synchronous, ใช้ known bytes)
-  //   3. Stream WAV จาก R2 ผ่าน writer ทีละ chunk พร้อม compute CRC32 แบบ on-the-fly
-  //   4. เขียน Data Descriptor (CRC + sizes) เป็น trailer
-  //   5. ปิด writer → readable พร้อมส่งให้ R2 uploadPart
-  const { readable: partReadable, writable: partWritable } = new FixedLengthStream(partSize);
-  const writer = partWritable.getWriter();
-
-  // ตัวแปรเก็บ CRC + size จริงหลัง stream WAV เสร็จ (สำหรับ CD ภายหลัง)
+  // ===== คำนวณ CRC32 ของ WAV bytes (ทีละ chunk 64KB เพื่อไม่ให้ block event loop นานเกิน) =====
   let capturedCrc = 0;
-  let capturedSize = 0;
-
-  try {
-    // เขียน LFH ก่อน (chunk แรก)
-    const lfhBytes = buildLocalFileHeader(filenameBytes);
-    await writer.write(lfhBytes);
-
-    // Stream WAV จาก R2 ผ่าน writer ทีละ chunk + compute CRC32 (เฉพาะ WAV bytes ตาม ZIP spec)
-    const reader = wavObject.body.getReader();
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value && value.byteLength) {
-          capturedCrc = crc32Update(capturedCrc, value);
-          capturedSize += value.byteLength;
-          await writer.write(value);
-        }
-      }
-    } finally {
-      try { reader.releaseLock(); } catch (_) { /* ignore */ }
-    }
-
-    // เขียน Data Descriptor (CRC + sizes)
-    const dd = buildDataDescriptor(capturedCrc, capturedSize);
-    await writer.write(dd);
-
-    // ปิด writer → readable พร้อมใช้
-    await writer.close();
-  } catch (err) {
-    try { writer.abort(err); } catch (_) { /* ignore */ }
-    return jsonResponse({
-      error: `stream ไฟล์ WAV ของเพลง "${song.song_name || songName}" ไม่สำเร็จ: ` + (err?.message || String(err)),
-    }, 500);
+  const CRC_CHUNK_SIZE = 65536;
+  for (let i = 0; i < wavSize; i += CRC_CHUNK_SIZE) {
+    const end = Math.min(i + CRC_CHUNK_SIZE, wavSize);
+    const chunk = wavBytes.subarray(i, end);
+    capturedCrc = crc32Update(capturedCrc, chunk);
   }
+  const capturedSize = wavSize;
+
+  // ===== สร้าง Uint8Array รวมทั้ง part: [LFH + WAV + DD] =====
+  const partBytes = new Uint8Array(partSize);
+  let writeOff = 0;
+  const lfhBytes = buildLocalFileHeader(filenameBytes);
+  partBytes.set(lfhBytes, writeOff);
+  writeOff += lfhBytes.byteLength;
+  partBytes.set(wavBytes, writeOff);
+  writeOff += wavSize;
+  const ddBytes = buildDataDescriptor(capturedCrc, capturedSize);
+  partBytes.set(ddBytes, writeOff);
+  writeOff += ddBytes.byteLength;
 
   // ===== resume multipart upload + upload part =====
   let mpu;
@@ -1499,8 +1484,8 @@ async function handleOrderZipAppend(request, env) {
 
   let uploadedPart;
   try {
-    // partReadable มาจาก FixedLengthStream → มี known length → R2 รับได้
-    uploadedPart = await mpu.uploadPart(partNumber, partReadable);
+    // partBytes เป็น Uint8Array → มี known length → R2 รับได้แน่นอน
+    uploadedPart = await mpu.uploadPart(partNumber, partBytes);
   } catch (err) {
     return jsonResponse({
       error: `อัปโหลด part ${partNumber} ของเพลง "${song.song_name || songName}" ไม่สำเร็จ: ` + (err?.message || String(err)),
