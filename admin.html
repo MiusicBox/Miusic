@@ -166,6 +166,9 @@
       <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
         <button class="icon-btn back-btn">←</button>
         <div style="flex:1;font-weight:800;">จัดการออเดอร์</div>
+        <!-- 🔧 แก้บั๊ก I11 (2026-09-18): ปุ่ม "รีเฟรช" — โหลดออเดอร์ล่าสุดจาก DB โดยไม่ต้อง F5 -->
+        <!-- ใช้เมื่อ: สงสัยว่าข้อมูลไม่ใช่ล่าสุด / อยากเช็คว่ามีออเดอร์ใหม่ไหม / ก่อน action สำคัญ -->
+        <button id="ordersRefreshBtn" type="button" class="icon-btn" style="font-size:18px;padding:6px 10px;" title="รีเฟรชออเดอร์">🔄</button>
       </div>
 
       <div class="container" style="padding:0 16px;">
