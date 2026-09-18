@@ -304,6 +304,27 @@ function uniqueZipFileName(value, usedNames) {
 /*
  * ดาวน์โหลด WAV เต็มจาก Cloud แล้วสร้าง ZIP ก่อนจึงค่อยอัปโหลด ZIP กลับขึ้น Cloud
  * จุดสำคัญ: อ่านเฉพาะ full_file_url ของเพลง ไม่แตะ preview_url/ไฟล์ตัวอย่าง
+ *
+ * 🔧 (2026-09-18 v2): เปลี่ยนจาก JSZip-in-browser → Worker-side streaming ZIP
+ *   เหตุผล: ระบบเดิมสร้าง ZIP blob ใน browser memory แล้วอัปโหลดผ่าน /api/upload
+ *   ครั้งเดียว → พังเมื่อ ZIP > 100MB (Cloudflare Workers free plan limit)
+ *   วิธีใหม่: เรียก endpoints ฝั่ง Worker ใหม่ 3 ตัว (start/append/finalize) → Worker สร้าง ZIP
+ *   ทีละเพลงผ่าน R2 Multipart Upload ทะลุ limit 100MB ได้
+ *
+ *   Flow ใหม่:
+ *     1) POST /api/order-zip/start   → Worker สร้าง multipart upload + resolve songs + คืน plan
+ *     2) for each song in plan: POST /api/order-zip/append → Worker stream WAV 1 เพลงเข้า part
+ *     3) POST /api/order-zip/finalize → Worker สร้าง Central Directory + complete multipart upload
+ *
+ *   ผลกระทบต่อ caller (confirmPaymentAndCreateZip + retryOrderZip):
+ *     - signature ยังเหมือนเดิม { ok: true, url, publicId } | { ok: false, error }
+ *     - zip_status/zip_download_url/zip_public_id/zip_file_name/zip_song_count/zip_error
+ *       ถูกอัปเดตฝั่ง Worker (handleOrderZipStart ตั้ง zip_status='preparing',
+ *       handleOrderZipFinalize ตั้ง zip_status='ready' + url)
+ *       → ไม่ต้องอัปเดต zip_* fields ฝั่ง client ในนี้แล้ว แต่ยังคงอัปเดต updated_at
+ *       ในกรณี error (เหมือนเดิม)
+ *     - function confirmPaymentAndCreateZip/retryOrderZip ไม่ต้องแก้ — ยังอ่าน
+ *       result.url/result.publicId/result.error ได้เหมือนเดิม
  */
 async function createOrderZip(orderId) {
   if (zipJobs.has(orderId)) return { ok: false, error: "กำลังสร้าง ZIP ของออเดอร์นี้อยู่" };
@@ -312,170 +333,106 @@ async function createOrderZip(orderId) {
 
   // ถ้ามี ZIP ที่สร้างสำเร็จแล้ว ใช้ลิงก์เดิมได้ ไม่สร้างไฟล์ซ้ำโดยไม่จำเป็น
   if (order.zip_status === "ready" && order.zip_download_url) {
-    return { ok: true, url: order.zip_download_url };
+    return { ok: true, url: order.zip_download_url, publicId: order.zip_public_id || "" };
   }
 
   zipJobs.add(orderId);
-  const zipFileName = `Order-${orderId}.zip`;
   try {
-    await updateDoc(doc(db, "orders", orderId), {
-      zip_status: "preparing",
-      zip_error: "",
-      zip_requested_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
+    // ===== Step 1: start — สร้าง multipart upload ใน R2 + รับ plan =====
+    orderToast("กำลังเริ่มกระบวนการสร้าง ZIP...", "progress");
+    let startRes;
+    try {
+      startRes = await fetch("/api/order-zip/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ orderId }),
+      });
+    } catch (err) {
+      throw new Error(`เริ่มกระบวนการ ZIP ไม่สำเร็จ (network): ${err?.message || err}`);
+    }
+    let startData;
+    try { startData = await startRes.json(); } catch {
+      throw new Error(`อ่านผลลัพธ์จาก Worker ไม่สำเร็จ (HTTP ${startRes.status})`);
+    }
+    if (!startRes.ok || !startData.ok) {
+      throw new Error(startData?.error || `เริ่มกระบวนการ ZIP ไม่สำเร็จ (HTTP ${startRes.status})`);
+    }
 
-    const orderSongsGrouped = await resolveOrderSongsGrouped(order);
-    const totalSongs = orderSongsGrouped.singles.length
-      + orderSongsGrouped.playlists.reduce((sum, p) => sum + p.songs.length, 0);
-    if (totalSongs === 0) {
+    // กรณีมี ZIP เดิมอยู่แล้ว → Worker คืน URL เดิม ไม่สร้างใหม่
+    if (startData.existing) {
+      return { ok: true, url: startData.url, publicId: startData.publicId || "" };
+    }
+
+    const jobId = startData.jobId;
+    const plan = Array.isArray(startData.plan) ? startData.plan : [];
+    const totalSongs = Number(startData.totalSongs || plan.length);
+    if (plan.length === 0) {
       throw new Error("ออเดอร์นี้ไม่มีรายการเพลงสำหรับสร้าง ZIP");
     }
 
-    // 🔧 (2026-09-17 Phase 2): Pre-fetch ทุกเพลงในครั้งเดียวแบบ batch
-    //   เดิม: แต่ละเพลงยิง getDoc ทีละอัน = N HTTP requests = N Worker invocations (ช้า)
-    //   ใหม่: ยิง batch endpoint ครั้งเดียว = 1 HTTP request = 1 Worker invocation (เร็วขึ้นมาก)
-    //   D1 rows read เท่าเดิม แต่ลด Worker invocations และ latency อย่างมาก
-    const allSongIds = [
-      ...orderSongsGrouped.singles.map(s => s.id),
-      ...orderSongsGrouped.playlists.flatMap(p => p.songs.map(s => s.id)),
-    ];
-    let songSnapMap = new Map();
-    if (allSongIds.length > 0) {
+    // ===== Step 2: append ทีละเพลง =====
+    // แต่ละ append เป็น Worker invocation แยก → ไม่เกิน CPU/time limit ของ free plan
+    for (let i = 0; i < plan.length; i += 1) {
+      const item = plan[i];
+      orderToast(`กำลังสร้าง ZIP ${i + 1}/${totalSongs}${item.folderPath ? ` (ในโฟลเดอร์ ${item.folderPath})` : ""}...`, "progress");
+      let appendRes;
       try {
-        songSnapMap = await getDocsByIds("songs", allSongIds);
-      } catch (err) {
-        // fallback: ถ้า batch endpoint พัง → ใช้ getDoc ทีละอันเหมือนเดิม (เก็บเป็น Map ว่าง → addSongToZip จะยิง getDoc เอง)
-        console.warn("createOrderZip: batch getDocsByIds failed, falling back to per-song getDoc", err?.message || err);
-      }
-    }
-
-    const JSZip = await loadJSZip();
-    const zip = new JSZip();
-    // usedNames แยกสำหรับ root และแต่ละ playlist folder เพื่อกันชื่อไฟล์ซ้ำกันภายใน path เดียวกัน
-    const rootUsedNames = new Set();
-    let songIndex = 0;
-
-    // ===== Helper: ดึงไฟล์เพลงจาก R2 + เพิ่มลง ZIP ใน path ที่กำหนด =====
-    // folderPath = "" → ใส่ที่ root (เพลงเดี่ยว)
-    // folderPath = "PlaylistName" → ใส่ใน folder ของ playlist (เพลง playlist)
-    // usedNames = Set สำหรับ track ชื่อไฟล์ที่ใช้แล้วใน path นั้น เพื่อ unique ชื่อไฟล์
-    // 🔧 (2026-09-17 Phase 2): ใช้ songSnapMap (pre-fetched) ถ้ามี แทนการยิง getDoc ทีละอัน
-    async function addSongToZip(songId, songTitle, folderPath, usedNames) {
-      songIndex += 1;
-      // 🔧 (2026-09-17 Phase 2): ใช้ cache จาก batch fetch ก่อน ถ้ามี
-      let songSnap = songSnapMap.get(songId);
-      if (!songSnap) {
-        // fallback: ถ้า batch fetch พัง หรือ id ไม่อยู่ใน cache → ยิง getDoc ทีละอันเหมือนเดิม
-        songSnap = await getDoc(doc(db, "songs", songId));
-      }
-      if (!songSnap.exists()) {
-        throw new Error(`ไม่พบข้อมูลเพลง "${songTitle || songId}"`);
-      }
-      const song = songSnap.data();
-      // 🔒 Shared-file (Lazy-shared): ถ้าไม่มี full_file_url ให้ fallback ใช้ file_url แทน
-      // เพราะเพลงใหม่บางเพลงใช้ไฟล์เดียวกันทั้งตอน preview และตอนส่งลูกค้า เพื่อประหยัดพื้นที่ R2
-      // ถ้าไม่มีทั้งคู่ถึงจะ throw error เหมือนเดิม
-      const songFileUrl = song.full_file_url || song.file_url;
-      if (!songFileUrl) {
-        throw new Error(`เพลง "${song.song_name || songTitle}" ยังไม่มีไฟล์เต็ม WAV บน Cloud (ไม่มีทั้ง full_file_url และ file_url)`);
-      }
-
-      // 🔒 R2 CORS Bypass (2026-09-12): แปลง R2 public URL ให้เป็น Worker proxy URL
-      // กันโดน CORS block ตอน fetch ไฟล์เพลงมาสร้าง ZIP (R2 pub-*.r2.dev ไม่ได้ตั้ง CORS headers)
-      // ถ้าเป็น Cloudinary URL เก่า จะปล่อยผ่านไม่แตะต้อง
-      const fetchUrl = r2UrlToProxyUrl(songFileUrl);
-
-      // คำนวณตำแหน่งปัจจุบันสำหรับ toast
-      const displayPath = folderPath ? ` (ในโฟลเดอร์ ${folderPath})` : "";
-      orderToast(`กำลังดึง WAV ${songIndex}/${totalSongs}${displayPath}...`, "progress");
-      let response;
-      try {
-        response = await fetch(fetchUrl, {
-          credentials: "same-origin", // ส่งคุกกี้ session ไปด้วย (Worker proxy ต้องการ admin session)
-          cache: "no-store",
+        appendRes = await fetch("/api/order-zip/append", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            jobId,
+            partNumber: i + 1,
+            songId: item.songId,
+            folderPath: item.folderPath || "",
+            songName: item.songName || "เพลง",
+          }),
         });
-      } catch (fetchErr) {
-        // ถ้า fetch ล้มเหลวด้วย network/CORS error — ให้ข้อความชัดเจน
-        const reason = fetchErr?.name === "TypeError" ? "CORS/Network" : (fetchErr?.name || "Unknown");
-        throw new Error(
-          `ดึงไฟล์ WAV ของเพลง "${song.song_name || songTitle}" ไม่สำเร็จ (${reason}) — ` +
-          `ลอง refresh หน้าเว็บแล้วลองใหม่ หรือติดต่อผู้ดูแลระบบ`
-        );
+      } catch (err) {
+        throw new Error(`ส่งเพลงที่ ${i + 1} "${item.songName}" เข้า ZIP ไม่สำเร็จ (network): ${err?.message || err}`);
       }
-      if (!response.ok) {
-        let errDetail = `HTTP ${response.status}`;
-        try {
-          const errBody = await response.text();
-          if (errBody) errDetail += `: ${errBody.slice(0, 200)}`;
-        } catch (_) {}
-        throw new Error(
-          `ดึงไฟล์ WAV ของเพลง "${song.song_name || songTitle}" ไม่สำเร็จ (${errDetail}) — ` +
-          `${response.status === 401 ? "กรุณาล็อกอินแอดมินใหม่" : response.status === 404 ? "ไม่พบไฟล์ใน R2" : "ลองอีกครั้ง"}`
-        );
+      let appendData;
+      try { appendData = await appendRes.json(); } catch {
+        throw new Error(`อ่านผลลัพธ์จาก Worker ไม่สำเร็จ (HTTP ${appendRes.status}) — เพลงที่ ${i + 1}`);
       }
-      const wavBlob = await response.blob();
-      // ใช้ชื่อไฟล์เต็มถ้ามี ไม่งั้น derive จาก file_url + ชื่อเพลง
-      // uniqueZipFileName จะตรวจชื่อซ้ำใน usedNames แล้วเพิ่ม (2) (3) ต่อท้ายถ้าจำเป็น
-      const baseName = uniqueZipFileName(
-        song.full_file_name || `${song.song_name || songTitle}.wav`,
-        usedNames
-      );
-      const entryName = folderPath ? `${folderPath}/${baseName}` : baseName;
-      zip.file(entryName, wavBlob);
-    }
-
-    // ===== 1. ใส่เพลงเดี่ยวที่ root ของ ZIP (เหมือนเดิม — ไม่สร้าง folder) =====
-    for (const single of orderSongsGrouped.singles) {
-      await addSongToZip(single.id, single.title, "", rootUsedNames);
-    }
-
-    // ===== 2. ใส่เพลง playlist แยก folder ชื่อตาม playlist =====
-    // 🔧 (2026-09-16): แต่ละ playlist สร้าง folder ของตัวเอง — ทุกเพลงใน playlist อยู่ใน folder นั้น
-    // ถ้ามีหลาย playlist → มีหลาย folder (แต่อยู่ใน ZIP ไฟล์เดียวกัน)
-    // ถ้าชื่อ playlist มีอักขระต้องห้ามใน OS (\/:*?"<>|) → แทนด้วย _ เพื่อกัน error ตอนแตก ZIP
-    for (const playlist of orderSongsGrouped.playlists) {
-      const rawFolderName = String(playlist.name || `Playlist-${playlist.id.slice(-6)}`).trim();
-      const safeFolderName = rawFolderName.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim() || `Playlist-${playlist.id.slice(-6)}`;
-      // usedNames สำหรับ folder นี้ (แยกจาก root และ folder อื่น) → กันชื่อไฟล์ซ้ำกันใน folder เดียวกัน
-      const folderUsedNames = new Set();
-      for (const songItem of playlist.songs) {
-        await addSongToZip(songItem.id, songItem.title, safeFolderName, folderUsedNames);
+      if (!appendRes.ok || !appendData.ok) {
+        throw new Error(appendData?.error || `ส่งเพลงที่ ${i + 1} "${item.songName}" เข้า ZIP ไม่สำเร็จ (HTTP ${appendRes.status})`);
       }
     }
 
-    orderToast("กำลังบีบอัดไฟล์ WAV เป็น ZIP...", "progress");
-    const zipBlob = await zip.generateAsync(
-      { type: "blob", compression: "STORE" },
-      (metadata) => orderToast(`กำลังสร้าง ZIP... ${Math.round(metadata.percent)}%`, "progress")
-    );
-    const zipFile = new File([zipBlob], zipFileName, { type: "application/zip" });
-
-    orderToast("กำลังอัปโหลด ZIP ขึ้น Cloud...", "progress");
-    const uploadResult = await uploadOrderZip(
-      zipFile,
-      (percent) => orderToast(`กำลังอัปโหลด ZIP... ${percent}%`, "progress")
-    );
-    if (!uploadResult?.url) {
-      throw new Error("Cloud ไม่ส่ง Download Link กลับมา");
+    // ===== Step 3: finalize — สร้าง Central Directory + complete multipart upload =====
+    orderToast("กำลังสร้างลิงก์ดาวน์โหลด...", "progress");
+    let finalizeRes;
+    try {
+      finalizeRes = await fetch("/api/order-zip/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ jobId }),
+      });
+    } catch (err) {
+      throw new Error(`สร้างลิงก์ดาวน์โหลด ZIP ไม่สำเร็จ (network): ${err?.message || err}`);
+    }
+    let finalizeData;
+    try { finalizeData = await finalizeRes.json(); } catch {
+      throw new Error(`อ่านผลลัพธ์จาก Worker ไม่สำเร็จ (HTTP ${finalizeRes.status})`);
+    }
+    if (!finalizeRes.ok || !finalizeData.ok) {
+      throw new Error(finalizeData?.error || `สร้างลิงก์ดาวน์โหลด ZIP ไม่สำเร็จ (HTTP ${finalizeRes.status})`);
     }
 
-    const downloadUrl = toCloudinaryDownloadUrl(uploadResult.url);
-    // บันทึกลิงก์หลังอัปโหลดสำเร็จเท่านั้น
-    await updateDoc(doc(db, "orders", orderId), {
-      zip_status: "ready",
-      zip_download_url: downloadUrl,
-      zip_file_name: zipFileName,
-      zip_public_id: uploadResult.publicId || "",
-      zip_song_count: totalSongs, // 🔧 (2026-09-16): ใช้ totalSongs (รวมเพลงเดี่ยว + ทุกเพลงใน playlist) แทน orderSongs.length ที่ถูกลบไปแล้วตอน refactor
-      zip_created_at: new Date().toISOString(),
-      zip_error: "",
-      updated_at: new Date().toISOString(),
-    });
-    return { ok: true, url: downloadUrl };
+    // Worker อัปเดต order doc ฝั่ง server แล้ว (zip_status='ready' + zip_download_url + ...)
+    // ฝั่ง client แค่ return url + publicId ให้ caller ใช้ sync state.allOrders
+    return {
+      ok: true,
+      url: finalizeData.url,
+      publicId: finalizeData.publicId || "",
+    };
   } catch (err) {
     const errorMessage = err?.message || String(err);
-    // ถ้าเกิดข้อผิดพลาด ให้คงสถานะออเดอร์เดิมไว้และไม่บันทึกลิงก์
+    // ถ้าเกิดข้อผิดพลาด ให้คงสถานะออเดอร์เดิมไว้ และบันทึก zip_status='failed' (เหมือนเดิม)
     try {
       await updateDoc(doc(db, "orders", orderId), {
         zip_status: "failed",
