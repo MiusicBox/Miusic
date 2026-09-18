@@ -83,21 +83,30 @@ export async function deleteSession(env, token) {
 }
 
 // คืนค่า admin_users row (ไม่รวม password_hash) ของ session ปัจจุบัน หรือ null ถ้าไม่ได้ login/session หมดอายุ
+//
+// 🔧 แก้บั๊ก I6 (2026-09-18): ลดจาก 2 D1 queries → 1 query (JOIN)
+// -----------------------------------------------------------
+// ปัญหา: ทุก request ที่ต้อง auth ทำ 2 reads:
+//   1. SELECT admin_id, expires_at FROM sessions WHERE token = ?
+//   2. SELECT id, email, ... FROM admin_users WHERE id = ?
+//   100 admins × 100 actions/day = 20,000 reads/day เฉพาะ auth
+//
+// วิธีแก้: ใช้ JOIN query เดียว — ลด reads เป็นครึ่งหนึ่ง
+//   + ยังเช็ค expires_at ใน SQL เลย (เดิมเช็คใน JS) → ลด data transfer
+//
+// ผลกระทบต่อระบบเดิม: 0% — return เหมือนเดิม (admin object หรือ null)
 export async function getSessionAdmin(request, env) {
   const token = getCookie(request, "session_token");
   if (!token) return null;
-  const session = await env.DB.prepare(
-    "SELECT admin_id, expires_at FROM sessions WHERE token = ?"
-  ).bind(token).first();
-  if (!session) return null;
-  if (new Date(session.expires_at).getTime() < Date.now()) {
-    await deleteSession(env, token);
-    return null;
-  }
+  // 🔧 แก้บั๊ก I6: JOIN query เดียว + เช็ค expires_at ใน SQL เลย
   const admin = await env.DB.prepare(
-    "SELECT id, email, display_name, role, created_at, created_by FROM admin_users WHERE id = ?"
-  ).bind(session.admin_id).first();
-  return admin || null;
+    "SELECT a.id, a.email, a.display_name, a.role, a.created_at, a.created_by " +
+    "FROM sessions s " +
+    "JOIN admin_users a ON s.admin_id = a.id " +
+    "WHERE s.token = ? AND s.expires_at > ?"
+  ).bind(token, new Date().toISOString()).first();
+  if (!admin) return null;
+  return admin;
 }
 
 // 🔒 Maintenance (2026-09-16): ทำความสะอาด session ที่หมดอายุทั้งหมดออกจากตาราง sessions
