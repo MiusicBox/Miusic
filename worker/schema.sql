@@ -35,6 +35,32 @@ CREATE INDEX IF NOT EXISTS idx_documents_collection ON documents(collection);
 CREATE INDEX IF NOT EXISTS idx_documents_collection_created_at
   ON documents(collection, created_at);
 
+-- 🔧 แก้บั๊ก I3 (2026-09-18): กัน bootstrap race — สร้าง main admin ซ้อน
+--   UNIQUE partial index บน role = 'main' → ถ้ามี main admin อยู่แล้ว INSERT ตัวที่ 2 จะ fail
+--   Worker ใช้ INSERT...ON CONFLICT DO NOTHING + เช็ค changes() เพื่อ detect race
+-- ⚠️ ถ้าในระบบมี main admin 2 ตัวอยู่แล้ว (จาก race ก่อนหน้า) → index creation จะ fail
+--   ให้ลบตัวซ้ำออกก่อน (ดู README สำหรับวิธีเช็ค + ลบ)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_main_unique
+  ON admin_users(role) WHERE role = 'main';
+
+-- 🔧 แก้บั๊ก I4 (2026-09-18): เพิ่ม indexes สำหรับ queries ที่ใช้บ่อย
+--   ทำให้ D1 ไม่ต้อง scan ทั้งตาราง + sort ใน memory
+
+-- query orders ด้วย status (ใช้ใน _count-pending endpoint — admin dashboard badge)
+CREATE INDEX IF NOT EXISTS idx_documents_orders_status
+  ON documents(json_extract(data, '$.status'))
+  WHERE collection = 'orders';
+
+-- query orders ด้วย receipt_number (ใช้ใน _customer-query endpoint — track order เดียว)
+CREATE INDEX IF NOT EXISTS idx_documents_orders_receipt
+  ON documents(json_extract(data, '$.receipt_number'))
+  WHERE collection = 'orders';
+
+-- query songs ด้วย playlist_id (ใช้ใน _query endpoint — ลูกค้า checkout playlist)
+CREATE INDEX IF NOT EXISTS idx_documents_songs_playlist
+  ON documents(json_extract(data, '$.playlist_id'))
+  WHERE collection = 'songs';
+
 -- 🔧 แก้บั๊ก Bug #6 (2026-09-17): index สำหรับ query orders ด้วย whatsapp
 -- ใช้ตอน endpoint /api/db/orders/_customer-list — ลูกค้าดูออเดอร์ของตัวเอง
 -- โดยที่ไม่ต้อง scan orders ทั้งหมดมากรองฝั่ง JS
