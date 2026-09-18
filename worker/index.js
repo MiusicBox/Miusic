@@ -345,7 +345,32 @@ const SONG_SENSITIVE_FIELDS = ["full_file_url", "full_file_public_id", "full_fil
 
 // normalize ค่าฝั่ง Server — เหมือน normalizePhone/normalizeName ฝั่ง client ทุกประการ
 // (ใช้ใน endpoint ค้นหา/ลบออเดอร์ของลูกค้า เพื่อให้เทียบค่าได้เหมือนฝั่ง client เดิม)
-function normalizePhoneServer(v) { return String(v || "").replace(/[^0-9]/g, ""); }
+//
+// 🔧 แก้บั๊ก C5 (2026-09-17): ลูกค้า Laos หาออเดอร์ตัวเองไม่เจอ เพราะเบอร์ใน DB เก็บหลายรูปแบบ
+// -----------------------------------------------------------
+// ปัญหา: เดิมแค่ strip non-digit ออก → "+85620XXXXXXXX" → "85620XXXXXXXX"
+//   แต่ถ้าลูกค้ากรอก "020XXXXXXXX" → normalize → "020XXXXXXXX" ไม่เท่ากับ "85620XXXXXXXX"
+//   → query หา orders ไม่เจอ (DB เก็บ +856... แต่ลูกค้ากรอก 020...)
+//
+// วิธีแก้: strip country code Laos (+856 / 856) + 0 นำหน้าออก ให้เบอร์ทุกรูปแบบเทียบเท่ากัน:
+//   "+85620XXXXXXXX" → "20XXXXXXXX"
+//   "85620XXXXXXXX"  → "20XXXXXXXX"
+//   "020XXXXXXXX"     → "20XXXXXXXX"
+//   "20XXXXXXXX"      → "20XXXXXXXX" (ไม่เปลี่ยน)
+//   ตัวเลขอื่น ๆ ที่ไม่ใช่เบอร์ Laos → ใช้ตรง ๆ เหมือนเดิม (เช่น เบอร์ไทย)
+//
+// ผลกระทบ: ลูกค้า Laos ที่สั่งด้วยเบอร์ +85620... จะหาออเดอร์ได้ถ้ากรอก 020... หรือ 20...
+//   สอดคล้องกับ normalizePhone ฝั่ง client (app-user.js, app-promotion.js) ที่แก้พร้อมกัน
+function normalizePhoneServer(v) {
+  let s = String(v || "").replace(/[^0-9]/g, "");
+  // 🔒 แก้บั๊ก C5: strip country code Laos (+856 / 856) ออก เพื่อให้เบอร์ Laos ทุกรูปแบบเทียบเท่ากัน
+  if (s.startsWith("856")) s = s.slice(3);
+  // 🔒 แก้บั๊ก C5: strip "0" นำหน้าออก (เช่น "020..." → "20...")
+  //   เพราะเบอร์มือถือ Laos มักขึ้นต้นด้วย "20" หลัง strip country code แล้ว
+  //   บางคนกรอก "020..." บางคนกรอก "20..." ต้องเทียบเท่ากัน
+  if (s.startsWith("0")) s = s.replace(/^0+/, "");
+  return s;
+}
 function normalizeNameServer(v) { return String(v || "").trim().toLowerCase(); }
 
 // ตัดฟิลด์ sensitive ออกจาก song document ก่อนส่งให้ non-admin
@@ -714,6 +739,14 @@ async function handleDb(request, env, url) {
         return jsonResponse({ exists: true, id: doc.id, data: responseData });
       }
       if (request.method === "PUT") {
+        // 🔒 แก้บั๊ก C2 (2026-09-17): กัน Privilege Escalation
+        //   เดิม: ตรวจแค่ "login หรือไม่" แต่ไม่ตรวจ admin.role === "main"
+        //   → Sub-admin สามารถ PATCH/PUT ตัวเองเป็น main admin หรือแก้ email ของ main admin ได้
+        //   แก้: เฉพาะ main admin เท่านั้นที่เขียน collection="admins" ได้ (PUT)
+        //   สอดคล้องกับ create-admin endpoint (บรรทัด ~303) ที่มี role check อยู่แล้ว
+        if (collection === "admins" && admin.role !== "main") {
+          return jsonResponse({ error: "เฉพาะแอดมินหลักเท่านั้นที่จัดการแอดมินได้" }, 403);
+        }
         const body = await request.json();
         if (!admin && collection === "orders") {
           // ลูกค้าไม่ได้ login — อนุญาตเฉพาะ "สร้างออเดอร์ใหม่" (id ยังไม่มีอยู่ในระบบ) เท่านั้น
@@ -757,12 +790,23 @@ async function handleDb(request, env, url) {
         return jsonResponse(result);
       }
       if (request.method === "PATCH") {
+        // 🔒 แก้บั๊ก C2 (2026-09-17): กัน Privilege Escalation — เหมือน PUT
+        //   เฉพาะ main admin เท่านั้นที่ PATCH collection="admins" ได้
+        if (collection === "admins" && admin.role !== "main") {
+          return jsonResponse({ error: "เฉพาะแอดมินหลักเท่านั้นที่จัดการแอดมินได้" }, 403);
+        }
         const body = await request.json();
         const result = await updateDocument(env, collection, id, body.data || {});
         if (result.notFound) return jsonResponse({ error: "ไม่พบเอกสารที่จะอัปเดต" }, 404);
         return jsonResponse(result);
       }
       if (request.method === "DELETE") {
+        // 🔒 แก้บั๊ก C2 (2026-09-17): กัน Privilege Escalation — เหมือน PUT/PATCH
+        //   เฉพาะ main admin เท่านั้นที่ DELETE collection="admins" ได้
+        //   กัน sub-admin ลบ main admin ออกจากระบบเพื่อ hijack ระบบ
+        if (collection === "admins" && admin.role !== "main") {
+          return jsonResponse({ error: "เฉพาะแอดมินหลักเท่านั้นที่จัดการแอดมินได้" }, 403);
+        }
         if (!admin && collection === "orders") {
           // ลูกค้าไม่ได้ login — ลบได้เฉพาะออเดอร์ของตัวเองที่ยัง "รอตรวจสอบการโอน" (pending_verify) เท่านั้น
           // กันไม่ให้ลบออเดอร์คนอื่นที่แอดมินเริ่มดำเนินการแล้ว (processing/completed/cancelled)
