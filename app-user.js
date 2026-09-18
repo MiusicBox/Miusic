@@ -1300,7 +1300,19 @@ function hideMyOrdersView() {
 
 // ===== เพิ่มใหม่: ติดตามออเดอร์ (ฝั่งลูกค้า ไม่ต้อง Login) — ไม่แตะระบบเดิม =====
 // ลูกค้ากรอกเลข Order + ชื่อ + เบอร์โทร เพื่อค้นหาและตรวจสอบสถานะออเดอร์ของตัวเอง
-function normalizePhone(v) { return String(v || "").replace(/[^0-9]/g, ""); }
+function normalizePhone(v) {
+  let s = String(v || "").replace(/[^0-9]/g, "");
+  // 🔧 แก้บั๊ก C5 (2026-09-17): strip country code Laos + 0 นำหน้าออก ให้เบอร์ Laos ทุกรูปแบบเทียบเท่ากัน
+  //   "+85620XXXXXXXX" → "20XXXXXXXX"
+  //   "85620XXXXXXXX"  → "20XXXXXXXX"
+  //   "020XXXXXXXX"     → "20XXXXXXXX"
+  //   "20XXXXXXXX"      → "20XXXXXXXX" (ไม่เปลี่ยน)
+  //   สอดคล้องกับ normalizePhoneServer ฝั่ง worker/index.js (ที่แก้พร้อมกัน)
+  //   ทำให้ลูกค้า Laos ที่สั่งด้วยเบอร์ +85620... จะหาออเดอร์ได้ถ้ากรอก 020... หรือ 20...
+  if (s.startsWith("856")) s = s.slice(3);
+  if (s.startsWith("0")) s = s.replace(/^0+/, "");
+  return s;
+}
 function normalizeName(v) { return String(v || "").trim().toLowerCase(); }
 
 // เพิ่มใหม่: แปล error ดิบจากระบบ/เน็ตให้เป็นข้อความที่ลูกค้าอ่านเข้าใจ (แทนที่จะโชว์ err.message ภาษาอังกฤษดิบๆ)
