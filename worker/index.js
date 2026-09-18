@@ -1313,15 +1313,21 @@ async function handleOrderZipStart(request, env) {
 
 // ---------------- POST /api/order-zip/append ----------------
 // รับ: { jobId, partNumber, songId, folderPath, songName }
-// ทำ:
+// ทำ (restructure 2026-09-18 v4):
 //   - ตรวจ admin session
 //   - โหลด job row จาก D1 (เพื่อเช็คว่ายัง active อยู่)
 //   - โหลด song doc เพื่อดึง R2 key ของ WAV
-//   - stream WAV จาก R2 binding → ผ่าน ZIP entry encoder (LFH + WAV + data descriptor)
-//   - uploadPart(partNumber, combinedStream) → ได้ etag
-//   - คำนวณ CRC32 + size ระหว่าง stream → เก็บลง parts JSON ใน D1 (สำหรับ central directory)
-//   - อัปเดต parts JSON ใน D1
-// Response: { ok, partNumber, etag, size, crc32, offset }
+//   - อ่าน WAV size จาก R2 metadata (head/get — no body read)
+//   - คำนวณ partSize ล่วงหน้า = LFH + WAV + DD
+//   - **บันทึก metadata ของ entry ใน D1** (songId, folderPath, filename, R2 key, size, partSize, offset)
+//   - **ไม่อัปโหลด part ตอนนี้** — จะทำใน finalize ทั้งหมดทีเดียว
+//
+// เหตุผล: R2 multipart upload ต้องการ "All non-trailing parts must have the same length"
+//   ทุก part ต้องมีขนาดเท่ากัน ยกเว้น part สุดท้าย
+//   ถ้าทำ 1 เพลง = 1 part → แต่ละ part มีขนาดต่างกัน → fail ตอน complete
+//   วิธีแก้: ทุก part ต้องมีขนาดคงที่ (8MB) → ต้อง build ทั้ง ZIP bytes ก่อน split + upload ใน finalize
+//
+// Response: { ok, partNumber, size, partSize, offset, filename, folderPath }
 async function handleOrderZipAppend(request, env) {
   const admin = await getSessionAdmin(request, env);
   if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
@@ -1370,24 +1376,23 @@ async function handleOrderZipAppend(request, env) {
     }, 400);
   }
 
-  // อ่าน WAV จาก R2 binding (เร็ว ไม่ผ่าน Internet)
+  // ตรวจว่าไฟล์มีอยู่จริงใน R2 (head only — no body read)
   let wavObject;
   try {
     wavObject = await env.BUCKET.get(r2Key);
   } catch (err) {
-    return jsonResponse({ error: `อ่านไฟล์ WAV จาก R2 ไม่สำเร็จ (key: ${r2Key}): ` + (err?.message || String(err)) }, 502);
+    return jsonResponse({ error: `ตรวจไฟล์ WAV จาก R2 ไม่สำเร็จ (key: ${r2Key}): ` + (err?.message || String(err)) }, 502);
   }
-  if (!wavObject || !wavObject.body) {
+  if (!wavObject) {
     return jsonResponse({ error: `ไม่พบไฟล์ WAV ใน R2 (key: ${r2Key})` }, 404);
   }
+  const wavSize = wavObject.size || 0;
 
   // ===== สร้างชื่อไฟล์ใน ZIP =====
   // ใช้ logic เดียวกับ orders.js (safeZipFileName + uniqueZipFileName)
-  // แต่ฝั่ง server ต้อง track usedNames เองในแต่ละ path
   let parts;
   try { parts = JSON.parse(jobRow.parts || "[]"); } catch { parts = []; }
 
-  // หา usedNames ใน folderPath เดียวกัน (track จาก parts ที่บันทึกไปแล้ว)
   const usedNames = new Set(
     parts.filter((p) => (p.folderPath || "") === folderPath).map((p) => p.filename)
   );
@@ -1420,94 +1425,31 @@ async function handleOrderZipAppend(request, env) {
 
   const baseName = song.full_file_name || `${song.song_name || songName}.wav`;
   const filename = uniqueZipFileName(baseName);
-  const zipEntryName = folderPath ? `${folderPath}/${filename}` : filename;
 
-  // ===== อ่าน WAV ทั้งไฟล์เข้า memory แล้วสร้าง Uint8Array รวมทั้ง part =====
-  // ทำไมไม่ใช้ streaming/FixedLengthStream:
-  //   - R2 multipart uploadPart ต้องการ known length ที่เชื่อถือได้
-  //   - FixedLengthStream + writer มี edge cases ที่ทำงานผิดพลาดในบางสถานการณ์
-  //   - WAV ปกติ 4-5 นาที = 40-60MB → ใส่ memory ได้สบาย (Worker memory limit 128MB)
-  //   - Uint8Array มี known length อัตโนมัติ → R2 รับได้แน่นอน
-  //
-  // ข้อจำกัด: ถ้า WAV เดียว > ~100MB (เพลงยาว 90+ นาที) → อาจเกิน Worker memory
-  //   → แจ้ง error และให้แอดมิน retry หรือพิจารณา Paid plan
+  // ===== คำนวณ partSize + offset =====
   const filenameInZip = folderPath ? `${folderPath}/${filename}` : filename;
-  const filenameBytes = encodeFilename(filenameInZip);
-  const filenameBytesLen = filenameBytes.byteLength;
+  const filenameBytesLen = encodeFilename(filenameInZip).byteLength;
   const LFH_SIZE = 30 + filenameBytesLen;
   const DD_SIZE = 16;
-
-  // อ่าน WAV ทั้งไฟล์เข้า memory
-  let wavBytes;
-  try {
-    const wavBuf = await wavObject.arrayBuffer();
-    wavBytes = new Uint8Array(wavBuf);
-  } catch (err) {
-    return jsonResponse({
-      error: `อ่านไฟล์ WAV ของเพลง "${song.song_name || songName}" เข้า memory ไม่สำเร็จ (อาจไฟล์ใหญ่เกิน Worker memory limit 128MB): ` + (err?.message || String(err)),
-    }, 500);
-  }
-  const wavSize = wavBytes.byteLength;
   const partSize = LFH_SIZE + wavSize + DD_SIZE;
-  // offset ของ entry นี้ = ผลรวม partSize ของ parts ก่อนหน้า (ทั้งหมด)
   const offset = parts.reduce((sum, p) => sum + Number(p.partSize || 0), 0);
 
-  // ===== คำนวณ CRC32 ของ WAV bytes (ทีละ chunk 64KB เพื่อไม่ให้ block event loop นานเกิน) =====
-  let capturedCrc = 0;
-  const CRC_CHUNK_SIZE = 65536;
-  for (let i = 0; i < wavSize; i += CRC_CHUNK_SIZE) {
-    const end = Math.min(i + CRC_CHUNK_SIZE, wavSize);
-    const chunk = wavBytes.subarray(i, end);
-    capturedCrc = crc32Update(capturedCrc, chunk);
-  }
-  const capturedSize = wavSize;
-
-  // ===== สร้าง Uint8Array รวมทั้ง part: [LFH + WAV + DD] =====
-  const partBytes = new Uint8Array(partSize);
-  let writeOff = 0;
-  const lfhBytes = buildLocalFileHeader(filenameBytes);
-  partBytes.set(lfhBytes, writeOff);
-  writeOff += lfhBytes.byteLength;
-  partBytes.set(wavBytes, writeOff);
-  writeOff += wavSize;
-  const ddBytes = buildDataDescriptor(capturedCrc, capturedSize);
-  partBytes.set(ddBytes, writeOff);
-  writeOff += ddBytes.byteLength;
-
-  // ===== resume multipart upload + upload part =====
-  let mpu;
-  try {
-    mpu = env.BUCKET.resumeMultipartUpload(jobRow.bucket_key, jobId);
-  } catch (err) {
-    return jsonResponse({ error: "resume multipart upload ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
-  }
-
-  let uploadedPart;
-  try {
-    // partBytes เป็น Uint8Array → มี known length → R2 รับได้แน่นอน
-    uploadedPart = await mpu.uploadPart(partNumber, partBytes);
-  } catch (err) {
-    return jsonResponse({
-      error: `อัปโหลด part ${partNumber} ของเพลง "${song.song_name || songName}" ไม่สำเร็จ: ` + (err?.message || String(err)),
-    }, 502);
-  }
-
-  // ===== บันทึก part info ลง D1 =====
-  // (สำหรับ finalize จะใช้สร้าง central directory ที่ต้องการ CRC + size + offset ของทุก entry)
-  // size = WAV bytes (สำหรับ CD entry's compressed/uncompressed size field)
-  // partSize = total bytes (LFH + WAV + DD) — ใช้สำหรับคำนวณ offset ของ entry ถัดไป + cdOffset
-  // offset = LFH offset ในไฟล์ ZIP (สำหรับ CD entry's local header offset field)
+  // ===== บันทึก metadata ของ entry ใน D1 (ยังไม่อัปโหลด part) =====
+  // finalize จะใช้ metadata นี้เพื่อ:
+  //   - อ่าน WAV จาก R2 (ผ่าน r2Key)
+  //   - คำนวณ CRC32 ของ WAV bytes
+  //   - build entry bytes [LFH + WAV + DD]
+  //   - ส่งเข้า buffer 8MB → upload เป็น R2 multipart part (ทุก part ขนาด 8MB ยกเว้น trailing)
   parts.push({
     partNumber,
-    etag: uploadedPart.etag,
     songId,
     songName: song.song_name || songName,
     folderPath,
     filename,
-    crc32: capturedCrc,
-    size: capturedSize,        // WAV bytes — สำหรับ CD entry's compressed/uncompressed size
-    partSize,                  // total bytes (LFH + WAV + DD) — สำหรับ offset/cdOffset calculation
-    offset,                   // LFH offset ในไฟล์ ZIP — สำหรับ CD entry's local header offset
+    r2Key,                   // R2 object key ของ WAV (ใช้ใน finalize อ่าน WAV)
+    size: wavSize,            // WAV bytes (สำหรับ CD entry's compressed/uncompressed size)
+    partSize,                // total bytes (LFH + WAV + DD) — สำหรับ offset/cdOffset calculation
+    offset,                  // LFH offset ในไฟล์ ZIP — สำหรับ CD entry's local header offset
   });
 
   const now = new Date().toISOString();
@@ -1516,18 +1458,14 @@ async function handleOrderZipAppend(request, env) {
       "UPDATE order_zip_jobs SET parts = ?, updated_at = ? WHERE job_id = ?"
     ).bind(JSON.stringify(parts), now, jobId).run();
   } catch (err) {
-    // ถ้าบันทึกไม่ได้ → abort multipart + ลบ row + return error
-    try { await mpu.abort(); } catch (_) {}
-    await deleteOrderZipJob(env, jobId);
-    return jsonResponse({ error: "บันทึกข้อมูล part ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+    return jsonResponse({ error: "บันทึกข้อมูล entry ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
   }
 
   return jsonResponse({
     ok: true,
     partNumber,
-    etag: uploadedPart.etag,
-    size: capturedSize,
-    crc32: capturedCrc,
+    size: wavSize,
+    partSize,
     offset,
     filename,
     folderPath,
@@ -1536,14 +1474,28 @@ async function handleOrderZipAppend(request, env) {
 
 // ---------------- POST /api/order-zip/finalize ----------------
 // รับ: { jobId }
-// ทำ:
+// ทำ (restructure 2026-09-18 v4):
 //   - ตรวจ admin session
-//   - โหลด parts ทั้งหมดจาก D1
-//   - สร้าง Central Directory + EOCD เป็น stream
-//   - uploadPart(lastPartNumber, cdStream)
+//   - โหลด parts ทั้งหมดจาก D1 (entries metadata: songId, r2Key, size, partSize, offset)
+//   - สร้าง Central Directory bytes (รวม EOCD)
+//   - For each entry:
+//     - อ่าน WAV จาก R2 → คำนวณ CRC32 → build entry bytes (LFH + WAV + DD)
+//     - เพิ่ม bytes เข้า buffer 8MB → เมื่อเต็ม upload เป็น R2 multipart part
+//   - หลังจบทุก entry → append CD + EOCD bytes เข้า buffer → flush trailing chunk
 //   - completeMultipartUpload(allParts)
 //   - อัปเดต order doc: zip_status='ready', zip_download_url=..., zip_public_id=...
 //   - ลบ job row ออกจาก D1
+//
+// ⚠️ R2 multipart upload rule: All non-trailing parts must have the same length
+//   วิธีแก้: ใช้ fixed part size = 8MB (พอดีกับ R2 minimum 5MB)
+//   ทุก part (ยกเว้น trailing) = 8MB → R2 รับได้
+//   Trailing part = ขนาดใดก็ได้
+//
+// Memory footprint: ต่ำ — ใช้แค่ buffer 8MB + CD bytes (เล็ก)
+//   ไม่ต้อง build ZIP ทั้งไฟล์ใน memory → รองรับ ZIP ขนาดหลาย GB (ถ้า CPU time พอ)
+//
+// ข้อจำกัด: Free plan CPU time limit 30s → รองรับ ZIP ~50-100MB
+//   Paid plan CPU time limit 5min → รองรับ ZIP ~500MB-1GB
 // Response: { ok, url, publicId, zipFileName, songCount }
 async function handleOrderZipFinalize(request, env) {
   const admin = await getSessionAdmin(request, env);
@@ -1576,23 +1528,23 @@ async function handleOrderZipFinalize(request, env) {
   let parts;
   try { parts = JSON.parse(jobRow.parts || "[]"); } catch { parts = []; }
   if (parts.length === 0) {
-    return jsonResponse({ error: "ยังไม่มี part ใดถูกอัปโหลด ไม่สามารถ finalize ได้" }, 400);
+    return jsonResponse({ error: "ยังไม่มี entry ใดถูกเพิ่ม ไม่สามารถ finalize ได้" }, 400);
   }
 
-  // ===== สร้าง Central Directory bytes รวม (Uint8Array) =====
-  // ใช้ Uint8Array แทน ReadableStream เพราะ R2 multipart uploadPart ต้องการ known length
-  // CD มีขนาดเล็ก (46 bytes/entry + 22 EOCD) → ปลอดภัยที่ buffer ทั้งหมดใน memory
+  // ===== Build Central Directory + EOCD bytes (ใน memory — มีขนาดเล็ก) =====
+  // แต่ละ entry ต้องการ CRC32 ของ WAV bytes เพื่อใส่ใน CD entry
+  // แต่ตอนนี้เรายังไม่ได้คำนวณ CRC (เก็บแค่ size ใน append)
+  // → finalize จะคำนวณ CRC ตอน stream WAV แล้วเก็บกลับเข้า parts array
+  // ดังนั้น CD bytes จะถูก build หลังจาก stream WAV ทุกเพลงเสร็จ
   const entries = parts.map((p) => ({
     filename: p.folderPath ? `${p.folderPath}/${p.filename}` : p.filename,
-    crc32: p.crc32,
-    size: p.size,        // WAV bytes
-    offset: p.offset,    // LFH offset
-    partSize: p.partSize, // total part bytes (LFH + WAV + DD)
+    crc32: 0,         // จะถูกเติมหลัง stream WAV
+    size: p.size,      // WAV bytes
+    offset: p.offset,
+    partSize: p.partSize,
   }));
-  const cdBytes = buildCentralDirectoryBytes(entries);
 
-  // ===== upload Central Directory + EOCD เป็น part สุดท้าย =====
-  const finalPartNumber = parts.length + 1;
+  // ===== Resume multipart upload =====
   let mpu;
   try {
     mpu = env.BUCKET.resumeMultipartUpload(jobRow.bucket_key, jobId);
@@ -1600,22 +1552,125 @@ async function handleOrderZipFinalize(request, env) {
     return jsonResponse({ error: "resume multipart upload ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
   }
 
-  let cdPart;
+  // ===== Stream build + upload ทีละ chunk 8MB =====
+  const CHUNK_SIZE = 8 * 1024 * 1024;  // 8MB (พอดีกับ R2 minimum 5MB + มี buffer)
+  let chunkBuffer = new Uint8Array(CHUNK_SIZE);
+  let chunkLen = 0;
+  let partNumber = 1;
+  const allUploadedParts = [];
+
+  // Flush 8MB chunk → upload เป็น R2 part → reset buffer
+  async function flushChunk(isLast) {
+    if (chunkLen === 0 && !isLast) return;
+    // ถ้า chunk สุดท้าย (trailing) → ใช้ขนาดที่เหลือ (อาจ < 8MB)
+    // ถ้า chunk ปกติ → ต้องเต็ม 8MB
+    const chunk = chunkLen < CHUNK_SIZE
+      ? chunkBuffer.subarray(0, chunkLen)   // trailing chunk (slice copy)
+      : chunkBuffer;                         // full chunk
+    // สร้าง Uint8Array ใหม่ (copy) เพื่อให้แน่ใจว่า R2 ได้ typed array ที่ standalone
+    const chunkBytes = new Uint8Array(chunk.byteLength);
+    chunkBytes.set(chunk);
+    try {
+      const uploaded = await mpu.uploadPart(partNumber, chunkBytes);
+      allUploadedParts.push({ partNumber, etag: uploaded.etag });
+      partNumber += 1;
+      chunkLen = 0;
+    } catch (err) {
+      throw new Error(`อัปโหลด part ${partNumber} ไม่สำเร็จ: ` + (err?.message || String(err)));
+    }
+  }
+
+  // เพิ่ม bytes เข้า chunkBuffer (auto-flush เมื่อเต็ม)
+  async function appendBytes(bytes) {
+    let off = 0;
+    while (off < bytes.byteLength) {
+      const remaining = CHUNK_SIZE - chunkLen;
+      const toAdd = Math.min(remaining, bytes.byteLength - off);
+      chunkBuffer.set(bytes.subarray(off, off + toAdd), chunkLen);
+      chunkLen += toAdd;
+      off += toAdd;
+      if (chunkLen === CHUNK_SIZE) {
+        await flushChunk(false);
+      }
+    }
+  }
+
   try {
-    // cdBytes เป็น Uint8Array → มี known length อัตโนมัติ → R2 รับได้
-    cdPart = await mpu.uploadPart(finalPartNumber, cdBytes);
+    // ===== For each entry: stream WAV → compute CRC → build entry bytes → append to chunkBuffer =====
+    for (let i = 0; i < parts.length; i += 1) {
+      const p = parts[i];
+      // อ่าน WAV จาก R2
+      let wavObject;
+      try {
+        wavObject = await env.BUCKET.get(p.r2Key);
+      } catch (err) {
+        throw new Error(`อ่านไฟล์ WAV ของเพลง "${p.songName}" จาก R2 ไม่สำเร็จ (key: ${p.r2Key}): ` + (err?.message || String(err)));
+      }
+      if (!wavObject) {
+        throw new Error(`ไม่พบไฟล์ WAV ของเพลง "${p.songName}" ใน R2 (key: ${p.r2Key})`);
+      }
+
+      // อ่าน WAV ทั้งไฟล์เข้า memory (เพลงเดียว 4-5 นาที = 40-60MB → ปลอดภัย)
+      let wavBytes;
+      try {
+        const wavBuf = await wavObject.arrayBuffer();
+        wavBytes = new Uint8Array(wavBuf);
+      } catch (err) {
+        throw new Error(`อ่าน WAV ของเพลง "${p.songName}" เข้า memory ไม่สำเร็จ: ` + (err?.message || String(err)));
+      }
+
+      // คำนวณ CRC32 ของ WAV bytes (ทีละ chunk 64KB)
+      let crc = 0;
+      const CRC_CHUNK = 65536;
+      for (let j = 0; j < wavBytes.byteLength; j += CRC_CHUNK) {
+        const end = Math.min(j + CRC_CHUNK, wavBytes.byteLength);
+        crc = crc32Update(crc, wavBytes.subarray(j, end));
+      }
+      // อัปเดต CRC กลับเข้า entries (สำหรับ CD bytes)
+      entries[i].crc32 = crc;
+
+      // Build entry bytes: [LFH + WAV + DD]
+      const filenameBytes = encodeFilename(entries[i].filename);
+      const lfhBytes = buildLocalFileHeader(filenameBytes);
+      await appendBytes(lfhBytes);
+      await appendBytes(wavBytes);
+      const ddBytes = buildDataDescriptor(crc, wavBytes.byteLength);
+      await appendBytes(ddBytes);
+
+      // คืน memory ของ wavBytes ทันที (ช่วยลด memory footprint)
+      wavBytes = null;
+    }
+
+    // ===== Build Central Directory + EOCD bytes → append to chunkBuffer =====
+    const cdBytes = buildCentralDirectoryBytes(entries);
+    await appendBytes(cdBytes);
+
+    // ===== Flush chunk สุดท้าย (trailing — อาจ < 8MB) =====
+    if (chunkLen > 0) {
+      await flushChunk(true);
+    }
   } catch (err) {
-    return jsonResponse({ error: "อัปโหลด Central Directory part ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
+    // ⚠️ ถ้าเกิด error ระหว่าง build/upload → abort multipart + ลบ job row
+    try { await mpu.abort(); } catch (_) {}
+    await deleteOrderZipJob(env, jobId);
+    // อัปเดต order doc: zip_status = 'failed'
+    try {
+      await updateDocument(env, "orders", jobRow.order_id, {
+        zip_status: "failed",
+        zip_error: String(err?.message || err),
+        zip_download_url: "",
+        zip_file_name: "",
+        updated_at: new Date().toISOString(),
+      });
+    } catch (_) {}
+    return jsonResponse({
+      error: "build/upload ZIP ไม่สำเร็จ: " + (err?.message || String(err)),
+    }, 500);
   }
 
   // ===== complete multipart upload =====
-  const allParts = [
-    ...parts.map((p) => ({ partNumber: p.partNumber, etag: p.etag })),
-    { partNumber: finalPartNumber, etag: cdPart.etag },
-  ].sort((a, b) => a.partNumber - b.partNumber);
-
   try {
-    await mpu.complete(allParts);
+    await mpu.complete(allUploadedParts);
   } catch (err) {
     return jsonResponse({ error: "complete multipart upload ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
   }
@@ -1623,9 +1678,6 @@ async function handleOrderZipFinalize(request, env) {
   // ===== อัปเดต order doc =====
   const base = env.R2_PUBLIC_BASE_URL.replace(/\/+$/, "");
   const url = `${base}/${jobRow.bucket_key.split("/").map(encodeURIComponent).join("/")}`;
-  // toCloudinaryDownloadUrl ฝั่ง client (orders.js:32) ใส่ fl_attachment ให้ Cloudinary URL
-  // แต่ R2 URL ไม่ใช่ Cloudinary → ฟังก์ชันนั้นปล่อยผ่าน → URL ยังเป็น R2 URL ตรงๆ
-  // Content-Disposition: attachment ถูกตั้งตอน createMultipartUpload แล้ว → ลูกค้าคลิกแล้วดาวน์โหลดทันที
   const zipFileName = jobRow.bucket_key.split("/").pop() || `Order-${jobRow.order_id}.zip`;
   const totalSongs = Number(jobRow.total_songs || parts.length);
   const now = new Date().toISOString();
@@ -1642,8 +1694,6 @@ async function handleOrderZipFinalize(request, env) {
       updated_at: now,
     });
   } catch (err) {
-    // ⚠️ ถ้าอัปเดต order doc ล้มเหลว → R2 มีไฟล์อยู่แล้ว แต่ order doc ไม่ได้รับ URL
-    // ไม่ abort multipart เพราะ complete แล้ว — แจ้ง error แล้วให้แอดมินลบไฟล์เอง
     return jsonResponse({
       error: "อัปเดตออเดอร์ด้วยลิงก์ ZIP ไม่สำเร็จ (แต่ไฟล์ ZIP ถูกสร้างใน R2 แล้ว — bucket key: " + jobRow.bucket_key + "): " + (err?.message || String(err)),
     }, 500);
