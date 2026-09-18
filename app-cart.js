@@ -223,7 +223,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         : formatPrice(item.price * item.quantity);
       return `
       <div class="cart-item" data-cart-item="${escapeHtml(item.id)}">
-        <img class="cart-item-cover" src="${escapeHtml(item.cover_url)}" alt="">
+        <img class="cart-item-cover" src="${escapeHtml(item.cover_url)}" loading="lazy" alt="">
         <div class="cart-item-info">
           <div class="cart-item-name">${escapeHtml(item.song_name)}</div>
           <div class="cart-item-meta">${metaText}</div>
