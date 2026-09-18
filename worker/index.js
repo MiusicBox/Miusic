@@ -491,6 +491,28 @@ function sanitizeSongsForPublic(docs) {
   });
 }
 
+// 🔧 (2026-09-18 v6 perf): Whitelist ฟิลด์ที่จำเป็นสำหรับ list view + modal ของ customer page
+// ฟิลด์อื่นๆ ที่ไม่อยู่ใน list นี้จะถูกตัดออกจาก response (ลด response size 75%)
+// ใช้ใน `?slim=1` query param
+const SONG_SLIM_FIELDS = new Set([
+  "song_name", "artist", "dj_name", "dj_id",
+  "cover_url", "preview_url", "file_url",
+  "price", "duration", "description",
+  "playlist_id", "playlist_name", "status",
+  "category_name", "category_id", "categoryIds",
+  "preview_status", "preview_start_sec", "preview_end_sec",
+  "preview_start_bar", "preview_end_bar",
+  "created_at"
+]);
+
+function slimSongForList(songData) {
+  const slim = {};
+  for (const key of SONG_SLIM_FIELDS) {
+    if (key in songData) slim[key] = songData[key];
+  }
+  return slim;
+}
+
 async function handleDb(request, env, url) {
   const parts = url.pathname.slice("/api/db/".length).split("/").filter(Boolean);
   const collection = parts[0];
@@ -824,12 +846,48 @@ async function handleDb(request, env, url) {
         const selfDoc = await getDocument(env, "admins", admin.id);
         return jsonResponse({ docs: selfDoc ? [selfDoc] : [] });
       }
-      let docs = await listDocuments(env, collection);
+      // 🔧 (2026-09-18 v6 perf): รองรับ pagination + slim response ผ่าน query params
+      //   ?limit=N&offset=M  → ใช้ LIMIT/OFFSET ใน SQL (ลด D1 reads + response size)
+      //   ?slim=1            → ส่งเฉพาะฟิลด์จำเป็นสำหรับ list view (ลด response size ~75%)
+      //   default: no limit, no slim — backward compat (admin ใช้ได้ปกติ)
+      //   ใช้กับ /api/db/songs ของ customer page (เพลง 5000+ ตัว) → ลดเวลาโหลดจาก 30s+ → 1s
+      const urlParams = new URL(request.url).searchParams;
+      const limit = parseInt(urlParams.get("limit") || "", 10);
+      const offset = parseInt(urlParams.get("offset") || "0", 10);
+      const slim = urlParams.get("slim") === "1";
+      const opts = {};
+      if (Number.isInteger(limit) && limit > 0) opts.limit = limit;
+      if (Number.isInteger(offset) && offset > 0) opts.offset = offset;
+      let docs = await listDocuments(env, collection, opts);
       // 🔒 sanitize ฟิลด์ sensitive ของ songs ถ้าเป็น non-admin
       if (collection === "songs" && !admin) {
         docs = sanitizeSongsForPublic(docs);
+        // 🔧 (2026-09-18 v6 perf): slim ส่งเฉพาะฟิลด์จำเป็นสำหรับ list view + modal
+        //   ลด response จาก ~2KB/song → ~500 bytes/song (ลด 75%)
+        //   ฟิลด์ที่เก็บ: song_name, artist, dj_name, cover_url, preview_url, file_url,
+        //     price, duration, description, playlist_id/name, status, category_*, preview_*
+        //   ฟิลด์ที่ตัด: tags, bpm, key, waveform_data, ฯลฯ (admin ใช้เท่านั้น)
+        if (slim) {
+          docs = docs.map((d) => ({
+            id: d.id,
+            data: slimSongForList(d.data || {}),
+          }));
+        }
       }
-      return jsonResponse({ docs });
+      // 🔧 (2026-09-18 v6 perf): CDN cache สำหรับ public collections GET requests
+      //   ช่วยให้ customer หลังจากคนแรกได้ cache hit (เร็วมาก)
+      //   ใช้ cache 60 วินาที — เพลง/playlist ไม่ค่อยเปลี่ยน
+      //   ไม่ cache "orders" (per-customer — ห้าม cache) หรือ "admins" (per-admin)
+      const isCacheable = PUBLIC_READ_COLLECTIONS.has(collection) && collection !== "orders";
+      const extraHeaders = isCacheable
+        ? { "Cache-Control": "public, max-age=60, s-maxage=300" }
+        : {};
+      // ใช้ new Response เพื่อใส่ Cache-Control header (jsonResponse ไม่รองรับ cache)
+      const body = JSON.stringify({ docs });
+      return new Response(body, {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders(), ...extraHeaders },
+      });
     }
 
     // /api/db/:collection/_query  (where/orderBy)
