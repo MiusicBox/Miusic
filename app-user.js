@@ -1120,8 +1120,11 @@ function playSongAndSeekTo(songId, targetSec, section) {
 document.getElementById("modalJumpToIntro").addEventListener("click", () => {
   // 🔧 แก้บั๊ก (2026-09-17): ถ้า modal เปิดอยู่ที่เพลงอื่น → เริ่มเล่นเพลงใน modal แทน
   if (modalCurrentSongId !== STATE.currentPlayingId) {
-    // "ต้นเพลง" = วินาที 0 → ไม่ต้อง seek (playSong เริ่มจาก 0 อยู่แล้ว)
-    playSongAndSeekTo(modalCurrentSongId, null, "intro");
+    // 🔧 แก้บั๊ก I1 (2026-09-18): เดิมส่ง null → per-call listener ไม่ seek
+    //   → permanent listener (บรรทัด 777) ชนะ → seek ไป preview.start แทน 0:00
+    //   แก้: ส่ง 0 แทน null → per-call listener จะ seek ไป 0 ทับ permanent listener
+    //   (เพราะ per-call listener ลงทะเบียนหลัง → ทำงานทีหลัง → override ค่าสุดท้าย)
+    playSongAndSeekTo(modalCurrentSongId, 0, "intro");
     return;
   }
   // กรณี modal เปิดอยู่ที่เพลงที่กำลังเล่น — โค้ดเดิม
