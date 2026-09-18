@@ -447,6 +447,28 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     return (hash >>> 0).toString(36);
   }
 
+  // 🔧 แก้บั๊ก (2026-09-18): normalize เบอร์ Laos ให้เป็นมาตรฐานเดียวก่อนเก็บลง DB / localStorage
+  // -----------------------------------------------------------
+  // ปัญหา: ลูกค้ากรอกเบอร์ได้หลายรูปแบบ เช่น "+85620XXXXXXXX" / "85620XXXXXXXX"
+  //   / "020XXXXXXXX" / "20XXXXXXXX" → DB เก็บตามที่กรอก → track order ไม่เจอเพราะเทียบกันไม่ตรง
+  //
+  // วิธีแก้: normalize ทุกรูปแบบให้เป็น "20XXXXXXXX" ตั้งแต่ตอน checkout
+  //   - strip country code Laos (+856 / 856) ออก
+  //   - strip "0" นำหน้าออก
+  //   ทำให้ DB เก็บเบอร์มาตรฐานเดียว → track order ตามเบอร์รูปแบบใดก็เจอ
+  //
+  // สอดคล้องกับ normalizePhoneServer ใน worker/index.js + normalizePhone ใน app-user.js
+  //   ที่แก้ใน Bug C5 (ทำให้ query-time normalization กับ storage-time ตรงกัน)
+  //
+  // ผลกระทบต่อระบบเดิม: 0% — เบอร์ที่ลูกค้ากรอกยังแสดงในใบเสร็จ/WhatsApp message ตามเดิม
+  //   แค่เปลี่ยนค่าที่เก็บใน field "whatsapp" ของ order document ใน DB
+  function normalizePhoneForStorage(v) {
+    let s = String(v || "").replace(/[^0-9]/g, "");
+    if (s.startsWith("856")) s = s.slice(3);
+    if (s.startsWith("0")) s = s.replace(/^0+/, "");
+    return s;
+  }
+
   function getCheckoutKey(customerName, whatsapp) {
     return hashCheckoutKey(JSON.stringify({
       customerName,
@@ -990,7 +1012,9 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
 
         const builtOrder = {
           customer_name: customerName,
-          whatsapp,
+          // 🔧 แก้บั๊ก (2026-09-18): normalize เบอร์ Laos ก่อนเก็บลง DB
+          //   เพื่อให้ track order ตามเบอร์รูปแบบใดก็เจอ (020 / 20 / +85620 ฯลฯ)
+          whatsapp: normalizePhoneForStorage(whatsapp),
           items: resolved.items, // Order Items ทั้งหมดของตะกร้า ณ ขณะสั่งซื้อ
           total: resolved.total, // ← ยอดสุดท้าย (final_total) — เก็บเหมือนเดิมเพื่อ back-compat กับ orders.js เดิม
           order_type: resolved.orderType, // "single" | "playlist" | "mixed"
@@ -1104,10 +1128,11 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     // clearStoredOrderId();
     renderCart();
     // เพิ่มใหม่: จำชื่อ+เบอร์โทรไว้ในเครื่อง เพื่อเติมฟอร์มอัตโนมัติให้ลูกค้าตอนสั่งซื้อครั้งถัดไป
-    saveCustomerInfo(customerName, whatsapp);
+    saveCustomerInfo(customerName, normalizePhoneForStorage(whatsapp));
     // 🔧 (2026-09-17): บันทึก name+whatsapp ลง MY_ORDERS_INFO_KEY ด้วย (key เดียวกับ app-promotion.js + app-user.js badge)
     // เพื่อให้ badge บนปุ่ม "ติดตามออเดอร์" สามารถ detect ลูกค้าได้ทันทีหลังสั่งซื้อ — ไม่ต้องรอให้ลูกค้าเปิด My Orders ก่อน
-    try { localStorage.setItem("music_store_my_orders_info_v1", JSON.stringify({ name: customerName, whatsapp })); } catch (_) {}
+    // 🔧 (2026-09-18): เก็บเบอร์แบบ normalized ด้วย เพื่อให้ตรงกับค่าใน DB และ badge ทำงานถูกต้อง
+    try { localStorage.setItem("music_store_my_orders_info_v1", JSON.stringify({ name: customerName, whatsapp: normalizePhoneForStorage(whatsapp) })); } catch (_) {}
     // 🔧 (2026-09-17): refresh badge ทันที — listener จะ poll ทันที (delay 0) → แสดง badge "1" ภายใน ~200-500ms
     if (window.__refreshTrackOrderBadge) window.__refreshTrackOrderBadge();
     if (nameInput) nameInput.value = "";
