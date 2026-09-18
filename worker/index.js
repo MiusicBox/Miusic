@@ -62,9 +62,6 @@ function buildObjectKey(folder, originalName) {
 
 async function handleUpload(request, env) {
   // 🔒 Security (2026-09-11): ตรวจ admin session ก่อนอัปโหลด — กันคนทั่วไปอัปโหลดไฟล์เข้า R2
-  // ก่อนหน้านี้ endpoint นี้เปิดให้ใครก็อัปโหลดได้ ทำให้คนนอกสามารถอัปโหลดไฟล์ใดก็ได้เข้า bucket
-  // การตรวจนี้ใช้รูปแบบเดียวกับ handleDeleteUpload ที่มีอยู่แล้ว (บรรทัด 112) — ไม่กระทบฝั่งแอป
-  // เพราะทุกจุดที่เรียก /api/upload (ผ่าน storage-adapter.js) รันในบริบท admin.html ที่ล็อกอินแล้ว
   const uploadAdmin = await getSessionAdmin(request, env);
   if (!uploadAdmin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
 
@@ -74,6 +71,13 @@ async function handleUpload(request, env) {
   if (!env.R2_PUBLIC_BASE_URL) {
     return jsonResponse({ error: "ยังไม่ได้ตั้งค่า R2_PUBLIC_BASE_URL ใน wrangler.jsonc" }, 500);
   }
+
+  // 🔧 (2026-09-18 v3): ยกเลิก file size limit — กลับไปไม่มี limit เหมือนเดิม
+  //   เหตุผล: ZIP ออเดอร์ที่รวมเพลงหลายสิบเพลง จะเกิน limit ที่กำหนด → ทำให้อัปโหลดไม่ได้
+  //   ฝั่ง client (app-admin.js) มี MAX_FULL_SONG_SIZE_MB = 100MB สำหรับเพลงเดี่ยวอยู่แล้ว
+  //   ZIP ออเดอร์ไม่มี limit ฝั่ง client → ต้องไม่มี limit ฝั่ง Worker ด้วย
+  //   Worker free plan มี request body limit 100MB โดย default → ถ้าไฟล์เกิน Worker จะตัดเอง
+  //   ถ้าอนาคตต้องการ limit จริง ๆ → ใช้ Worker Paid plan (limit 500MB) แล้วค่อยตั้ง limit
 
   let form;
   try {
@@ -90,15 +94,35 @@ async function handleUpload(request, env) {
     return jsonResponse({ error: "ไม่พบไฟล์ที่จะอัปโหลด (field 'file')" }, 400);
   }
 
+  // 🔒 แก้บั๊ก #3 (2026-09-18): validate MIME type ตาม folder — กันอัปโหลด HTML/JS → XSS ผ่าน R2 URL
+  //   เดิม: รับทุก MIME type → แอดมิน (หรือ attacker) อัปโหลด HTML ได้ → R2 เสิร์ฟด้วย Content-Type: text/html → XSS
+  //   แก้: allowlist MIME type ตาม folder + resourceType
+  const ALLOWED_MIME_BY_FOLDER = {
+    "full-songs":   ["audio/wav", "audio/mpeg", "audio/mp3", "audio/x-wav", "audio/x-mpeg", "audio/ogg", "audio/aac", "audio/flac"],
+    "order-zips":   ["application/zip", "application/x-zip-compressed", "application/octet-stream"],
+    "":             ["audio/wav", "audio/mpeg", "audio/mp3", "audio/x-wav", "audio/x-mpeg", "audio/ogg", "audio/aac", "audio/flac",
+                     "image/jpeg", "image/png", "image/webp", "image/gif", "image/jpg"],
+  };
+  const folderKey = ALLOWED_MIME_BY_FOLDER[folder] ? folder : "";
+  const allowedTypes = ALLOWED_MIME_BY_FOLDER[folderKey] || ALLOWED_MIME_BY_FOLDER[""];
+  const actualType = (file.type || "").toLowerCase();
+  // ถ้า resourceType === "raw" → อนุญาต application/octet-stream และ zip types เท่านั้น
+  const isRaw = resourceType === "raw";
+  const effectiveAllowed = isRaw
+    ? ["application/zip", "application/x-zip-compressed", "application/octet-stream"]
+    : allowedTypes;
+  if (actualType && !effectiveAllowed.includes(actualType)) {
+    return jsonResponse({ error: `ประเภทไฟล์ไม่ได้รับอนุญาต: ${actualType} (อนุญาตเฉพาะ: ${effectiveAllowed.join(", ")})` }, 415);
+  }
+
   const key = buildObjectKey(folder, file.name);
+  // 🔒 แก้บั๊ก #3: บังคับ Content-Type ตาม MIME type ที่ validate แล้ว — ไม่ไว้ใจ client 100%
   const httpMetadata = {
-    contentType: file.type || "application/octet-stream",
+    contentType: actualType || "application/octet-stream",
   };
 
   // เดิม (Cloudinary): orders.js ใช้ toCloudinaryDownloadUrl() แปะ fl_attachment ต่อท้าย URL
-  // ตอนแสดงผลทุกครั้งที่ผู้ใช้กดลิงก์ดาวน์โหลด — ย้ายมาตั้งตอนอัปโหลดครั้งเดียวแทน ผลลัพธ์
-  // ปลายทาง (กดแล้วดาวน์โหลดไฟล์ทันที ไม่เปิดเล่นในแท็บใหม่) เหมือนเดิมทุกประการ
-  const isForceDownload = FORCE_DOWNLOAD_FOLDERS.has(folder) || resourceType === "raw";
+  const isForceDownload = FORCE_DOWNLOAD_FOLDERS.has(folder) || isRaw;
   if (isForceDownload) {
     const downloadName = (file.name || key.split("/").pop() || "download").replace(/"/g, "");
     httpMetadata.contentDisposition = `attachment; filename="${downloadName}"`;
@@ -141,6 +165,14 @@ async function handleFileProxy(request, env, url) {
   // ดึง key จาก path: ตัด prefix "/api/file/" ออก ที่เหลือคือ key ทั้งหมด (รวม subfolder ถ้ามี)
   const key = decodeURIComponent(url.pathname.slice("/api/file/".length));
   if (!key) return jsonResponse({ error: "ไม่พบ key ของไฟล์" }, 400);
+
+  // 🔒 แก้บั๊ก #2 (2026-09-18): ป้องกัน path traversal — กัน admin อ่านไฟล์อื่นใน R2 ผ่าน `../`
+  //   เดิม: ไม่เช็ค key → admin สามารถส่ง `/api/file/../secret/config.json` อ่านไฟล์อื่นได้
+  //   แก้: ตรวจว่า key มี `..` หรือเริ่มต้นด้วย `/` → reject
+  //   ปกติ R2 key มีรูปแบบ `folder/timestamp-uuid.ext` — ไม่มีทางมี `..` หรือขึ้นต้นด้วย `/`
+  if (key.includes("..") || key.startsWith("/")) {
+    return jsonResponse({ error: "key ไม่ถูกต้อง" }, 400);
+  }
 
   // อ่านไฟล์จาก R2 binding (ไม่ผ่าน public URL จึงไม่โดน CORS)
   const object = await env.BUCKET.get(key);
@@ -258,14 +290,49 @@ async function handleAuth(request, env, url) {
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
     const email = String(body.email || "").trim();
     const password = String(body.password || "");
+
+    // 🔒 แก้บั๊ก #4 (2026-09-18): Rate limiting บน login — กัน brute-force password
+    //   เดิม: ไม่มี rate limiting → attacker ยิง password dictionary ได้ไม่จำกัด
+    //   แก้: ใช้ D1 ตาราง `login_attempts` track IP + email → บล็อกถ้าเกิน 5 ครั้งใน 15 นาที
+    //   ⚠️ ใช้ IP จาก CF-Connecting-IP header (Cloudflare ใส่ให้อัตโนมัติ)
+    //   ถ้าไม่มีตาราง login_attempts (DB เก่า) → rate limiting ข้ามไป (fallback: ไม่บล็อก)
+    const clientIP = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "unknown";
+    const RATE_LIMIT_MAX_ATTEMPTS = 5;
+    const RATE_LIMIT_WINDOW_MINUTES = 15;
+    const rateLimitWindow = new Date(Date.now() - RATE_LIMIT_WINDOW_MINUTES * 60 * 1000).toISOString();
+    try {
+      // นับ attempts ล้มเหลวใน 15 นาทีล่าสุดสำหรับ IP นี้
+      const attemptsRow = await env.DB.prepare(
+        "SELECT COUNT(*) AS c FROM login_attempts WHERE ip = ? AND attempted_at > ?"
+      ).bind(clientIP, rateLimitWindow).first();
+      if ((attemptsRow?.c || 0) >= RATE_LIMIT_MAX_ATTEMPTS) {
+        return jsonResponse({
+          error: `พยายามเข้าสู่ระบบผิดพลาดเกินไป (${RATE_LIMIT_MAX_ATTEMPTS} ครั้งใน ${RATE_LIMIT_WINDOW_MINUTES} นาที) — กรุณารอ ${RATE_LIMIT_WINDOW_MINUTES} นาทีแล้วลองใหม่`,
+          code: "auth/rate-limited"
+        }, 429);
+      }
+    } catch (rateErr) {
+      // ถ้าตาราง login_attempts ไม่มี → ข้าม rate limiting (fallback: ไม่บล็อก)
+      // ผู้ใช้ต้องสร้างตารางนี้เอง (ดู schema.sql สำหรับคำสั่ง CREATE TABLE)
+      console.warn("rate limiting skipped (table login_attempts not found):", rateErr?.message);
+    }
+
     // 🔒 Maintenance (2026-09-16): ทำความสะอาด session ที่หมดอายุก่อนสร้าง session ใหม่
-    // ลบ session ของคนที่ไม่เคยกลับมา (ปิดเบราว์เซอร์ไปเลย) ออกจากตาราง sessions
-    // ไม่ทำให้ login พังถ้า cleanup ล้มเหลว (ฟังก์ชัน try/catch ภายในเอง)
     await cleanupExpiredSessions(env);
     const admin = await env.DB.prepare("SELECT * FROM admin_users WHERE email = ?").bind(email).first();
     if (!admin || !(await verifyPassword(password, admin.password_hash))) {
+      // 🔒 แก้บั๊ก #4: บันทึก login attempt ที่ล้มเหลวลง D1 (สำหรับ rate limiting)
+      try {
+        await env.DB.prepare(
+          "INSERT INTO login_attempts (ip, email, attempted_at) VALUES (?, ?, ?)"
+        ).bind(clientIP, email, new Date().toISOString()).run();
+      } catch (_) { /* ถ้าตารางไม่มี → ข้าม */ }
       return jsonResponse({ error: "อีเมลหรือรหัสผ่านไม่ถูกต้อง", code: "auth/invalid-credential" }, 401);
     }
+    // 🔒 แก้บั๊ก #4: login สำเร็จ → ล้าง login attempts ของ IP นี้
+    try {
+      await env.DB.prepare("DELETE FROM login_attempts WHERE ip = ?").bind(clientIP).run();
+    } catch (_) { /* ถ้าตารางไม่มี → ข้าม */ }
     const token = await createSession(env, admin.id);
     return jsonResponse(adminToClient(admin), 200, { "Set-Cookie": buildSessionCookie(token) });
   }
