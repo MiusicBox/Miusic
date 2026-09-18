@@ -1053,6 +1053,20 @@ function updateModalSeekUI() {
 //   4. ตั้ง setModalJumpActive(section) เพื่อ highlight ปุ่มที่กด
 //
 // ⚠️ ถ้า targetSec เป็น null/undefined → ไม่ seek (ใช้ตอน "ต้นเพลง" ที่เริ่มจาก 0 อยู่แล้ว)
+//
+// 🔧 แก้บั๊ก C4 (2026-09-18): listener leak + stale seek race condition
+// -----------------------------------------------------------
+// ปัญหาก่อนแก้:
+//   1. ถ้า playSong() fail (autoplay block) → loadedmetadata ไม่ fire → listener ติดค้างตลอด
+//   2. ถ้า user กด jump 2 ครั้งรวด → เพิ่ม listener 2 ตัว → fire พร้อมกัน → seek ผิดพลาด
+//   3. ถ้า user เปิด modal B แล้วรีบเปิด modal C → listener เก่า fire พร้อม pendingSeek ของเพลงเก่า
+//
+// วิธีแก้: ใช้ seekToken (ตัวนับเพิ่มทีละ 1) เพื่อ track ว่า listener ตัวไหนเป็นปัจจุบัน
+//   - ทุกครั้งที่เรียก playSongAndSeekTo → เพิ่ม seekToken + เก็บ token ของ call นี้
+//   - ใน listener → เช็คว่า token ยังตรงกับปัจจุบันไหม
+//   - ถ้าไม่ตรง → ไม่ seek (เพราะมี call ใหม่กว่า → listener เก่า)
+//   - ถ้า playSong fail → ล้าง listener ทันทีเพื่อกัน leak
+let _seekToken = 0;
 function playSongAndSeekTo(songId, targetSec, section) {
   const song = findSong(songId);
   if (!song || !song.file_url) {
@@ -1072,7 +1086,13 @@ function playSongAndSeekTo(songId, targetSec, section) {
 
   // กรณีต้องโหลดเพลงใหม่ → ตั้ง pendingSeek ไว้รอ loadedmetadata
   const pendingSeek = (targetSec != null && isFinite(targetSec) && targetSec >= 0) ? targetSec : null;
+  // 🔧 แก้บั๊ก C4: เพิ่ม seekToken ทุกครั้ง → call เก่าที่มี token ต่ำกว่าจะถูก ignore ใน listener
+  _seekToken += 1;
+  const myToken = _seekToken;
+
   const onLoadedMetadata = () => {
+    // 🔧 แก้บั๊ก C4: เช็ค token ก่อน seek — ถ้าไม่ตรง = call ใหม่กว่ามาแล้ว → ไม่ seek (กัน stale seek)
+    if (myToken !== _seekToken) return;
     AUDIO.removeEventListener("loadedmetadata", onLoadedMetadata);
     if (pendingSeek != null) {
       try { AUDIO.currentTime = pendingSeek; } catch (e) {}
@@ -1080,6 +1100,18 @@ function playSongAndSeekTo(songId, targetSec, section) {
     if (section) setModalJumpActive(section);
   };
   AUDIO.addEventListener("loadedmetadata", onLoadedMetadata);
+
+  // 🔧 แก้บั๊ก C4: ถ้า playSong fail (เช่น autoplay block) → ล้าง listener ทันทีเพื่อกัน leak
+  //   ใช้ setTimeout(0) เพื่อให้ playSong() ทำงานก่อน → แล้วค่อยเช็คว่า currentPlayingId เปลี่ยนไหม
+  //   ถ้า currentPlayingId ไม่ตรงกับ songId → playSong fail → ล้าง listener
+  //   ถ้า currentPlayingId === songId → playSong สำเร็จ → listener จะถูกล้างเองตอน loadedmetadata fire
+  setTimeout(() => {
+    if (myToken !== _seekToken) return; // call ใหม่กว่ามาแล้ว → ไม่ต้องทำอะไร
+    if (STATE.currentPlayingId !== songId) {
+      // playSong fail → ล้าง listener กัน leak
+      AUDIO.removeEventListener("loadedmetadata", onLoadedMetadata);
+    }
+  }, 0);
 
   // เริ่มเล่นเพลงใหม่ (playSong จะตั้ง STATE.currentPlayingId/preview)
   playSong(songId);
