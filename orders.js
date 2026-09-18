@@ -57,6 +57,28 @@ function r2UrlToProxyUrl(url) {
   return "/api/file/" + key;
 }
 function formatLAK(v) { return Number(v || 0).toLocaleString("en-US") + " LAK"; }
+
+// 🔧 แก้บั๊ก (2026-09-18): normalize เบอร์ Laos ให้เป็นมาตรฐานเดียวก่อนเก็บลง DB
+// -----------------------------------------------------------
+// ปัญหา: แอดมินสร้าง/แก้ไขออเดอร์ฝั่ง admin → เก็บเบอร์ตามที่กรอก ซึ่งอาจเป็น "+85620..." / "020..." / "20..."
+//   → DB เก็บหลายรูปแบบ → ลูกค้า track order ไม่เจอ (query-time normalize ก็ยังต้องการความสอดคล้อง)
+//
+// วิธีแก้: normalize ทุกรูปแบบให้เป็น "20XXXXXXXX" ก่อนเก็บลง DB (เหมือนฝั่ง app-cart.js)
+//   - strip country code Laos (+856 / 856) ออก
+//   - strip "0" นำหน้าออก
+//
+// สอดคล้องกับ normalizePhoneForStorage ใน app-cart.js + normalizePhoneServer ใน worker/index.js
+//   + normalizePhone ใน app-user.js / app-promotion.js (ที่แก้ใน Bug C5)
+//
+// ผลกระทบต่อระบบเดิม: 0% — เบอร์ที่แสดงในใบเสร็จ/WhatsApp message ยังเก็บรูปแบบเดิมใน UI
+//   แค่เปลี่ยนค่าที่เก็บใน field "whatsapp" ของ order document ใน DB
+function normalizePhoneForStorage(v) {
+  let s = String(v || "").replace(/[^0-9]/g, "");
+  if (s.startsWith("856")) s = s.slice(3);
+  if (s.startsWith("0")) s = s.replace(/^0+/, "");
+  return s;
+}
+
 // เปิดแชท WhatsApp ไปหาเบอร์ที่ระบุ (รูปแบบเดียวกับ buildWhatsAppLink ใน app-user.js/app-cart.js)
 function buildWhatsAppLink(number, text) {
   const clean = String(number || "").replace(/[^0-9]/g, "");
@@ -2232,7 +2254,9 @@ async function handleUpdateOrder() {
 
   const updatedData = {
     customer_name: customerName,
-    whatsapp: whatsapp,
+    // 🔧 แก้บั๊ก (2026-09-18): normalize เบอร์ Laos ก่อนเก็บลง DB (เหมือนฝั่ง app-cart.js)
+    //   ทำให้ track order ตามเบอร์รูปแบบใดก็เจอ (020 / 20 / +85620 ฯลฯ)
+    whatsapp: normalizePhoneForStorage(whatsapp),
     items: payload.items,
     total: finalTotal, // ← ใช้ finalTotal สำหรับ back-compat
     order_type: payload.order_type, // "single" | "playlist" | "mixed"
@@ -2378,7 +2402,9 @@ async function handleSubmitOrder() {
   const btn = document.getElementById("ordSubmitBtn");
 
   const customerName = nameInput.value.trim();
-  const whatsapp = whatsappInput.value.trim();
+  // 🔧 แก้บั๊ก (2026-09-18): normalize เบอร์ Laos ก่อนเก็บลง DB (เหมือนฝั่ง app-cart.js + edit order)
+  //   ทำให้ track order ตามเบอร์รูปแบบใดก็เจอ (020 / 20 / +85620 ฯลฯ)
+  const whatsapp = normalizePhoneForStorage(whatsappInput.value.trim());
   const payload = buildOrderPayloadFromEntries(state.cartEntries);
   const total = payload.total;
 
