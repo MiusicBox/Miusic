@@ -29,9 +29,13 @@ import { getDocument, listDocuments, queryDocuments, setDocument, updateDocument
 // ทำไมต้องใช้: Worker request body limit 100MB → สร้าง ZIP > 100MB ผ่าน R2 Multipart Upload ทีละเพลง
 // ไม่กระทบฟังก์ชันเดิมใน worker/index.js เลย — import เข้ามาใช้เฉพาะใน handleOrderZip*
 import {
-  makeZipEntryStream,
-  makeCentralDirectoryStream,
+  makeZipEntryStream,                  // คงไว้ตามกฎ #7 (เผื่อใช้ในอนาคต)
+  makeCentralDirectoryStream,         // คงไว้ตามกฎ #7
+  buildCentralDirectoryBytes,         // ใช้ใน finalize — Uint8Array แทน stream (R2 ต้องการ known length)
   encodeFilename,
+  buildLocalFileHeader,
+  buildDataDescriptor,
+  crc32Update,
 } from "./zip-format.js";
 
 // โฟลเดอร์เหล่านี้เดิมใช้ toCloudinaryDownloadUrl() เติม fl_attachment ให้บังคับดาวน์โหลด
@@ -1418,47 +1422,72 @@ async function handleOrderZipAppend(request, env) {
   const filename = uniqueZipFileName(baseName);
   const zipEntryName = folderPath ? `${folderPath}/${filename}` : filename;
 
-  // ===== สร้าง combined stream: [LFH + WAV chunks + Data Descriptor] =====
-  // makeZipEntryStream คำนวณ CRC32 ของ **WAV bytes เท่านั้น** ภายในตัวมันเอง (ตาม ZIP spec)
-  // และเรียก onDone({ crc32, size }) เมื่อ stream สิ้นสุด เพื่อให้ caller ใช้ค่า CRC ที่ถูกต้อง
-  // ในการสร้าง Central Directory ในภายหลัง (handleOrderZipFinalize)
-  //
-  // ⚠️ ห้ามใช้ TransformStream ภายนอกเพื่อ capture CRC เพราะมันจะคำนวณ CRC ของ
-  //   bytes ทั้งหมดที่ผ่าน stream (รวม LFH + DD bytes) — ซึ่งผิดตาม ZIP spec
-  //   CRC ที่ถูกต้อง = CRC ของ WAV bytes เท่านั้น
-  let capturedCrc = 0;
-  let capturedSize = 0;
-  const zipEntryStream = makeZipEntryStream(
-    zipEntryName,
-    wavObject.body,
-    ({ crc32, size }) => {
-      capturedCrc = crc32;
-      capturedSize = size;
-    }
-  );
-  // pipe ผ่าน identity TransformStream เพื่อให้สามารถ pipe เข้า R2 uploadPart ได้
-  // (บาง R2 SDK ต้องการ stream ที่ผ่าน TransformStream ไม่ใช่ ReadableStream ดิบ)
-  // ⚠️ ใช้ identity stream ไม่ใช่ CRC tracker — เพราะ CRC ถูกคำนวณภายใน makeZipEntryStream แล้ว
-  const trackedStream = zipEntryStream.pipeThrough(new TransformStream({
-    transform(chunk, controller) { controller.enqueue(chunk); },
-  }));
-
-  // ===== คำนวณ offset + partSize =====
-  // ⚠️ สำคัญ: offset ใน Central Directory ต้องเป็นตำแหน่งจริงของ LFH ในไฟล์ ZIP
-  //   แต่ละ part ใน R2 Multipart Upload มีโครงสร้าง [LFH + WAV + DD]
-  //   ดังนั้น partSize (ขนาดรวม) = LFH_size + WAV_size + DD_size
+  // ===== คำนวณ partSize ล่วงหน้า (สำหรับ FixedLengthStream) =====
+  // ⚠️ สำคัญ: R2 Multipart Upload API ต้องการ stream ที่มี "known length"
+  //   ถ้าใช้ ReadableStream แบบ pull-based ปกติ R2 จะ reject:
+  //   "Provided readable stream must have a known length (... FixedLengthStream)"
+  //   วิธีแก้: ใช้ FixedLengthStream ซึ่งรู้ขนาดรวมล่วงหน้า
+  //   คำนวณ partSize จาก:
   //     LFH_size = 30 + filename_bytes_len (filename ใน ZIP = folderPath + "/" + filename)
-  //     WAV_size = capturedSize (จาก onDone callback)
+  //     WAV_size = wavObject.size (จาก R2 object metadata — ทราบทันทีหลัง get())
   //     DD_size = 16 (always 16 bytes for data descriptor with signature)
-  //   offset ของ entry ถัดไป = ผลรวม partSize ของ parts ก่อนหน้า (ทั้งหมด)
-  //   cdOffset (ตำแหน่งเริ่มต้นของ Central Directory) = ผลรวม partSize ทั้งหมด
   const filenameInZip = folderPath ? `${folderPath}/${filename}` : filename;
-  const filenameBytesLen = encodeFilename(filenameInZip).byteLength;
+  const filenameBytes = encodeFilename(filenameInZip);
+  const filenameBytesLen = filenameBytes.byteLength;
   const LFH_SIZE = 30 + filenameBytesLen;
   const DD_SIZE = 16;
-  const partSize = LFH_SIZE + capturedSize + DD_SIZE;
+  const wavSize = wavObject.size || 0;  // จาก R2 object metadata — known ทันที
+  const partSize = LFH_SIZE + wavSize + DD_SIZE;
   // offset ของ entry นี้ = ผลรวม partSize ของ parts ก่อนหน้า (ทั้งหมด)
   const offset = parts.reduce((sum, p) => sum + Number(p.partSize || 0), 0);
+
+  // ===== สร้าง FixedLengthStream ที่มี known length =====
+  // เราจะ:
+  //   1. สร้าง writer + readable คู่กัน (FixedLengthStream)
+  //   2. เขียน LFH (synchronous, ใช้ known bytes)
+  //   3. Stream WAV จาก R2 ผ่าน writer ทีละ chunk พร้อม compute CRC32 แบบ on-the-fly
+  //   4. เขียน Data Descriptor (CRC + sizes) เป็น trailer
+  //   5. ปิด writer → readable พร้อมส่งให้ R2 uploadPart
+  const { readable: partReadable, writable: partWritable } = new FixedLengthStream(partSize);
+  const writer = partWritable.getWriter();
+
+  // ตัวแปรเก็บ CRC + size จริงหลัง stream WAV เสร็จ (สำหรับ CD ภายหลัง)
+  let capturedCrc = 0;
+  let capturedSize = 0;
+
+  try {
+    // เขียน LFH ก่อน (chunk แรก)
+    const lfhBytes = buildLocalFileHeader(filenameBytes);
+    await writer.write(lfhBytes);
+
+    // Stream WAV จาก R2 ผ่าน writer ทีละ chunk + compute CRC32 (เฉพาะ WAV bytes ตาม ZIP spec)
+    const reader = wavObject.body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value && value.byteLength) {
+          capturedCrc = crc32Update(capturedCrc, value);
+          capturedSize += value.byteLength;
+          await writer.write(value);
+        }
+      }
+    } finally {
+      try { reader.releaseLock(); } catch (_) { /* ignore */ }
+    }
+
+    // เขียน Data Descriptor (CRC + sizes)
+    const dd = buildDataDescriptor(capturedCrc, capturedSize);
+    await writer.write(dd);
+
+    // ปิด writer → readable พร้อมใช้
+    await writer.close();
+  } catch (err) {
+    try { writer.abort(err); } catch (_) { /* ignore */ }
+    return jsonResponse({
+      error: `stream ไฟล์ WAV ของเพลง "${song.song_name || songName}" ไม่สำเร็จ: ` + (err?.message || String(err)),
+    }, 500);
+  }
 
   // ===== resume multipart upload + upload part =====
   let mpu;
@@ -1470,7 +1499,8 @@ async function handleOrderZipAppend(request, env) {
 
   let uploadedPart;
   try {
-    uploadedPart = await mpu.uploadPart(partNumber, trackedStream);
+    // partReadable มาจาก FixedLengthStream → มี known length → R2 รับได้
+    uploadedPart = await mpu.uploadPart(partNumber, partReadable);
   } catch (err) {
     return jsonResponse({
       error: `อัปโหลด part ${partNumber} ของเพลง "${song.song_name || songName}" ไม่สำเร็จ: ` + (err?.message || String(err)),
@@ -1564,13 +1594,9 @@ async function handleOrderZipFinalize(request, env) {
     return jsonResponse({ error: "ยังไม่มี part ใดถูกอัปโหลด ไม่สามารถ finalize ได้" }, 400);
   }
 
-  // ===== สร้าง Central Directory entries =====
-  // แต่ละ entry ต้องการ:
-  //   - filename: ชื่อไฟล์ใน ZIP (รวม folderPath) — สำหรับ CD entry
-  //   - crc32: CRC ของ WAV bytes (จริง) — สำหรับ CD entry's CRC field
-  //   - size: WAV bytes — สำหรับ CD entry's compressed/uncompressed size (STORE method)
-  //   - offset: LFH offset ในไฟล์ ZIP — สำหรับ CD entry's local header offset field
-  //   - partSize: total bytes (LFH + WAV + DD) — สำหรับคำนวณ cdOffset ใน EOCD
+  // ===== สร้าง Central Directory bytes รวม (Uint8Array) =====
+  // ใช้ Uint8Array แทน ReadableStream เพราะ R2 multipart uploadPart ต้องการ known length
+  // CD มีขนาดเล็ก (46 bytes/entry + 22 EOCD) → ปลอดภัยที่ buffer ทั้งหมดใน memory
   const entries = parts.map((p) => ({
     filename: p.folderPath ? `${p.folderPath}/${p.filename}` : p.filename,
     crc32: p.crc32,
@@ -1578,8 +1604,7 @@ async function handleOrderZipFinalize(request, env) {
     offset: p.offset,    // LFH offset
     partSize: p.partSize, // total part bytes (LFH + WAV + DD)
   }));
-
-  const cdStream = makeCentralDirectoryStream(entries);
+  const cdBytes = buildCentralDirectoryBytes(entries);
 
   // ===== upload Central Directory + EOCD เป็น part สุดท้าย =====
   const finalPartNumber = parts.length + 1;
@@ -1592,7 +1617,8 @@ async function handleOrderZipFinalize(request, env) {
 
   let cdPart;
   try {
-    cdPart = await mpu.uploadPart(finalPartNumber, cdStream);
+    // cdBytes เป็น Uint8Array → มี known length อัตโนมัติ → R2 รับได้
+    cdPart = await mpu.uploadPart(finalPartNumber, cdBytes);
   } catch (err) {
     return jsonResponse({ error: "อัปโหลด Central Directory part ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
   }
