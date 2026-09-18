@@ -25,6 +25,14 @@
 // ===================================================
 import { hashPassword, verifyPassword, getSessionAdmin, createSession, deleteSession, buildSessionCookie, buildClearCookie, getCookie, cleanupExpiredSessions } from "./auth-helpers.js";
 import { getDocument, listDocuments, queryDocuments, setDocument, updateDocument, deleteDocument, countDocuments, getDocumentsByIds } from "./db-helpers.js";
+// 🔧 (2026-09-18): ZIP streaming helpers สำหรับสร้างไฟล์ ZIP ฝั่ง Worker
+// ทำไมต้องใช้: Worker request body limit 100MB → สร้าง ZIP > 100MB ผ่าน R2 Multipart Upload ทีละเพลง
+// ไม่กระทบฟังก์ชันเดิมใน worker/index.js เลย — import เข้ามาใช้เฉพาะใน handleOrderZip*
+import {
+  makeZipEntryStream,
+  makeCentralDirectoryStream,
+  encodeFilename,
+} from "./zip-format.js";
 
 // โฟลเดอร์เหล่านี้เดิมใช้ toCloudinaryDownloadUrl() เติม fl_attachment ให้บังคับดาวน์โหลด
 // (ไฟล์เพลงเต็ม/ไฟล์ ZIP ออเดอร์ — ไม่ใช่ไฟล์ที่เปิดเล่น/แสดงผลตรงๆ บนเว็บ)
@@ -987,6 +995,703 @@ async function handleDb(request, env, url) {
   return jsonResponse({ error: "ไม่พบ endpoint นี้" }, 404);
 }
 
+// ===================================================
+// 🔧 (2026-09-18): /api/order-zip/* — ระบบสร้าง ZIP ออเดอร์ฝั่ง Worker (ใหม่)
+// -----------------------------------------------------------
+// ปัญหา: Worker มี request body limit 100MB → สร้าง ZIP ออเดอร์ที่รวมเพลงหลายสิบเพลง
+//   แล้วอัปโหลดผ่าน /api/upload ครั้งเดียวไม่ได้ (ZIP อาจ > 100MB)
+//   ทางเดิมใช้ JSZip ใน browser สร้าง ZIP blob แล้วอัปโหลด blob ทั้งไฟล์ผ่าน /api/upload
+//   → พังทันทีถ้า ZIP > 100MB
+//
+// ทางแก้: สร้าง ZIP ฝั่ง Worker ผ่าน R2 Multipart Upload ทีละเพลง
+//   Flow:
+//   1) POST /api/order-zip/start   — สร้าง multipart upload ใน R2 + เก็บ state ใน D1
+//   2) POST /api/order-zip/append  — ยัดเพลง 1 เพลงเข้า part ถัดไปของ multipart upload
+//                                    (Worker อ่าน WAV จาก R2 binding → stream ผ่าน ZIP encoder
+//                                     → ส่งเข้า R2 part โดยตรง ไม่ผ่าน browser memory)
+//   3) POST /api/order-zip/finalize — สร้าง Central Directory + EOCD เป็น part สุดท้าย
+//                                     แล้ว completeMultipartUpload → อัปเดต order doc
+//
+// ผลกระทบต่อระบบเดิม: 0% — เพิ่ม path prefix `/api/order-zip/*` ใหม่ขั้น
+//   ไม่แตะ endpoint เดิมใดๆ (/api/upload, /api/auth/*, /api/db/*, /api/file/*)
+//   ฟังก์ชัน createOrderZip() ใน orders.js ฝั่ง client จะถูกแก้ให้เรียก endpoints นี้แทน
+//   แต่ fields ใน order document (zip_status, zip_download_url, zip_public_id, ฯลฯ)
+//   ยังเหมือนเดิม 100% → UI ฝั่ง admin ไม่ต้องแก้
+// ===================================================
+
+// Helper: แปลง R2 public URL → R2 object key (ใช้ตอนอ่าน WAV จาก R2 binding)
+// ตัวอย่าง: "https://pub-xxx.r2.dev/full-songs/123-abc.wav" → "full-songs/123-abc.wav"
+// ถ้าไม่ใช่ R2 URL (เช่น Cloudinary เก่า) จะคืน null → caller จะ throw error
+function deriveR2KeyFromUrl(url, env) {
+  if (!url || typeof url !== "string") return null;
+  const base = (env.R2_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+  if (base && url.startsWith(base + "/")) {
+    try {
+      return decodeURIComponent(url.slice(base.length + 1));
+    } catch {
+      return null;
+    }
+  }
+  // fallback: ใช้ URL parser ดึง path
+  try {
+    const u = new URL(url);
+    // ตัด leading slash ออก แล้ว decode แต่ละ segment
+    return decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+  } catch {
+    return null;
+  }
+}
+
+// Helper: ดึง R2 key ของเพลงจาก song document
+// ลำดับความสำคัญ:
+//   1. full_file_public_id (เก็บตอนอัปโหลดผ่าน /api/upload — คือ R2 key ตรงๆ)
+//   2. deriveKeyFromUrl(full_file_url) — สำหรับเพลงเก่าที่ไม่มี public_id
+//   3. file_url (fallback สำหรับเพลง "shared" ที่ไม่มี full_file_url แยก)
+function getSongR2Key(song, env) {
+  const publicId = song?.full_file_public_id;
+  if (publicId && typeof publicId === "string" && publicId.trim()) {
+    return publicId;
+  }
+  const fileUrl = song?.full_file_url || song?.file_url;
+  if (!fileUrl) return null;
+  return deriveR2KeyFromUrl(fileUrl, env);
+}
+
+// Helper: ทำความสะอาด leftover multipart upload ใน R2 (ถ้ามี)
+// ใช้ตอน /api/order-zip/start เริ่มใหม่ — กันขยะใน R2 ถ้ามี job เดิมค้างอยู่
+async function cleanupLeftoverMultipart(env, jobId, bucketKey) {
+  if (!env.BUCKET || !jobId || !bucketKey) return;
+  try {
+    const mpu = env.BUCKET.resumeMultipartUpload(bucketKey, jobId);
+    await mpu.abort();
+  } catch (_) { /* อาจไม่มี upload จริง → ข้ามไป */ }
+}
+
+// Helper: ลบ job row จาก D1 (ใช้ตอน finalize สำเร็จ หรือ abort)
+async function deleteOrderZipJob(env, jobId) {
+  if (!env.DB || !jobId) return;
+  try {
+    await env.DB.prepare("DELETE FROM order_zip_jobs WHERE job_id = ?").bind(jobId).run();
+  } catch (_) { /* ถ้าตารางไม่มี → ข้าม */ }
+}
+
+// ---------------- POST /api/order-zip/start ----------------
+// รับ: { orderId }
+// ทำ:
+//   - ตรวจ admin session
+//   - โหลด order doc จาก D1
+//   - resolveOrderSongsGrouped (จำลอง logic ฝั่ง client ใน orders.js)
+//   - ถ้ามี job เดิมของ orderId นี้อยู่ → abort multipart upload + ลบ row
+//   - สร้าง multipart upload ใน R2 → เก็บ uploadId ลง D1 (order_zip_jobs)
+//   - คืน jobId + plan (ลำดับเพลงที่จะส่งเข้า zip ทีละเพลง)
+//
+// Response:
+//   { jobId, plan: [{ songId, folderPath, filename, songName }], totalSongs, zipFileName }
+//   หรือ { error } เมื่อ fail
+async function handleOrderZipStart(request, env) {
+  const admin = await getSessionAdmin(request, env);
+  if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+  if (!env.BUCKET) {
+    return jsonResponse({ error: "ยังไม่ได้ผูก R2 bucket (binding: BUCKET) ใน wrangler.jsonc" }, 500);
+  }
+  if (!env.DB) {
+    return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
+  }
+  if (!env.R2_PUBLIC_BASE_URL) {
+    return jsonResponse({ error: "ยังไม่ได้ตั้งค่า R2_PUBLIC_BASE_URL ใน wrangler.jsonc" }, 500);
+  }
+
+  let body;
+  try { body = await request.json(); } catch {
+    return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400);
+  }
+  const orderId = String(body?.orderId || "").trim();
+  if (!orderId) return jsonResponse({ error: "กรุณาระบุ orderId" }, 400);
+
+  // โหลด order doc
+  const orderDoc = await getDocument(env, "orders", orderId);
+  if (!orderDoc || !orderDoc.data) {
+    return jsonResponse({ error: "ไม่พบออเดอร์ที่ระบุ" }, 404);
+  }
+  const order = orderDoc.data;
+
+  // ⚠️ ไม่ตรวจ order.status — เหมือน behavior เดิมของ createOrderZip ใน orders.js
+  // เพราะ confirmPaymentAndCreateZip() เรียก createOrderZip() ก่อนเปลี่ยน status เป็น 'processing'
+  // ตอนนั้นยังเป็น 'pending_verify' อยู่ → ถ้าเช็ค status จะ block flow นี้
+  // (ตัวอนาคต: ถ้าต้องการ restrict เฉพาะบาง status ต้องแก้ caller ให้ update status ก่อนเรียก)
+
+  // ถ้ามี ZIP เดิมอยู่แล้ว (zip_status='ready' + zip_download_url) → คืน URL เดิม ไม่สร้างใหม่
+  if (order.zip_status === "ready" && order.zip_download_url) {
+    return jsonResponse({
+      ok: true,
+      existing: true,
+      url: order.zip_download_url,
+      publicId: order.zip_public_id || "",
+      zipFileName: order.zip_file_name || `Order-${orderId}.zip`,
+    });
+  }
+
+  // ===== จำลอง resolveOrderSongsGrouped ฝั่ง server =====
+  // โครงสร้างเดียวกับ orders.js (บรรทัด 178-268) — แยกเพลงเดี่ยว + playlist groups
+  const singles = [];
+  const playlistMap = new Map();
+
+  function getOrCreatePlaylist(playlistId, playlistName) {
+    const key = String(playlistId || "");
+    if (!playlistMap.has(key)) {
+      playlistMap.set(key, {
+        id: key,
+        name: String(playlistName || `Playlist-${key.slice(-6)}`),
+        songs: [],
+      });
+    }
+    return playlistMap.get(key);
+  }
+
+  (order.items || []).forEach((item) => {
+    if (!item) return;
+    if (order.order_type === "playlist") {
+      const group = getOrCreatePlaylist(order.playlist_id, order.playlist_name);
+      if (item.song_id) {
+        group.songs.push({
+          id: String(item.song_id),
+          title: item.title || "เพลง",
+        });
+      }
+    } else if (order.order_type === "mixed") {
+      if (item.kind === "playlist") {
+        const group = getOrCreatePlaylist(item.playlist_id, item.title);
+        (item.song_ids || []).forEach((sid) => {
+          if (sid) group.songs.push({ id: String(sid), title: "" });
+        });
+      } else if (item.song_id) {
+        singles.push({
+          id: String(item.song_id),
+          title: item.title || "เพลง",
+        });
+      }
+    } else {
+      if (item.song_id) {
+        singles.push({
+          id: String(item.song_id),
+          title: item.title || "เพลง",
+        });
+      }
+    }
+  });
+
+  // สำหรับ playlist groups ที่ไม่มี song_ids snapshot → query จาก playlist_id
+  for (const [playlistId, group] of playlistMap) {
+    if (group.songs.length === 0 && playlistId) {
+      try {
+        const { results } = await env.DB.prepare(
+          "SELECT id, data FROM documents WHERE collection = 'songs' AND json_extract(data, '$.playlist_id') = ?"
+        ).bind(playlistId).all();
+        for (const row of results) {
+          const song = JSON.parse(row.data);
+          group.songs.push({
+            id: row.id,
+            title: song.song_name || "เพลง",
+          });
+        }
+      } catch (err) {
+        console.warn("order-zip/start: query songs for playlist failed:", err?.message || err);
+      }
+    } else if (group.songs.length > 0 && !group.songs[0].title) {
+      // มี song_ids แต่ไม่มี title → batch fetch titles
+      const songIds = group.songs.map((s) => s.id);
+      const songDocs = await getDocumentsByIds(env, "songs", songIds);
+      const titleMap = new Map(songDocs.map((d) => [d.id, d.data?.song_name || "เพลง"]));
+      group.songs = group.songs.map((s) => ({
+        id: s.id,
+        title: titleMap.get(s.id) || `เพลง`,
+      }));
+    }
+  }
+
+  const playlists = [...playlistMap.values()];
+  const totalSongs = singles.length + playlists.reduce((sum, p) => sum + p.songs.length, 0);
+  if (totalSongs === 0) {
+    return jsonResponse({ error: "ออเดอร์นี้ไม่มีรายการเพลงสำหรับสร้าง ZIP" }, 400);
+  }
+
+  // สร้าง plan: ลำดับเพลงที่จะ append ทีละเพลง
+  // (เพลงเดี่ยวก่อน → แต่ละ playlist ตามด้วยเพลงใน playlist นั้น)
+  const plan = [];
+  const rootUsedNames = new Set();
+  for (const single of singles) {
+    plan.push({
+      songId: single.id,
+      songName: single.title,
+      folderPath: "",
+      filename: "", // จะ resolve ตอน append (ต้องอ่าน full_file_name จาก song doc)
+    });
+  }
+  for (const playlist of playlists) {
+    const rawFolderName = String(playlist.name || `Playlist-${playlist.id.slice(-6)}`).trim();
+    const safeFolderName = rawFolderName.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim() || `Playlist-${playlist.id.slice(-6)}`;
+    for (const songItem of playlist.songs) {
+      plan.push({
+        songId: songItem.id,
+        songName: songItem.title,
+        folderPath: safeFolderName,
+        filename: "",
+      });
+    }
+  }
+
+  // ===== Cleanup leftover job ถ้ามี =====
+  // (กัน multipart upload ค้างใน R2 ถ้าแอดมินกด "สร้าง ZIP ใหม่" ซ้ำ)
+  try {
+    const existing = await env.DB.prepare(
+      "SELECT job_id, bucket_key FROM order_zip_jobs WHERE order_id = ? AND status = 'preparing'"
+    ).bind(orderId).first();
+    if (existing) {
+      await cleanupLeftoverMultipart(env, existing.job_id, existing.bucket_key);
+      await deleteOrderZipJob(env, existing.job_id);
+    }
+  } catch (_) { /* ตารางยังไม่สร้าง → ข้าม */ }
+
+  // ===== สร้าง R2 multipart upload =====
+  const zipFileName = `Order-${orderId}.zip`;
+  const bucketKey = `order-zips/${zipFileName}`;
+  let mpu;
+  try {
+    mpu = await env.BUCKET.createMultipartUpload(bucketKey, {
+      httpMetadata: {
+        contentType: "application/zip",
+        contentDisposition: `attachment; filename="${zipFileName.replace(/"/g, "")}"`,
+      },
+    });
+  } catch (err) {
+    return jsonResponse({ error: "สร้าง multipart upload ใน R2 ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
+  }
+
+  // ===== บันทึก state ลง D1 =====
+  const jobId = mpu.uploadId;
+  const now = new Date().toISOString();
+  try {
+    await env.DB.prepare(
+      "INSERT INTO order_zip_jobs (job_id, order_id, bucket_key, parts, total_songs, status, error, created_at, updated_at) " +
+      "VALUES (?, ?, ?, '[]', ?, 'preparing', '', ?, ?) " +
+      "ON CONFLICT(job_id) DO UPDATE SET order_id = excluded.order_id, bucket_key = excluded.bucket_key, parts = '[]', total_songs = excluded.total_songs, status = 'preparing', error = '', updated_at = excluded.updated_at"
+    ).bind(jobId, orderId, bucketKey, totalSongs, now, now).run();
+  } catch (err) {
+    // ถ้า insert ล้มเหลว → abort multipart upload เพื่อไม่ให้ค้างใน R2
+    try { await mpu.abort(); } catch (_) {}
+    return jsonResponse({ error: "บันทึกสถานะ ZIP job ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+  }
+
+  // อัปเดต order doc: zip_status = 'preparing' (เหมือนเดิมใน orders.js createOrderZip)
+  try {
+    await updateDocument(env, "orders", orderId, {
+      zip_status: "preparing",
+      zip_error: "",
+      zip_requested_at: now,
+      updated_at: now,
+    });
+  } catch (err) {
+    // ถ้าอัปเดต order doc ล้มเหลว → abort multipart upload + ลบ row + return error
+    try { await mpu.abort(); } catch (_) {}
+    await deleteOrderZipJob(env, jobId);
+    return jsonResponse({ error: "อัปเดตสถานะออเดอร์ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+  }
+
+  return jsonResponse({
+    ok: true,
+    jobId,
+    bucketKey,
+    plan,
+    totalSongs,
+    zipFileName,
+  });
+}
+
+// ---------------- POST /api/order-zip/append ----------------
+// รับ: { jobId, partNumber, songId, folderPath, songName }
+// ทำ:
+//   - ตรวจ admin session
+//   - โหลด job row จาก D1 (เพื่อเช็คว่ายัง active อยู่)
+//   - โหลด song doc เพื่อดึง R2 key ของ WAV
+//   - stream WAV จาก R2 binding → ผ่าน ZIP entry encoder (LFH + WAV + data descriptor)
+//   - uploadPart(partNumber, combinedStream) → ได้ etag
+//   - คำนวณ CRC32 + size ระหว่าง stream → เก็บลง parts JSON ใน D1 (สำหรับ central directory)
+//   - อัปเดต parts JSON ใน D1
+// Response: { ok, partNumber, etag, size, crc32, offset }
+async function handleOrderZipAppend(request, env) {
+  const admin = await getSessionAdmin(request, env);
+  if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+  if (!env.BUCKET) return jsonResponse({ error: "ยังไม่ได้ผูก R2 bucket (binding: BUCKET) ใน wrangler.jsonc" }, 500);
+  if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
+
+  let body;
+  try { body = await request.json(); } catch {
+    return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400);
+  }
+  const jobId = String(body?.jobId || "").trim();
+  const partNumber = Number(body?.partNumber);
+  const songId = String(body?.songId || "").trim();
+  const folderPath = String(body?.folderPath || "");
+  const songName = String(body?.songName || "เพลง");
+  if (!jobId || !Number.isInteger(partNumber) || partNumber < 1 || !songId) {
+    return jsonResponse({ error: "พารามิเตอร์ไม่ครบ (jobId, partNumber, songId)" }, 400);
+  }
+
+  // โหลด job row
+  let jobRow;
+  try {
+    jobRow = await env.DB.prepare(
+      "SELECT job_id, order_id, bucket_key, parts, status FROM order_zip_jobs WHERE job_id = ?"
+    ).bind(jobId).first();
+  } catch (err) {
+    return jsonResponse({ error: "อ่านสถานะ ZIP job ไม่สำเร็จ (อาจยังไม่ได้สร้างตาราง order_zip_jobs — รัน schema.sql ใหม่): " + (err?.message || String(err)) }, 500);
+  }
+  if (!jobRow) {
+    return jsonResponse({ error: "ไม่พบ ZIP job นี้ (อาจถูกยกเลิกไปแล้ว)" }, 404);
+  }
+  if (jobRow.status !== "preparing") {
+    return jsonResponse({ error: `ZIP job นี้อยู่ในสถานะ "${jobRow.status}" ไม่สามารถ append ได้` }, 400);
+  }
+
+  // โหลด song doc
+  const songDoc = await getDocument(env, "songs", songId);
+  if (!songDoc || !songDoc.data) {
+    return jsonResponse({ error: `ไม่พบข้อมูลเพลง "${songName || songId}"` }, 404);
+  }
+  const song = songDoc.data;
+  const r2Key = getSongR2Key(song, env);
+  if (!r2Key) {
+    return jsonResponse({
+      error: `เพลง "${song.song_name || songName}" ยังไม่มีไฟล์เต็ม WAV บน Cloud (ไม่มี full_file_public_id หรือ full_file_url/file_url)`,
+    }, 400);
+  }
+
+  // อ่าน WAV จาก R2 binding (เร็ว ไม่ผ่าน Internet)
+  let wavObject;
+  try {
+    wavObject = await env.BUCKET.get(r2Key);
+  } catch (err) {
+    return jsonResponse({ error: `อ่านไฟล์ WAV จาก R2 ไม่สำเร็จ (key: ${r2Key}): ` + (err?.message || String(err)) }, 502);
+  }
+  if (!wavObject || !wavObject.body) {
+    return jsonResponse({ error: `ไม่พบไฟล์ WAV ใน R2 (key: ${r2Key})` }, 404);
+  }
+
+  // ===== สร้างชื่อไฟล์ใน ZIP =====
+  // ใช้ logic เดียวกับ orders.js (safeZipFileName + uniqueZipFileName)
+  // แต่ฝั่ง server ต้อง track usedNames เองในแต่ละ path
+  let parts;
+  try { parts = JSON.parse(jobRow.parts || "[]"); } catch { parts = []; }
+
+  // หา usedNames ใน folderPath เดียวกัน (track จาก parts ที่บันทึกไปแล้ว)
+  const usedNames = new Set(
+    parts.filter((p) => (p.folderPath || "") === folderPath).map((p) => p.filename)
+  );
+
+  function safeZipFileName(value, fallback) {
+    const cleaned = String(value || fallback || "เพลง.wav")
+      .replace(/[\\/:*?"<>|]/g, "_")
+      .replace(/\s+/g, " ")
+      .trim();
+    return /\.(wav|mp3)$/i.test(cleaned) ? cleaned : `${cleaned }.wav`;
+  }
+  function uniqueZipFileName(value) {
+    const original = safeZipFileName(value, "เพลง.wav");
+    if (!usedNames.has(original)) {
+      usedNames.add(original);
+      return original;
+    }
+    const dot = original.lastIndexOf(".");
+    const base = dot > 0 ? original.slice(0, dot) : original;
+    const ext = dot > 0 ? original.slice(dot) : ".wav";
+    let index = 2;
+    let candidate = `${base} (${index})${ext}`;
+    while (usedNames.has(candidate)) {
+      index += 1;
+      candidate = `${base} (${index})${ext}`;
+    }
+    usedNames.add(candidate);
+    return candidate;
+  }
+
+  const baseName = song.full_file_name || `${song.song_name || songName}.wav`;
+  const filename = uniqueZipFileName(baseName);
+  const zipEntryName = folderPath ? `${folderPath}/${filename}` : filename;
+
+  // ===== สร้าง combined stream: [LFH + WAV chunks + Data Descriptor] =====
+  // makeZipEntryStream คำนวณ CRC32 ของ **WAV bytes เท่านั้น** ภายในตัวมันเอง (ตาม ZIP spec)
+  // และเรียก onDone({ crc32, size }) เมื่อ stream สิ้นสุด เพื่อให้ caller ใช้ค่า CRC ที่ถูกต้อง
+  // ในการสร้าง Central Directory ในภายหลัง (handleOrderZipFinalize)
+  //
+  // ⚠️ ห้ามใช้ TransformStream ภายนอกเพื่อ capture CRC เพราะมันจะคำนวณ CRC ของ
+  //   bytes ทั้งหมดที่ผ่าน stream (รวม LFH + DD bytes) — ซึ่งผิดตาม ZIP spec
+  //   CRC ที่ถูกต้อง = CRC ของ WAV bytes เท่านั้น
+  let capturedCrc = 0;
+  let capturedSize = 0;
+  const zipEntryStream = makeZipEntryStream(
+    zipEntryName,
+    wavObject.body,
+    ({ crc32, size }) => {
+      capturedCrc = crc32;
+      capturedSize = size;
+    }
+  );
+  // pipe ผ่าน identity TransformStream เพื่อให้สามารถ pipe เข้า R2 uploadPart ได้
+  // (บาง R2 SDK ต้องการ stream ที่ผ่าน TransformStream ไม่ใช่ ReadableStream ดิบ)
+  // ⚠️ ใช้ identity stream ไม่ใช่ CRC tracker — เพราะ CRC ถูกคำนวณภายใน makeZipEntryStream แล้ว
+  const trackedStream = zipEntryStream.pipeThrough(new TransformStream({
+    transform(chunk, controller) { controller.enqueue(chunk); },
+  }));
+
+  // ===== คำนวณ offset + partSize =====
+  // ⚠️ สำคัญ: offset ใน Central Directory ต้องเป็นตำแหน่งจริงของ LFH ในไฟล์ ZIP
+  //   แต่ละ part ใน R2 Multipart Upload มีโครงสร้าง [LFH + WAV + DD]
+  //   ดังนั้น partSize (ขนาดรวม) = LFH_size + WAV_size + DD_size
+  //     LFH_size = 30 + filename_bytes_len (filename ใน ZIP = folderPath + "/" + filename)
+  //     WAV_size = capturedSize (จาก onDone callback)
+  //     DD_size = 16 (always 16 bytes for data descriptor with signature)
+  //   offset ของ entry ถัดไป = ผลรวม partSize ของ parts ก่อนหน้า (ทั้งหมด)
+  //   cdOffset (ตำแหน่งเริ่มต้นของ Central Directory) = ผลรวม partSize ทั้งหมด
+  const filenameInZip = folderPath ? `${folderPath}/${filename}` : filename;
+  const filenameBytesLen = encodeFilename(filenameInZip).byteLength;
+  const LFH_SIZE = 30 + filenameBytesLen;
+  const DD_SIZE = 16;
+  const partSize = LFH_SIZE + capturedSize + DD_SIZE;
+  // offset ของ entry นี้ = ผลรวม partSize ของ parts ก่อนหน้า (ทั้งหมด)
+  const offset = parts.reduce((sum, p) => sum + Number(p.partSize || 0), 0);
+
+  // ===== resume multipart upload + upload part =====
+  let mpu;
+  try {
+    mpu = env.BUCKET.resumeMultipartUpload(jobRow.bucket_key, jobId);
+  } catch (err) {
+    return jsonResponse({ error: "resume multipart upload ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
+  }
+
+  let uploadedPart;
+  try {
+    uploadedPart = await mpu.uploadPart(partNumber, trackedStream);
+  } catch (err) {
+    return jsonResponse({
+      error: `อัปโหลด part ${partNumber} ของเพลง "${song.song_name || songName}" ไม่สำเร็จ: ` + (err?.message || String(err)),
+    }, 502);
+  }
+
+  // ===== บันทึก part info ลง D1 =====
+  // (สำหรับ finalize จะใช้สร้าง central directory ที่ต้องการ CRC + size + offset ของทุก entry)
+  // size = WAV bytes (สำหรับ CD entry's compressed/uncompressed size field)
+  // partSize = total bytes (LFH + WAV + DD) — ใช้สำหรับคำนวณ offset ของ entry ถัดไป + cdOffset
+  // offset = LFH offset ในไฟล์ ZIP (สำหรับ CD entry's local header offset field)
+  parts.push({
+    partNumber,
+    etag: uploadedPart.etag,
+    songId,
+    songName: song.song_name || songName,
+    folderPath,
+    filename,
+    crc32: capturedCrc,
+    size: capturedSize,        // WAV bytes — สำหรับ CD entry's compressed/uncompressed size
+    partSize,                  // total bytes (LFH + WAV + DD) — สำหรับ offset/cdOffset calculation
+    offset,                   // LFH offset ในไฟล์ ZIP — สำหรับ CD entry's local header offset
+  });
+
+  const now = new Date().toISOString();
+  try {
+    await env.DB.prepare(
+      "UPDATE order_zip_jobs SET parts = ?, updated_at = ? WHERE job_id = ?"
+    ).bind(JSON.stringify(parts), now, jobId).run();
+  } catch (err) {
+    // ถ้าบันทึกไม่ได้ → abort multipart + ลบ row + return error
+    try { await mpu.abort(); } catch (_) {}
+    await deleteOrderZipJob(env, jobId);
+    return jsonResponse({ error: "บันทึกข้อมูล part ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+  }
+
+  return jsonResponse({
+    ok: true,
+    partNumber,
+    etag: uploadedPart.etag,
+    size: capturedSize,
+    crc32: capturedCrc,
+    offset,
+    filename,
+    folderPath,
+  });
+}
+
+// ---------------- POST /api/order-zip/finalize ----------------
+// รับ: { jobId }
+// ทำ:
+//   - ตรวจ admin session
+//   - โหลด parts ทั้งหมดจาก D1
+//   - สร้าง Central Directory + EOCD เป็น stream
+//   - uploadPart(lastPartNumber, cdStream)
+//   - completeMultipartUpload(allParts)
+//   - อัปเดต order doc: zip_status='ready', zip_download_url=..., zip_public_id=...
+//   - ลบ job row ออกจาก D1
+// Response: { ok, url, publicId, zipFileName, songCount }
+async function handleOrderZipFinalize(request, env) {
+  const admin = await getSessionAdmin(request, env);
+  if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+  if (!env.BUCKET) return jsonResponse({ error: "ยังไม่ได้ผูก R2 bucket (binding: BUCKET) ใน wrangler.jsonc" }, 500);
+  if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
+
+  let body;
+  try { body = await request.json(); } catch {
+    return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400);
+  }
+  const jobId = String(body?.jobId || "").trim();
+  if (!jobId) return jsonResponse({ error: "กรุณาระบุ jobId" }, 400);
+
+  let jobRow;
+  try {
+    jobRow = await env.DB.prepare(
+      "SELECT job_id, order_id, bucket_key, parts, total_songs, status FROM order_zip_jobs WHERE job_id = ?"
+    ).bind(jobId).first();
+  } catch (err) {
+    return jsonResponse({ error: "อ่านสถานะ ZIP job ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+  }
+  if (!jobRow) {
+    return jsonResponse({ error: "ไม่พบ ZIP job นี้" }, 404);
+  }
+  if (jobRow.status !== "preparing") {
+    return jsonResponse({ error: `ZIP job นี้อยู่ในสถานะ "${jobRow.status}" ไม่สามารถ finalize ได้` }, 400);
+  }
+
+  let parts;
+  try { parts = JSON.parse(jobRow.parts || "[]"); } catch { parts = []; }
+  if (parts.length === 0) {
+    return jsonResponse({ error: "ยังไม่มี part ใดถูกอัปโหลด ไม่สามารถ finalize ได้" }, 400);
+  }
+
+  // ===== สร้าง Central Directory entries =====
+  // แต่ละ entry ต้องการ:
+  //   - filename: ชื่อไฟล์ใน ZIP (รวม folderPath) — สำหรับ CD entry
+  //   - crc32: CRC ของ WAV bytes (จริง) — สำหรับ CD entry's CRC field
+  //   - size: WAV bytes — สำหรับ CD entry's compressed/uncompressed size (STORE method)
+  //   - offset: LFH offset ในไฟล์ ZIP — สำหรับ CD entry's local header offset field
+  //   - partSize: total bytes (LFH + WAV + DD) — สำหรับคำนวณ cdOffset ใน EOCD
+  const entries = parts.map((p) => ({
+    filename: p.folderPath ? `${p.folderPath}/${p.filename}` : p.filename,
+    crc32: p.crc32,
+    size: p.size,        // WAV bytes
+    offset: p.offset,    // LFH offset
+    partSize: p.partSize, // total part bytes (LFH + WAV + DD)
+  }));
+
+  const cdStream = makeCentralDirectoryStream(entries);
+
+  // ===== upload Central Directory + EOCD เป็น part สุดท้าย =====
+  const finalPartNumber = parts.length + 1;
+  let mpu;
+  try {
+    mpu = env.BUCKET.resumeMultipartUpload(jobRow.bucket_key, jobId);
+  } catch (err) {
+    return jsonResponse({ error: "resume multipart upload ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
+  }
+
+  let cdPart;
+  try {
+    cdPart = await mpu.uploadPart(finalPartNumber, cdStream);
+  } catch (err) {
+    return jsonResponse({ error: "อัปโหลด Central Directory part ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
+  }
+
+  // ===== complete multipart upload =====
+  const allParts = [
+    ...parts.map((p) => ({ partNumber: p.partNumber, etag: p.etag })),
+    { partNumber: finalPartNumber, etag: cdPart.etag },
+  ].sort((a, b) => a.partNumber - b.partNumber);
+
+  try {
+    await mpu.complete(allParts);
+  } catch (err) {
+    return jsonResponse({ error: "complete multipart upload ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
+  }
+
+  // ===== อัปเดต order doc =====
+  const base = env.R2_PUBLIC_BASE_URL.replace(/\/+$/, "");
+  const url = `${base}/${jobRow.bucket_key.split("/").map(encodeURIComponent).join("/")}`;
+  // toCloudinaryDownloadUrl ฝั่ง client (orders.js:32) ใส่ fl_attachment ให้ Cloudinary URL
+  // แต่ R2 URL ไม่ใช่ Cloudinary → ฟังก์ชันนั้นปล่อยผ่าน → URL ยังเป็น R2 URL ตรงๆ
+  // Content-Disposition: attachment ถูกตั้งตอน createMultipartUpload แล้ว → ลูกค้าคลิกแล้วดาวน์โหลดทันที
+  const zipFileName = jobRow.bucket_key.split("/").pop() || `Order-${jobRow.order_id}.zip`;
+  const totalSongs = Number(jobRow.total_songs || parts.length);
+  const now = new Date().toISOString();
+
+  try {
+    await updateDocument(env, "orders", jobRow.order_id, {
+      zip_status: "ready",
+      zip_download_url: url,
+      zip_file_name: zipFileName,
+      zip_public_id: jobRow.bucket_key,
+      zip_song_count: totalSongs,
+      zip_created_at: now,
+      zip_error: "",
+      updated_at: now,
+    });
+  } catch (err) {
+    // ⚠️ ถ้าอัปเดต order doc ล้มเหลว → R2 มีไฟล์อยู่แล้ว แต่ order doc ไม่ได้รับ URL
+    // ไม่ abort multipart เพราะ complete แล้ว — แจ้ง error แล้วให้แอดมินลบไฟล์เอง
+    return jsonResponse({
+      error: "อัปเดตออเดอร์ด้วยลิงก์ ZIP ไม่สำเร็จ (แต่ไฟล์ ZIP ถูกสร้างใน R2 แล้ว — bucket key: " + jobRow.bucket_key + "): " + (err?.message || String(err)),
+    }, 500);
+  }
+
+  // ===== ลบ job row =====
+  await deleteOrderZipJob(env, jobId);
+
+  return jsonResponse({
+    ok: true,
+    url,
+    publicId: jobRow.bucket_key,
+    zipFileName,
+    songCount: totalSongs,
+  });
+}
+
+// ---------------- POST /api/order-zip/abort (เผื่อใช้ในอนาคต ถ้าต้องการ cancel) ----------------
+// ไม่ได้เรียกจาก orders.js ใน v1 นี้ — แต่เก็บไว้เผื่ออนาคตต้องการปุ่ม "ยกเลิกการสร้าง ZIP"
+// ทำ: abort multipart upload + ลบ job row + อัปเดต order doc zip_status=''
+async function handleOrderZipAbort(request, env) {
+  const admin = await getSessionAdmin(request, env);
+  if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+  if (!env.BUCKET) return jsonResponse({ error: "ยังไม่ได้ผูก R2 bucket (binding: BUCKET) ใน wrangler.jsonc" }, 500);
+  if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
+
+  let body;
+  try { body = await request.json(); } catch { body = {}; }
+  const jobId = String(body?.jobId || "").trim();
+  if (!jobId) return jsonResponse({ error: "กรุณาระบุ jobId" }, 400);
+
+  let jobRow;
+  try {
+    jobRow = await env.DB.prepare(
+      "SELECT job_id, order_id, bucket_key, status FROM order_zip_jobs WHERE job_id = ?"
+    ).bind(jobId).first();
+  } catch (err) {
+    return jsonResponse({ error: "อ่านสถานะ ZIP job ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+  }
+  if (!jobRow) return jsonResponse({ error: "ไม่พบ ZIP job นี้" }, 404);
+
+  await cleanupLeftoverMultipart(env, jobId, jobRow.bucket_key);
+  await deleteOrderZipJob(env, jobId);
+
+  // อัปเดต order doc: zip_status = '' (ล้างสถานะ)
+  try {
+    await updateDocument(env, "orders", jobRow.order_id, {
+      zip_status: "",
+      zip_error: "ยกเลิกการสร้าง ZIP โดยแอดมิน",
+      zip_download_url: "",
+      zip_file_name: "",
+      zip_public_id: "",
+      updated_at: new Date().toISOString(),
+    });
+  } catch (_) { /* ไม่วิกฤต */ }
+
+  return jsonResponse({ ok: true });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -1009,6 +1714,23 @@ export default {
     // ต้อง login แอดมินเท่านั้น (เช็คใน handleFileProxy)
     if (url.pathname.startsWith("/api/file/") && request.method === "GET") {
       return handleFileProxy(request, env, url);
+    }
+
+    // 🔧 (2026-09-18): /api/order-zip/* — ระบบสร้าง ZIP ออเดอร์ฝั่ง Worker (แทน JSZip-in-browser)
+    // ใช้ R2 Multipart Upload ทีละเพลง → รองรับ ZIP > 100MB (ทะลุ Worker body limit 100MB)
+    // ต้อง login แอดมินเท่านั้น (เช็คในแต่ละ handler) — เหมือน /api/upload, /api/file/*
+    // ไม่กระทบ endpoints เดิมใดๆ (path ใหม่ขั้น)
+    if (url.pathname === "/api/order-zip/start" && request.method === "POST") {
+      return handleOrderZipStart(request, env);
+    }
+    if (url.pathname === "/api/order-zip/append" && request.method === "POST") {
+      return handleOrderZipAppend(request, env);
+    }
+    if (url.pathname === "/api/order-zip/finalize" && request.method === "POST") {
+      return handleOrderZipFinalize(request, env);
+    }
+    if (url.pathname === "/api/order-zip/abort" && request.method === "POST") {
+      return handleOrderZipAbort(request, env);
     }
 
     if (url.pathname.startsWith("/api/auth/")) {
