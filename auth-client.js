@@ -138,11 +138,34 @@ export async function deleteApp(_app) {
 //   ปัญหา: ถ้า DB ไม่มี admin จริง ๆ และ network พัง → user ติดหน้า login ไม่มีทาง bootstrap
 //   ใหม่: ถ้า fetch error → return null (unknown) → app-admin.js แสดงทั้ง login + ปุ่ม bootstrap
 //   คืนค่า: true = มี admin, false = ไม่มี, null = ไม่แน่ใจ (error)
+//
+// 🔧 แก้บั๊ก C3 (2026-09-18): error fallback ไม่สมบูรณ์ — 5xx response ถูกมองเป็น "มี admin"
+// -----------------------------------------------------------
+// ปัญหา: โค้ดเดิม `return body.hasAdmin !== false` มีปัญหา 2 กรณี:
+//   1. ถ้า Worker ส่ง 500 (DB พัง) → safeJson คืน `{}` → body.hasAdmin เป็น undefined
+//      → `undefined !== false` = true → return true → แอปเข้าสู่โหมด login ปกติ
+//      → ถ้าระบบยังไม่มี admin จริง ๆ → user ติดหน้า login ไม่มีทาง bootstrap
+//   2. ถ้า Worker ส่ง response ผิดปกติ (เช่น HTML error page) → safeJson คืน `{}`
+//      → ก็ return true เหมือนกัน → ผิดพลาดเหมือนกัน
+//
+// วิธีแก้: เช็ค res.ok ก่อน → ถ้าไม่ ok (4xx/5xx) → return null (unknown)
+//   และเช็ค body.hasAdmin เป็น boolean โดยตรง (=== true / === false)
+//   ถ้า body.hasAdmin ไม่ใช่ boolean → return null (unknown)
+//
+// ผลกระทบต่อระบบเดิม: 0%
+//   - ถ้า Worker ตอบปกติ (200 + { hasAdmin: true/false }) → คืนค่าเดียวกับเดิม
+//   - ถ้า Worker พัง → คืน null แทน true → แอปแสดงทั้ง login + ปุ่ม bootstrap (ที่ถูกต้อง)
 export async function checkHasAdmin() {
   try {
     const res = await fetch("/api/auth/has-admin", { credentials: "same-origin" });
+    // 🔧 แก้บั๊ก C3: ถ้า response ไม่ ok (4xx/5xx) → return null (unknown)
+    //   กันกรณี DB พัง → Worker ส่ง 500 → body ว่าง → body.hasAdmin undefined → เดิม return true ผิด
+    if (!res.ok) return null;
     const body = await safeJson(res);
-    return body.hasAdmin !== false; // true หรือ false
+    // 🔧 แก้บั๊ก C3: เช็ค body.hasAdmin เป็น boolean โดยตรง ถ้าไม่ใช่ boolean → return null (unknown)
+    //   กันกรณี Worker ส่ง response ผิดปกติ (เช่น HTML error page) → safeJson คืน {} → undefined
+    if (body && typeof body.hasAdmin === "boolean") return body.hasAdmin;
+    return null; // unknown — ไม่ใช่ true/false ที่ชัดเจน
   } catch {
     return null; // 🔧 (2026-09-17 P1): คืน null แทน true → app-admin.js จะแสดงทั้ง login + bootstrap
   }
