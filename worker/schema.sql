@@ -111,3 +111,33 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts(ip, attempted_at);
+
+-- ===================================================
+-- 🔧 (2026-09-18): ตาราง order_zip_jobs
+-- เก็บสถานะ R2 Multipart Upload ระหว่างสร้าง ZIP ออเดอร์ฝั่ง Worker
+-- (ปัญหา: Worker มี request body limit 100MB → สร้าง ZIP ผ่าน multipart upload ทีละเพลง)
+--
+-- วงจร:
+--   1) POST /api/order-zip/start → insert row ใหม่ status='preparing'
+--   2) POST /api/order-zip/append → update parts JSON (push partNumber/etag/songId/offset/crc/size)
+--   3) POST /api/order-zip/finalize → update status='ready' หรือ delete row + update order doc
+--
+-- ถ้าแอดมินกด "สร้าง ZIP ใหม่" ซ้ำ → /api/order-zip/start จะ abort multipart upload เดิม
+--   และ delete row เดิมก่อน insert ใหม่ (cleanup)
+--
+-- ผลกระทบต่อระบบเดิม: 0% — ตารางใหม่ ไม่แตะ documents/admin_users/sessions/login_attempts
+-- ===================================================
+CREATE TABLE IF NOT EXISTS order_zip_jobs (
+  job_id        TEXT PRIMARY KEY,    -- = R2 multipart uploadId (uuid)
+  order_id      TEXT NOT NULL,
+  bucket_key    TEXT NOT NULL,      -- "order-zips/Order-{orderId}.zip"
+  parts         TEXT NOT NULL DEFAULT '[]', -- JSON array [{ partNumber, etag, songId, folderPath, filename, crc32, size, offset }]
+  total_songs   INTEGER NOT NULL DEFAULT 0,
+  status        TEXT NOT NULL DEFAULT 'preparing', -- 'preparing' | 'ready' | 'failed'
+  error         TEXT NOT NULL DEFAULT '',
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_zip_jobs_order ON order_zip_jobs(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_zip_jobs_status ON order_zip_jobs(status);
