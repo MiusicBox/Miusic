@@ -95,7 +95,11 @@ function getPlaylistName(playlist) {
 
 // งานสร้าง ZIP ถูกกันซ้ำไว้ในหน้านี้ เพื่อไม่ให้ออเดอร์เดียวกันถูกสร้างหลายไฟล์
 // หาก Admin เปิด/กดซ้ำระหว่างที่กำลังดาวน์โหลด WAV จาก Cloud
-const zipJobs = new Set();
+//
+// 🔧 (2026-09-18 v5): เปลี่ยนจาก Set เป็น Map เพื่อเก็บ AbortController + jobId
+//   เพื่อรองรับปุ่ม "ยกเลิก" — กดแล้วเรียก abort() ที่ controller ซึ่ง cancel ทุก fetch ที่กำลังทำอยู่
+//   และเรียก /api/order-zip/abort เพื่อ cleanup ฝั่ง Worker (R2 multipart + D1 row + order doc)
+const zipJobs = new Map(); // orderId → { abortController, jobId }
 let jsZipModulePromise = null;
 
 async function loadJSZip() {
@@ -331,12 +335,19 @@ async function createOrderZip(orderId) {
   const order = state.allOrders.find((item) => item.id === orderId);
   if (!order) return { ok: false, error: "ไม่พบออเดอร์นี้" };
 
+  // 🔧 (2026-09-18 v5): สร้าง AbortController สำหรับ cancel การสร้าง ZIP ระหว่างทำ
+  //   ใช้กับทุก fetch ใน flow (start, append, finalize-build, finalize-compose)
+  //   ถ้าแอดมินกดปุ่ม "ยกเลิก" → abortController.abort() → ทุก fetch reject ทันที
+  //   จากนั้นเรียก /api/order-zip/abort (โดยไม่ใช้ signal) เพื่อ cleanup ฝั่ง Worker
+  const abortController = new AbortController();
+  const { signal } = abortController;
+  zipJobs.set(orderId, { abortController, jobId: null });
+
   // ถ้ามี ZIP ที่สร้างสำเร็จแล้ว ใช้ลิงก์เดิมได้ ไม่สร้างไฟล์ซ้ำโดยไม่จำเป็น
   if (order.zip_status === "ready" && order.zip_download_url) {
     return { ok: true, url: order.zip_download_url, publicId: order.zip_public_id || "" };
   }
 
-  zipJobs.add(orderId);
   try {
     // ===== Step 1: start — สร้าง multipart upload ใน R2 + รับ plan =====
     orderToast("กำลังเริ่มกระบวนการสร้าง ZIP...", "progress");
@@ -347,8 +358,13 @@ async function createOrderZip(orderId) {
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
         body: JSON.stringify({ orderId }),
+        signal,
       });
     } catch (err) {
+      // 🔧 (2026-09-18 v5): ถ้าเป็น abort → return แบบ silent (ไม่ throw เพราะ error ถูก handle ใน abortOrderZip แล้ว)
+      if (err?.name === "AbortError" || signal.aborted) {
+        return { ok: false, error: "ยกเลิกการสร้าง ZIP โดยแอดมิน", aborted: true };
+      }
       throw new Error(`เริ่มกระบวนการ ZIP ไม่สำเร็จ (network): ${err?.message || err}`);
     }
     let startData;
@@ -365,6 +381,9 @@ async function createOrderZip(orderId) {
     }
 
     const jobId = startData.jobId;
+    // 🔧 (2026-09-18 v5): เก็บ jobId ใน zipJobs เพื่อใช้ตอน abort
+    const jobEntry = zipJobs.get(orderId);
+    if (jobEntry) jobEntry.jobId = jobId;
     const plan = Array.isArray(startData.plan) ? startData.plan : [];
     const totalSongs = Number(startData.totalSongs || plan.length);
     if (plan.length === 0) {
@@ -389,8 +408,12 @@ async function createOrderZip(orderId) {
             folderPath: item.folderPath || "",
             songName: item.songName || "เพลง",
           }),
+          signal,
         });
       } catch (err) {
+        if (err?.name === "AbortError" || signal.aborted) {
+          return { ok: false, error: "ยกเลิกการสร้าง ZIP โดยแอดมิน", aborted: true };
+        }
         throw new Error(`ส่งเพลงที่ ${i + 1} "${item.songName}" เข้า ZIP ไม่สำเร็จ (network): ${err?.message || err}`);
       }
       let appendData;
@@ -417,8 +440,12 @@ async function createOrderZip(orderId) {
           headers: { "Content-Type": "application/json" },
           credentials: "same-origin",
           body: JSON.stringify({ jobId }),
+          signal,
         });
       } catch (err) {
+        if (err?.name === "AbortError" || signal.aborted) {
+          return { ok: false, error: "ยกเลิกการสร้าง ZIP โดยแอดมิน", aborted: true };
+        }
         throw new Error(`finalize-build ไม่สำเร็จ (network): ${err?.message || err}`);
       }
       let buildData;
@@ -442,8 +469,12 @@ async function createOrderZip(orderId) {
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
         body: JSON.stringify({ jobId }),
+        signal,
       });
     } catch (err) {
+      if (err?.name === "AbortError" || signal.aborted) {
+        return { ok: false, error: "ยกเลิกการสร้าง ZIP โดยแอดมิน", aborted: true };
+      }
       throw new Error(`สร้างลิงก์ดาวน์โหลด ZIP ไม่สำเร็จ (network): ${err?.message || err}`);
     }
     let composeData;
@@ -463,6 +494,10 @@ async function createOrderZip(orderId) {
     };
   } catch (err) {
     const errorMessage = err?.message || String(err);
+    // 🔧 (2026-09-18 v5): ถ้าเป็น abort → ไม่ต้องบันทึก zip_status='failed' เพราะ Worker อัปเดตเป็น '' แล้วใน /api/order-zip/abort
+    if (signal.aborted) {
+      return { ok: false, error: "ยกเลิกการสร้าง ZIP โดยแอดมิน", aborted: true };
+    }
     // ถ้าเกิดข้อผิดพลาด ให้คงสถานะออเดอร์เดิมไว้ และบันทึก zip_status='failed' (เหมือนเดิม)
     try {
       await updateDoc(doc(db, "orders", orderId), {
@@ -479,6 +514,53 @@ async function createOrderZip(orderId) {
   } finally {
     zipJobs.delete(orderId);
   }
+}
+
+// 🔧 (2026-09-18 v5): ยกเลิกการสร้าง ZIP ระหว่างทำ (จากปุ่ม UI)
+// ทำ 2 อย่าง:
+//   1) abortController.abort() → ทุก fetch ที่กำลังทำอยู่ reject ทันที (ส่ง AbortError กลับ)
+//   2) เรียก /api/order-zip/abort เพื่อ cleanup ฝั่ง Worker (R2 multipart + D1 row + order doc)
+//      โดยใช้ fetch แยก (ไม่ใช่ signal เดียวกับ createOrderZip) เพราะต้องส่งได้แม้หลัง abort
+// หลังจากนี้ createOrderZip จะ return { ok: false, error: 'ยกเลิก...', aborted: true }
+//   → caller (confirmPaymentAndCreateZip/retryOrderZip) เห็น aborted=true จะไม่แสดง error toast
+async function abortOrderZip(orderId) {
+  const job = zipJobs.get(orderId);
+  if (!job) return { ok: false, error: "ไม่พบการสร้าง ZIP ที่กำลังทำอยู่ของออเดอร์นี้" };
+
+  // 1) abort fetches ที่กำลังทำอยู่
+  try { job.abortController.abort(); } catch (_) {}
+
+  // 2) cleanup ฝั่ง Worker (ถ้ามี jobId — อาจยังไม่มีถ้า abort ตอนกำลัง start)
+  if (job.jobId) {
+    try {
+      const res = await fetch("/api/order-zip/abort", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ jobId: job.jobId }),
+      });
+      let data;
+      try { data = await res.json(); } catch { data = null; }
+      if (!res.ok) {
+        console.warn("abort endpoint ล้มเหลว (HTTP " + res.status + "):", data?.error || "");
+      }
+    } catch (err) {
+      console.warn("เรียก /api/order-zip/abort ไม่สำเร็จ:", err?.message || err);
+    }
+  }
+
+  // อัปเดต state ฝั่ง client — ระบบ Worker อัปเดต order doc เป็น zip_status='' + zip_error='ยกเลิกโดยแอดมิน' แล้ว
+  await updateOrderInState(orderId, {
+    zip_status: "",
+    zip_error: "ยกเลิกการสร้าง ZIP โดยแอดมิน",
+    zip_download_url: "",
+    zip_file_name: "",
+    zip_public_id: "",
+    updated_at: new Date().toISOString(),
+  });
+  renderFromState();
+  orderToast("ยกเลิกการสร้าง ZIP แล้ว — สามารถสร้างใหม่ได้", "success_long");
+  return { ok: true, aborted: true };
 }
 
 function getReceiptNumber(orderId, createdAt) {
@@ -1201,6 +1283,8 @@ function renderHistory() {
           ${(o.status === "processing" || o.status === "completed") ? `<button class="icon-btn" data-fullfiles-order="${o.id}" title="ไฟล์เต็มสำหรับส่งลูกค้า">📥</button>` : ""}
           ${o.zip_status === "failed" ? `<button class="icon-btn" data-retry-zip-order="${o.id}" title="สร้าง ZIP ใหม่">🔁</button>` : ""}
           ${o.zip_download_url ? `<button class="icon-btn" data-delete-zip-order="${o.id}" title="ลบไฟล์ ZIP ออกจาก Cloud (ไม่ลบออเดอร์ — ประหยัดพื้นที่จัดเก็บ)">🧹</button>` : ""}
+          ${/* v5: ปุ่ม "ยกเลิก" แสดงตอนกำลังสร้าง ZIP */""}
+          ${zipJobs.has(o.id) ? `<button class="icon-btn danger" data-abort-zip-order="${o.id}" title="ยกเลิกการสร้าง ZIP ระหว่างทำ (cleanup R2 multipart + D1 row)">✕</button>` : ""}
           <button class="icon-btn" data-edit-order="${o.id}" title="แก้ไขออเดอร์">✏️</button>
           ${isMainAdmin() ? `<button class="icon-btn danger" data-delete-order="${o.id}" title="ลบออเดอร์">🗑</button>` : ""}
         </div>
@@ -1222,6 +1306,10 @@ function renderHistory() {
   });
   wrap.querySelectorAll("[data-delete-zip-order]").forEach((btn) => {
     btn.addEventListener("click", () => handleDeleteOrderZip(btn.getAttribute("data-delete-zip-order")));
+  });
+  // 🔧 (2026-09-18 v5): listener สำหรับปุ่ม "ยกเลิก" (data-abort-zip-order)
+  wrap.querySelectorAll("[data-abort-zip-order]").forEach((btn) => {
+    btn.addEventListener("click", () => abortOrderZip(btn.getAttribute("data-abort-zip-order")));
   });
   wrap.querySelectorAll("[data-edit-order]").forEach((btn) => {
     btn.addEventListener("click", () => openEditOrderModal(btn.getAttribute("data-edit-order")));
@@ -1691,6 +1779,11 @@ async function handleStatusChange(orderId, newStatus) {
 
 async function confirmPaymentAndCreateZip(orderId) {
   const result = await createOrderZip(orderId);
+  // 🔧 (2026-09-18 v5): ถ้า user กด "ยกเลิก" → ไม่แสดง error (Worker อัปเดต order doc แล้ว)
+  if (result.aborted) {
+    orderToast("ยกเลิกการสร้าง ZIP — ออเดอร์ยังคงรอตรวจสอบ", "info");
+    return;
+  }
   if (!result.ok) {
     // 🔧 (2026-09-17 Phase 2): ใช้ renderFromState แทน refreshDashboardAndHistory (ออเดอร์ยังอยู่ status เดิม)
     //   เพราะ createOrderZip อัปเดต zip_status='failed' ภายในตัวมันเอง → state ต้อง sync ด้วย
@@ -1739,6 +1832,11 @@ async function retryOrderZip(orderId) {
   const order = state.allOrders.find((item) => item.id === orderId);
   if (!order || zipJobs.has(orderId)) return;
   const result = await createOrderZip(orderId);
+  // 🔧 (2026-09-18 v5): ถ้า user กด "ยกเลิก" → ไม่แสดง error (Worker อัปเดต order doc แล้ว)
+  if (result.aborted) {
+    // abortOrderZip อัปเดต state แล้ว → ไม่ต้องทำอะไรเพิ่ม
+    return;
+  }
   if (!result.ok) {
     // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client (zip_status='failed') แทน re-fetch
     await updateOrderInState(orderId, {
