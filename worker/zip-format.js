@@ -205,6 +205,38 @@ export function concatUint8(arrays) {
   return out;
 }
 
+// ---------------- สร้าง Central Directory bytes รวม (buffer ใน memory) ----------------
+// ใช้แทน makeCentralDirectoryStream ในกรณีที่ caller ต้องการส่งให้ R2 uploadPart
+// เป็น Uint8Array (มี known length อัตโนมัติ) แทน ReadableStream
+//
+// ขนาด CD มักจะเล็ก (46 bytes/entry + 22 EOCD) → แม้ 1,000 เพลงก็แค่ ~46KB
+// → ปลอดภัยที่จะ buffer ทั้งหมดใน memory
+//
+// รับ: entries = [{ filename, crc32, size, offset, partSize }, ...] (เหมือน makeCentralDirectoryStream)
+// คืน: Uint8Array ที่ประกอบด้วย [CD entry 1][CD entry 2]...[EOCD]
+export function buildCentralDirectoryBytes(entries) {
+  const arrays = [];
+  let cdSize = 0;
+  let cdOffset = 0;
+  for (const e of entries) {
+    cdOffset += Number(e.partSize || 0);
+  }
+  for (const e of entries) {
+    const filenameBytes = encodeFilename(e.filename);
+    const cdEntry = buildCentralDirectoryEntry(
+      filenameBytes,
+      e.crc32,
+      e.size,
+      e.offset
+    );
+    cdSize += cdEntry.byteLength;
+    arrays.push(cdEntry);
+  }
+  const eocd = buildEndOfCentralDirectory(entries.length, cdSize, cdOffset);
+  arrays.push(eocd);
+  return concatUint8(arrays);
+}
+
 // ---------------- สร้าง ReadableStream สำหรับ 1 รายการเพลงใน ZIP ----------------
 // รับ:
 //   - filename: ชื่อไฟล์ใน ZIP (รวม path ถ้าอยู่ใน folder playlist)
