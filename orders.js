@@ -1761,31 +1761,56 @@ async function retryOrderZip(orderId) {
 /* =====================================================================
    ยืนยันก่อนลบ — ใช้ modal ที่มีอยู่แล้วในหน้า (confirmBackdrop) ทั้งเว็บ
    คืนค่าเป็น Promise<boolean> ว่าผู้ใช้กด "ลบ" หรือ "ยกเลิก"
+   =====================================================================
+
+   🔧 แก้บั๊ก (2026-09-17) C1: Bug #3 ยังไม่ถูกแก้จริง — ปัญหา openConfirm vs askConfirm
+   -----------------------------------------------------------
+   ปัญหาก่อนแก้:
+     - openConfirm (app-admin.js:2128) ใช้ `classList.add("show")` + state variable `confirmAction`
+     - askConfirm (orders.js) ใช้ `classList.add("open")` + `style.display = "flex"/"none"` + listener ใหม่
+     - ทั้งสองผูก listener บนปุ่ม #confirmOk ตัวเดียวกัน → cross-module handler conflict
+     - inline style `display: none` ของ askConfirm ค้างถาวร → override CSS rule `.modal-backdrop.show`
+       → openConfirm ทุกครั้งถัดไปจะ "มองไม่เห็น modal"
+
+   วิธีแก้: เปลี่ยน askConfirm ให้ใช้ window.__openConfirm ที่ app-admin.js expose ไว้แล้ว (บรรทัด 2141)
+     - ใช้ classList.add("show") เหมือน openConfirm → ไม่มี inline style leak
+     - ใช้ confirmAction state ตัวเดียวกัน → ไม่มี cross-handler trigger
+     - มี fallback กันกรณี app-admin.js ยังไม่โหลด → ใช้ window.confirm ธรรมดา
+
+   ผลกระทบต่อระบบเดิม: 0%
+     - ทุก caller ของ askConfirm (handleDeleteOrder, handleDeleteOrderZip, ฯลฯ) ยังได้ Promise<boolean>
+       เหมือนเดิม → ไม่ต้องแก้ caller เลย
+     - openConfirm เดิมใน app-admin.js ไม่ถูกแตะ → ไม่กระทบ
    ===================================================================== */
 function askConfirm(message) {
-  return new Promise((resolve) => {
-    const backdrop = document.getElementById("confirmBackdrop");
-    const textEl = document.getElementById("confirmText");
-    const okBtn = document.getElementById("confirmOk");
-    const cancelBtn = document.getElementById("confirmCancel");
-
-    textEl.textContent = message;
-    backdrop.classList.add("open");
-    backdrop.style.display = "flex";
-
-    function cleanup(result) {
-      backdrop.classList.remove("open");
-      backdrop.style.display = "none";
-      okBtn.removeEventListener("click", onOk);
-      cancelBtn.removeEventListener("click", onCancel);
-      resolve(result);
-    }
-    function onOk() { cleanup(true); }
-    function onCancel() { cleanup(false); }
-
-    okBtn.addEventListener("click", onOk);
-    cancelBtn.addEventListener("click", onCancel);
-  });
+  // 🔧 แก้บั๊ก C1: ใช้ window.__openConfirm ของ app-admin.js แทน เพื่อกัน conflict + inline style leak
+  if (window.__openConfirm) {
+    return new Promise((resolve) => {
+      let resolved = false;
+      // กด "ยืนยัน" → openConfirm เรียก onOk callback → resolve(true)
+      window.__openConfirm(message, () => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        resolve(true);
+      });
+      // กด "ยกเลิก" → ปุ่ม #confirmCancel แค่ remove "show" class → ไม่ resolve ปกติ
+      //   เลยต้องเพิ่ม listener ชั่วคราวเพื่อ catch การกด cancel
+      const cancelBtn = document.getElementById("confirmCancel");
+      function onCancel() {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        resolve(false);
+      }
+      function cleanup() {
+        if (cancelBtn) cancelBtn.removeEventListener("click", onCancel);
+      }
+      if (cancelBtn) cancelBtn.addEventListener("click", onCancel);
+    });
+  }
+  // Fallback: ถ้า app-admin.js ยังไม่โหลด (หากเรียกก่อน module load) → ใช้ window.confirm ธรรมดา
+  return Promise.resolve(window.confirm(message));
 }
 
 /* ---------------- ลบไฟล์ ZIP ออกจาก Cloud (ใหม่ 2026-09-11) ----------------
