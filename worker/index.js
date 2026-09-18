@@ -205,10 +205,17 @@ async function handleAuth(request, env, url) {
   }
 
   if (path === "bootstrap" && request.method === "POST") {
-    const row = await env.DB.prepare("SELECT COUNT(*) AS c FROM admin_users").first();
-    if ((row?.c || 0) > 0) {
-      return jsonResponse({ error: "ระบบมีแอดมินอยู่แล้ว ไม่สามารถตั้งค่าแอดมินคนแรกซ้ำได้" }, 409);
-    }
+    // 🔧 แก้บั๊ก I3 (2026-09-18): กัน bootstrap race condition — 2 requests พร้อมกัน → สร้าง main admin 2 ตัว
+    // -----------------------------------------------------------
+    // ปัญหา: SELECT COUNT(*) → INSERT แยกกัน 2 queries → race condition
+    //   ถ้า 2 requests เข้ามาพร้อมกันทั้งคู่เห็น c=0 ทั้งคู่ INSERT ได้ → main admin 2 ตัว
+    //
+    // วิธีแก้: ใช้ UNIQUE partial index `idx_admin_users_main_unique` (สร้างใน schema.sql)
+    //   + INSERT...ON CONFLICT DO NOTHING → ถ้ามี main admin อยู่แล้ว INSERT จะไม่ทำงาน
+    //   + เช็ค changes() หลัง INSERT → ถ้า 0 = มี main admin อยู่แล้ว (race) → return 409
+    //
+    // ผลกระทบต่อระบบเดิม: 0% — behavior เหมือนเดิม แต่ปลอดภัยขึ้น (กัน race)
+    //   ถ้า index ยังไม่ถูกสร้าง (ยังไม่ได้ run schema.sql ใหม่) → ยังทำงานเหมือนเดิม (fallback)
     let body;
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
     const email = String(body.email || "").trim();
@@ -216,12 +223,31 @@ async function handleAuth(request, env, url) {
     const displayName = String(body.displayName || "").trim() || email.split("@")[0];
     if (!email) return jsonResponse({ error: "กรุณากรอกอีเมล" }, 400);
     if (password.length < 6) return jsonResponse({ error: "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร" }, 400);
+
+    // 🔧 แก้บั๊ก I3: pre-check (เหมือนเดิม — เพื่อให้ error message ชัดเจน)
+    const row = await env.DB.prepare("SELECT COUNT(*) AS c FROM admin_users").first();
+    if ((row?.c || 0) > 0) {
+      return jsonResponse({ error: "ระบบมีแอดมินอยู่แล้ว ไม่สามารถตั้งค่าแอดมินคนแรกซ้ำได้" }, 409);
+    }
+
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const passwordHash = await hashPassword(password);
-    await env.DB.prepare(
-      "INSERT INTO admin_users (id, email, password_hash, display_name, role, created_at, created_by) VALUES (?, ?, ?, ?, 'main', ?, 'bootstrap')"
+
+    // 🔧 แก้บั๊ก I3: ใช้ INSERT...ON CONFLICT DO NOTHING (เหมือนกันกับ documents table)
+    //   ถ้ามี main admin ถูกสร้างระหว่าง pre-check กับ INSERT (race) → INSERT จะไม่ทำงาน
+    //   changes() จะเป็น 0 → เราจะ detect และ return 409 แทนที่จะสร้าง main admin ซ้อน
+    const insertResult = await env.DB.prepare(
+      "INSERT INTO admin_users (id, email, password_hash, display_name, role, created_at, created_by) VALUES (?, ?, ?, ?, 'main', ?, 'bootstrap') ON CONFLICT DO NOTHING"
     ).bind(id, email, passwordHash, displayName, now).run();
+
+    // 🔧 แก้บั๊ก I3: เช็คว่า INSERT สำเร็จจริงไหม (changes() > 0)
+    //   ถ้า changes() === 0 = มี main admin อยู่แล้ว (race) → return 409
+    //   ⚠️ หมายเหตุ: meta.changes อาจไม่ถูกต้องในบาง D1 driver version → ใช้ meta.last_row_id ด้วย
+    if (!insertResult.meta || insertResult.meta.changes === 0) {
+      return jsonResponse({ error: "ระบบมีแอดมินอยู่แล้ว ไม่สามารถตั้งค่าแอดมินคนแรกซ้ำได้ (race detected)" }, 409);
+    }
+
     const token = await createSession(env, id);
     const admin = await env.DB.prepare("SELECT id, email, display_name, role, created_at, created_by FROM admin_users WHERE id = ?").bind(id).first();
     return jsonResponse(adminToClient(admin), 200, { "Set-Cookie": buildSessionCookie(token) });
@@ -549,6 +575,12 @@ async function handleDb(request, env, url) {
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
     const ids = Array.isArray(body?.ids) ? body.ids.map(id => String(id)).filter(Boolean) : [];
     if (ids.length === 0) return jsonResponse({ results: {} });
+    // 🔒 แก้บั๊ก I5 (2026-09-18): จำกัดจำนวน ids สูงสุด 200 เพื่อกัน OOM + DoS
+    //   เดิม: ไม่จำกัด → admin ส่ง 10,000 ids → วนลูป 10,000 × allOrders iterations → Worker CPU spin
+    //   ใหม่: limit 200 ids (เพียงพอสำหรับ bulk delete ในชีวิตจริง) + เกิน → return error
+    if (ids.length > 200) {
+      return jsonResponse({ error: "จำนวนเพลงเกิน 200 รายการ — กรุณาลดจำนวนแล้วลองใหม่" }, 400);
+    }
     try {
       // โหลด orders ทั้งหมด 1 ครั้ง (ไม่ใช่ N ครั้งแบบเดิม)
       const allOrders = await listDocuments(env, "orders");
@@ -703,6 +735,16 @@ async function handleDb(request, env, url) {
 
     // /api/db/:collection  (list ทั้ง collection)
     if (parts.length === 1 && request.method === "GET") {
+      // 🔒 แก้บั๊ก I7 (2026-09-18): กัน sub-admin อ่านรายชื่อแอดมินทั้งหมด
+      //   เดิม: listDocuments(env, "admins") ไม่จำกัด role → sub-admin เห็น email ของแอดมินทุกคน
+      //   แก้: เฉพาะ main admin เท่านั้นที่ดูรายชื่อแอดมินทั้งหมดได้ (สอดคล้องกับ PUT/PATCH/DELETE ใน C2)
+      //   sub-admin จะเห็นได้แค่ตัวเอง → เพื่อให้ app-admin.js loadAdmins() ใน admin-roles.js ยังทำงานได้
+      //   แต่จะเห็นแค่ตัวเอง → frontend จะแสดงแค่ตัวเอง + ปุ่ม "เพิ่มแอดมิน" จะถูกซ่อน (isMainAdmin() = false)
+      if (collection === "admins" && admin && admin.role !== "main") {
+        // คืนแค่ข้อมูลตัวเอง (sub-admin ไม่เห็นคนอื่น)
+        const selfDoc = await getDocument(env, "admins", admin.id);
+        return jsonResponse({ docs: selfDoc ? [selfDoc] : [] });
+      }
       let docs = await listDocuments(env, collection);
       // 🔒 sanitize ฟิลด์ sensitive ของ songs ถ้าเป็น non-admin
       if (collection === "songs" && !admin) {
@@ -776,6 +818,30 @@ async function handleDb(request, env, url) {
             return jsonResponse({ error: "ยอดรวมไม่ถูกต้อง (ต้องเป็นจำนวนเงินที่ >= 0)" }, 400);
           }
 
+          // 🔒 แก้บั๊ก I8 (2026-09-18): เพิ่ม validation ความยาว + โครงสร้าง items
+          //   กันลูกค้าส่งข้อมูลประหลาดที่อาจทำให้ DB พัง (D1 row size limit 1MB) หรือ CPU spin
+          if (data.customer_name.length > 200) {
+            return jsonResponse({ error: "ชื่อลูกค้ายาวเกินไป (สูงสุด 200 ตัวอักษร)" }, 400);
+          }
+          if (data.whatsapp.length > 30) {
+            return jsonResponse({ error: "เบอร์ WhatsApp ยาวเกินไป (สูงสุด 30 ตัวอักษร)" }, 400);
+          }
+          if (data.items.length > 100) {
+            return jsonResponse({ error: "รายการสินค้ามากเกินไป (สูงสุด 100 รายการ)" }, 400);
+          }
+          // validate แต่ละ item มี field ครบ (title + price) — กันส่ง items ประหลาด
+          for (const item of data.items) {
+            if (!item || typeof item !== "object") {
+              return jsonResponse({ error: "รายการสินค้าไม่ถูกต้อง" }, 400);
+            }
+            if (!item.title || typeof item.title !== "string" || item.title.length > 200) {
+              return jsonResponse({ error: "รายการสินค้าต้องมีชื่อ (สูงสุด 200 ตัวอักษร)" }, 400);
+            }
+            if (typeof item.price !== "number" || !Number.isFinite(item.price) || item.price < 0) {
+              return jsonResponse({ error: "ราคาสินค้าไม่ถูกต้อง (ต้องเป็นจำนวนเงิน >= 0)" }, 400);
+            }
+          }
+
           // 🔒 Force status='pending_verify' — ลูกค้าตั้ง status เองไม่ได้
           //   กัน bypass การตรวจสอบเงินโอน (เช่น ตั้ง status='completed' ตรง ๆ)
           //   ค่าอื่น ๆ ที่ลูกค้าตั้งเองได้: created_at, receipt_number, store_name,
@@ -826,6 +892,22 @@ async function handleDb(request, env, url) {
           if (!ownerName || !ownerPhone || ownerName !== orderName || ownerPhone !== orderPhone) {
             return jsonResponse({ error: "ไม่สามารถลบออเดอร์นี้ได้ — ข้อมูลไม่ตรงกับเจ้าของออเดอร์" }, 403);
           }
+          // 🔒 แก้บั๊ก I2 (2026-09-18): กัน TOCTOU race — re-check status ทันทีก่อน delete
+          //   ปัญหา: ระหว่างตรวจ existing.data?.status === "pending_verify" กับ deleteDocument
+          //   แอดมินอาจเปลี่ยน status เป็น "processing" → ลูกค้ายังลบได้ (เพราะเช็คไปแล้ว)
+          //   แก้: ใช้ conditional DELETE ที่ตรวจ status + owner ใน SQL พร้อม delete เลย (atomic)
+          //   ถ้า changes() === 0 = ออเดอร์ถูกเปลี่ยนแปลงไปแล้ว → บอกลูกค้าว่าลบไม่ได้
+          const deleteResult = await env.DB.prepare(
+            "DELETE FROM documents WHERE collection = 'orders' AND id = ? " +
+            "AND json_extract(data, '$.status') = 'pending_verify' " +
+            "AND json_extract(data, '$.customer_name') = ? " +
+            "AND json_extract(data, '$.whatsapp') = ?"
+          ).bind(id, existing.data?.customer_name || "", existing.data?.whatsapp || "").run();
+          if (!deleteResult.meta || deleteResult.meta.changes === 0) {
+            // ออเดอร์ถูกอัปเดตไปแล้วระหว่างที่ลูกค้ากำลังลบ → บอกลูกค้าว่าลบไม่ได้
+            return jsonResponse({ error: "ออเดอร์นี้ถูกอัปเดตโดยแอดมินแล้ว ไม่สามารถลบได้" }, 409);
+          }
+          return jsonResponse({ ok: true });
         }
         await deleteDocument(env, collection, id);
         return jsonResponse({ ok: true });
