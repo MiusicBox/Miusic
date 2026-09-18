@@ -335,6 +335,13 @@ async function createOrderZip(orderId) {
   const order = state.allOrders.find((item) => item.id === orderId);
   if (!order) return { ok: false, error: "ไม่พบออเดอร์นี้" };
 
+  // ถ้ามี ZIP ที่สร้างสำเร็จแล้ว ใช้ลิงก์เดิมได้ ไม่สร้างไฟล์ซ้ำโดยไม่จำเป็น
+  // 🔧 (2026-09-18 v5): ย้ายเช็คนี้มาก่อน zipJobs.set() — กัน edge case ที่ early return
+  //   โดยไม่ได้ลบ zipJobs → zipJobs.has(orderId) ค้างเป็น true → กดสร้าง ZIP ซ้ำไม่ได้
+  if (order.zip_status === "ready" && order.zip_download_url) {
+    return { ok: true, url: order.zip_download_url, publicId: order.zip_public_id || "" };
+  }
+
   // 🔧 (2026-09-18 v5): สร้าง AbortController สำหรับ cancel การสร้าง ZIP ระหว่างทำ
   //   ใช้กับทุก fetch ใน flow (start, append, finalize-build, finalize-compose)
   //   ถ้าแอดมินกดปุ่ม "ยกเลิก" → abortController.abort() → ทุก fetch reject ทันที
@@ -343,10 +350,9 @@ async function createOrderZip(orderId) {
   const { signal } = abortController;
   zipJobs.set(orderId, { abortController, jobId: null });
 
-  // ถ้ามี ZIP ที่สร้างสำเร็จแล้ว ใช้ลิงก์เดิมได้ ไม่สร้างไฟล์ซ้ำโดยไม่จำเป็น
-  if (order.zip_status === "ready" && order.zip_download_url) {
-    return { ok: true, url: order.zip_download_url, publicId: order.zip_public_id || "" };
-  }
+  // 🔧 (2026-09-18 v5): re-render ทันทีหลัง zipJobs.set() → ปุ่ม ✕ "ยกเลิก" โชว์ทันที
+  //   โดยไม่ต้องรอให้ user refresh หน้า
+  renderFromState();
 
   try {
     // ===== Step 1: start — สร้าง multipart upload ใน R2 + รับ plan =====
@@ -513,6 +519,9 @@ async function createOrderZip(orderId) {
     return { ok: false, error: errorMessage };
   } finally {
     zipJobs.delete(orderId);
+    // 🔧 (2026-09-18 v5): re-render ทันทีหลัง zipJobs.delete() → ปุ่ม ✕ "ยกเลิก" หายไปทันที
+    //   (ทำงานทุกกรณี: สำเร็จ / error / abort)
+    renderFromState();
   }
 }
 
