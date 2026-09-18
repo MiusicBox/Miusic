@@ -2187,9 +2187,14 @@ async function handleOrderZipFinalizeCompose(request, env) {
   });
 }
 
-// ---------------- POST /api/order-zip/abort (เผื่อใช้ในอนาคต ถ้าต้องการ cancel) ----------------
-// ไม่ได้เรียกจาก orders.js ใน v1 นี้ — แต่เก็บไว้เผื่ออนาคตต้องการปุ่ม "ยกเลิกการสร้าง ZIP"
-// ทำ: abort multipart upload + ลบ job row + อัปเดต order doc zip_status=''
+// ---------------- POST /api/order-zip/abort ----------------
+// ใช้สำหรับ "ยกเลิกการสร้าง ZIP" ระหว่างทำ (จากปุ่ม UI ฝั่งแอดมิน)
+// ทำครบ:
+//   - ลบ partial buffer ใน R2 (จาก finalizeState.partialBufferKey — temp object จาก finalize-build)
+//   - Abort multipart upload (ลบไฟล์ ongoing ที่ค้างใน R2)
+//   - ลบ job row ใน D1
+//   - อัปเดต order doc: zip_status='' + zip_error='ยกเลิกโดยแอดมิน'
+// Response: { ok: true, aborted: true, orderId }
 async function handleOrderZipAbort(request, env) {
   const admin = await getSessionAdmin(request, env);
   if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
@@ -2204,14 +2209,23 @@ async function handleOrderZipAbort(request, env) {
   let jobRow;
   try {
     jobRow = await env.DB.prepare(
-      "SELECT job_id, order_id, bucket_key, status FROM order_zip_jobs WHERE job_id = ?"
+      "SELECT job_id, order_id, bucket_key, parts, status FROM order_zip_jobs WHERE job_id = ?"
     ).bind(jobId).first();
   } catch (err) {
     return jsonResponse({ error: "อ่านสถานะ ZIP job ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
   }
   if (!jobRow) return jsonResponse({ error: "ไม่พบ ZIP job นี้" }, 404);
 
+  // 🔧 (2026-09-18 v5): อ่าน finalizeState เพื่อ cleanup partial buffer ใน R2 ด้วย
+  //   (finalize-build สร้าง temp object ชื่อ partialBufferKey — ต้องลบตอน abort)
+  const partsData = parsePartsJson(jobRow.parts);
+  if (partsData.finalizeState) {
+    await cleanupPartialBuffer(env, partsData.finalizeState);
+  }
+
+  // Abort multipart upload (ลบไฟล์ ongoing ที่ค้างใน R2)
   await cleanupLeftoverMultipart(env, jobId, jobRow.bucket_key);
+  // ลบ job row จาก D1
   await deleteOrderZipJob(env, jobId);
 
   // อัปเดต order doc: zip_status = '' (ล้างสถานะ)
@@ -2222,11 +2236,14 @@ async function handleOrderZipAbort(request, env) {
       zip_download_url: "",
       zip_file_name: "",
       zip_public_id: "",
+      zip_song_count: 0,
+      zip_created_at: "",
+      zip_requested_at: "",
       updated_at: new Date().toISOString(),
     });
   } catch (_) { /* ไม่วิกฤต */ }
 
-  return jsonResponse({ ok: true });
+  return jsonResponse({ ok: true, aborted: true, orderId: jobRow.order_id });
 }
 
 export default {
