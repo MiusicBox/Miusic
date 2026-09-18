@@ -1153,7 +1153,19 @@ function myOrders_escapeHtml(str) {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 function myOrders_formatPrice(v) { return Number(v || 0).toLocaleString("en-US") + " LAK"; }
-function myOrders_normalizePhone(v) { return String(v || "").replace(/[^0-9]/g, ""); }
+function myOrders_normalizePhone(v) {
+  let s = String(v || "").replace(/[^0-9]/g, "");
+  // 🔧 แก้บั๊ก C5 (2026-09-17): strip country code Laos + 0 นำหน้าออก ให้เบอร์ Laos ทุกรูปแบบเทียบเท่ากัน
+  //   "+85620XXXXXXXX" → "20XXXXXXXX"
+  //   "85620XXXXXXXX"  → "20XXXXXXXX"
+  //   "020XXXXXXXX"     → "20XXXXXXXX"
+  //   "20XXXXXXXX"      → "20XXXXXXXX" (ไม่เปลี่ยน)
+  //   สอดคล้องกับ normalizePhoneServer ฝั่ง worker/index.js + normalizePhone ใน app-user.js (ที่แก้พร้อมกัน)
+  //   ทำให้ลูกค้า Laos ที่สั่งด้วยเบอร์ +85620... จะหาออเดอร์ได้ถ้ากรอก 020... หรือ 20...
+  if (s.startsWith("856")) s = s.slice(3);
+  if (s.startsWith("0")) s = s.replace(/^0+/, "");
+  return s;
+}
 function myOrders_normalizeName(v) { return String(v || "").trim().toLowerCase(); }
 
 function myOrders_showToast(message, type) {
