@@ -99,3 +99,15 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_admin ON sessions(admin_id);
+
+-- 🔒 แก้บั๊ก #4 (2026-09-18): ตาราง login_attempts สำหรับ rate limiting บน login
+--   ใช้ track IP + email ของการ login ที่ล้มเหลว → บล็อกถ้าเกิน 5 ครั้งใน 15 นาที
+--   ล้างอัตโนมัติเมื่อ login สำเร็จ (DELETE FROM login_attempts WHERE ip = ?)
+CREATE TABLE IF NOT EXISTS login_attempts (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  ip            TEXT NOT NULL,
+  email         TEXT NOT NULL,
+  attempted_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts(ip, attempted_at);
