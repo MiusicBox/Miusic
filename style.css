@@ -2425,10 +2425,10 @@ button:active {
   justify-content: flex-end;
 }
 
-/* ราคาปกติในหัวเพลย์ลิสต์ — 🔧 (2026-09-19): เปลี่ยนจากม่วงเป็นสีชมพู */
+/* ราคาปกติในหัวเพลย์ลิสต์ — 🔧 (2026-09-19): เล็กลงสำหรับมือถือ */
 .playlist-folder-btn .playlist-folder-price-block .song-price {
-  font-size: 20px !important;
-  font-weight: 900 !important;
+  font-size: 17px !important;
+  font-weight: 800 !important;
   color: #ec4899 !important;
   letter-spacing: -0.5px;
   text-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
@@ -2444,9 +2444,9 @@ button:active {
   font-weight: 500;
 }
 
-/* ราคาหลังลด — สีทองใหญ่ */
+/* ราคาหลังลด — สีทอง */
 .playlist-folder-btn .playlist-folder-price-block .price-discounted {
-  font-size: 20px !important;
+  font-size: 17px !important;
   font-weight: 900 !important;
   color: #fbbf24 !important;
   letter-spacing: -0.5px;
@@ -2515,7 +2515,7 @@ button:active {
   }
   .playlist-folder-btn .playlist-folder-price-block .song-price,
   .playlist-folder-btn .playlist-folder-price-block .price-discounted {
-    font-size: 17px !important;
+    font-size: 14px !important;
   }
   .playlist-folder-btn .playlist-folder-buy-btn {
     padding: 8px 12px !important;
