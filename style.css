@@ -1146,6 +1146,114 @@ button:active {
 }
 
 /* ---------- Common Buttons & Elements ---------- */
+/* =====================================================================
+   🔧 (2026-09-19 v6): หน้าจอ Admin Login — จัดกึ่งกลางจอ + ขยายขนาดให้พอดี
+   ------------------------------------------------------------------------
+   ปัญหาเดิม:
+   - ไม่มี CSS สำหรับ `.login-screen` / `.login-card` เลย → ใช้ browser default
+   - JS ตั้ง `#loginScreen` เป็น `display: flex` แต่ไม่มี justify/align →
+     flex container วาง item ชิดซ้ายบน → login อยู่มุมซ้ายบน เล็ก 35% ของจอ
+   แก้:
+   - `.login-screen`: flex center ทั้งแนวนอนและแนวตั้ง, min-height 100vh, padding ขอบ
+   - `.login-card`: max-width 420px (ไม่ใหญ่เกินไปบน desktop, พอดีอ่านง่าย),
+     width 100%, padding ใหญ่ขึ้น (28px 24px), border + shadow + border-radius
+   - mobile responsive: ขยายเต็มจอด้วย padding ขอบ 16px
+   ===================================================================== */
+.login-screen {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 100vh !important;
+  min-height: 100dvh !important; /* 🔑 ใช้ dynamic viewport height บนมือถือ */
+  padding: 24px 16px !important;
+  padding: calc(24px + var(--safe-top, 0px)) 16px calc(24px + var(--safe-bottom, 0px)) 16px !important;
+  background: linear-gradient(180deg, #0a0a0f 0%, #1a1428 100%) !important;
+  box-sizing: border-box !important;
+}
+
+.login-card {
+  width: 100% !important;
+  max-width: 420px !important;
+  background: var(--surface, #1c1c22) !important;
+  border: 1px solid var(--border, rgba(255,255,255,.1)) !important;
+  border-radius: 16px !important;
+  padding: 28px 24px !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5) !important;
+  box-sizing: border-box !important;
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* หัวข้อ login ใหญ่ขึ้นนิดหน่อย ให้อ่านง่าย */
+.login-card h2 {
+  font-size: 22px !important;
+  font-weight: 800 !important;
+  margin: 0 0 6px !important;
+  text-align: center !important;
+  color: var(--text, #fff) !important;
+  letter-spacing: -0.3px !important;
+}
+
+/* subtitle ใต้ heading */
+.login-card p {
+  text-align: center !important;
+  color: var(--text-dim, #94a3b8) !important;
+  font-size: 13px !important;
+  margin: 0 0 20px !important;
+  line-height: 1.4 !important;
+}
+
+/* input field ใน login card — สืบทอด .field ปกติ แต่ขยาย padding นิดหน่อยให้ใช้ง่าย */
+.login-card .field {
+  margin-bottom: 14px !important;
+}
+
+.login-card .field label {
+  font-size: 13px !important;
+  margin-bottom: 6px !important;
+  color: var(--text-dim, #94a3b8) !important;
+  font-weight: 600 !important;
+}
+
+.login-card .field input {
+  padding: 13px 16px !important;
+  font-size: 15px !important;
+  min-height: 48px !important;
+  box-sizing: border-box !important;
+}
+
+/* ปุ่ม login ใหญ่ขึ้นนิดหน่อย ใช้ง่าย */
+.login-card .btn {
+  margin-top: 8px !important;
+  padding: 14px 20px !important;
+  font-size: 15px !important;
+  min-height: 52px !important;
+}
+
+/* 🔧 (2026-09-19 v6): บนมือถือ — ขยาย login-card ให้พอดีจอ + ลด padding ขอบ */
+@media (max-width: 480px) {
+  .login-screen {
+    padding: 16px 14px !important;
+    padding: calc(16px + var(--safe-top, 0px)) 14px calc(16px + var(--safe-bottom, 0px)) 14px !important;
+    justify-content: flex-start !important; /* บนมือถือดันขึ้นบนนิดหน่อย ไม่ใช่กลางจอเปี๊ยบ */
+    padding-top: calc(40px + var(--safe-top, 0px)) !important;
+  }
+  .login-card {
+    max-width: 100% !important;
+    padding: 24px 18px !important;
+  }
+  .login-card h2 {
+    font-size: 20px !important;
+  }
+}
+
+/* บนจอกว้าง (tablet/desktop) — จำกัด max-width ไว้ที่ 420px ไม่ให้กว้างเกินไป */
+@media (min-width: 481px) {
+  .login-card {
+    max-width: 420px !important;
+  }
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
