@@ -1977,27 +1977,28 @@ button:active {
 }
 
 /* =====================================================================
-   🔧 (2026-09-19 v4): แก้ input[type="datetime-local"] ล้นขอบในฟอร์ม discount/promotion
+   🔧 (2026-09-19 v5): แก้ input[type="datetime-local"] ให้มีความกว้างเท่ากับ
+   input อื่นในฟอร์ม (เดิม v4 ตั้ง padding 12px 14px → กว้างกว่า input อื่น
+   ที่มี padding 12px 16px → ทำให้ date input "ยาวกว่าฟอร์มตัวอื่น")
    ------------------------------------------------------------------------
    ปัญหาเดิม:
-   - `.field input` (บรรทัด 1213) กำหนด width:100% + padding:12px 16px แต่ไม่ได้กำหนด box-sizing
+   - `.field input` (บรรทัด 1213) กำหนด width:100% + padding:12px 16px
    - input[type="datetime-local"] บน iOS Safari / Chrome mobile มี native calendar icon
-     ฝั่งขวา + min-width ภายในตัวเอง → ทำให้ตัวอักษร "13 ก.ย. 2026 2:22 AM" ล้น padding ขวา
-   - ไม่มี CSS เฉพาะสำหรับ datetime-local → browser default ทำให้ input นี้มีขนาด/พฤติกรรม
-     ไม่เท่ากับ input ชนิดอื่น (text/number) ในฟอร์มเดียวกัน
+     ฝั่งขวา + min-width ภายในตัวเอง → ทำให้ input ดูล้นขอบและ "ยาวกว่าฟอร์มตัวอื่น"
    แก้:
-   - บังคับ box-sizing: border-box → padding รวมใน width แล้ว ไม่ล้น
-   - min-width: 0 → ยกเลิก default min-width ของ browser
-   - ปรับ padding ให้สั้นลงนิดหน่อยทางขวา เผื่อ native icon ปฏิทิน
-   - ตั้ง font-size ให้เท่ากับ input ชนิดอื่น (14.5px)
-   - บนมือถือ: ลด padding และ font-size ลง เพื่อเผื่อพื้นที่ให้ native datetime picker
+   - padding 12px 16px (เท่ากับ .field input ปกติ) + padding-right 40px (เผื่อ icon)
+   - appearance: none → ลบ native calendar icon ที่ทำให้ iOS บังคับ text-align center
+   - เพิ่ม custom calendar icon เป็น SVG background (data URI) ทางขวา
+   - Force text-align: left → ข้อความ date อยู่ชิดซ้ายเสมอ
+   - box-sizing: border-box → padding รวมใน width แล้ว
    ===================================================================== */
 .field input[type="datetime-local"] {
   box-sizing: border-box !important;
   width: 100% !important;
   min-width: 0 !important;
-  /* ปรับ padding ให้เท่ากับ .field input ปกติ แต่เผื่อขวาสำหรับ native calendar icon */
-  padding: 12px 14px !important;
+  max-width: 100% !important;
+  /* 🔧 (v5): padding เท่ากับ .field input ปกติ (12px 16px) แต่เผื่อขวา 40px ให้ icon */
+  padding: 12px 40px 12px 16px !important;
   font-size: 14.5px !important;
   font-family: inherit !important;
   color: var(--text) !important;
@@ -2008,33 +2009,42 @@ button:active {
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
-  /* จัดตำแหน่ง text ชิดซ้ายเสมอ (ไม่ center เพราะทำให้ล้นสองข้าง) */
+  /* 🔑 (v5): บังคับ text-align: left — iOS มักจะ center datetime-local text */
   text-align: left !important;
-  /* 🔧 ไม่ใช้ appearance:none เพราะอาจทำให้ native calendar picker หายไปในบาง browser
-     แทนด้วยการจัดการ overflow และ min-width:0 ที่ปลอดภัยกว่า */
+  /* 🔑 (v5): ลบ native calendar icon เพื่อให้ text-align: left ทำงานได้
+     และทำให้ input มีขนาดตรงๆ ตาม width: 100% ไม่มี native min-width แทรก */
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  /* 🔑 (v5): เพิ่ม custom calendar icon เป็น SVG background
+     - สี: var(--text-dim) ผ่าน currentColor (SVG fill ใช้ #94a3b8 ตรงกับ --text-dim)
+     - ตำแหน่ง: right 12px center
+     - ขนาด: 16x16px
+     - ป้องกัน overlap กับ text (ใช้ padding-right 40px เผื่อไว้แล้ว) */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2394a3b8'><path d='M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM7 12h5v5H7z'/></svg>") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 12px center !important;
+  background-size: 16px 16px !important;
+  outline: none;
+  transition: all 0.2s ease;
 }
 
-/* ปรับขนาด native datetime picker icon (Webkit/Chrome/Safari/Edge) */
-.field input[type="datetime-local"]::-webkit-calendar-picker-indicator {
-  flex-shrink: 0;
-  cursor: pointer;
-  margin-left: 4px;
+/* ปรับให้ focus state ตรงกับ .field input:focus ปกติ */
+.field input[type="datetime-local"]:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-glow) !important;
 }
 
-/* 🔧 (2026-09-19 v4): บนมือถือจอเล็ก — ลด padding/font-size ลง เผื่อพื้นที่ให้ native picker
-   และปรับให้ input datetime-local มีขนาดเท่ากับ input อื่นในฟอร์มเดียวกัน */
+/* 🔧 (2026-09-19 v5): บนมือถือจอเล็ก — ลด padding/font-size ลงนิดหน่อย
+   แต่ยังคง padding-right 40px เพื่อเผื่อที่ให้ calendar icon */
 @media (max-width: 480px) {
   .field input[type="datetime-local"] {
-    padding: 11px 12px !important;
+    padding: 11px 38px 11px 14px !important;
     font-size: 14px !important;
-    /* ลด line-height ให้แคบลง เผื่อพื้นที่แนวตั้งบนจอเล็ก */
     line-height: 1.35 !important;
-  }
-  /* บน iOS: native calendar picker มักจะใหญ่ ลดขนาดลงนิดหน่อย */
-  .field input[type="datetime-local"]::-webkit-calendar-picker-indicator {
-    width: 14px;
-    height: 14px;
-    margin-left: 2px;
+    /* ลดขนาด icon นิดหน่อยบนจอเล็ก */
+    background-position: right 10px center !important;
+    background-size: 14px 14px !important;
   }
 }
 
