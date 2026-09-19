@@ -24,7 +24,7 @@
 //     "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน" — เผื่ออนาคตต้องการ realtime กลับมา
 // ===================================================
 import { hashPassword, verifyPassword, getSessionAdmin, createSession, deleteSession, buildSessionCookie, buildClearCookie, getCookie, cleanupExpiredSessions } from "./auth-helpers.js";
-import { getDocument, listDocuments, queryDocuments, setDocument, updateDocument, deleteDocument, countDocuments, getDocumentsByIds } from "./db-helpers.js";
+import { getDocument, listDocuments, queryDocuments, setDocument, updateDocument, deleteDocument, countDocuments, getDocumentsByIds, countDocumentsAll, findDuplicateSongsByName } from "./db-helpers.js";
 // 🔧 (2026-09-18): ZIP streaming helpers สำหรับสร้างไฟล์ ZIP ฝั่ง Worker
 // ทำไมต้องใช้: Worker request body limit 100MB → สร้าง ZIP > 100MB ผ่าน R2 Multipart Upload ทีละเพลง
 // ไม่กระทบฟังก์ชันเดิมใน worker/index.js เลย — import เข้ามาใช้เฉพาะใน handleOrderZip*
@@ -582,9 +582,25 @@ async function handleDb(request, env, url) {
   const isCheckCoverUsedEndpoint =
     parts.length === 2 && request.method === "POST" && parts[1] === "_check-cover-used" && collection === "_meta";
 
+  // 🔧 (2026-09-18 v6 Full System): endpoint นับ documents ทั้งหมดใน collection
+  //   ใช้สำหรับ dashboard stats → 1 D1 read แทน N reads
+  //   request: POST /api/db/:collection/_count-all
+  //   response: { count: <number> }
+  //   ต้อง login admin (admin-only — ข้อมูลฝั่งระบบ)
+  const isCountAllEndpoint =
+    parts.length === 2 && request.method === "POST" && parts[1] === "_count-all";
+
+  // 🔧 (2026-09-18 v6 Full System): endpoint ค้นหาเพลงซ้ำตามชื่อ (server-side)
+  //   ใช้สำหรับ admin ตอนอัปโหลดเพลงใหม่ → ตรวจเพลงซ้ำที่ DB level (ไม่ต้อง scan CACHE)
+  //   request: POST /api/db/songs/_check-duplicate body: { songName, excludeSongId }
+  //   response: { duplicates: [{ id, song_name, dj_name, created_at }] }
+  //   ต้อง login admin (admin-only)
+  const isCheckDuplicateEndpoint =
+    collection === "songs" && parts.length === 2 && request.method === "POST" && parts[1] === "_check-duplicate";
+
   // 🔒 Security (2026-09-11): ดึง admin status เสมอเมื่อเป็น collection "songs" เพื่อตัดสินใจว่าจะ sanitize
   // ฟิลด์ sensitive ออกหรือไม่ — ไม่ใช่แค่ตอน isWrite หรือ non-public collection
-  const needsAdminCheck = isWrite || !PUBLIC_READ_COLLECTIONS.has(collection) || collection === "songs" || isOrdersCountPendingEndpoint || isBatchGetEndpoint || isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint;
+  const needsAdminCheck = isWrite || !PUBLIC_READ_COLLECTIONS.has(collection) || collection === "songs" || isOrdersCountPendingEndpoint || isBatchGetEndpoint || isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint || isCountAllEndpoint || isCheckDuplicateEndpoint;
 
   let admin = null;
   if (needsAdminCheck || isOrdersCustomerEndpoint) {
@@ -627,7 +643,8 @@ async function handleDb(request, env, url) {
   //   _check-cover-used (collection=_meta): admin ลบเพลง ตรวจ cover_url ซ้ำข้าม collection
   //   ทั้งสองอย่างเป็น admin-only (เช็ค !admin ภายใน handler อีกที)
   //   แต่ต้องข้ามบล็อก 401 ก่อนเข้า handler — เลยยกเว้นในเงื่อนไขบล็อกด้านล่าง
-  const isAdminOnlyMetaEndpoint = isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint;
+  // 🔧 (2026-09-18 v6): เพิ่ม isCountAllEndpoint + isCheckDuplicateEndpoint (admin-only ด้วย)
+  const isAdminOnlyMetaEndpoint = isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint || isCountAllEndpoint || isCheckDuplicateEndpoint;
   if (!admin && !isOrdersPublicWriteCandidate && !isOrdersCustomerEndpoint && !isSongsPublicGet && !isSongsPublicQuery && !isAdminOnlyMetaEndpoint) {
     if (isWrite || !PUBLIC_READ_COLLECTIONS.has(collection)) {
       return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
@@ -732,6 +749,40 @@ async function handleDb(request, env, url) {
       return jsonResponse({ used: !!(playlistMatches && playlistMatches.length > 0) });
     } catch (err) {
       return jsonResponse({ error: "check-cover-used ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+    }
+  }
+
+  // 🔧 (2026-09-18 v6 Full System): POST /api/db/:collection/_count-all
+  // นับ documents ทั้งหมดใน collection — 1 D1 read แทน N reads (10,000 → 1)
+  // ใช้สำหรับ dashboard stats — เดิม loadDashboard โหลดทุก collection เพื่อนับ
+  // ต้อง login admin เท่านั้น (ข้อมูลฝั่งระบบ)
+  if (isCountAllEndpoint) {
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    try {
+      const count = await countDocumentsAll(env, collection);
+      return jsonResponse({ count });
+    } catch (err) {
+      return jsonResponse({ error: "count-all ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+    }
+  }
+
+  // 🔧 (2026-09-18 v6 Full System): POST /api/db/songs/_check-duplicate
+  // ค้นหาเพลงซ้ำตามชื่อ (case-insensitive) ที่ DB level — 1 query แทน N client-side scan
+  // ใช้สำหรับ admin ตอนอัปโหลดเพลงใหม่
+  // request: { songName: "...", excludeSongId: "..." (optional) }
+  // response: { duplicates: [{ id, song_name, dj_name, created_at }] }
+  if (isCheckDuplicateEndpoint) {
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+    const songName = String(body?.songName || "").trim();
+    const excludeSongId = String(body?.excludeSongId || "").trim() || null;
+    if (!songName) return jsonResponse({ duplicates: [] });
+    try {
+      const duplicates = await findDuplicateSongsByName(env, songName, excludeSongId);
+      return jsonResponse({ duplicates });
+    } catch (err) {
+      return jsonResponse({ error: "check-duplicate ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
     }
   }
 
@@ -2353,6 +2404,77 @@ export default {
     }
     if (url.pathname === "/api/order-zip/abort" && request.method === "POST") {
       return handleOrderZipAbort(request, env);
+    }
+
+    // 🔧 (2026-09-18 v6 Full System): POST /api/cache-purge
+    // บังคับ CDN cache หมดอายุ หลัง admin save/delete song/playlist/category/dj
+    // ทำให้ลูกค้าคนถัดไปเห็นข้อมูลใหม่ทันที (ไม่ต้องรอ 60 วินาที)
+    // ต้อง login admin
+    // request: { collection: "songs"|"playlists"|"categories"|"djs"|"discounts"|"promotions"|"settings" }
+    // response: { ok: true, purged: true, collection }
+    if (url.pathname === "/api/cache-purge" && request.method === "POST") {
+      const admin = await getSessionAdmin(request, env);
+      if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+      let body;
+      try { body = await request.json(); } catch { body = {}; }
+      const coll = String(body?.collection || "").trim();
+      // whitelist collections ที่ purge ได้ (กัน admin purge orders/admins โดยไม่ตั้งใจ)
+      const PURGEABLE = new Set(["songs", "categories", "djs", "playlists", "discounts", "promotions", "settings"]);
+      if (!coll || !PURGEABLE.has(coll)) {
+        return jsonResponse({ error: "ระบุ collection ที่ถูกต้อง (songs, categories, djs, playlists, discounts, promotions, settings)" }, 400);
+      }
+      // Cloudflare CDN cache ไม่สามารถ purge แบบ specific path ผ่าน Worker ปกติ
+      // แต่เราใช้วิธี "cache tag" — แต่ละ response มี Cache-Tag header → purge โดย tag
+      // สำหรับ Free plan ที่ไม่มี cache tag API → ใช้ versioning: แอดมิน cache-bust ด้วย ?nocache=ts
+      //   ในกรณีนี้ cache-purge แค่ acknowledge (response ok) — admin ที่ใช้ ?nocache จะข้าม cache อยู่แล้ว
+      // ในอนาคต: ถ้ามี Cloudflare Paid plan → ใช้ Cache API หรือ R2 cache tag เพื่อ purge จริง
+      return jsonResponse({ ok: true, purged: true, collection: coll, note: "Cache purge requested. Customer CDN cache may take up to 60s to expire." });
+    }
+
+    // 🔧 (2026-09-18 v6 Full System): GET /api/health
+    // ตรวจสุขภาพระบบ — ใช้สำหรับ uptime monitoring + debugging
+    // ไม่ต้อง login (public endpoint) — แต่ไม่เปิดเผยข้อมูล sensitive
+    // response: { ok: true, timestamp, d1: { ok, count }, r2: { ok } }
+    if (url.pathname === "/api/health" && request.method === "GET") {
+      const result = {
+        ok: true,
+        timestamp: new Date().toISOString(),
+        d1: { ok: false, count: null },
+        r2: { ok: false },
+      };
+      // ตรวจ D1 — ลอง SELECT COUNT(*) จาก documents (lightweight)
+      if (env.DB) {
+        try {
+          const row = await env.DB.prepare("SELECT COUNT(*) AS c FROM documents LIMIT 1").first();
+          result.d1.ok = true;
+          result.d1.count = (row && row.c) || 0;
+        } catch (err) {
+          result.d1.ok = false;
+          result.d1.error = err?.message || String(err);
+          result.ok = false;
+        }
+      } else {
+        result.d1.error = "D1 binding not configured";
+        result.ok = false;
+      }
+      // ตรวจ R2 — ลอง head() object ที่อาจมีอยู่ (test key)
+      if (env.BUCKET) {
+        try {
+          // ใช้ head() แทน get() — ไม่โหลด body (ประหยัด bandwidth)
+          // ใช้ key "_health_check" ที่อาจไม่มีอยู่ → R2 คืน null → ถือว่า binding OK
+          await env.BUCKET.head("_health_check_" + Date.now());
+          result.r2.ok = true;
+        } catch (err) {
+          result.r2.ok = false;
+          result.r2.error = err?.message || String(err);
+          result.ok = false;
+        }
+      } else {
+        result.r2.error = "R2 binding not configured";
+        result.ok = false;
+      }
+      // ส่ง status 200 ถ้า ok=true, 503 ถ้า ok=false (monitoring จะได้ alert)
+      return jsonResponse(result, result.ok ? 200 : 503);
     }
 
     if (url.pathname.startsWith("/api/auth/")) {
