@@ -2087,11 +2087,11 @@ button:active {
   text-shadow: 0 0 12px rgba(251, 191, 36, 0.4);
 }
 
-/* ปุ่มเพิ่มลงตะกร้าแบบใหม่ — เด่น เป็นปุ่มจริง */
+/* ปุ่มเพิ่มลงตะกร้าแบบใหม่ — 🔧 (2026-09-19): เปลี่ยนสีพื้นเป็นเขียวอ่อน เหมือนมือถือ */
 .song-card-row .cart-add-btn-row {
-  background: linear-gradient(135deg, var(--accent), #7c3aed) !important;
-  border: none !important;
-  color: #fff !important;
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.25), rgba(34, 197, 94, 0.15)) !important;
+  border: 1px solid rgba(74, 222, 128, 0.4) !important;
+  color: #4ade80 !important;
   font-size: 11.5px !important;
   font-weight: 700;
   padding: 8px 14px !important;
@@ -2100,7 +2100,7 @@ button:active {
   align-items: center;
   gap: 5px !important;
   white-space: nowrap;
-  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.4);
+  box-shadow: 0 4px 14px rgba(74, 222, 128, 0.3);
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
@@ -2110,7 +2110,8 @@ button:active {
 
 .song-card-row .cart-add-btn-row:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(139, 92, 246, 0.55);
+  box-shadow: 0 6px 18px rgba(74, 222, 128, 0.45);
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.35), rgba(34, 197, 94, 0.25)) !important;
 }
 
 .song-card-row .cart-add-btn-row:active {
@@ -2472,11 +2473,11 @@ button:active {
   white-space: nowrap;
 }
 
-/* ปุ่ม "ซื้อทั้งเพลย์ลิสต์" — ม่วงใหญ่เด่น */
+/* ปุ่ม "ซื้อทั้งเพลย์ลิสต์" — 🔧 (2026-09-19): เปลี่ยนสีพื้นเป็นชมพู เหมือนมือถือ */
 .playlist-folder-btn .playlist-folder-buy-btn {
-  background: linear-gradient(135deg, var(--accent), #7c3aed) !important;
-  border: none !important;
-  color: #fff !important;
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.25), rgba(236, 72, 153, 0.15)) !important;
+  border: 1px solid rgba(236, 72, 153, 0.4) !important;
+  color: #ec4899 !important;
   font-size: 12px !important;
   font-weight: 700;
   padding: 10px 16px !important;
@@ -2485,7 +2486,7 @@ button:active {
   align-items: center;
   gap: 5px !important;
   white-space: nowrap;
-  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.4);
+  box-shadow: 0 4px 14px rgba(236, 72, 153, 0.3);
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
@@ -2496,8 +2497,8 @@ button:active {
 
 .playlist-folder-btn .playlist-folder-buy-btn:hover {
   transform: translateY(-1px);
-  background: linear-gradient(135deg, #a855f7, #6d28d9) !important;
-  box-shadow: 0 6px 18px rgba(168, 85, 247, 0.55);
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.35), rgba(236, 72, 153, 0.25)) !important;
+  box-shadow: 0 6px 18px rgba(236, 72, 153, 0.45);
 }
 
 .playlist-folder-btn .playlist-folder-buy-btn svg {
