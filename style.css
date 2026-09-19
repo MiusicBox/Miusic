@@ -185,14 +185,14 @@ button:active {
   display: none;
 }
 
-/* 🔧 (2026-09-19): แบบที่ 3 Gradient Pill — active = เขียว→ฟ้า gradient, inactive = เข้ม+ขอบเขียวบาง */
+/* 🔧 (2026-09-19): แบบที่ 3 Gradient Pill — active = ม่วง gradient, inactive = เข้ม+ขอบม่วงบาง */
 .chip {
   flex-shrink: 0;
   padding: 8px 18px;
   border-radius: var(--radius-full);
   background: rgba(15, 17, 24, 0.6);
-  border: 1px solid rgba(74, 222, 128, 0.2);
-  color: #4ade80;
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  color: #c084fc;
   font-size: 13.5px;
   font-weight: 600;
   white-space: nowrap;
@@ -202,19 +202,19 @@ button:active {
 }
 
 .chip:hover {
-  background: rgba(74, 222, 128, 0.15);
-  border-color: rgba(74, 222, 128, 0.5);
+  background: rgba(168, 85, 247, 0.15);
+  border-color: rgba(168, 85, 247, 0.5);
   color: #fff;
-  box-shadow: 0 2px 12px rgba(74, 222, 128, 0.25);
+  box-shadow: 0 2px 12px rgba(168, 85, 247, 0.25);
 }
 
-/* 🔧 (2026-09-19): Active = gradient เขียว→ฟ้า + ตัวขาว + เงา */
+/* 🔧 (2026-09-19): Active = gradient ม่วง + ตัวขาว + เงา */
 .chip.active {
-  background: linear-gradient(135deg, #4ade80, #22d3ee);
+  background: linear-gradient(135deg, #8b5cf6, #a855f7);
   border-color: transparent;
   color: #fff;
   font-weight: 700;
-  box-shadow: 0 4px 16px rgba(34, 211, 238, 0.4), 0 2px 8px rgba(74, 222, 128, 0.3);
+  box-shadow: 0 4px 16px rgba(168, 85, 247, 0.4), 0 2px 8px rgba(139, 92, 246, 0.3);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
