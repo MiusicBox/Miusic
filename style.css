@@ -218,7 +218,32 @@ button:active {
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
+/* 🔧 (2026-09-19): เพิ่ม CSS สำหรับ #modalDj (เดิมไม่มี CSS เลย → ลอยได้) */
+#modalDj {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 4px 0 8px;
+  padding: 0;
+  width: 100%;
+  display: block;
+}
+#modalDj:empty {
+  display: none;
+}
+
 /* ---------- DJ Section ---------- */
+/* 🔧 (2026-09-19): แก้บัก DJ section ลอยไปมุมขวาบน — เพิ่ม position:relative + clear:both */
+#djSection {
+  position: relative;
+  clear: both;
+  z-index: 1;
+  width: 100%;
+}
+/* 🔧 (2026-09-19): แก้ section-title ที่ใช้ space-between กับ text เดียว → อาจลอย */
+#djSection .section-title {
+  justify-content: flex-start;
+}
+
 .dj-row {
   display: flex;
   gap: 16px;
