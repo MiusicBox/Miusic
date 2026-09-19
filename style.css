@@ -1159,8 +1159,22 @@ button:active {
      width 100%, padding ใหญ่ขึ้น (28px 24px), border + shadow + border-radius
    - mobile responsive: ขยายเต็มจอด้วย padding ขอบ 16px
    ===================================================================== */
+/* =====================================================================
+   🔧 (2026-09-19 v6.1): HOTFIX — ลบ !important ออกจาก display ของ .login-screen
+   ------------------------------------------------------------------------
+   ปัญหา (v6):
+   - ใน v6 ผมใส่ `display: flex !important` ที่ .login-screen
+   - แต่ JS เดิม (app-admin.js:390) ใช้ `style.display = "none"` เพื่อซ่อน login
+     ตอนเข้าสู่ระบบสำเร็จ
+   - CSS `!important` ชนะ inline style → JS ตั้ง display="none" ไม่สำเร็จ
+     → login screen ค้างอยู่ที่ flex ตลอด → ค้างหน้า login ไม่ยอมเข้า admin
+   แก้ (v6.1):
+   - ลบ `!important` ออกจาก `display` (เป็น `display: flex` ธรรมดา)
+     → inline style ของ JS (`style.display = "none"`) จะ override ได้ปกติ
+   - คง `!important` ในกฎอื่นๆ (flex-direction, align-items, etc.) เพราะไม่กระทบ JS
+   ===================================================================== */
 .login-screen {
-  display: flex !important;
+  display: flex; /* 🔑 (v6.1): ห้ามใส่ !important — JS ต้องตั้ง display="none" เพื่อซ่อน login ได้ */
   flex-direction: column !important;
   align-items: center !important;
   justify-content: center !important;
