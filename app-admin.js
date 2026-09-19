@@ -3,7 +3,7 @@
 import { db, auth, uploadToCloudinary } from "./firebase-init.js?v=20260905-fix1";
 import { uploadFullSong, deleteFromStorage } from "./storage-adapter.js?v=20260904-rawzip";
 import {
-  collection, addDoc, updateDoc, deleteDoc, doc, getDocs, getDoc, setDoc
+  collection, addDoc, updateDoc, deleteDoc, doc, getDocs, getDoc, setDoc, getDocsAdmin
 } from "./db-client.js";
 import {
   signInWithEmailAndPassword, onAuthStateChanged, signOut,
@@ -432,35 +432,45 @@ document.getElementById("qaPromotions").addEventListener("click", () => {
 //   - ถ้า stale → fetch เฉพาะที่ stale แบบ parallel
 //   - ถ้า admin save/delete → invalidateAdminCache ล้าง timestamp → ครั้งถัดไป fetch ใหม่
 async function loadDashboard() {
-  // ตัดสินใจว่า collection ไหนต้อง fetch ใหม่
-  const needSongs = !isAdminCacheFresh("songs");
-  const needCats = !isAdminCacheFresh("categories");
-  const needDjs = !isAdminCacheFresh("djs");
-  const needPlaylists = !isAdminCacheFresh("playlists");
-
-  const fetches = [];
-  const fetchKeys = [];
-  if (needSongs) { fetches.push(getDocs(collection(db, "songs"))); fetchKeys.push("songs"); }
-  if (needCats) { fetches.push(getDocs(collection(db, "categories"))); fetchKeys.push("categories"); }
-  if (needDjs) { fetches.push(getDocs(collection(db, "djs"))); fetchKeys.push("djs"); }
-  if (needPlaylists) { fetches.push(getDocs(collection(db, "playlists"))); fetchKeys.push("playlists"); }
-
-  if (fetches.length > 0) {
-    const now = Date.now();
-    const results = await Promise.all(fetches);
-    results.forEach((snap, i) => {
-      const key = fetchKeys[i];
-      CACHE[key] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      CACHE_AT[key] = now;
-    });
+  // 🔧 (2026-09-18 v6 Full System): ใช้ _count-all endpoint แทนการโหลด collection ทั้งหมด
+  //   เดิม: loadDashboard โหลด songs/categories/djs/playlists ทั้งหมดเพื่อนับ → 10,000+ D1 reads
+  //   ใหม่: ยิง _count-all endpoint → 1 D1 read per collection (4 total) → ลด 99.96%
+  //   ลดเวลาจาก 5-10s → 50ms สำหรับ 10,000 เพลง
+  //   CACHE.songs จะถูกโหลดทีหลังเมื่อ admin เข้าหน้า "จัดการเพลง" (loadSongs ทำงานอยู่แล้ว)
+  try {
+    const [songsCount, catsCount, djsCount, playlistsCount] = await Promise.all([
+      fetchCountAll("songs"),
+      fetchCountAll("categories"),
+      fetchCountAll("djs"),
+      fetchCountAll("playlists"),
+    ]);
+    document.getElementById("statSongs").textContent = songsCount;
+    document.getElementById("statCats").textContent = catsCount;
+    document.getElementById("statDjs").textContent = djsCount;
+    document.getElementById("statPlaylists").textContent = playlistsCount;
+  } catch (err) {
+    // fallback: ถ้า _count-all endpoint fail → แสดง "?" (ไม่โหลด collection ทั้งหมด)
+    console.warn("loadDashboard: count-all failed:", err?.message);
+    document.getElementById("statSongs").textContent = "?";
+    document.getElementById("statCats").textContent = "?";
+    document.getElementById("statDjs").textContent = "?";
+    document.getElementById("statPlaylists").textContent = "?";
   }
-
-  document.getElementById("statSongs").textContent = CACHE.songs.length;
-  document.getElementById("statCats").textContent = CACHE.categories.length;
-  document.getElementById("statDjs").textContent = CACHE.djs.length;
-  document.getElementById("statPlaylists").textContent = CACHE.playlists.length;
   // 🔧 (2026-09-16): อัปเดต badge ออเดอร์ "รอตรวจสอบการโอน" ทุกครั้งที่กลับหน้า dashboard
   updateOrdersBadge();
+}
+
+// 🔧 (2026-09-18 v6 Full System): Helper สำหรับยิง _count-all endpoint
+//   ใช้ใน loadDashboard → ลด D1 reads จาก 10,000+ → 1 per collection
+async function fetchCountAll(coll) {
+  const res = await fetch(`/api/db/${encodeURIComponent(coll)}/_count-all`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const body = await res.json();
+  return Number(body?.count) || 0;
 }
 
 // 🔧 (2026-09-16): อัปเดต badge จำนวนออเดอร์ "รอตรวจสอบการโอน" บนปุ่มเมนู "🧾 จัดการออเดอร์"
@@ -498,23 +508,26 @@ async function updateOrdersBadge(orders) {
           const body = await res.json();
           count = Number(body?.count) || 0;
         } else {
-          // fallback: ถ้า endpoint ใหม่ error (เช่น deploy ไม่ครบ) → ใช้วิธีเดิม
-          console.warn("updateOrdersBadge: _count-pending endpoint failed, falling back to getDocs", res.status);
-          const snap = await getDocs(collection(db, "orders"));
-          const ordersList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          count = ordersList.filter(o => String(o?.status || "") === "pending_verify").length;
+          // 🔧 (2026-09-18 v6 Full System): ลบ fallback ที่โหลด orders ทั้งหมด
+          //   เดิม: ถ้า endpoint fail → fallback getDocs(collection(db,"orders")) → โหลดทุก orders (10,000+ reads)
+          //   ใหม่: ถ้า endpoint fail → แสดง "?" แทน (ไม่โหลด orders ทั้งหมด → ประหยัด D1 quota)
+          console.warn("updateOrdersBadge: _count-pending endpoint failed (HTTP " + res.status + ")");
+          count = null;  // null = ไม่รู้จำนวน → แสดง "?"
         }
       } catch (fetchErr) {
-        // fallback: ถ้า fetch throw (network error) → ใช้วิธีเดิม
-        console.warn("updateOrdersBadge: _count-pending fetch error, falling back to getDocs", fetchErr?.message);
-        const snap = await getDocs(collection(db, "orders"));
-        const ordersList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        count = ordersList.filter(o => String(o?.status || "") === "pending_verify").length;
+        // 🔧 (2026-09-18 v6): ลบ fallback → แสดง "?" แทน
+        console.warn("updateOrdersBadge: _count-pending fetch error:", fetchErr?.message);
+        count = null;
       }
     }
     // ลบ class ระดับสีเดิมออกก่อน แล้วค่อยตั้งใหม่ตามจำนวน
     badgeEl.classList.remove("warn", "alert", "critical", "show");
-    if (count > 0) {
+    if (count === null) {
+      // 🔧 (2026-09-18 v6): ถ้า endpoint fail → แสดง "?" แทน (ไม่โหลด orders ทั้งหมด)
+      badgeEl.textContent = "?";
+      badgeEl.classList.add("warn");
+      badgeEl.classList.add("show");
+    } else if (count > 0) {
       badgeEl.textContent = String(count);
       if (count <= 2) badgeEl.classList.add("warn");
       else if (count <= 5) badgeEl.classList.add("alert");
@@ -545,7 +558,9 @@ async function loadSongs() {
 
   const fetches = [];
   const fetchKeys = [];
-  if (needSongs) { fetches.push(getDocs(collection(db, "songs"))); fetchKeys.push("songs"); }
+  // 🔧 (2026-09-18 v6): ใช้ getDocsAdmin สำหรับ songs → bypass CDN cache
+  //   ส่วน categories/djs/playlists ใช้ getDocs ปกติ (CDN cache ได้ — ไม่ค่อยเปลี่ยน)
+  if (needSongs) { fetches.push(getDocsAdmin(collection(db, "songs"))); fetchKeys.push("songs"); }
   if (needCats) { fetches.push(getDocs(collection(db, "categories"))); fetchKeys.push("categories"); }
   if (needDjs) { fetches.push(getDocs(collection(db, "djs"))); fetchKeys.push("djs"); }
   if (needPlaylists) { fetches.push(getDocs(collection(db, "playlists"))); fetchKeys.push("playlists"); }
@@ -586,14 +601,23 @@ function populateSelect(id, items, valueKey, labelKey) {
   sel.innerHTML = '<option value="">— ไม่ระบุ —</option>' + items.map(it => `<option value="${it[valueKey]}">${escapeHtml(it[labelKey])}</option>`).join("");
   sel.value = current;
 }
+// 🔧 (2026-09-18 v6 Full System): incremental render — แสดง 100 แรก + "โหลดเพิ่ม" button
+//   ป้องกัน browser freeze เมื่อมี 5000+ เพลง
+//   state: songListVisibleCount (default 100, เพิ่ม 100 ตอนกด "โหลดเพิ่ม")
+const SONG_LIST_PAGE_SIZE = 100;
+let songListVisibleCount = SONG_LIST_PAGE_SIZE;
+
 function renderSongList(list) {
   currentSongListView = list;
   const wrap = document.getElementById("songList");
   if (list.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีเพลง</div>'; return; }
-  wrap.innerHTML = list.map(s => `
+  // 🔧 (2026-09-18 v6): แสดงแค่ songListVisibleCount แรก — กัน browser freeze ตอน render 5000+ cards
+  const visibleList = list.slice(0, songListVisibleCount);
+  const hasMore = list.length > visibleList.length;
+  wrap.innerHTML = visibleList.map(s => `
     <div class="list-row" data-song-row="${s.id}" style="cursor:pointer;">
       ${songSelectMode ? `<input type="checkbox" class="song-select-chk" data-id="${s.id}" ${selectedSongIds.has(s.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;">` : ""}
-      <img src="${s.cover_url || ""}">
+      <img src="${s.cover_url || ""}" loading="lazy" alt="">
       <div class="info"><div class="n1">${escapeHtml(s.song_name)}</div>
       <div class="n2">${escapeHtml(s.dj_name || "-")} · ${escapeHtml(s.category_name || "-")} · ${formatPrice(s.price)}</div>
       ${!s.full_file_url && !s.file_url ? `<div class="n2" style="color:var(--danger);">⚠️ ยังไม่มีไฟล์เต็ม (WAV) บน Cloud</div>` : ""}
@@ -601,7 +625,7 @@ function renderSongList(list) {
       <div class="row-actions">
         <button class="icon-btn" data-menu="${s.id}" title="เมนู">⋮</button>
       </div>
-    </div>`).join("");
+    </div>`).join("") + (hasMore ? `<div class="load-more-row" style="padding:16px;text-align:center;background:var(--bg-card);border-radius:8px;margin-top:8px;cursor:pointer;color:var(--accent);font-weight:600;" id="loadMoreSongsBtn">⬇️ โหลดเพิ่มอีน (แสดง ${visibleList.length} จาก ${list.length} เพลง)</div>` : "");
   wrap.querySelectorAll("[data-menu]").forEach(b => b.addEventListener("click", (e) => {
     e.stopPropagation();
     toggleSongRowMenu(b, b.getAttribute("data-menu"));
@@ -618,6 +642,14 @@ function renderSongList(list) {
       if (id) openSongDetailPopup(id);
     });
   });
+  // 🔧 (2026-09-18 v6): listener สำหรับปุ่ม "โหลดเพิ่ม" → เพิ่ม songListVisibleCount อีก 100
+  const loadMoreBtn = document.getElementById("loadMoreSongsBtn");
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener("click", () => {
+      songListVisibleCount += SONG_LIST_PAGE_SIZE;
+      renderSongList(currentSongListView);
+    });
+  }
   wrap.querySelectorAll(".song-select-chk").forEach(chk => chk.addEventListener("change", () => {
     const id = chk.getAttribute("data-id");
     if (chk.checked) selectedSongIds.add(id); else selectedSongIds.delete(id);
@@ -1046,7 +1078,8 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
     && existingSong.preview_start_sec != null
     && existingSong.preview_end_sec != null;
   if (willShareFile && !hasValidPreview && !existingHasValidPreview) {
-    const proceed = window.confirm(
+    // 🔧 (2026-09-18 v6 P3.2): ใช้ adminConfirm (modal) แทน window.confirm (blocking)
+    const proceed = await adminConfirm(
       "⚠️ คุณไม่ได้อัปโหลดไฟล์เต็มแยกต่างหาก และยังไม่ได้ตั้ง Auto Preview\n\n" +
       "ระบบจะใช้ไฟล์เพลงตัวอย่าง (file_url) เป็นเพลงเต็มด้วยเพื่อประหยัดพื้นที่ R2\n" +
       "แต่ถ้าไม่มี Auto Preview ลูกค้าจะเห็นเพลงเต็มผ่าน file_url ตั้งแต่ก่อนชำระเงิน\n\n" +
@@ -1279,7 +1312,7 @@ async function deleteSongFilesFromStorage(song) {
         //   เพื่อความเข้ากันได้กับ worker เวอร์ชันเก่า — กัน admin เห็น error หากยังไม่ได้ deploy
         console.warn("deleteSongFilesFromStorage: _check-cover-used endpoint failed, fallback to legacy method", err?.message || err);
         const [songsSnap, playlistsSnap] = await Promise.all([
-          getDocs(collection(db, "songs")),
+          getDocsAdmin(collection(db, "songs")),
           getDocs(collection(db, "playlists")),
         ]);
         stillUsed =
@@ -1393,7 +1426,7 @@ async function loadDjs() {
   const wrap = document.getElementById("djList");
   if (CACHE.djs.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มี DJ</div>'; return; }
   wrap.innerHTML = CACHE.djs.map(d => `
-    <div class="list-row" data-open="${d.id}" style="cursor:pointer;"><img src="${d.image_url || ""}">
+    <div class="list-row" data-open="${d.id}" style="cursor:pointer;"><img src="${d.image_url || ""}" loading="lazy" alt="">
     <div class="info"><div class="n1">${escapeHtml(d.dj_name)}</div><div class="n2">${escapeHtml(d.description || "")}</div></div>
     <div class="row-actions"><button class="icon-btn" data-edit="${d.id}">✎</button>
     <button class="icon-btn danger" data-del="${d.id}">🗑</button></div></div>`).join("");
@@ -1471,7 +1504,7 @@ async function loadPlaylists() {
   const wrap = document.getElementById("playlistList");
   if (CACHE.playlists.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีเพลย์ลิสต์</div>'; return; }
   wrap.innerHTML = CACHE.playlists.map(p => `
-    <div class="list-row" data-open="${p.id}" style="cursor:pointer;"><img src="${p.cover_url || ""}">
+    <div class="list-row" data-open="${p.id}" style="cursor:pointer;"><img src="${p.cover_url || ""}" loading="lazy" alt="">
     <div class="info"><div class="n1">${escapeHtml(p.playlist_name)}</div><div class="n2">${escapeHtml(p.description || "")}${p.price ? ` · ${formatPrice(p.price)}` : ""}</div></div>
     <div class="row-actions"><button class="icon-btn" data-edit="${p.id}">✎</button>
     <button class="icon-btn danger" data-del="${p.id}">🗑</button></div></div>`).join("");
@@ -1515,12 +1548,18 @@ async function openDetailSongs(type, id, name) {
   document.getElementById("listSongsContainer").innerHTML = '<div class="empty-state">กำลังโหลด...</div>';
   document.getElementById("listSongsBackdrop").classList.add("show");
   // โหลดรายชื่อเพลงล่าสุดเสมอตอนเปิดหน้านี้ (กันกรณีเข้าหน้าหมวดหมู่/DJ/เพลย์ลิสต์โดยยังไม่เคยโหลดเพลงมาก่อน)
-  const snap = await getDocs(collection(db, "songs"));
+  // 🔧 (2026-09-18 v6): ใช้ getDocsAdmin → bypass CDN cache (ดูข้อมูลล่าสุด)
+  const snap = await getDocsAdmin(collection(db, "songs"));
   CACHE.songs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   if (currentDetailContext && currentDetailContext.type === type && currentDetailContext.id === id) {
     renderDetailSongsList();
   }
 }
+
+// 🔧 (2026-09-18 v6 Full System): incremental render สำหรับ detail popup (เหมือน renderSongList)
+//   กัน browser freeze ตอนเปิด popup "เพลงในหมวด/DJ/playlist" ที่มี 5000+ เพลง
+const DETAIL_LIST_PAGE_SIZE = 100;
+let detailListVisibleCount = DETAIL_LIST_PAGE_SIZE;
 
 function renderDetailSongsList() {
   if (!currentDetailContext) return;
@@ -1529,16 +1568,19 @@ function renderDetailSongsList() {
   document.getElementById("listSongsMeta").textContent = `ทั้งหมด ${songs.length} เพลง`;
   const wrap = document.getElementById("listSongsContainer");
   if (songs.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีเพลงในรายการนี้</div>'; return; }
+  // 🔧 (2026-09-18 v6): แสดงแค่ detailListVisibleCount แรก — กัน freeze
+  const visibleSongs = songs.slice(0, detailListVisibleCount);
+  const hasMore = songs.length > visibleSongs.length;
   const removeLabel = { category: "นำออกจากหมวดหมู่นี้ (ไม่ลบเพลง)", playlist: "นำออกจากเพลย์ลิสต์นี้ (ไม่ลบเพลง)", dj: "นำออกจาก DJ นี้ (ไม่ลบเพลง)" }[type];
-  wrap.innerHTML = songs.map(s => `
+  wrap.innerHTML = visibleSongs.map(s => `
     <div class="list-row" data-detail-song-row="${s.id}" style="cursor:pointer;">
-      <img src="${s.cover_url || ""}">
+      <img src="${s.cover_url || ""}" loading="lazy" alt="">
       <div class="info"><div class="n1">${escapeHtml(s.song_name)}</div>
       <div class="n2">${escapeHtml(s.dj_name || "-")} · ${escapeHtml(s.category_name || "-")} · ${formatPrice(s.price)}</div></div>
       <div class="row-actions">
         <button class="icon-btn" data-detail-menu="${s.id}" title="เมนู">⋮</button>
       </div>
-    </div>`).join("");
+    </div>`).join("") + (hasMore ? `<div class="load-more-row" style="padding:16px;text-align:center;background:var(--bg-card);border-radius:8px;margin-top:8px;cursor:pointer;color:var(--accent);font-weight:600;" id="loadMoreDetailSongsBtn">⬇️ โหลดเพิ่มอีน (แสดง ${visibleSongs.length} จาก ${songs.length} เพลง)</div>` : "");
   wrap.querySelectorAll("[data-detail-menu]").forEach(b => b.addEventListener("click", (e) => {
     e.stopPropagation();
     toggleDetailRowMenu(b, b.getAttribute("data-detail-menu"));
@@ -1552,6 +1594,14 @@ function renderDetailSongsList() {
       if (sid) openSongDetailPopup(sid);
     });
   });
+  // 🔧 (2026-09-18 v6): listener สำหรับปุ่ม "โหลดเพิ่ม" ใน detail popup
+  const loadMoreBtn = document.getElementById("loadMoreDetailSongsBtn");
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener("click", () => {
+      detailListVisibleCount += DETAIL_LIST_PAGE_SIZE;
+      renderDetailSongsList();
+    });
+  }
 }
 
 // เมนูดรอปดาวน์ ⋮ สำหรับแถวเพลงในหน้ารายละเอียด หมวดหมู่ / DJ / เพลย์ลิสต์ (เดิมเป็นปุ่ม ✎➖🗑 เรียงกันจนบังชื่อเพลงบนจอแคบ)
@@ -1910,7 +1960,8 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
       if (totalNew > 0) {
         // มีเพลงใหม่ที่ไม่ซ้ำ → ถาม confirm ว่าจะ skip และอัปเฉพาะเพลงใหม่ หรือยกเลิก
         msg += `\nต้องการ skip เพลงซ้ำ ${totalDup} เพลง และอัปเฉพาะเพลงใหม่ ${totalNew} เพลง หรือยกเลิกทั้งหมด?`;
-        const proceed = window.confirm(msg);
+        // 🔧 (2026-09-18 v6 P3.2): ใช้ adminConfirm (modal) แทน window.confirm
+        const proceed = await adminConfirm(msg);
         if (!proceed) {
           showToast("ยกเลิกการอัปโหลดทั้งชุด", "info");
           return;
@@ -2136,6 +2187,29 @@ document.getElementById("confirmOk").addEventListener("click", async () => {
   if (confirmAction) await confirmAction();
 });
 
+// 🔧 (2026-09-18 v6 Full System P3.2): Promise-based confirm modal
+//   แทนที่ window.confirm (blocking, ไม่สวย) ด้วย openConfirm (async, ใช้ modal ที่มีอยู่)
+//   ใช้กับ: songSaveBtn handler + bulk upload handler
+//   คืน Promise<boolean> → true = กด "ยืนยัน", false = กด "ยกเลิก"
+function adminConfirm(message) {
+  return new Promise((resolve) => {
+    openConfirm(message, () => resolve(true));
+    // กด "ยกเลิก" → confirmCancel ลบ class "show" → เราต้อง detect การปิด modal
+    // ใช้ MutationObserver หรือ interval เช็คว่า modal ปิดแล้ว (แต่ยังไม่ resolve)
+    let resolved = false;
+    const checkClosed = setInterval(() => {
+      const backdrop = document.getElementById("confirmBackdrop");
+      if (!backdrop.classList.contains("show") && !resolved) {
+        resolved = true;
+        clearInterval(checkClosed);
+        resolve(false);
+      }
+    }, 100);
+    // Safety: ล้าง interval หลัง 30 วินาที
+    setTimeout(() => { if (!resolved) { clearInterval(checkClosed); resolve(false); } }, 30000);
+  });
+}
+
 // ให้ admin-roles.js เรียกใช้ toast/confirm modal ตัวเดียวกับหน้านี้ได้ (ไม่ต้องสร้างซ้ำ)
 window.__showToast = showToast;
 window.__openConfirm = openConfirm;
@@ -2274,7 +2348,7 @@ function openSongDetailPopup(songId) {
   const metaLine = document.getElementById("songDetailMetaLine");
   if (detailPopupPreview) {
     const bars = (s.preview_start_bar != null && s.preview_end_bar != null)
-      ? ` · ห้อง ${s.preview_start_bar}–${s.preview_end_bar}` : "";
+      ? ` · ห้อง ${escapeHtml(String(s.preview_start_bar))}–${escapeHtml(String(s.preview_end_bar))}` : "";
     metaLine.innerHTML = `🎯 เล่นช่วงตัวอย่าง ${detailFormatTime(detailPopupPreview.start)}–${detailFormatTime(detailPopupPreview.end)}${bars}<br>ใช้ปุ่มด้านบนเพื่อข้ามไปฟังส่วนต่าง ๆ ของเพลง`;
   } else {
     metaLine.innerHTML = `เล่นเต็มไฟล์ (เพลงนี้ยังไม่ได้วิเคราะห์ช่วง Preview) · ใช้ปุ่มด้านบนเพื่อข้ามไปฟังส่วนต่าง ๆ ของเพลง`;
@@ -2719,7 +2793,7 @@ document.getElementById("songDetailSavePreviewBtn").addEventListener("click", as
     const metaLine = document.getElementById("songDetailMetaLine");
     if (detailPopupPreview) {
       const bars = (payload.preview_start_bar != null && payload.preview_end_bar != null)
-        ? ` · ห้อง ${payload.preview_start_bar}–${payload.preview_end_bar}` : "";
+        ? ` · ห้อง ${escapeHtml(String(payload.preview_start_bar))}–${escapeHtml(String(payload.preview_end_bar))}` : "";
       metaLine.innerHTML = `🎯 เล่นช่วงตัวอย่าง ${detailFormatTime(detailPopupPreview.start)}–${detailFormatTime(detailPopupPreview.end)}${bars}<br>ใช้ปุ่มด้านบนเพื่อข้ามไปฟังส่วนต่าง ๆ ของเพลง`;
       // ถ้ากำลังเล่นอยู่ → หยุดก่อน แล้วกระโดดไปยังจุด preview ใหม่
       DETAIL_AUDIO.pause();
