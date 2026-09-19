@@ -334,8 +334,10 @@ button:active {
   font-size: 18px;
   font-weight: 800;
   letter-spacing: -0.3px;
-  margin: 10px auto 10px;
-  max-width: 1080px;
+  /* 🔧 (2026-09-19 mobile fix v6): เต็มจอเสมอ — ไม่จำกัด max-width */
+  margin: 10px 0 10px;
+  width: 100%;
+  box-sizing: border-box;
   padding: 0 16px;
   display: flex;
   align-items: center;
