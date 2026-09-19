@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Admin - Music Store</title>
-<link rel="stylesheet" href="style.css?v=20260919-v7">
+<link rel="stylesheet" href="style.css?v=20260919-v6.1">
 </head>
 <body>
 
@@ -250,27 +250,7 @@
         <div class="field"><label>คำอธิบายเว็บไซต์ (สำหรับ Google ค้นหา)</label><textarea id="setMetaDesc" placeholder="สำหรับค้นหา Google"></textarea></div>
         <div class="field"><label>ชื่อ Admin</label><input id="setAdminName" placeholder="ชื่อแอดมิน"></div>
         <div class="field"><label>เบอร์ WhatsApp (20XXXXXXXX)</label><input id="setWhatsapp"></div>
-        <!-- 🔧 (2026-09-19 v7): เปลี่ยน "URL โลโก้เว็บไซต์" จาก text input อย่างเดียว
-             เป็น file picker + text input + preview รูป
-             - คง text input setLogo เดิมไว้ (id เดิม) → โค้ดเดิมใน loadSettings/saveSettingsBtn ยังทำงานได้
-             - เพิ่ม file picker แบบเดียวกับ playlistCoverPicker (รองรับ iOS/iPadOS)
-             - เพิ่ม preview รูปโลโก้ถ้ามี URL อยู่แล้ว
-             - ไม่ใช้ capture attribute (ปล่อยให้ user เลือก Photo Library หรือ Camera เอง) -->
-        <div class="field">
-          <label>โลโก้เว็บไซต์</label>
-          <div class="logo-upload-row" id="logoUploadRow">
-            <div class="logo-preview" id="logoPreview">
-              <div class="logo-preview-placeholder" id="logoPreviewPlaceholder">🖼️<br><span>ยังไม่มีรูป</span></div>
-              <img id="logoPreviewImg" src="" alt="โลโก้เว็บไซต์" style="display:none;">
-            </div>
-            <label class="file-picker logo-file-picker" id="logoFilePicker" for="logoFileInput">🖼️ แตะเพื่อเลือกรูปโลโก้</label>
-            <input type="file" id="logoFileInput" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
-          </div>
-          <details class="logo-url-collapse">
-            <summary>หรือใส่ URL รูปโลโก้โดยตรง</summary>
-            <input id="setLogo" placeholder="https://... (รองรับทั้ง URL และไฟล์ที่อัปโหลด)">
-          </details>
-        </div>
+        <div class="field"><label>URL โลโก้เว็บไซต์</label><input id="setLogo"></div>
         <button class="btn" id="saveSettingsBtn">บันทึกการตั้งค่า</button>
       </div>
     </div>
@@ -954,6 +934,6 @@
 
   <div class="toast" id="toast"></div>
 
-  <script type="module" src="app-admin.js?v=20260919-v7.3"></script>
+  <script type="module" src="app-admin.js?v=20260917-p1"></script>
 </body>
 </html>
