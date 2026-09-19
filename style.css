@@ -591,7 +591,8 @@ button:active {
   bottom: 0px;
   font-size: 16px;
   font-weight: 800;
-  color: var(--success);
+  /* 🔧 (2026-09-19): เปลี่ยนจากสีเขียว เป็นสีชมพู */
+  color: #ec4899;
   white-space: nowrap;
   background: transparent;
   padding: 0;
@@ -793,7 +794,8 @@ button:active {
 .song-price {
   font-size: 17px;
   font-weight: 800;
-  color: var(--success);
+  /* 🔧 (2026-09-19): เปลี่ยนจากสีเขียว (var(--success)) เป็นสีชมพู — ลูกค้ามองเห็นชัด */
+  color: #ec4899;
   white-space: nowrap;
   background: transparent;
   padding: 0;
@@ -2422,13 +2424,13 @@ button:active {
   justify-content: flex-end;
 }
 
-/* ราคาปกติในหัวเพลย์ลิสต์ — ม่วงใหญ่ */
+/* ราคาปกติในหัวเพลย์ลิสต์ — 🔧 (2026-09-19): เปลี่ยนจากม่วงเป็นสีชมพู */
 .playlist-folder-btn .playlist-folder-price-block .song-price {
   font-size: 20px !important;
   font-weight: 900 !important;
-  color: #a78bfa !important;
+  color: #ec4899 !important;
   letter-spacing: -0.5px;
-  text-shadow: 0 0 10px rgba(167, 139, 250, 0.4);
+  text-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
   white-space: nowrap;
 }
 
