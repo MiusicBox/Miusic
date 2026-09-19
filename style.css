@@ -1903,6 +1903,79 @@ button:active {
    ตอนนี้เราใช้ class แทน inline style แล้ว → rule เดิมไม่ match
    แต่เผื่อไว้ ป้องกัน !important จาก rule เดิม จึงย้ำด้วย !important ที่นี่ */
 
+/* =====================================================================
+   🔧 (2026-09-19 v3): แก้ badge "ใช้งานอยู่/ปิดใช้งาน" ใน list-row ของ discount/promotion
+   ------------------------------------------------------------------------
+   ปัญหาเดิม:
+   - `.list-row .info .n1` (บรรทัด 1432-1438) ใช้ `white-space:nowrap; overflow:hidden;
+     text-overflow:ellipsis` ทำให้ชื่อยาวถูกตัดด้วย "..."
+   - แต่ badge อยู่ถัดจากชื่อ → ถูก clip ออกไปด้วย overflow:hidden → บนมือถือไม่เห็น
+   แก้:
+   - เฉพาะ `.list-row.discount-row .n1` และ `.list-row.promotion-row .n1`
+     เปลี่ยนเป็น flex layout → ชื่อ truncate แยก, badge อยู่ขวาสุดไม่ถูก clip
+   - ไม่กระทบ `.n1` ของระบบอื่น (เพลง/หมวด/DJ/orders/admin-roles) เพราะใช้ selector จำกัด
+   ===================================================================== */
+.list-row.discount-row .info .n1,
+.list-row.promotion-row .info .n1 {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  flex-wrap: nowrap !important;
+}
+
+/* ชื่อ: ยืดเต็มพื้นที่ ตัดด้วย "..." ถ้ายาวเกิน */
+.list-row.discount-row .info .n1 .n1-name,
+.list-row.promotion-row .info .n1 .n1-name {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  /* สืบทอด font-size/font-weight จาก .n1 เดิม */
+}
+
+/* badge: ไม่ย่อ ไม่ถูก clip — แสดงเต็มเสมอ */
+.list-row.discount-row .info .n1 .discount-status-badge,
+.list-row.promotion-row .info .n1 .discount-status-badge {
+  flex: 0 0 auto !important;
+  margin-left: 0 !important; /* ใช้ gap ของ .n1 แทน */
+  white-space: nowrap !important;
+}
+
+/* เพิ่ม dot สีนำหน้า badge → มอง state เด่นชัดทันที (มองเห็นแม้ขนาดเล็ก)
+   ใช้ currentColor → ดึงสีตามที่กำหนดใน style attribute ของ badge อยู่แล้ว */
+.discount-status-badge::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  margin-right: 5px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* 🔧 (2026-09-19 v3): บนมือถือจอเล็ก — ขยาย badge นิดหน่อยให้อ่านง่าย
+   และเพิ่ม contrast ของพื้นหลัง (เดิมใช้ alpha 0.15 บน dark theme มองไม่ค่อยชัด) */
+@media (max-width: 480px) {
+  .list-row.discount-row .info .n1 .discount-status-badge,
+  .list-row.promotion-row .info .n1 .discount-status-badge {
+    font-size: 11px !important;
+    padding: 3px 9px !important;
+    font-weight: 800 !important;
+  }
+  /* เพิ่ม contrast: alpha 0.15 → 0.22 บนมือถือ เพื่อให้พื้นหลังเด่นขึ้นบน dark theme
+     (ใช้ filter brightness แทนการเขียนทับ style attribute ที่ตั้งใน JS) */
+  .list-row.discount-row .info .n1 .discount-status-badge,
+  .list-row.promotion-row .info .n1 .discount-status-badge {
+    filter: brightness(1.15);
+  }
+}
+
 /* ---- ปุ่ม quick action grid ที่รองรับ 11 ปุ่ม (เพิ่ม discount/promotion) ---- */
 .quick-actions {
   /* ถ้า grid มีปุ่มเยอะ ให้แสดง 2 คอลัมน์บนมือถือ / 3 คอลัมน์บนจอกว้าง */
