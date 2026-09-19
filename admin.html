@@ -178,6 +178,15 @@
           <div class="stat-card"><div class="num" id="ordStatSongs">0</div><div class="label">เพลงที่ขายได้ (สำเร็จ)</div></div>
           <div class="stat-card" style="grid-column:span 2;"><div class="num" id="ordStatRevenue">0</div><div class="label">ยอดขายรวม (LAK) — เฉพาะสำเร็จ</div></div>
         </div>
+        <!-- 🔧 (2026-09-19 stats fix): แยกการ์ดสถิติเพลงเดี่ยว vs เพลงในเพลย์ลิสต์ -->
+        <!--   เดิม: มีแค่ "ออเดอร์เพลงเดี่ยว" + "ออเดอร์ยกเพลย์ลิสต์" (นับเป็นจำนวนออเดอร์) -->
+        <!--   ใหม่: แยกเป็นจำนวนเพลงเดี่ยวที่ขายได้ vs จำนวนเพลงในเพลย์ลิสต์ที่ขายได้ -->
+        <!--   ผลกระทบต่อระบบเดิม: 0% — คง ordStatSingleCount + ordStatPlaylistCount ไว้ (นับเป็นออเดอร์) -->
+        <!--   เพิ่ม ordStatSingleSongs + ordStatPlaylistSongs ใหม่ (นับเป็นเพลง) -->
+        <div class="stat-grid" style="margin-bottom:16px;">
+          <div class="stat-card"><div class="num" id="ordStatSingleSongs" style="color:var(--accent-2,#ec4899);">0</div><div class="label">🎵 เพลงเดี่ยวที่ขายได้</div></div>
+          <div class="stat-card"><div class="num" id="ordStatPlaylistSongs" style="color:var(--accent-2,#ec4899);">0</div><div class="label">🎶 เพลงในเพลย์ลิสต์ที่ขายได้</div></div>
+        </div>
         <div class="stat-grid" style="margin-bottom:16px;">
           <div class="stat-card"><div class="num" id="ordStatSingleCount">0</div><div class="label">ออเดอร์เพลงเดี่ยว (สำเร็จ)</div></div>
           <div class="stat-card"><div class="num" id="ordStatPlaylistCount">0</div><div class="label">ออเดอร์ยกเพลย์ลิสต์ (สำเร็จ)</div></div>
@@ -186,48 +195,17 @@
           <div class="stat-card" style="grid-column:span 2;"><div class="num" id="ordStatDiscount" style="color:var(--accent-2,#ec4899);">0</div><div class="label">ส่วนลด/โปรโมชั่นรวม (LAK) — เฉพาะสำเร็จ</div></div>
         </div>
 
-        <div style="font-weight:800;margin-bottom:10px;">สร้างออเดอร์ใหม่</div>
-
-        <div class="field"><label>ชื่อลูกค้า *</label><input id="ordCustomerName" placeholder="ชื่อลูกค้า"></div>
-        <div class="field"><label>เบอร์ WhatsApp *</label><input id="ordCustomerWhatsapp" placeholder="20XXXXXXXX"></div>
-
-        <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px;">เลือกได้ทั้งเพลงเดี่ยว (หลายเพลง) และเพลย์ลิสต์ (หลายรายการ) ผสมกันในออเดอร์เดียวได้</p>
-
-        <div id="ordSingleSection">
-          <div class="field">
-            <label>🎵 ค้นหาและเลือกเพลง</label>
-            <div class="search-box"><input id="ordSongSearch" placeholder="ค้นหาเพลง ศิลปิน หรือ DJ..."></div>
-          </div>
-          <p id="ordSongsLoading" class="empty-state" style="padding:10px 0;">กำลังโหลดรายชื่อเพลง...</p>
-          <div id="ordSearchResults"></div>
-        </div>
-
-        <div id="ordPlaylistSection" style="margin-top:14px;">
-          <div class="field">
-            <label>🎶 ค้นหาและเลือกเพลย์ลิสต์ (เลือกได้หลายรายการ)</label>
-            <div class="search-box"><input id="ordPlaylistSearch" placeholder="ค้นหาชื่อเพลย์ลิสต์ เช่น Sdk zzbee..."></div>
-          </div>
-          <div id="ordPlaylistSelected"></div>
-          <div id="ordPlaylistResults"></div>
-        </div>
-
-        <div style="margin:16px 0;">
-          <div style="font-weight:700;font-size:13px;color:var(--text-dim);margin-bottom:6px;">ออเดอร์ปัจจุบัน</div>
-          <div id="ordCartItems"></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-top:1px solid rgba(255,255,255,.08);padding-top:10px;margin-top:6px;">
-            <span style="color:var(--text-dim);font-size:13px;">ยอดรวม (LAK) — คำนวณอัตโนมัติ</span>
-            <input id="ordCartTotal" type="number" min="0" inputmode="numeric"
-              readonly aria-readonly="true"
-              style="width:140px;text-align:right;font-size:18px;font-weight:800;color:var(--success);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px 10px;">
-          </div>
-          <div id="ordTotalHint" style="font-size:11px;color:var(--text-dim);text-align:right;margin-top:4px;"></div>
-        </div>
-
-        <button class="btn" id="ordSubmitBtn">บันทึกออเดอร์</button>
-        <div id="ordFormFeedback" style="font-size:13px;margin-top:8px;min-height:18px;"></div>
+        <!-- 🔧 (2026-09-19 layout fix): ย้ายฟอร์ม "สร้างออเดอร์ใหม่" ไปเป็น collapsible -->
+        <!--   เหตุผล: เดิมฟอร์มอยู่ในหน้าหลัก → หน้ายาวเกิน → ปุ่ม "บันทึกออเดอร์" โดนตัดขอบล่าง -->
+        <!--   วิธีใหม่: แสดงปุ่ม "➕ สร้างออเดอร์ใหม่" เฉพาะเวลาต้องการ → กดแล้วเปิดเป็น modal -->
+        <!--   ผลกระทบต่อระบบเดิม: 0% — element IDs ทั้งหมดยังอยู่ (ordCustomerName, ordCartItems, ฯลฯ) -->
+        <!--   เพียงแต่ย้ายจาก inline → modal -->
+        <button type="button" id="ordCreateBtn" class="btn" style="display:flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-bottom:10px;">
+          ➕ สร้างออเดอร์ใหม่
+        </button>
       </div>
 
-      <div class="section-title" style="margin-top:22px;">ประวัติออเดอร์</div>
+      <div class="section-title" style="margin-top:14px;">ประวัติออเดอร์</div>
       <!-- เพิ่มใหม่: ช่องค้นหาในประวัติออเดอร์ — ค้นจากข้อมูลออเดอร์จริง (ชื่อลูกค้า/เบอร์/เพลง/เพลย์ลิสต์/เลขออเดอร์/ชื่อ ZIP) -->
       <div class="history-search">
         <div class="search-box">
@@ -237,6 +215,56 @@
       </div>
       <div class="status-filter" id="ordStatusFilter"></div>
       <div id="ordHistoryList" class="container" style="padding:0 16px 24px;"></div>
+    </div>
+
+    <!-- 🔧 (2026-09-19 layout fix): Modal สร้างออเดอร์ใหม่ (ย้ายจาก inline → modal) -->
+    <!--   คง element IDs ทั้งหมดไว้ — เพียงแต่ย้ายไปอยู่ใน modal-backdrop -->
+    <div class="modal-backdrop" id="ordCreateBackdrop" style="display:none;">
+      <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto;">
+        <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-weight:800;">สร้างออเดอร์ใหม่</div>
+          <button type="button" id="ordCreateCloseBtn" class="icon-btn" style="font-size:18px;padding:4px 8px;">✕</button>
+        </div>
+        <div style="padding:14px 16px;">
+          <div class="field"><label>ชื่อลูกค้า *</label><input id="ordCustomerName" placeholder="ชื่อลูกค้า"></div>
+          <div class="field"><label>เบอร์ WhatsApp *</label><input id="ordCustomerWhatsapp" placeholder="20XXXXXXXX"></div>
+
+          <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px;">เลือกได้ทั้งเพลงเดี่ยว (หลายเพลง) และเพลย์ลิสต์ (หลายรายการ) ผสมกันในออเดอร์เดียวได้</p>
+
+          <div id="ordSingleSection">
+            <div class="field">
+              <label>🎵 ค้นหาและเลือกเพลง</label>
+              <div class="search-box"><input id="ordSongSearch" placeholder="ค้นหาเพลง ศิลปิน หรือ DJ..."></div>
+            </div>
+            <p id="ordSongsLoading" class="empty-state" style="padding:10px 0;">กำลังโหลดรายชื่อเพลง...</p>
+            <div id="ordSearchResults"></div>
+          </div>
+
+          <div id="ordPlaylistSection" style="margin-top:14px;">
+            <div class="field">
+              <label>🎶 ค้นหาและเลือกเพลย์ลิสต์ (เลือกได้หลายรายการ)</label>
+              <div class="search-box"><input id="ordPlaylistSearch" placeholder="ค้นหาชื่อเพลย์ลิสต์ เช่น Sdk zzbee..."></div>
+            </div>
+            <div id="ordPlaylistSelected"></div>
+            <div id="ordPlaylistResults"></div>
+          </div>
+
+          <div style="margin:16px 0;">
+            <div style="font-weight:700;font-size:13px;color:var(--text-dim);margin-bottom:6px;">ออเดอร์ปัจจุบัน</div>
+            <div id="ordCartItems"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-top:1px solid rgba(255,255,255,.08);padding-top:10px;margin-top:6px;">
+              <span style="color:var(--text-dim);font-size:13px;">ยอดรวม (LAK) — คำนวณอัตโนมัติ</span>
+              <input id="ordCartTotal" type="number" min="0" inputmode="numeric"
+                readonly aria-readonly="true"
+                style="width:140px;text-align:right;font-size:18px;font-weight:800;color:var(--success);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px 10px;">
+            </div>
+            <div id="ordTotalHint" style="font-size:11px;color:var(--text-dim);text-align:right;margin-top:4px;"></div>
+          </div>
+
+          <button class="btn" id="ordSubmitBtn">บันทึกออเดอร์</button>
+          <div id="ordFormFeedback" style="font-size:13px;margin-top:8px;min-height:18px;"></div>
+        </div>
+      </div>
     </div>
     <!-- ===================== /ORDERS VIEW ===================== -->
 
