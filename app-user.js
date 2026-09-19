@@ -341,6 +341,16 @@ function renderCategoryChips() {
     el.addEventListener("click", () => {
       STATE.currentCategory = el.getAttribute("data-cat");
       STATE.currentDj = null;
+      // 🔧 (2026-09-18 v6 Full System): เมื่อกดหมวดหมู่ ถ้ายังโหลดเพลงไม่ครบ → trigger auto-load-all
+      //   กันกรณีที่เพลงของหมวดนี้อยู่ใน page หลัง → filter ไม่เจอ
+      if (STATE.songsHasMore && !STATE.songsLoadingAllRemaining) {
+        showToast("กำลังโหลดเพลงทั้งหมดเพื่อกรอง...", "progress");
+        loadAllRemainingSongs().then(() => {
+          renderSongGrid();
+          renderPlaylists();
+          togglePlaylistsVisibility();
+        });
+      }
       // หน้า "ทั้งหมด" แสดงส่วน DJ เหมือนเดิม แต่หน้าหมวดหมู่
       // ต้องซ่อนส่วน DJ เพื่อให้เห็นเฉพาะเพลงของหมวดที่เลือก
       setView(STATE.currentView);
@@ -369,6 +379,16 @@ function renderDjRow() {
       // กด DJ คนเดิมซ้ำอีกครั้งเพื่อยกเลิกตัวกรองและแสดงเพลงของ DJ ทุกคน
       STATE.currentDj = STATE.currentDj === selectedDjId ? null : selectedDjId;
       STATE.currentCategory = "all";
+      // 🔧 (2026-09-18 v6 Full System): เมื่อกด DJ ถ้ายังโหลดเพลงไม่ครบ → trigger auto-load-all
+      if (STATE.songsHasMore && !STATE.songsLoadingAllRemaining) {
+        showToast("กำลังโหลดเพลงทั้งหมดเพื่อกรอง...", "progress");
+        loadAllRemainingSongs().then(() => {
+          renderCategoryChips();
+          renderSongGrid();
+          renderPlaylists();
+          togglePlaylistsVisibility();
+        });
+      }
       renderCategoryChips();
       renderSongGrid();
       renderPlaylists();
