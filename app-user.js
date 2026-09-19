@@ -81,12 +81,14 @@ function renderDiscountedPriceForSong(song) {
 }
 
 function renderDiscountedPriceForPlaylist(playlist) {
-  if (!playlist) return formatPrice(0);
+  if (!playlist) return `<span class="song-price">${formatPrice(0)}</span>`;
   const original = Number(playlist.price) || 0;
   const discount = findActiveDiscountFor({ targetType: "playlist", targetId: playlist.id, discounts: STATE.discounts });
-  if (!discount) return formatPrice(original);
+  // 🔧 (2026-09-19): ครอบด้วย <span class="song-price"> เหมือน renderDiscountedPriceForSong
+  //   เพื่อให้ CSS .song-price { color: #ec4899 } มีผล → ราคาเพลย์ลิสต์เป็นสีชมพูเหมือนราคาเพลงเดี่ยว
+  if (!discount) return `<span class="song-price">${formatPrice(original)}</span>`;
   const { finalPrice, hasDiscount } = applyDiscountToPrice(original, discount);
-  if (!hasDiscount) return formatPrice(original);
+  if (!hasDiscount) return `<span class="song-price">${formatPrice(original)}</span>`;
   return `<span class="price-original">${formatPrice(original)}</span> <span class="price-discounted">${formatPrice(finalPrice)}</span>`;
 }
 
