@@ -81,6 +81,18 @@ CREATE INDEX IF NOT EXISTS idx_documents_playlists_cover
   ON documents(json_extract(data, '$.cover_url'))
   WHERE collection = 'playlists';
 
+-- 🔧 (2026-09-18 v6 perf): indexes สำหรับ queries ใหม่ของ Full System
+--   - song_name index: สำหรับ _check-duplicate endpoint (ค้นหาเพลงซ้ำตามชื่อ)
+--   - artist index: สำหรับ admin filter by artist (อนาคต)
+--   - dj_name index: สำหรับ getSongsForDetail กรณี filter by DJ name
+CREATE INDEX IF NOT EXISTS idx_documents_songs_name
+  ON documents(json_extract(data, '$.song_name'))
+  WHERE collection = 'songs';
+
+CREATE INDEX IF NOT EXISTS idx_documents_songs_dj_name
+  ON documents(json_extract(data, '$.dj_name'))
+  WHERE collection = 'songs';
+
 CREATE TABLE IF NOT EXISTS admin_users (
   id             TEXT PRIMARY KEY, -- เทียบเท่า Firebase Auth UID เดิม
   email          TEXT NOT NULL UNIQUE,
