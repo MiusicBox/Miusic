@@ -1828,6 +1828,17 @@ button:active {
   line-height: 1.4 !important;
 }
 
+/* 🔧 (2026-09-19): ลดขนาด dropdown menu (⋮) ในหน้าโปรโมชัน/ลดราคา — กันบังปุ่มบันทึก */
+#discountRowMenu, #promotionRowMenu {
+  min-width: 160px !important; /* เดิม 200px → เล็กลง */
+  padding: 4px !important; /* เดิม 6px → แคบลง */
+}
+#discountRowMenu button, #promotionRowMenu button {
+  padding: 8px 10px !important; /* เดิม 10px 12px → เล็กลง */
+  font-size: 13px !important; /* เดิม 14px → เล็กลง */
+  gap: 7px !important; /* เดิม 9px → แคบลง */
+}
+
 /* ---- ปุ่ม quick action grid ที่รองรับ 11 ปุ่ม (เพิ่ม discount/promotion) ---- */
 .quick-actions {
   /* ถ้า grid มีปุ่มเยอะ ให้แสดง 2 คอลัมน์บนมือถือ / 3 คอลัมน์บนจอกว้าง */
