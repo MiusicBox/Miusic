@@ -443,7 +443,7 @@ function renderDiscountList() {
     return `
       <div class="list-row discount-row" data-id="${disc_escapeHtml(d.id)}">
         <div class="info">
-          <div class="n1">${disc_escapeHtml(d.target_name || "(ไม่พบชื่อ)")}
+          <div class="n1"><span class="n1-name">${disc_escapeHtml(d.target_name || "(ไม่พบชื่อ)")}</span>
             <span class="discount-status-badge" style="background:${status.color === 'var(--success)' ? 'rgba(16,185,129,.15)' : status.color === 'var(--danger)' ? 'rgba(239,68,68,.15)' : status.color === '#F5B400' ? 'rgba(245,180,0,.15)' : 'rgba(148,163,184,.15)'}; color:${status.color};">${status.label}</span>
           </div>
           <div class="n2">${targetTypeIcon} ${targetLabel} · ${valueLabel}</div>
@@ -847,7 +847,7 @@ function renderPromotionList() {
     return `
       <div class="list-row promotion-row" data-id="${promo_escapeHtml(p.id)}">
         <div class="info">
-          <div class="n1">${promo_escapeHtml(p.name || '(ไม่มีชื่อ)')}
+          <div class="n1"><span class="n1-name">${promo_escapeHtml(p.name || '(ไม่มีชื่อ)')}</span>
             <span class="discount-status-badge" style="background:${status.color === 'var(--success)' ? 'rgba(16,185,129,.15)' : status.color === 'var(--danger)' ? 'rgba(239,68,68,.15)' : status.color === '#F5B400' ? 'rgba(245,180,0,.15)' : 'rgba(148,163,184,.15)'}; color:${status.color};">${status.label}</span>
           </div>
           <div class="n2">${typeLabel} · ${valueLabel} · ${minQtyLabel} · ${appliesToLabel}</div>
