@@ -2264,6 +2264,7 @@ async function loadSettings() {
 // 🔧 (v7): ฟังก์ชันอัปเดต preview รูปโลโก้
 // - ถ้ามี URL → แสดงรูป
 // - ถ้าไม่มี → แสดง placeholder "ยังไม่มีรูป"
+// 🔧 (v7.1 HOTFIX): เพิ่ม onerror handler บน <img> → ถ้า URL โหลดไม่ได้ กลับไปแสดง placeholder
 function updateLogoPreview(url) {
   const imgEl = document.getElementById("logoPreviewImg");
   const placeholderEl = document.getElementById("logoPreviewPlaceholder");
@@ -2272,12 +2273,28 @@ function updateLogoPreview(url) {
 
   const trimmedUrl = (url || "").trim();
   if (trimmedUrl) {
+    // 🔧 (v7.1): ตั้ง onerror ก่อน src → ถ้าโหลดไม่ได้ จะได้ catch ได้ทันที
+    imgEl.onerror = () => {
+      // ถ้าโหลดรูปไม่ได้ → กลับไปแสดง placeholder + ล้าง src
+      imgEl.src = "";
+      imgEl.style.display = "none";
+      placeholderEl.style.display = "flex";
+      pickerEl.textContent = "⚠️ โหลดรูปไม่ได้ (แตะเพื่อเลือกรูปใหม่)";
+      pickerEl.className = "file-picker logo-file-picker";
+    };
+    imgEl.onload = () => {
+      // โหลดสำเร็จ → แสดงรูป + ล้าง onerror (กัน trigger ซ้ำ)
+      imgEl.onerror = null;
+      imgEl.onload = null;
+    };
     imgEl.src = trimmedUrl;
     imgEl.style.display = "block";
     placeholderEl.style.display = "none";
     pickerEl.textContent = "✔ มีรูปโลโก้แล้ว (แตะเพื่อเปลี่ยนรูปใหม่)";
     pickerEl.className = "file-picker logo-file-picker filled";
   } else {
+    imgEl.onerror = null;
+    imgEl.onload = null;
     imgEl.src = "";
     imgEl.style.display = "none";
     placeholderEl.style.display = "flex";
@@ -2288,13 +2305,21 @@ function updateLogoPreview(url) {
 
 // 🔧 (v7): event listener สำหรับ file picker ของโลโก้
 // เก็บไฟล์ที่เลือกไว้ใน pendingLogoFile + แสดง preview ทันที (FileReader → base64)
+// 🔧 (v7.1 HOTFIX): reset input.value="" หลังจากเลือกไฟล์เสร็จ → แก้ปัญหา "เลือกไฟล์เดิมซ้ำไม่ได้"
+//   เพราะ <input type="file"> ถ้า value เดิมเท่ากับ value ใหม่ (ไฟล์เดียวกัน) → event change ไม่ trigger
+//   การ reset value="" ทำให้สามารถเลือกไฟล์เดิมซ้ำได้
 document.getElementById("logoFileInput").addEventListener("change", (e) => {
   const f = e.target.files[0];
-  if (!f) return;
+  // 🔧 (v7.1): reset input.value ทันที → user จะได้เลือกไฟล์เดิมซ้ำได้ครั้งถัดไป
+  // (ทำหลังจากเก็บ reference ของ file แล้ว เพราะ reset แล้ว files[0] จะหายไป)
+  if (!f) {
+    // user ยกเลิกเลือกไฟล์ → ไม่ต้องทำอะไร
+    return;
+  }
   pendingLogoFile = f;
   const pickerEl = document.getElementById("logoFilePicker");
   if (pickerEl) {
-    pickerEl.textContent = "🖼️ " + f.name;
+    pickerEl.textContent = "🖼️ " + f.name + " (พร้อมอัปโหลด)";
     pickerEl.className = "file-picker logo-file-picker filled";
   }
   // แสดง preview ทันทีโดยใช้ FileReader (base64) → ไม่ต้องรออัปโหลดจริง
@@ -2303,27 +2328,49 @@ document.getElementById("logoFileInput").addEventListener("change", (e) => {
     const imgEl = document.getElementById("logoPreviewImg");
     const placeholderEl = document.getElementById("logoPreviewPlaceholder");
     if (imgEl && ev.target && ev.target.result) {
+      // 🔧 (v7.1): ล้าง onerror/onload ก่อน เพราะเป็น base64 (ไม่มี error ได้)
+      imgEl.onerror = null;
+      imgEl.onload = null;
       imgEl.src = ev.target.result;
       imgEl.style.display = "block";
       if (placeholderEl) placeholderEl.style.display = "none";
     }
   };
+  reader.onerror = () => {
+    // 🔧 (v7.1): ถ้า FileReader อ่านไฟล์ไม่ได้ → แจ้ง user
+    showToast("อ่านไฟล์รูปไม่ได้ ลองเลือกไฟล์ใหม่", "error");
+  };
   reader.readAsDataURL(f);
+
+  // 🔧 (v7.1): reset value="" หลังจากใช้ file เสร็จ → ครั้งถัดไปเลือกไฟล์เดิมได้
+  // (ทำหลังสุด เพราะถ้าทำก่อน reader.readAsDataURL อาจมีปัญหาในบาง browser)
+  e.target.value = "";
 });
 
 document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("saveSettingsBtn");
+  // 🔧 (v7.1): เพิ่ม loading state ปุ่มบันทึก เพื่อให้ user รู้ว่ากำลังอัปโหลดอยู่
+  const originalBtnText = btn.textContent;
   // 🔧 (v7): ถ้ามีไฟล์รูปที่เลือก → อัปโหลดก่อน แล้วเอา URL ใส่ใน setLogo.value
   // คงโครงสร้างเดิมไว้ทั้งหมด → field website_logo ยังเป็น URL string เหมือนเดิม
   if (pendingLogoFile) {
+    btn.disabled = true;
+    btn.textContent = "กำลังอัปโหลดรูป...";
     try {
       const res = await uploadToCloudinary(pendingLogoFile);
       document.getElementById("setLogo").value = res.url;
       pendingLogoFile = null;
+      // 🔧 (v7.1): อัปเดต preview ทันทีด้วย URL จริงจาก server (ไม่ใช่ base64)
+      updateLogoPreview(res.url);
       showToast("อัปโหลดรูปโลโก้แล้ว", "success");
     } catch (err) {
       showToast("อัปโหลดรูปโลโก้ไม่สำเร็จ: " + (err.message || err), "error");
+      btn.disabled = false;
+      btn.textContent = originalBtnText;
       return; // หยุดถ้าอัปโหลดไม่สำเร็จ ไม่บันทึก settings
     }
+    btn.disabled = false;
+    btn.textContent = originalBtnText;
   }
   const payload = {
     website_name: document.getElementById("setWebsiteName").value.trim(),
@@ -2333,6 +2380,8 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
     website_logo: document.getElementById("setLogo").value.trim()
   };
   try {
+    btn.disabled = true;
+    btn.textContent = "กำลังบันทึก...";
     await setDoc(doc(db, "settings", "main"), payload, { merge: true });
     showToast("บันทึกการตั้งค่าแล้ว", "success");
     // 🔧 (v7): อัปเดต preview รูปโลโก้ให้ตรงกับค่าที่บันทึก
@@ -2340,6 +2389,8 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
   } catch (err) {
     showToast("บันทึกไม่สำเร็จ: " + err.message, "error");
   }
+  btn.disabled = false;
+  btn.textContent = originalBtnText;
 });
 
 // ================= Confirm modal =================
