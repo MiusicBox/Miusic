@@ -109,11 +109,15 @@ async function handleUpload(request, env) {
   // 🔒 แก้บั๊ก #3 (2026-09-18): validate MIME type ตาม folder — กันอัปโหลด HTML/JS → XSS ผ่าน R2 URL
   //   เดิม: รับทุก MIME type → แอดมิน (หรือ attacker) อัปโหลด HTML ได้ → R2 เสิร์ฟด้วย Content-Type: text/html → XSS
   //   แก้: allowlist MIME type ตาม folder + resourceType
+  // 🔧 (2026-09-19 v7.3): เพิ่ม image/heic + image/heif ใน allowlist ของ folder ""
+  //   เพราะ iPhone ถ่ายรูปเป็น HEIC format โดย default → user อัปโหลดรูปโลโก้ไม่ได้
+  //   R2 สามารถเก็บ HEIC ได้ (เป็น binary เหมือน image type อื่น) และ iOS Safari แสดง HEIC ได้นิติ
   const ALLOWED_MIME_BY_FOLDER = {
     "full-songs":   ["audio/wav", "audio/mpeg", "audio/mp3", "audio/x-wav", "audio/x-mpeg", "audio/ogg", "audio/aac", "audio/flac"],
     "order-zips":   ["application/zip", "application/x-zip-compressed", "application/octet-stream"],
     "":             ["audio/wav", "audio/mpeg", "audio/mp3", "audio/x-wav", "audio/x-mpeg", "audio/ogg", "audio/aac", "audio/flac",
-                     "image/jpeg", "image/png", "image/webp", "image/gif", "image/jpg"],
+                     "image/jpeg", "image/png", "image/webp", "image/gif", "image/jpg",
+                     "image/heic", "image/heif"], // 🔧 (v7.3): เพิ่ม HEIC/HEIF สำหรับ iPhone photos
   };
   const folderKey = ALLOWED_MIME_BY_FOLDER[folder] ? folder : "";
   const allowedTypes = ALLOWED_MIME_BY_FOLDER[folderKey] || ALLOWED_MIME_BY_FOLDER[""];
