@@ -1799,6 +1799,8 @@ button:active {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
+  padding: 0 16px 16px; /* 🔧 (2026-09-19): เพิ่ม padding กลับมา — ตัว rule เดิมลบ padding ออกทำให้ปุ่มล้นขอบจอ */
+  overflow: hidden; /* 🔧 (2026-09-19): กัน content ล้นออกขวา */
 }
 @media (min-width: 480px) {
   .quick-actions { grid-template-columns: repeat(3, 1fr); }
