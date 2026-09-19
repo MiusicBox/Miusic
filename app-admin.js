@@ -2304,14 +2304,15 @@ function updateLogoPreview(url) {
 }
 
 // 🔧 (v7): event listener สำหรับ file picker ของโลโก้
-// เก็บไฟล์ที่เลือกไว้ใน pendingLogoFile + แสดง preview ทันที (FileReader → base64)
+// เก็บไฟล์ที่เลือกไว้ใน pendingLogoFile + แสดง preview ทันที
 // 🔧 (v7.1 HOTFIX): reset input.value="" หลังจากเลือกไฟล์เสร็จ → แก้ปัญหา "เลือกไฟล์เดิมซ้ำไม่ได้"
-//   เพราะ <input type="file"> ถ้า value เดิมเท่ากับ value ใหม่ (ไฟล์เดียวกัน) → event change ไม่ trigger
-//   การ reset value="" ทำให้สามารถเลือกไฟล์เดิมซ้ำได้
 // 🔧 (v7.2 HOTFIX): ย้าย reset value ไปไว้ใน reader.onload/onerror แทน
-//   เพราะ reset value ทันทีหลัง readAsDataURL ทำให้ browser revoke File object
-//   ก่อน FileReader อ่านเสร็จ → reader.onload ไม่ trigger → preview ไม่แสดงรูป
-//   (ปัญหา user บอก: "แตะเลือกรูปได้ปกติ แต่รูปไม่มา เหมือนไม่มีอะไรเกิดขึ้น")
+// 🔧 (v7.3 HOTFIX): เปลี่ยน preview จาก FileReader (base64) → URL.createObjectURL() (blob URL)
+//   เพราะ FileReader มีปัญหาบน iPhone:
+//   - ไฟล์ใหญ่ (3-10MB) → base64 ใหญ่เกิน browser limit → preview ไม่แสดง
+//   - บางครั้ง onload ไม่ trigger เลย → "รูปไม่มา"
+//   URL.createObjectURL() เร็วกว่า ไม่ต้องแปลง base64 รองรับไฟล์ใหญ่ และ iOS Safari แสดงได้ดีกว่า
+let pendingLogoObjectUrl = null; // เก็บ object URL เดิมเพื่อ revoke ทิ้งตอนเปลี่ยนรูปใหม่
 document.getElementById("logoFileInput").addEventListener("change", (e) => {
   const f = e.target.files[0];
   if (!f) {
@@ -2324,39 +2325,36 @@ document.getElementById("logoFileInput").addEventListener("change", (e) => {
     pickerEl.textContent = "🖼️ " + f.name + " (พร้อมอัปโหลด)";
     pickerEl.className = "file-picker logo-file-picker filled";
   }
-  // แสดง preview ทันทีโดยใช้ FileReader (base64) → ไม่ต้องรออัปโหลดจริง
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    const imgEl = document.getElementById("logoPreviewImg");
-    const placeholderEl = document.getElementById("logoPreviewPlaceholder");
-    if (imgEl && ev.target && ev.target.result) {
-      // 🔧 (v7.1): ล้าง onerror/onload ก่อน เพราะเป็น base64 (ไม่มี error ได้)
-      imgEl.onerror = null;
-      imgEl.onload = null;
-      imgEl.src = ev.target.result;
-      imgEl.style.display = "block";
-      if (placeholderEl) placeholderEl.style.display = "none";
-    }
-    // 🔧 (v7.2): reset input.value ที่นี่ (หลัง FileReader อ่านเสร็จแล้ว)
-    // → browser จะไม่ revoke File object ก่อน FileReader ทำงานเสร็จ
+  // 🔧 (v7.3): revoke object URL เดิม (ถ้ามี) เพื่อ free memory
+  if (pendingLogoObjectUrl) {
+    URL.revokeObjectURL(pendingLogoObjectUrl);
+    pendingLogoObjectUrl = null;
+  }
+  // 🔧 (v7.3): ใช้ URL.createObjectURL() แทน FileReader → เร็วและเชื่อถือได้กว่า
+  // - สร้าง blob URL ที่ชี้ไปยังไฟล์ตรงๆ (ไม่ต้องแปลง base64)
+  // - รองรับไฟล์ขนาดใหญ่ (10MB+) โดยไม่มีปัญหา memory
+  // - iOS Safari แสดงรูปจาก blob URL ได้ทุก format (JPEG/PNG/HEIC/WebP)
+  try {
+    pendingLogoObjectUrl = URL.createObjectURL(f);
+  } catch (err) {
+    console.error("[logoFileInput] URL.createObjectURL failed:", err);
+    showToast("ไม่สามารถสร้าง preview รูปได้ ลองเลือกไฟล์ใหม่", "error");
     e.target.value = "";
-  };
-  reader.onerror = () => {
-    // 🔧 (v7.1): ถ้า FileReader อ่านไฟล์ไม่ได้ → แจ้ง user
-    showToast("อ่านไฟล์รูปไม่ได้ ลองเลือกไฟล์ใหม่", "error");
-    // 🔧 (v7.2): reset input.value ใน onerror ด้วย
-    e.target.value = "";
-  };
-  reader.readAsDataURL(f);
-
-  // 🔧 (v7.2): เพิ่ม fallback timeout — ถ้า FileReader ไม่ trigger onload/onerror ใน 5 วินาที
-  // ให้ reset value เพื่อกัน user ค้าง และ log warning
-  setTimeout(() => {
-    if (e.target.value !== "") {
-      console.warn("[logoFileInput] FileReader timeout — reset input value");
-      e.target.value = "";
-    }
-  }, 5000);
+    return;
+  }
+  const imgEl = document.getElementById("logoPreviewImg");
+  const placeholderEl = document.getElementById("logoPreviewPlaceholder");
+  if (imgEl && pendingLogoObjectUrl) {
+    // ล้าง onerror/onload ก่อน (กัน trigger ซ้ำจากครั้งก่อน)
+    imgEl.onerror = null;
+    imgEl.onload = null;
+    imgEl.src = pendingLogoObjectUrl;
+    imgEl.style.display = "block";
+    if (placeholderEl) placeholderEl.style.display = "none";
+  }
+  // 🔧 (v7.2): reset input.value ทันที (URL.createObjectURL ทำงาน sync)
+  // → user จะได้เลือกไฟล์เดิมซ้ำได้
+  e.target.value = "";
 });
 
 document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
