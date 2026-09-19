@@ -1519,9 +1519,25 @@ async function handleOrderZipAppend(request, env) {
   }
 
   // ตรวจว่าไฟล์มีอยู่จริงใน R2 (head only — no body read)
+  // 🔧 (2026-09-19 bugfix): เปลี่ยน env.BUCKET.get(r2Key) → env.BUCKET.head(r2Key)
+  //   เหตุผล (แก้ "ค้างขั้นตอนการสร้าง ZIP"):
+  //     เดิมใช้ get() ซึ่งเปิด body stream ของไฟล์ WAV ทั้งไฟล์ (อาจ 50MB+ ต่อเพลง)
+  //     แต่โค้ดด้านล่างใช้แค่ wavObject.size เท่านั้น → body stream ไม่ถูก consume หรือ cancel
+  //     → ทิ้ง R2 connection ค้างไว้ทุกครั้งที่ append 1 เพลง
+  //     → เมื่อเพลงเยอะ ๆ (10+ เพลง) R2 connections ค้างเป็นจำนวนมาก
+  //     → Worker fetch รอ response ไม่ได้ → "ค้างขั้นตอนการสร้าง ZIP" ตามที่แอดมินรายงาน
+  //
+  //   head() คืนค่า R2Object | null (metadata เท่านั้น ไม่เปิด body stream)
+  //   มี field ครบทุกอย่างที่ใช้ต่อไป (size, etag, httpMetadata, uploaded)
+  //   เหมือนกับที่ health check endpoint (บรรทัด ~2465) ใช้ head() อยู่แล้ว
+  //
+  // ผลกระทบต่อระบบเดิม: 0%
+  //   - append endpoint ยังคืน response รูปแบบเดิมทุกประการ
+  //   - โค้ดด้านล่างใช้แค่ wavObject.size ซึ่ง head() ให้ค่าเหมือน get()
+  //   - ไม่เปลี่ยน API contract, DB schema, function signature, หรือ UI
   let wavObject;
   try {
-    wavObject = await env.BUCKET.get(r2Key);
+    wavObject = await env.BUCKET.head(r2Key);
   } catch (err) {
     return jsonResponse({ error: `ตรวจไฟล์ WAV จาก R2 ไม่สำเร็จ (key: ${r2Key}): ` + (err?.message || String(err)) }, 502);
   }
