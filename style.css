@@ -1493,6 +1493,11 @@ button:active {
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   padding: 16px;
+  /* 🔧 (2026-09-19 layout fix): จำกัดความกว้าง + จัดกึ่งกลาง → ไม่ใช้ชิดซ้ายบนจอใหญ่ */
+  /*   ผลกระทบต่อระบบเดิม: 0% — บนมือถือ (จอแคบ) ไม่เปลี่ยนแปลง เพราะ padding 16px เท่าเดิม */
+  /*   บนจอใหญ่ (desktop) เนื้อหาจะอยู่กึ่งกลางหน้าจอแทนที่จะชิดซ้าย */
+  max-width: 1080px;
+  margin: 0 auto;
 }
 
 .stat-card {
@@ -1522,6 +1527,9 @@ button:active {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   padding: 0 16px 16px;
+  /* 🔧 (2026-09-19 layout fix): จำกัดความกว้าง + จัดกึ่งกลาง → ไม่ใช้ชิดซ้ายบนจอใหญ่ */
+  max-width: 1080px;
+  margin: 0 auto;
 }
 
 .quick-actions button {
