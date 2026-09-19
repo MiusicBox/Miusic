@@ -103,6 +103,11 @@ button:active {
   /*   ลด blur ลงครึ่งหนึ่ง + เพิ่ม alpha จาก 0.75 → 0.85 ชดเชยความโปร่งใส → ดูเหมือนเดิมแต่เร็วกว่า */
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+  /* 🔧 (2026-09-19 perf Chrome): เพิ่ม transform: translateZ(0) → บังคับ Chrome GPU compositing */
+  /*   เหตุผล: Safari ใช้ GPU compositing อัตโนมัติสำหรับ backdrop-filter → ไม่กะตุก */
+  /*   แต่ Chrome อาจใช้ software render → กะตุก การบังคับ translateZ(0) จะสร้าง layer ใน GPU */
+  /*   ผลกระทบต่อระบบเดิม: 0% — เหมือนเดิม 100% แค่เร็วขึ้นบน Chrome */
+  transform: translateZ(0);
   padding-top: var(--safe-top);
   border-bottom: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
@@ -145,7 +150,10 @@ button:active {
   border: 1px solid var(--border);
   max-width: 1080px;
   margin: 0 auto;
-  transition: all 0.25s ease;
+  /* 🔧 (2026-09-19 perf Chrome): เปลี่ยน transition: all → เฉพาะ property ที่จำเป็น */
+  /*   เหตุผล: transition: all ทำให้ Chrome ต้อง track ทุก property → กิน CPU */
+  /*   ระบุเฉพาะ property ที่ใช้จริง → ลด CPU และ scroll ลื่นขึ้น */
+  transition: transform 0.25s ease, background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
   border-radius: var(--radius-full);
   padding: 10px 18px;
   gap: 10px;
@@ -513,7 +521,8 @@ button:active {
   padding: 10px 12px;
   gap: 12px;
   box-shadow: none;
-  transition: all 0.2s ease;
+  /* 🔧 (2026-09-19 perf Chrome): transition เฉพาะ property ที่จำเป็น (เดิม all) */
+  transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
   position: relative;
 }
 
@@ -680,7 +689,8 @@ button:active {
   padding: 10px 12px;
   gap: 12px;
   box-shadow: none;
-  transition: all 0.2s ease;
+  /* 🔧 (2026-09-19 perf Chrome): transition เฉพาะ property ที่จำเป็น (เดิม all) */
+  transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
   position: relative; /* เพิ่มใหม่ (2026-09-10 รอบ 3): ให้ .song-footer ยึดมุมขวาล่างของการ์ดนี้ */
 }
 
@@ -879,7 +889,8 @@ button:active {
   border-radius: var(--radius-full);
   color: var(--text);
   white-space: nowrap;
-  transition: all 0.2s ease;
+  /* 🔧 (2026-09-19 perf Chrome): transition เฉพาะ property ที่จำเป็น (เดิม all) */
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .buy-btn:hover {
@@ -921,6 +932,8 @@ button:active {
   /* 🔧 (2026-09-19 perf): ลด backdrop-filter blur(20px) saturate(180%) → blur(10px) */
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+  /* 🔧 (2026-09-19 perf Chrome): translateZ(0) → บังคับ GPU compositing เหมือน Safari */
+  transform: translateZ(0);
   background: rgba(19, 23, 34, 0.92);
 }
 
@@ -967,6 +980,8 @@ button:active {
   /* 🔧 (2026-09-19 perf): ลด backdrop-filter blur(20px) saturate(180%) → blur(10px) */
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+  /* 🔧 (2026-09-19 perf Chrome): translateZ(0) → บังคับ GPU compositing เหมือน Safari */
+  transform: translateZ(0);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
   padding: 6px 10px 5px;
@@ -1545,6 +1560,10 @@ button:active {
   /*   ผลกระทบต่อระบบเดิม: 0% — เห็น content ครบเมื่อ scroll ถึง (browser auto-render) */
   content-visibility: auto;
   contain-intrinsic-size: 76px;  /* ความสูงโดยประมาณของ list-row (กัน layout shift) */
+  /* 🔧 (2026-09-19 perf Chrome): เพิ่ม contain: layout style paint → แยก layer เฉพาะ list-row */
+  /*   เหตุผล: Chrome แต่ละ list-row จะถูก isolated → ไม่กระทบ layout ของ row อื่นเวลา scroll */
+  /*   Safari ทำอัตโนมัติอยู่แล้ว แต่ Chrome ต้องระบุชัด → กัน Chrome กะตุก */
+  contain: layout style paint;
 }
 
 .list-row img {
