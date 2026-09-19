@@ -403,7 +403,7 @@ button:active {
   flex-shrink: 0;
   font-size: 16px;
   font-weight: 800;
-  /* 🔧 (2026-09-19): เปลี่ยนจากเขียวเป็นชมพู */
+  /* 🔧 (2026-09-19): ราคาเพลย์ลิสต์ = ชมพู */
   color: #ec4899;
   white-space: nowrap;
   background: transparent;
@@ -592,8 +592,8 @@ button:active {
   bottom: 0px;
   font-size: 16px;
   font-weight: 800;
-  /* 🔧 (2026-09-19): เปลี่ยนจากสีเขียว เป็นสีชมพู */
-  color: #ec4899;
+  /* 🔧 (2026-09-19): ราคาเพลงในเพลย์ลิสต์ = เขียวอ่อน */
+  color: #4ade80;
   white-space: nowrap;
   background: transparent;
   padding: 0;
@@ -795,8 +795,8 @@ button:active {
 .song-price {
   font-size: 17px;
   font-weight: 800;
-  /* 🔧 (2026-09-19): เปลี่ยนจากสีเขียว (var(--success)) เป็นสีชมพู — ลูกค้ามองเห็นชัด */
-  color: #ec4899;
+  /* 🔧 (2026-09-19): ราคาเพลงเดี่ยว = เขียวอ่อน */
+  color: #4ade80;
   white-space: nowrap;
   background: transparent;
   padding: 0;
@@ -2058,14 +2058,14 @@ button:active {
   min-width: 0;
 }
 
-/* ราคาใหญ่เด่น — 🔧 (2026-09-19): เปลี่ยนจากม่วงเป็นชมพู */
+/* ราคาเพลงเดี่ยวในกริด — 🔧 (2026-09-19): เขียวอ่อน */
 .song-card-row .song-price {
   font-size: 17px !important;
   font-weight: 900 !important;
-  color: #ec4899 !important;
+  color: #4ade80 !important;
   letter-spacing: -0.5px;
   white-space: nowrap;
-  text-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
+  text-shadow: 0 0 10px rgba(74, 222, 128, 0.4);
 }
 
 /* ราคาเก่าขีดฆ่า */
