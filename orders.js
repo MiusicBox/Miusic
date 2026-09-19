@@ -874,16 +874,27 @@ function calculateStats(orders) {
   // เพื่อไม่ให้ออเดอร์ที่ยังรอตรวจสอบหรือถูกยกเลิกไปปนกับยอดขายจริง
   const totalOrders = orders.length;
   const completed = orders.filter((o) => o.status === "completed");
-  // นับจำนวนเพลงต่อ Order: รายการปกติ (เพลงเดี่ยว) นับ 1, รายการที่เป็นเพลย์ลิสต์ (kind: "playlist",
-  // มาจากตะกร้าแบบผสม/หลายเพลย์ลิสต์) ให้นับตามจำนวนเพลงจริงใน song_ids แทนการนับเป็น 1 รายการ
-  const totalSongsSold = completed.reduce((sum, o) => {
+  // 🔧 (2026-09-19 stats fix): นับแยกเพลงเดี่ยว vs เพลงในเพลย์ลิสต์
+  //   เดิม: totalSongsSold รวมทุกอย่างเป็นจำนวนเพลง (single = 1, playlist = song_ids.length)
+  //   ใหม่: แยก singleSongsSold (เพลงเดี่ยวที่ขาย) และ playlistSongsSold (เพลงในเพลย์ลิสต์ที่ขาย)
+  //   ผลกระทบต่อระบบเดิม: 0% — totalSongsSold ยังเท่าเดิม (single + playlist)
+  //   เพิ่ม fields ใหม่: singleSongsSold, playlistSongsSold สำหรับแสดงใน Dashboard
+  let singleSongsSold = 0;
+  let playlistSongsSold = 0;
+  completed.forEach((o) => {
     const items = o.items || [];
-    const count = items.reduce((itemSum, item) => {
-      if (item?.kind === "playlist") return itemSum + (Array.isArray(item.song_ids) ? item.song_ids.length : 1);
-      return itemSum + 1;
-    }, 0);
-    return sum + count;
-  }, 0);
+    items.forEach((item) => {
+      if (item?.kind === "playlist") {
+        // รายการเพลย์ลิสต์ → นับตามจำนวนเพลงใน song_ids
+        playlistSongsSold += (Array.isArray(item.song_ids) ? item.song_ids.length : 1);
+      } else {
+        // รายการเพลงเดี่ยว → นับ 1
+        singleSongsSold += 1;
+      }
+    });
+  });
+  // totalSongsSold = รวมเพลงเดี่ยว + เพลงในเพลย์ลิสต์ (เหมือนเดิม 100%)
+  const totalSongsSold = singleSongsSold + playlistSongsSold;
   // ===== เพิ่มใหม่: ใช้ final_total ถ้ามี (รายได้จริงหลังหักส่วนลด), fallback ไป total สำหรับ order เก่า =====
   // เหตุผล: order.total เดิมถูกตั้งเท่ากับ final_total แล้วตอนสร้างใหม่ — แต่ order เก่า (ก่อน deploy ระบบใหม่)
   // ยังมี order.total = ราคาเต็ม จึงใช้ total เป็น fallback ปลอดภัย (สถิติยังถูกต้องสำหรับ order ใหม่ + ไม่พังสำหรับ order เก่า)
@@ -899,7 +910,9 @@ function calculateStats(orders) {
   const mixedCount = completed.filter((o) => o.order_type === "mixed").length;
   // ===== เพิ่มใหม่: สถิติส่วนลดรวมที่ให้ลูกค้าไป (สำหรับแอดมินดู performance ของโปรโมชั่น) =====
   const totalDiscountGiven = completed.reduce((sum, o) => sum + (Number(o.discount_amount) || 0), 0);
-  return { totalOrders, totalSongsSold, totalRevenue, singleCount, playlistCount, mixedCount, totalDiscountGiven };
+  // 🔧 (2026-09-19 stats fix): เพิ่ม singleSongsSold + playlistSongsSold ใน return value
+  //   ไม่ลบ fields เดิม → back-compatible 100%
+  return { totalOrders, totalSongsSold, singleSongsSold, playlistSongsSold, totalRevenue, singleCount, playlistCount, mixedCount, totalDiscountGiven };
 }
 
 /* ---------------- Render: ผลค้นหาเพลง (ฟอร์มสร้างออเดอร์ใหม่) ---------------- */
@@ -1156,6 +1169,12 @@ function renderStats(orders) {
   document.getElementById("ordStatRevenue").textContent = formatLAK(stats.totalRevenue);
   document.getElementById("ordStatSingleCount").textContent = stats.singleCount.toLocaleString("en-US");
   document.getElementById("ordStatPlaylistCount").textContent = stats.playlistCount.toLocaleString("en-US");
+  // 🔧 (2026-09-19 stats fix): แสดงจำนวนเพลงเดี่ยว + เพลงในเพลย์ลิสต์แยก (นับเป็นเพลง ไม่ใช่ออเดอร์)
+  //   รองรับออเดอร์ผสม: ถ้า 1 ออเดอร์มีเพลงเดี่ยว 3 + เพลย์ลิสต์ 5 เพลง → นับแยก 3 + 5
+  const singleSongsEl = document.getElementById("ordStatSingleSongs");
+  const playlistSongsEl = document.getElementById("ordStatPlaylistSongs");
+  if (singleSongsEl) singleSongsEl.textContent = (stats.singleSongsSold || 0).toLocaleString("en-US");
+  if (playlistSongsEl) playlistSongsEl.textContent = (stats.playlistSongsSold || 0).toLocaleString("en-US");
   // ===== เพิ่มใหม่: สถิติส่วนลดรวม (optional — ถ้า element ยังไม่มี จะข้ามไปเฉยๆ) =====
   const discEl = document.getElementById("ordStatDiscount");
   if (discEl) discEl.textContent = formatLAK(stats.totalDiscountGiven || 0);
@@ -2574,6 +2593,16 @@ async function handleSubmitOrder() {
     feedback.style.color = "var(--success)";
     feedback.textContent = `บันทึกออเดอร์ของ ${customerName} เรียบร้อยแล้ว ✓`;
 
+    // 🔧 (2026-09-19 layout fix): ปิด modal "สร้างออเดอร์ใหม่" หลัง submit สำเร็จ
+    //   ปิด modal ก่อน แล้วค่อยเปิด receipt (กัน modal ซ้อนกัน)
+    const ordCreateBackdrop = document.getElementById("ordCreateBackdrop");
+    if (ordCreateBackdrop) {
+      ordCreateBackdrop.classList.remove("open");
+      ordCreateBackdrop.style.display = "none";
+      // ล้าง feedback หลังปิด modal 1 วินาที (กัน user เห็น flash)
+      setTimeout(() => { feedback.textContent = ""; }, 1000);
+    }
+
     // 🔧 (2026-09-17 Phase 2): เพิ่ม order ใหม่เข้า state ฝั่ง client แทน re-fetch (ลด D1 reads)
     //   order ที่บันทึกมี id (orderRef.id), created_at, receipt_number, items, status='pending_verify', ฯลฯ ครบ
     addOrderToState({ id: orderRef.id, ...order });
@@ -2666,6 +2695,37 @@ export async function initOrdersView() {
     document.getElementById("ordSongSearch").addEventListener("input", debounce(handleSearchInput, 200));
     document.getElementById("ordSubmitBtn").addEventListener("click", handleSubmitOrder);
     document.getElementById("ordPlaylistSearch").addEventListener("input", debounce(handlePlaylistSearchInput, 200));
+
+    // 🔧 (2026-09-19 layout fix): เปิด/ปิด modal "สร้างออเดอร์ใหม่"
+    //   เดิม: ฟอร์มอยู่ในหน้าหลัก → หน้ายาว → ปุ่ม "บันทึกออเดอร์" โดนตัดขอบล่าง
+    //   ใหม่: กดปุ่ม "➕ สร้างออเดอร์ใหม่" → เปิด modal → กด ✕ หรือกดพื้นหลัง → ปิด modal
+    //   ผลกระทบต่อระบบเดิม: 0% — element IDs ทั้งหมดยังอยู่ใน modal (เหมือนเดิม)
+    const ordCreateBtn = document.getElementById("ordCreateBtn");
+    const ordCreateBackdrop = document.getElementById("ordCreateBackdrop");
+    const ordCreateCloseBtn = document.getElementById("ordCreateCloseBtn");
+    if (ordCreateBtn && ordCreateBackdrop) {
+      ordCreateBtn.addEventListener("click", () => {
+        ordCreateBackdrop.style.display = "flex";
+        // trigger reflow ก่อน add class open (เหมือน modal อื่น ๆ ในระบบ)
+        ordCreateBackdrop.offsetHeight;
+        ordCreateBackdrop.classList.add("open");
+      });
+    }
+    if (ordCreateCloseBtn && ordCreateBackdrop) {
+      ordCreateCloseBtn.addEventListener("click", () => {
+        ordCreateBackdrop.classList.remove("open");
+        ordCreateBackdrop.style.display = "none";
+      });
+    }
+    // กดพื้นหลัง (นอก modal) → ปิด modal
+    if (ordCreateBackdrop) {
+      ordCreateBackdrop.addEventListener("click", (e) => {
+        if (e.target === ordCreateBackdrop) {
+          ordCreateBackdrop.classList.remove("open");
+          ordCreateBackdrop.style.display = "none";
+        }
+      });
+    }
 
     // 🔧 แก้บั๊ก I11 (2026-09-18): ปุ่ม "รีเฟรช" — โหลดออเดอร์ล่าสุดจาก DB โดยไม่ต้อง F5
     //   ใช้เมื่อ: สงสัยว่าข้อมูลไม่ใช่ล่าสุด / อยากเช็คว่ามีออเดอร์ใหม่ไหม / ก่อน action สำคัญ
