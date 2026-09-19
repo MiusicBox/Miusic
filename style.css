@@ -47,6 +47,13 @@
 html, body {
   margin: 0;
   padding: 0;
+  /* 🔧 (2026-09-19 mobile fix v5): บังคับให้ html + body เต็มจอเสมอ */
+  /*   เหตุผล: เดิมไม่มี width → บนบางอุปกรณ์ (iPad Safari) html/body อาจจะไม่ขยายเต็มจอ */
+  /*   ทำให้เนื้อหาทั้งหมดถูกจำกัดขนาดและชิดซ้าย → เห็นพื้นที่ว่างดำทางขวา */
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
   background: var(--bg);
   background-image: 
     radial-gradient(circle at 50% 0%, rgba(139, 92, 246, 0.12) 0%, transparent 60%),
@@ -102,6 +109,9 @@ button:active {
   position: sticky;
   top: 0;
   z-index: 40;
+  /* 🔧 (2026-09-19 mobile fix v5): บังคับ topbar เต็มจอเสมอ */
+  width: 100%;
+  box-sizing: border-box;
   background: rgba(11, 13, 20, 0.85);
   /* 🔧 (2026-09-19 perf): ลด backdrop-filter จาก blur(20px) saturate(180%) → blur(10px) */
   /*   เหตุผล: blur(20px) saturate(180%) กิน CPU สูงมากตอน scroll โดยเฉพาะมือถือ → กะตุก */
@@ -1493,6 +1503,17 @@ button:active {
 /* ---------- Admin Panel UI ---------- */
 .admin-shell {
   min-height: 100vh;
+  /* 🔧 (2026-09-19 mobile fix v5): บังคับ admin-shell เต็มจอเสมอ */
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 🔧 (2026-09-19 mobile fix v5): .view (ทุกหน้า view) เต็มจอเสมอ */
+/*   เหตุผล: เดิมไม่มี CSS สำหรับ .view → ใช้ default ของ div → อาจจะไม่เต็มจอ */
+/*   บังคับ width: 100% + box-sizing → ทุก view จะเต็มจอเสมอ */
+.view {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .stat-grid {
