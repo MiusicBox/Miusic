@@ -2244,6 +2244,10 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
 });
 
 // ================= SETTINGS =================
+// 🔧 (2026-09-19 v7): เพิ่มตัวแปร pendingLogoFile สำหรับเก็บไฟล์รูปที่เลือกจาก file picker
+// ก่อนกดบันทึก (เหมือน pendingPlaylistCoverFile)
+let pendingLogoFile = null;
+
 async function loadSettings() {
   const snap = await getDoc(doc(db, "settings", "main"));
   const s = snap.exists() ? snap.data() : {};
@@ -2252,8 +2256,75 @@ async function loadSettings() {
   document.getElementById("setAdminName").value = s.admin_name || "";
   document.getElementById("setWhatsapp").value = s.whatsapp_number || "";
   document.getElementById("setLogo").value = s.website_logo || "";
+  // 🔧 (v7): อัปเดต preview รูปโลโก้ + file picker label ตามค่าปัจจุบัน
+  updateLogoPreview(s.website_logo || "");
+  pendingLogoFile = null;
 }
+
+// 🔧 (v7): ฟังก์ชันอัปเดต preview รูปโลโก้
+// - ถ้ามี URL → แสดงรูป
+// - ถ้าไม่มี → แสดง placeholder "ยังไม่มีรูป"
+function updateLogoPreview(url) {
+  const imgEl = document.getElementById("logoPreviewImg");
+  const placeholderEl = document.getElementById("logoPreviewPlaceholder");
+  const pickerEl = document.getElementById("logoFilePicker");
+  if (!imgEl || !placeholderEl || !pickerEl) return;
+
+  const trimmedUrl = (url || "").trim();
+  if (trimmedUrl) {
+    imgEl.src = trimmedUrl;
+    imgEl.style.display = "block";
+    placeholderEl.style.display = "none";
+    pickerEl.textContent = "✔ มีรูปโลโก้แล้ว (แตะเพื่อเปลี่ยนรูปใหม่)";
+    pickerEl.className = "file-picker logo-file-picker filled";
+  } else {
+    imgEl.src = "";
+    imgEl.style.display = "none";
+    placeholderEl.style.display = "flex";
+    pickerEl.textContent = "🖼️ แตะเพื่อเลือกรูปโลโก้";
+    pickerEl.className = "file-picker logo-file-picker";
+  }
+}
+
+// 🔧 (v7): event listener สำหรับ file picker ของโลโก้
+// เก็บไฟล์ที่เลือกไว้ใน pendingLogoFile + แสดง preview ทันที (FileReader → base64)
+document.getElementById("logoFileInput").addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  pendingLogoFile = f;
+  const pickerEl = document.getElementById("logoFilePicker");
+  if (pickerEl) {
+    pickerEl.textContent = "🖼️ " + f.name;
+    pickerEl.className = "file-picker logo-file-picker filled";
+  }
+  // แสดง preview ทันทีโดยใช้ FileReader (base64) → ไม่ต้องรออัปโหลดจริง
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const imgEl = document.getElementById("logoPreviewImg");
+    const placeholderEl = document.getElementById("logoPreviewPlaceholder");
+    if (imgEl && ev.target && ev.target.result) {
+      imgEl.src = ev.target.result;
+      imgEl.style.display = "block";
+      if (placeholderEl) placeholderEl.style.display = "none";
+    }
+  };
+  reader.readAsDataURL(f);
+});
+
 document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
+  // 🔧 (v7): ถ้ามีไฟล์รูปที่เลือก → อัปโหลดก่อน แล้วเอา URL ใส่ใน setLogo.value
+  // คงโครงสร้างเดิมไว้ทั้งหมด → field website_logo ยังเป็น URL string เหมือนเดิม
+  if (pendingLogoFile) {
+    try {
+      const res = await uploadToCloudinary(pendingLogoFile);
+      document.getElementById("setLogo").value = res.url;
+      pendingLogoFile = null;
+      showToast("อัปโหลดรูปโลโก้แล้ว", "success");
+    } catch (err) {
+      showToast("อัปโหลดรูปโลโก้ไม่สำเร็จ: " + (err.message || err), "error");
+      return; // หยุดถ้าอัปโหลดไม่สำเร็จ ไม่บันทึก settings
+    }
+  }
   const payload = {
     website_name: document.getElementById("setWebsiteName").value.trim(),
     meta_description: document.getElementById("setMetaDesc").value.trim(),
@@ -2264,6 +2335,8 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
   try {
     await setDoc(doc(db, "settings", "main"), payload, { merge: true });
     showToast("บันทึกการตั้งค่าแล้ว", "success");
+    // 🔧 (v7): อัปเดต preview รูปโลโก้ให้ตรงกับค่าที่บันทึก
+    updateLogoPreview(payload.website_logo);
   } catch (err) {
     showToast("บันทึกไม่สำเร็จ: " + err.message, "error");
   }
