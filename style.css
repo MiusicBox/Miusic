@@ -1507,12 +1507,26 @@ button:active {
   padding: 16px 12px;
   text-align: center;
   box-shadow: var(--shadow-sm);
+  /* 🔧 (2026-09-19 mobile fix): บังคับให้ content อยู่กึ่งกลางจริง ๆ ด้วย flexbox */
+  /*   เดิม: ใช้แค่ text-align: center → ในบางกรณี (ตัวเลขยาว) อาจจะชิดซ้าย */
+  /*   ใหม่: flex column + align-items center → บังคับทั้งแนวตั้งและแนวนอนให้อยู่กึ่งกลาง */
+  /*   ผลกระทบต่อระบบเดิม: 0% — text-align: center ยังอยู่ (back-compatible) */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* 🔧 (2026-09-19 mobile fix): กันตัวเลขยาว (เช่น "486,000 LAK") ล้นการ์ด → ให้ wrap */
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .stat-card .num {
   font-size: 26px;
   font-weight: 800;
   color: var(--accent);
+  /* 🔧 (2026-09-19 mobile fix): บังคับ text-align: center ที่ตัวเลขด้วย */
+  text-align: center;
+  width: 100%;
 }
 
 .stat-card .label {
@@ -1520,6 +1534,9 @@ button:active {
   color: var(--text-dim);
   margin-top: 4px;
   font-weight: 600;
+  /* 🔧 (2026-09-19 mobile fix): บังคับ text-align: center ที่ label ด้วย */
+  text-align: center;
+  width: 100%;
 }
 
 .quick-actions {
