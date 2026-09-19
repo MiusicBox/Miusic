@@ -46,10 +46,15 @@ const API_BASE = "/api/db";
 const SNAPSHOT_POLL_MS = 4000;
 
 async function apiFetch(path, options = {}) {
-  const res = await fetch(API_BASE + path, {
+  // 🔧 (2026-09-18 v6 Full System): รองรับ cacheBust option สำหรับ admin fetches
+  //   เมื่อ cacheBust=true → เพิ่ม ?nocache=timestamp ใน URL → CDN ไม่ cache (URL เปลี่ยนทุกครั้ง)
+  //   ใช้ใน getDocsAdmin() ที่ admin เรียก → แน่ใจว่าเห็นข้อมูลใหม่หลัง invalidateAdminCache
+  const { cacheBust, ...fetchOptions } = options;
+  const url = API_BASE + path + (cacheBust ? `?nocache=${Date.now()}` : "");
+  const res = await fetch(url, {
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    ...options,
+    ...fetchOptions,
   });
   let body = null;
   try { body = await res.json(); } catch { /* ไม่มี body หรือไม่ใช่ JSON */ }
@@ -114,20 +119,30 @@ export async function getDoc(ref) {
   return makeDocSnap(ref.id, res.data, res.exists);
 }
 
-async function fetchDocs(refOrQuery) {
+async function fetchDocs(refOrQuery, options = {}) {
   if (refOrQuery.__type === "query" && (refOrQuery.wheres.length || refOrQuery.orderBy)) {
     const res = await apiFetch(`/${encodeURIComponent(refOrQuery.path)}/_query`, {
       method: "POST",
       body: JSON.stringify({ wheres: refOrQuery.wheres, orderBy: refOrQuery.orderBy }),
+      ...options,
     });
     return res.docs;
   }
-  const res = await apiFetch(`/${encodeURIComponent(refOrQuery.path)}`);
+  const res = await apiFetch(`/${encodeURIComponent(refOrQuery.path)}`, options);
   return res.docs;
 }
 
 export async function getDocs(refOrQuery) {
   const docs = await fetchDocs(refOrQuery);
+  return makeQuerySnap(docs);
+}
+
+// 🔧 (2026-09-18 v6 Full System): getDocsAdmin — getDocs ที่ bypass CDN cache
+//   ใช้สำหรับ admin fetches หลัง invalidateAdminCache() — แน่ใจว่าเห็นข้อมูลใหม่
+//   เพิ่ม ?nocache=timestamp ใน URL → CDN ไม่ cache (URL เปลี่ยนทุกครั้ง)
+//   ใช้กับ loadSongs, loadDashboard, openDetailSongs (admin-only flows)
+export async function getDocsAdmin(refOrQuery) {
+  const docs = await fetchDocs(refOrQuery, { cacheBust: true });
   return makeQuerySnap(docs);
 }
 
