@@ -403,7 +403,8 @@ button:active {
   flex-shrink: 0;
   font-size: 16px;
   font-weight: 800;
-  color: var(--success);
+  /* 🔧 (2026-09-19): เปลี่ยนจากเขียวเป็นชมพู */
+  color: #ec4899;
   white-space: nowrap;
   background: transparent;
   padding: 0;
@@ -2057,14 +2058,14 @@ button:active {
   min-width: 0;
 }
 
-/* ราคาใหญ่เด่น สีม่วง (ตาม Style D) */
+/* ราคาใหญ่เด่น — 🔧 (2026-09-19): เปลี่ยนจากม่วงเป็นชมพู */
 .song-card-row .song-price {
   font-size: 17px !important;
   font-weight: 900 !important;
-  color: #a78bfa !important;
+  color: #ec4899 !important;
   letter-spacing: -0.5px;
   white-space: nowrap;
-  text-shadow: 0 0 10px rgba(167, 139, 250, 0.4);
+  text-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
 }
 
 /* ราคาเก่าขีดฆ่า */
@@ -2526,12 +2527,12 @@ button:active {
   }
 }
 
-/* ====== ตัวเก่า .playlist-folder-price (เดิมใช้ใน HTML เก่า) — คงไว้ไม่กระทบ ====== */
+/* ====== ตัวเก่า .playlist-folder-price (เดิมใช้ใน HTML เก่า) — 🔧 (2026-09-19): เปลี่ยนสีเป็นชมพู ====== */
 .playlist-folder-price {
   flex-shrink: 0;
   font-size: 16px;
   font-weight: 800;
-  color: #fbbf24;
+  color: #ec4899;
   white-space: nowrap;
   background: transparent;
   padding: 0;
@@ -2539,5 +2540,5 @@ button:active {
   cursor: pointer;
   margin-left: 8px;
   letter-spacing: -0.2px;
-  text-shadow: 0 0 12px rgba(251, 191, 36, 0.4);
+  text-shadow: 0 0 12px rgba(236, 72, 153, 0.4);
 }
