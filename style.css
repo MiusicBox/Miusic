@@ -87,9 +87,21 @@ button:active {
 
 /* ---------- Container ---------- */
 .container {
+  /* 🔧 (2026-09-19 mobile fix v3): รองรับ iPad แนวนอน (1024-1366px) */
+  /*   เดิม: max-width: 1080px → บน iPad แนวนอนเนื้อหาชิดซ้าย (เพราะ margin auto ไม่ทำงานเมื่อ content เท่า container) */
+  /*   ใหม่: width: 100% + box-sizing → ขยายเต็มจอบนมือถือ/iPad แนวนอน */
+  /*   บน desktop ขนาดใหญ่ (>1366px) จะจำกัด 1080px + กึ่งกลาง */
+  width: 100%;
+  box-sizing: border-box;
   max-width: 1080px;
   margin: 0 auto;
   padding: 0 16px;
+}
+/* 🔧 (2026-09-19 mobile fix v3): บน iPad แนวนอน (1024-1366px) ขยายเต็มจอ */
+@media (min-width: 1024px) and (max-width: 1366px) {
+  .container {
+    max-width: 100%;
+  }
 }
 
 /* ---------- Top Bar ---------- */
@@ -118,8 +130,17 @@ button:active {
   align-items: center;
   gap: 16px;
   padding: 14px 16px;
+  /* 🔧 (2026-09-19 mobile fix v3): รองรับ iPad แนวนอน — เต็มจอบนมือถือ/iPad */
+  width: 100%;
+  box-sizing: border-box;
   max-width: 1080px;
   margin: 0 auto;
+}
+/* 🔧 (2026-09-19 mobile fix v3): บน iPad แนวนอน (1024-1366px) ขยายเต็มจอ */
+@media (min-width: 1024px) and (max-width: 1366px) {
+  .topbar-inner {
+    max-width: 100%;
+  }
 }
 
 .logo {
@@ -1493,11 +1514,21 @@ button:active {
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   padding: 16px;
-  /* 🔧 (2026-09-19 layout fix): จำกัดความกว้าง + จัดกึ่งกลาง → ไม่ใช้ชิดซ้ายบนจอใหญ่ */
-  /*   ผลกระทบต่อระบบเดิม: 0% — บนมือถือ (จอแคบ) ไม่เปลี่ยนแปลง เพราะ padding 16px เท่าเดิม */
-  /*   บนจอใหญ่ (desktop) เนื้อหาจะอยู่กึ่งกลางหน้าจอแทนที่จะชิดซ้าย */
-  max-width: 1080px;
+  /* 🔧 (2026-09-19 mobile fix v3): รองรับ iPad แนวนอน (1024-1366px) */
+  /*   เดิม: มีแค่ max-width: 1080px + margin: auto → บน iPad แนวนอนเนื้อหาชิดซ้าย */
+  /*   ใหม่: width: 100% + box-sizing: border-box → ขยายเต็มจอบนมือถือ/iPad */
+  /*   และใช้ media query บังคับให้บน desktop (>1080px) เนื้อหาจำกัด 1080px + กึ่งกลาง */
+  width: 100%;
+  box-sizing: border-box;
   margin: 0 auto;
+}
+
+/* 🔧 (2026-09-19 mobile fix v3): บน desktop (>1080px) จำกัดความกว้าง */
+/*   iPad แนวนอน (1024-1366px) จะไม่ถูกจำกัด → ขยายเต็มจอ */
+@media (min-width: 1367px) {
+  .stat-grid {
+    max-width: 1080px;
+  }
 }
 
 .stat-card {
@@ -1544,9 +1575,17 @@ button:active {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   padding: 0 16px 16px;
-  /* 🔧 (2026-09-19 layout fix): จำกัดความกว้าง + จัดกึ่งกลาง → ไม่ใช้ชิดซ้ายบนจอใหญ่ */
-  max-width: 1080px;
+  /* 🔧 (2026-09-19 mobile fix v3): width 100% + box-sizing → ขยายเต็มจอบนมือถือ/iPad */
+  width: 100%;
+  box-sizing: border-box;
   margin: 0 auto;
+}
+
+/* 🔧 (2026-09-19 mobile fix v3): บน desktop (>1366px) จำกัดความกว้าง */
+@media (min-width: 1367px) {
+  .quick-actions {
+    max-width: 1080px;
+  }
 }
 
 .quick-actions button {
