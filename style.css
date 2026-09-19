@@ -1280,12 +1280,14 @@ button:active {
   max-width: 560px;
   max-height: 90vh;
   overflow-y: auto;
+  overflow-x: hidden; /* 🔧 (2026-09-19): กัน content ล้นออกขวาใน promotion/discount form */
   border-radius: var(--radius) var(--radius) 0 0;
   border: 1px solid var(--border);
   border-bottom: none;
   padding: 22px 20px calc(24px + var(--safe-bottom));
   animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: var(--shadow-lg);
+  box-sizing: border-box; /* 🔧 (2026-09-19): ให้ padding รวมใน width → ไม่ล้น */
 }
 
 @keyframes fadeIn {
@@ -1408,6 +1410,9 @@ button:active {
   border-radius: var(--radius-sm);
   padding: 12px;
   margin: 0 16px 10px;
+  overflow: hidden; /* 🔧 (2026-09-19): กัน content ล้นออกขวา */
+  box-sizing: border-box;
+  max-width: calc(100% - 32px); /* 🔧 (2026-09-19): ไม่ให้ margin ทำให้ list-row กว้างเกิน container */
 }
 
 .list-row img {
