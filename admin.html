@@ -443,10 +443,15 @@
         <label>วันสิ้นสุด *</label>
         <input id="fDiscEndAt" type="datetime-local">
       </div>
+      <!-- 🔧 (2026-09-19 v2): ปรับ layout checkbox "เปิดใช้งานทันที" ในฟอร์มลดราคา
+           - เพิ่ม icon cloud ☁️ ข้าง checkbox
+           - ใช้ label.disc-active-label (class ใหม่) แทน style inline เพื่อให้ CSS คุมได้
+           - ไม่เปลี่ยน id หรือ logic เดิม (fDiscActive ยังเหมือนเดิม) -->
       <div class="field">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <label class="disc-active-label" for="fDiscActive">
           <input type="checkbox" id="fDiscActive" checked>
-          <span>เปิดใช้งานทันที (ถ้าไม่เลือก จะถูกปิดไว้ชั่วคราว)</span>
+          <span class="disc-active-icon" aria-hidden="true">☁️</span>
+          <span class="disc-active-text">เปิดใช้งานทันที (ถ้าไม่เลือก จะถูกปิดไว้ชั่วคราว)</span>
         </label>
       </div>
       <div id="discountFormNote" style="font-size:12px;color:var(--text-dim);margin-top:-6px;margin-bottom:14px;"></div>
@@ -506,10 +511,15 @@
         <label>วันสิ้นสุด *</label>
         <input id="fPromoEndAt" type="datetime-local">
       </div>
+      <!-- 🔧 (2026-09-19 v2): ปรับ layout checkbox "เปิดใช้งานทันที" ในฟอร์มโปรโมชั่น
+           - เพิ่ม icon cloud ☁️ ข้าง checkbox
+           - ใช้ label.promo-active-label (class ใหม่) แทน style inline
+           - ไม่เปลี่ยน id หรือ logic เดิม (fPromoActive ยังเหมือนเดิม) -->
       <div class="field">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <label class="promo-active-label" for="fPromoActive">
           <input type="checkbox" id="fPromoActive" checked>
-          <span>เปิดใช้งานทันที</span>
+          <span class="disc-active-icon" aria-hidden="true">☁️</span>
+          <span class="disc-active-text">เปิดใช้งานทันที</span>
         </label>
       </div>
       <div class="field">
