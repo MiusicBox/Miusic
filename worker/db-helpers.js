@@ -261,3 +261,52 @@ async function setAdminDocument(env, id, data) {
   ).bind(merged.email, merged.display_name, merged.role, merged.created_at, merged.created_by, id).run();
   return { id };
 }
+
+// ===================================================
+// 🔧 (2026-09-18 v6 Full System): Helper functions ใหม่สำหรับ endpoints ใหม่
+// ===================================================
+
+// countDocumentsAll: นับ documents ทั้งหมดใน collection (1 D1 read แทน N reads)
+//   ใช้กับ /api/db/:collection/_count-all endpoint
+//   สำหรับ dashboard stats — เดิม loadDashboard โหลดทุก collection ทั้งหมดเพื่อนับ แย่มาก
+//   ใหม่: SELECT COUNT(*) → D1 คืนแค่ 1 row → ประหยัด D1 reads 100× (10,000 → 1)
+export async function countDocumentsAll(env, collection) {
+  if (collection === "admins") {
+    // admins ใช้ admin_users table ไม่ใช่ documents → count ตรงๆ
+    const row = await env.DB.prepare("SELECT COUNT(*) AS c FROM admin_users").first();
+    return (row && row.c) || 0;
+  }
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS c FROM documents WHERE collection = ?"
+  ).bind(collection).first();
+  return (row && row.c) || 0;
+}
+
+// findDuplicateSongsByName: ค้นหาเพลงที่ชื่อตรงกัน (case-insensitive) ใน D1
+//   ใช้กับ /api/db/songs/_check-duplicate endpoint
+//   สำหรับ admin ตอนอัปโหลดเพลงใหม่ — เดิมใช้ findDuplicateSongsByName ฝั่ง client scan CACHE.songs ทั้งหมด
+//   ใหม่: SELECT ที่ DB level ด้วย LOWER(json_extract(data, '$.song_name')) = LOWER(?) → ใช้ index ได้
+//   คืน: array ของ { id, song_name, dj_name, created_at }
+//   รับ: songName (ชื่อที่จะตรวจ), excludeSongId (id ของเพลงที่กำลังแก้ไข — เพื่อไม่เช็คตัวเอง)
+export async function findDuplicateSongsByName(env, songName, excludeSongId) {
+  const normalized = String(songName || "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) return [];
+  // 🔧 ใชes LOWER + TRIM + json_extract → match logic ของ findDuplicateSongsByName ฝั่ง client
+  //   แต่ฝั่ง server ทำที่ DB level → ประหยัด D1 reads (10,000 → 1)
+  const { results } = await env.DB.prepare(
+    "SELECT id, data FROM documents WHERE collection = 'songs' " +
+    "AND LOWER(TRIM(json_extract(data, '$.song_name'))) = ?"
+  ).bind(normalized).all();
+  // filter excludeSongId ออก + map ให้มีเฉพาะ fields ที่ใช้
+  return results
+    .filter((row) => row.id !== excludeSongId)
+    .map((row) => {
+      const data = JSON.parse(row.data);
+      return {
+        id: row.id,
+        song_name: data.song_name || "",
+        dj_name: data.dj_name || "",
+        created_at: data.created_at || "",
+      };
+    });
+}
