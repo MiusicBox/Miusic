@@ -2141,12 +2141,21 @@ button:active {
     font-size: 15px !important;
   }
   .song-card-row .cart-add-btn-row {
-    padding: 6px 10px !important;
-    font-size: 11px !important;
+    padding: 8px 14px !important;
+    font-size: 12px !important;
+    background: rgba(74, 222, 128, 0.15) !important;
+    border: 1px solid rgba(74, 222, 128, 0.4) !important;
+    border-radius: 8px !important;
   }
-  /* 🔧 แก้ (2026-09-13 รอบ 2): บนมือถือซ่อนข้อความปุ่ม เหลือแค่ไอคอน เพราะบังราคา */
+  /* 🔧 (2026-09-19): บนมือถือ แสดงตัวหนังสือสั้น "เพิ่ม" แทนที่จะซ่อนหมด */
   .song-card-row .cart-add-btn-row span {
     display: none;
+  }
+  .song-card-row .cart-add-btn-row::after {
+    content: "เพิ่ม";
+    font-size: 12px;
+    font-weight: 700;
+    color: #4ade80;
   }
   .song-card-row .cart-add-btn-row svg {
     width: 16px;
@@ -2295,12 +2304,21 @@ button:active {
     font-size: 14px !important;
   }
   .playlist-song-row.song-card-row .cart-add-btn-row {
-    padding: 6px 10px !important;
-    font-size: 11px !important;
+    padding: 8px 14px !important;
+    font-size: 12px !important;
+    background: rgba(74, 222, 128, 0.15) !important;
+    border: 1px solid rgba(74, 222, 128, 0.4) !important;
+    border-radius: 8px !important;
   }
-  /* 🔧 แก้ (2026-09-13 รอบ 2): บนมือถือซ่อนข้อความปุ่ม เหลือแค่ไอคอน เพราะบังราคา */
+  /* 🔧 (2026-09-19): บนมือถือ แสดงตัวหนังสือสั้น "เพิ่ม" */
   .playlist-song-row.song-card-row .cart-add-btn-row span {
     display: none;
+  }
+  .playlist-song-row.song-card-row .cart-add-btn-row::after {
+    content: "เพิ่ม";
+    font-size: 12px;
+    font-weight: 700;
+    color: #4ade80;
   }
   .playlist-song-row.song-card-row .cart-add-btn-row svg {
     width: 16px;
@@ -2518,12 +2536,21 @@ button:active {
     font-size: 14px !important;
   }
   .playlist-folder-btn .playlist-folder-buy-btn {
-    padding: 8px 12px !important;
-    font-size: 11px !important;
+    padding: 8px 14px !important;
+    font-size: 12px !important;
+    background: rgba(236, 72, 153, 0.15) !important;
+    border: 1px solid rgba(236, 72, 153, 0.4) !important;
+    border-radius: 8px !important;
   }
-  /* 🔧 แก้ (2026-09-13 รอบ 2): บนมือถือซ่อนข้อความปุ่ม "ซื้อทั้งเพลย์ลิสต์" เหลือแค่ไอคอน เพราะบังราคา */
+  /* 🔧 (2026-09-19): บนมือถือ แสดงตัวหนังสือสั้น "ซื้อ" แทนที่จะซ่อนหมด */
   .playlist-folder-btn .playlist-folder-buy-btn span {
     display: none;
+  }
+  .playlist-folder-btn .playlist-folder-buy-btn::after {
+    content: "ซื้อ";
+    font-size: 12px;
+    font-weight: 700;
+    color: #ec4899;
   }
 }
 
