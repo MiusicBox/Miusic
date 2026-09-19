@@ -2308,10 +2308,12 @@ function updateLogoPreview(url) {
 // 🔧 (v7.1 HOTFIX): reset input.value="" หลังจากเลือกไฟล์เสร็จ → แก้ปัญหา "เลือกไฟล์เดิมซ้ำไม่ได้"
 //   เพราะ <input type="file"> ถ้า value เดิมเท่ากับ value ใหม่ (ไฟล์เดียวกัน) → event change ไม่ trigger
 //   การ reset value="" ทำให้สามารถเลือกไฟล์เดิมซ้ำได้
+// 🔧 (v7.2 HOTFIX): ย้าย reset value ไปไว้ใน reader.onload/onerror แทน
+//   เพราะ reset value ทันทีหลัง readAsDataURL ทำให้ browser revoke File object
+//   ก่อน FileReader อ่านเสร็จ → reader.onload ไม่ trigger → preview ไม่แสดงรูป
+//   (ปัญหา user บอก: "แตะเลือกรูปได้ปกติ แต่รูปไม่มา เหมือนไม่มีอะไรเกิดขึ้น")
 document.getElementById("logoFileInput").addEventListener("change", (e) => {
   const f = e.target.files[0];
-  // 🔧 (v7.1): reset input.value ทันที → user จะได้เลือกไฟล์เดิมซ้ำได้ครั้งถัดไป
-  // (ทำหลังจากเก็บ reference ของ file แล้ว เพราะ reset แล้ว files[0] จะหายไป)
   if (!f) {
     // user ยกเลิกเลือกไฟล์ → ไม่ต้องทำอะไร
     return;
@@ -2335,16 +2337,26 @@ document.getElementById("logoFileInput").addEventListener("change", (e) => {
       imgEl.style.display = "block";
       if (placeholderEl) placeholderEl.style.display = "none";
     }
+    // 🔧 (v7.2): reset input.value ที่นี่ (หลัง FileReader อ่านเสร็จแล้ว)
+    // → browser จะไม่ revoke File object ก่อน FileReader ทำงานเสร็จ
+    e.target.value = "";
   };
   reader.onerror = () => {
     // 🔧 (v7.1): ถ้า FileReader อ่านไฟล์ไม่ได้ → แจ้ง user
     showToast("อ่านไฟล์รูปไม่ได้ ลองเลือกไฟล์ใหม่", "error");
+    // 🔧 (v7.2): reset input.value ใน onerror ด้วย
+    e.target.value = "";
   };
   reader.readAsDataURL(f);
 
-  // 🔧 (v7.1): reset value="" หลังจากใช้ file เสร็จ → ครั้งถัดไปเลือกไฟล์เดิมได้
-  // (ทำหลังสุด เพราะถ้าทำก่อน reader.readAsDataURL อาจมีปัญหาในบาง browser)
-  e.target.value = "";
+  // 🔧 (v7.2): เพิ่ม fallback timeout — ถ้า FileReader ไม่ trigger onload/onerror ใน 5 วินาที
+  // ให้ reset value เพื่อกัน user ค้าง และ log warning
+  setTimeout(() => {
+    if (e.target.value !== "") {
+      console.warn("[logoFileInput] FileReader timeout — reset input value");
+      e.target.value = "";
+    }
+  }, 5000);
 });
 
 document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
