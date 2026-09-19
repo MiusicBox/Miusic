@@ -1839,6 +1839,70 @@ button:active {
   gap: 7px !important; /* เดิม 9px → แคบลง */
 }
 
+/* =====================================================================
+   🔧 (2026-09-19 v2): layout ใหม่สำหรับ checkbox "เปิดใช้งานทันที"
+   ------------------------------------------------------------------------
+   - ใช้ class ใหม่: .disc-active-label / .promo-active-label
+   - โครงสร้าง: [checkbox] [icon ☁️] [text]
+   - แก้ปัญหาเดิม: ตัวหนังสือบัง toggle / ล้นขอบขวา / หมุนบน iOS
+   - ไม่กระทบ selector เดิม `label[style*="flex"]` ที่ใช้กับฟอร์มอื่นอยู่
+   ===================================================================== */
+.disc-active-label,
+.promo-active-label {
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  gap: 8px !important;
+  cursor: pointer !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 4px 0 !important;
+  line-height: 1.5 !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+/* checkbox: อยู่ซ้ายสุด ขนาดพอดี ไม่บัง icon/text */
+.disc-active-label input[type="checkbox"],
+.promo-active-label input[type="checkbox"] {
+  flex: 0 0 auto !important;
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  margin: 0 !important;
+  cursor: pointer !important;
+  accent-color: var(--accent-2, #a855f7) !important;
+}
+
+/* icon cloud ☁️: อยู่ถัดจาก checkbox ขนาดพอดี */
+.disc-active-icon {
+  flex: 0 0 auto !important;
+  font-size: 16px !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 20px !important;
+  text-align: center !important;
+}
+
+/* text: ยืดเต็มพื้นที่ที่เหลือ ตัดขึ้นบรรทัดใหม่ได้ ไม่ล้นขอบขวา */
+.disc-active-text {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  display: block !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+  color: var(--text) !important;
+}
+
+/* 🔧 (2026-09-19 v2): override rule เดิม `#promotionFormBackdrop label[style*="flex"]`
+   ที่จะบังคับ absolute checkbox กับ label แบบ inline-style flex
+   ตอนนี้เราใช้ class แทน inline style แล้ว → rule เดิมไม่ match
+   แต่เผื่อไว้ ป้องกัน !important จาก rule เดิม จึงย้ำด้วย !important ที่นี่ */
+
 /* ---- ปุ่ม quick action grid ที่รองรับ 11 ปุ่ม (เพิ่ม discount/promotion) ---- */
 .quick-actions {
   /* ถ้า grid มีปุ่มเยอะ ให้แสดง 2 คอลัมน์บนมือถือ / 3 คอลัมน์บนจอกว้าง */
