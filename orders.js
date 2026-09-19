@@ -874,6 +874,30 @@ function calculateStats(orders) {
   // เพื่อไม่ให้ออเดอร์ที่ยังรอตรวจสอบหรือถูกยกเลิกไปปนกับยอดขายจริง
   const totalOrders = orders.length;
   const completed = orders.filter((o) => o.status === "completed");
+  // 🔧 (2026-09-19 stats v2): เปลี่ยนการนับตามที่ user ต้องการ
+  //   completedOrders = นับออเดอร์ที่สำเร็จทั้งหมด (เพลงเดี่ยว + เพลย์ลิสต์ + ผสม — รวมกันหมด)
+  //   playlistsSold = นับจำนวนเพลย์ลิสต์ที่ขาย (นับตัวเพลย์ลิสต์ ไม่นับเพลงข้างใน)
+  //   เดิม: singleCount + playlistCount + mixedCount (นับแยกตาม order_type)
+  //   ใหม่: completedOrders รวมทุกประเภท + playlistsSold นับเฉพาะตัวเพลย์ลิสต์
+  const completedOrders = completed.length;
+  let playlistsSold = 0;
+  completed.forEach((o) => {
+    const items = o.items || [];
+    items.forEach((item) => {
+      // นับเพลย์ลิสต์ที่ขาย — ทั้งแบบ order_type="playlist" (item.kind ไม่มี) และ order_type="mixed" (item.kind="playlist")
+      if (item?.kind === "playlist") {
+        playlistsSold += 1;
+      } else if (o.order_type === "playlist" && !item?.kind) {
+        // ออเดอร์เพลย์ลิสต์เดี่ยว (order_type="playlist") — แต่ละ item คือเพลงในเพลย์ลิสต์ 1 เพลง
+        // → ทั้งออเดอร์ = 1 เพลย์ลิสต์ (นับครั้งเดียวต่อออเดอร์)
+        // จะนับด้านล่างแยก เพื่อกัน double count
+      }
+    });
+    // ถ้าเป็น order_type="playlist" (ออเดอร์ยกเพลย์ลิสต์เดี่ยว) → นับเป็น 1 เพลย์ลิสต์
+    if (o.order_type === "playlist") {
+      playlistsSold += 1;
+    }
+  });
   // 🔧 (2026-09-19 stats fix): นับแยกเพลงเดี่ยว vs เพลงในเพลย์ลิสต์
   //   เดิม: totalSongsSold รวมทุกอย่างเป็นจำนวนเพลง (single = 1, playlist = song_ids.length)
   //   ใหม่: แยก singleSongsSold (เพลงเดี่ยวที่ขาย) และ playlistSongsSold (เพลงในเพลย์ลิสต์ที่ขาย)
@@ -902,17 +926,16 @@ function calculateStats(orders) {
     const amount = (o.final_total != null) ? Number(o.final_total) : Number(o.total || 0);
     return sum + amount;
   }, 0);
-  // แยกนับว่าออเดอร์ที่สำเร็จแล้วเป็นแบบ "เพลงเดี่ยว" หรือ "ยกเพลย์ลิสต์" กี่ออเดอร์
-  // ออเดอร์เก่าที่ไม่มีฟิลด์ order_type (สร้างก่อนอัปเดตนี้) ให้นับเป็นเพลงเดี่ยวไว้ก่อน
+  // 🔧 (2026-09-19 stats v2): คง fields เดิมไว้ (singleCount/playlistCount/mixedCount) เพื่อ back-compatible
+  //   แต่ user ต้องการให้แสดงแค่ completedOrders + playlistsSold แทน → จะไม่ render fields เดิมใน HTML ใหม่
   const singleCount = completed.filter((o) => (o.order_type || "single") === "single").length;
   const playlistCount = completed.filter((o) => o.order_type === "playlist").length;
-  // ออเดอร์แบบผสม (เพลง+เพลย์ลิสต์ หรือหลายเพลย์ลิสต์ ที่สั่งซื้อจากตะกร้าฝั่งลูกค้า)
   const mixedCount = completed.filter((o) => o.order_type === "mixed").length;
   // ===== เพิ่มใหม่: สถิติส่วนลดรวมที่ให้ลูกค้าไป (สำหรับแอดมินดู performance ของโปรโมชั่น) =====
   const totalDiscountGiven = completed.reduce((sum, o) => sum + (Number(o.discount_amount) || 0), 0);
-  // 🔧 (2026-09-19 stats fix): เพิ่ม singleSongsSold + playlistSongsSold ใน return value
-  //   ไม่ลบ fields เดิม → back-compatible 100%
-  return { totalOrders, totalSongsSold, singleSongsSold, playlistSongsSold, totalRevenue, singleCount, playlistCount, mixedCount, totalDiscountGiven };
+  // 🔧 (2026-09-19 stats v2): เพิ่ม completedOrders + playlistsSold ใน return value
+  //   ไม่ลบ fields เดิม → back-compatible 100% (แค่ไม่ render ใน HTML ใหม่)
+  return { totalOrders, completedOrders, playlistsSold, totalSongsSold, singleSongsSold, playlistSongsSold, totalRevenue, singleCount, playlistCount, mixedCount, totalDiscountGiven };
 }
 
 /* ---------------- Render: ผลค้นหาเพลง (ฟอร์มสร้างออเดอร์ใหม่) ---------------- */
@@ -1167,8 +1190,14 @@ function renderStats(orders) {
   document.getElementById("ordStatCount").textContent = stats.totalOrders.toLocaleString("en-US");
   document.getElementById("ordStatSongs").textContent = stats.totalSongsSold.toLocaleString("en-US");
   document.getElementById("ordStatRevenue").textContent = formatLAK(stats.totalRevenue);
-  document.getElementById("ordStatSingleCount").textContent = stats.singleCount.toLocaleString("en-US");
-  document.getElementById("ordStatPlaylistCount").textContent = stats.playlistCount.toLocaleString("en-US");
+  // 🔧 (2026-09-19 stats v2): เปลี่ยนการ์ดใหม่ตามที่ user ต้องการ
+  //   - ลบ ordStatSingleCount + ordStatPlaylistCount ออก (HTML ลบแล้ว)
+  //   - เพิ่ม ordStatCompletedOrders (ออเดอร์ที่สำเร็จรวมทุกประเภท)
+  //   - เพิ่ม ordStatPlaylistsSold (เพลย์ลิสต์ที่ขาย นับตัว ไม่นับเพลงข้างใน)
+  const completedOrdersEl = document.getElementById("ordStatCompletedOrders");
+  const playlistsSoldEl = document.getElementById("ordStatPlaylistsSold");
+  if (completedOrdersEl) completedOrdersEl.textContent = (stats.completedOrders || 0).toLocaleString("en-US");
+  if (playlistsSoldEl) playlistsSoldEl.textContent = (stats.playlistsSold || 0).toLocaleString("en-US");
   // 🔧 (2026-09-19 stats fix): แสดงจำนวนเพลงเดี่ยว + เพลงในเพลย์ลิสต์แยก (นับเป็นเพลง ไม่ใช่ออเดอร์)
   //   รองรับออเดอร์ผสม: ถ้า 1 ออเดอร์มีเพลงเดี่ยว 3 + เพลย์ลิสต์ 5 เพลง → นับแยก 3 + 5
   const singleSongsEl = document.getElementById("ordStatSingleSongs");
