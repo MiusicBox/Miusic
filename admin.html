@@ -138,7 +138,19 @@
       }
       #view-orders .playlist-result-card:hover { background:rgba(255,255,255,.04); }
       #view-orders .playlist-result-card img { width:44px; height:44px; border-radius:8px; object-fit:cover; background:rgba(255,255,255,.06); }
-      #view-orders .playlist-selected-card {
+      /* 🔧 (2026-09-19 bugfix): หลังย้ายฟอร์มไป modal #ordCreateBackdrop ต้องเพิ่ม CSS เดียวกัน */
+      /*   มิฉะนั้นรูปจะขยายเต็มจอเพราะ selector #view-orders ไม่ match อีกต่อไป */
+      /*   ผลกระทบต่อระบบเดิม: 0% — เพิ่ม CSS rule ใหม่ ไม่ลบของเดิม */
+      #ordCreateBackdrop .playlist-result-card {
+        border:1px solid rgba(255,255,255,.12); border-radius:10px; padding:10px; margin-bottom:8px;
+        display:flex; gap:10px; align-items:center; cursor:pointer;
+      }
+      #ordCreateBackdrop .playlist-result-card:hover { background:rgba(255,255,255,.04); }
+      #ordCreateBackdrop .playlist-result-card img { width:44px; height:44px; border-radius:8px; object-fit:cover; background:rgba(255,255,255,.06); flex-shrink:0; }
+      #ordCreateBackdrop .playlist-result-card .info { min-width:0; flex:1; }
+      #ordCreateBackdrop .playlist-result-card .info .n1 { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      #ordCreateBackdrop .playlist-result-card .info .n2 { font-size:12px; color:var(--text-dim); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      #ordCreateBackdrop .playlist-selected-card {
         border:1px solid var(--accent); background:rgba(122,92,255,.08); border-radius:10px; padding:12px;
         display:flex; flex-direction:column; gap:4px; margin-bottom:10px;
       }
