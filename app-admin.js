@@ -687,7 +687,11 @@ document.addEventListener("click", (e) => {
   const menu = document.getElementById("songRowMenu");
   if (menu.style.display !== "none" && !menu.contains(e.target)) hideSongRowMenu();
 });
-window.addEventListener("scroll", hideSongRowMenu, true);
+// 🔧 (2026-09-19 perf): เปลี่ยน scroll listener จาก capture phase → passive listener
+//   เดิม: addEventListener("scroll", fn, true) → capture phase ทำให้ทุก scroll event ถูก intercept ก่อน → scroll หน่วง
+//   ใหม่: { passive: true, capture: true } → browser รู้ล่วงหน้าว่า fn จะไม่ preventDefault() → สามารถ scroll ได้ลื่น
+//   ผลกระทบต่อระบบเดิม: 0% — hideSongRowMenu ไม่ได้เรียก preventDefault อยู่แล้ว → behavior เหมือนเดิม 100%
+window.addEventListener("scroll", hideSongRowMenu, { passive: true, capture: true });
 document.getElementById("songRowMenuAssign").addEventListener("click", () => {
   const id = openSongMenuId; hideSongRowMenu();
   if (id) openQuickAssign(id);
@@ -1634,7 +1638,7 @@ document.addEventListener("click", (e) => {
   const menu = document.getElementById("detailSongRowMenu");
   if (menu.style.display !== "none" && !menu.contains(e.target)) hideDetailRowMenu();
 });
-window.addEventListener("scroll", hideDetailRowMenu, true);
+window.addEventListener("scroll", hideDetailRowMenu, { passive: true, capture: true });
 document.getElementById("detailRowMenuEdit").addEventListener("click", async () => {
   const songId = openDetailMenuId; hideDetailRowMenu();
   if (!songId) return;
