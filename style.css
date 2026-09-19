@@ -231,6 +231,17 @@ button:active {
   display: none;
 }
 
+/* 🔧 (2026-09-19): แก้บั๊ก badge ใน modal ลอยไปมุมขวาบน
+   สาเหตุ: .badge ทั่วไปมี position:absolute (ใช้สำหรับ badge ตะกร้า)
+   แต่ #modalBadges .badge (DJ/category badge ใน popup) ก็สืบทอดค่านี้ → ลอย
+   แก้: override position เป็น static → badge อยู่ใน flow ปกติ */
+#modalBadges .badge {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  display: inline-flex !important;
+}
+
 /* ---------- DJ Section ---------- */
 /* 🔧 (2026-09-19): แก้บัก DJ section ลอยไปมุมขวาบน — เพิ่ม position:relative + clear:both */
 #djSection {
