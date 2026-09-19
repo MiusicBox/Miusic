@@ -1762,10 +1762,18 @@ let pendingBulkCoverFile = null;
 
 async function openBulkUpload() {
   bulkFiles = []; bulkFullFiles = []; pendingBulkCoverFile = null;
+  // 🔧 (2026-09-19): ล้าง song list preview ด้วย
+  const bulkPreview = document.getElementById("bulkSongListPreview");
+  if (bulkPreview) bulkPreview.innerHTML = "";
   document.getElementById("bulkNewPlaylistName").value = "";
   document.getElementById("bulkPrice").value = "";
   document.getElementById("bulkFilesInput").value = "";
   document.getElementById("bulkCoverInput").value = "";
+  // 🔧 (2026-09-19): เพิ่มช่อง "ราคาเพลย์ลิสต์" สำหรับตอนสร้างเพลย์ลิสต์ใหม่ใน Bulk Upload
+  //   เดิม: สร้าง playlist ใหม่ใน bulk upload → price=0 (hardcoded) → ต้องไปตั้งที่ Playlist Manager ทีหลัง
+  //   ใหม่: มีช่องราคา → ตั้งได้ตอนสร้างเลย → ลูกค้าเห็นปุ่ม "ซื้อทั้งเพลย์ลิสต์" ได้ทันที
+  ensureBulkPlaylistPriceField();
+  document.getElementById("bulkPlaylistPrice").value = "";
   document.getElementById("bulkFilesPicker").textContent = "📁 แตะเพื่อเลือกไฟล์เพลงหลายไฟล์";
   document.getElementById("bulkFilesPicker").className = "file-picker";
   document.getElementById("bulkFullFilesInput").value = "";
@@ -1804,11 +1812,87 @@ document.getElementById("bulkUploadClose").addEventListener("click", () => {
   document.getElementById("bulkUploadBackdrop").classList.remove("show");
 });
 
+// 🔧 (2026-09-19): เพิ่มช่อง "ราคาเพลย์ลิสต์" ใน Bulk Upload (dynamically — ไม่ต้องแก้ admin.html)
+//   แทรกหลังช่อง "ชื่อเพลย์ลิสต์ใหม่" → admin ตั้งราคาเพลย์ลิสต์ได้ตอนสร้างใหม่เลย
+function ensureBulkPlaylistPriceField() {
+  if (document.getElementById("bulkPlaylistPrice")) return; // มีอยู่แล้ว → ไม่สร้างซ้ำ
+  const newNameField = document.getElementById("bulkNewPlaylistName");
+  if (!newNameField) return;
+  // สร้าง div.field ใหม่คล้ายของเดิม
+  const priceField = document.createElement("div");
+  priceField.className = "field";
+  priceField.innerHTML = `
+    <label>ราคาเพลย์ลิสต์ (LAK — สำหรับลูกค้าซื้อทั้งเพลย์ลิสต์)</label>
+    <input id="bulkPlaylistPrice" type="number" min="0" placeholder="0 (ไม่ระบุ = ไม่ขายทั้งเพลย์ลิสต์)">
+  `;
+  // แทรกหลัง field ของ bulkNewPlaylistName
+  newNameField.parentElement.parentElement.insertBefore(priceField, newNameField.parentElement.nextSibling);
+}
+
+// 🔧 (2026-09-19): แสดงราคาเพลย์ลิสต์เดิมในช่องเมื่อเลือก playlist ที่มีอยู่
+//   ถ้าเลือก playlist จาก dropdown → แสดงราคาปัจจุบันในช่อง bulkPlaylistPrice (เพื่ออ้างอิง)
+//   ถ้าเลือก "ไม่ระบุ" → ล้างช่อง
+document.getElementById("bulkPlaylist").addEventListener("change", (e) => {
+  const plId = e.target.value;
+  const priceInput = document.getElementById("bulkPlaylistPrice");
+  if (!priceInput) return;
+  if (plId) {
+    const pl = (CACHE.playlists || []).find(p => p.id === plId);
+    if (pl) priceInput.value = pl.price || 0;
+  } else {
+    priceInput.value = "";
+  }
+});
+
 document.getElementById("bulkFilesInput").addEventListener("change", (e) => {
   bulkFiles = Array.from(e.target.files || []);
   if (bulkFiles.length === 0) return;
   document.getElementById("bulkFilesPicker").textContent = `🎵 เลือกแล้ว ${bulkFiles.length} ไฟล์`;
   document.getElementById("bulkFilesPicker").className = "file-picker filled";
+  // 🔧 (2026-09-19): แสดงรายการเพลงพร้อมช่องตั้งราคาแต่ละเพลง
+  renderBulkSongListPreview();
+});
+
+// 🔧 (2026-09-19): แสดงรายการเพลงใน Bulk Upload พร้อมช่องตั้งราคาแต่ละเพลง
+//   - หลังเลือกไฟล์ → สร้าง list ของเพลงพร้อมชื่อ (auto-derive จากชื่อไฟล์) + ช่องราคา
+//   - ช่อง bulkPrice (ราคารวม) → เป็น default ให้ทุกเพลง
+//   - admin สามารถแก้ราคาแต่ละเพลงได้ใน list นี้โดยตรง → ไม่ต้องไปตั้งทีหลัง
+function renderBulkSongListPreview() {
+  let container = document.getElementById("bulkSongListPreview");
+  if (!container) {
+    // สร้าง container ใหม่ → แทรกหลัง field ของ bulkFilesInput
+    container = document.createElement("div");
+    container.id = "bulkSongListPreview";
+    const filesField = document.getElementById("bulkFilesInput").parentElement;
+    filesField.parentElement.insertBefore(container, filesField.nextSibling);
+  }
+  if (bulkFiles.length === 0) { container.innerHTML = ""; return; }
+  const defaultPrice = Number(document.getElementById("bulkPrice").value || 0);
+  container.innerHTML = `
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text);">📋 รายการเพลง (${bulkFiles.length} เพลง) — ตั้งราคาแต่ละเพลงได้ด้านล่าง</div>
+    <div style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px;">
+      ${bulkFiles.map((file, i) => {
+        const songName = cleanFileNameToSongName(file.name);
+        return `
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 6px;border-bottom:1px solid var(--border);">
+            <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(songName)}">${i + 1}. ${escapeHtml(songName)}</span>
+            <input type="number" min="0" value="${defaultPrice}" data-bulk-song-price="${i}"
+                   style="width:100px;padding:4px 8px;font-size:13px;text-align:right;border:1px solid var(--border);border-radius:4px;"
+                   placeholder="0">
+            <span style="font-size:11px;color:var(--text-dim);white-space:nowrap;">LAK</span>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+// 🔧 (2026-09-19): เมื่อ bulkPrice เปลี่ยน → อัปเดตราคาทุกเพลงใน list (เป็น default)
+document.getElementById("bulkPrice").addEventListener("input", (e) => {
+  const price = e.target.value;
+  document.querySelectorAll("[data-bulk-song-price]").forEach(input => {
+    input.value = price;
+  });
 });
 
 // 🔒🔒🔒 ห้าม AI แก้โค้ดส่วนนี้เองโดยไม่มีคำสั่งจากผู้ใช้โดยตรง (ประกาศจากผู้ใช้ 2026-09-06) 🔒🔒🔒
@@ -2004,7 +2088,12 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
     let playlistId = plSel.value;
     let playlistName = plSel.value ? plSel.options[plSel.selectedIndex].text : "";
     if (!playlistId && newPlaylistName) {
-      const newDoc = await addDoc(collection(db, "playlists"), { playlist_name: newPlaylistName, description: "", price: 0, cover_url: "", created_at: new Date().toISOString() });
+      // 🔧 (2026-09-19): อ่านราคาเพลย์ลิสต์จากช่องใหม่ (bulkPlaylistPrice)
+      //   เดิม: price=0 (hardcoded) → ต้องไปตั้งที่ Playlist Manager ทีหลัง
+      //   ใหม่: ใช้ราคาจากช่อง → ลูกค้าเห็นปุ่ม "ซื้อทั้งเพลย์ลิสต์" ได้ทันที
+      const plPriceInput = document.getElementById("bulkPlaylistPrice");
+      const plPrice = plPriceInput ? Number(plPriceInput.value || 0) : 0;
+      const newDoc = await addDoc(collection(db, "playlists"), { playlist_name: newPlaylistName, description: "", price: plPrice, cover_url: "", created_at: new Date().toISOString() });
       playlistId = newDoc.id;
       playlistName = newPlaylistName;
     }
@@ -2018,7 +2107,8 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
 
     const djSel = document.getElementById("bulkDj");
     const catSel = document.getElementById("bulkCategory");
-    const price = Number(document.getElementById("bulkPrice").value || 0);
+    // 🔧 (2026-09-19): อ่านราคาแต่ละเพลงจากช่องใน list — ถ้าไม่มีช่อง (เช่น list ไม่ render) → fallback ใช้ bulkPrice
+    const defaultPrice = Number(document.getElementById("bulkPrice").value || 0);
     const djName = djSel.value ? djSel.options[djSel.selectedIndex].text : "";
     const catId = catSel.value;
     const catName = catSel.value ? catSel.options[catSel.selectedIndex].text : "";
@@ -2050,7 +2140,11 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
         playlist_name: playlistName,
         file_url: res.url,
         cover_url: sharedCoverUrl,
-        price: price,
+        // 🔧 (2026-09-19): อ่านราคาเฉพาะของเพลงนี้จากช่องใน list — ถ้าไม่มี → fallback ใช้ defaultPrice
+        price: (() => {
+          const priceInput = document.querySelector(`[data-bulk-song-price="${i}"]`);
+          return priceInput ? Number(priceInput.value || 0) : defaultPrice;
+        })(),
         description: "",
         status: "active",
         created_at: new Date().toISOString(),
