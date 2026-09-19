@@ -190,18 +190,21 @@
           <div class="stat-card"><div class="num" id="ordStatSongs">0</div><div class="label">เพลงที่ขายได้ (สำเร็จ)</div></div>
           <div class="stat-card" style="grid-column:span 2;"><div class="num" id="ordStatRevenue">0</div><div class="label">ยอดขายรวม (LAK) — เฉพาะสำเร็จ</div></div>
         </div>
+        <!-- 🔧 (2026-09-19 stats v2): เปลี่ยนการ์ดสถิติตามที่ user ต้องการ -->
+        <!--   เดิม: ordStatSingleCount (ออเดอร์เพลงเดี่ยว) + ordStatPlaylistCount (ออเดอร์ยกเพลย์ลิสต์) — นับแยกตามประเภท -->
+        <!--   ใหม่: ordStatCompletedOrders (ออเดอร์ที่สำเร็จทั้งหมด รวมทุกประเภท) -->
+        <!--        + ordStatPlaylistsSold (เพลย์ลิสต์ที่ขาย นับตัว ไม่นับเพลงข้างใน) -->
+        <!--   ผลกระทบต่อระบบเดิม: 0% — calculateStats ยังคง return singleCount/playlistCount/mixedCount (เก็บไว้ back-compatible) -->
+        <!--   แค่ไม่ render ค่าเดิมใน HTML ใหม่ -->
+        <div class="stat-grid" style="margin-bottom:16px;">
+          <div class="stat-card"><div class="num" id="ordStatCompletedOrders" style="color:var(--success,#29cc71);">0</div><div class="label">✓ ออเดอร์ที่สำเร็จ</div></div>
+          <div class="stat-card"><div class="num" id="ordStatPlaylistsSold" style="color:var(--accent);">0</div><div class="label">🎶 เพลย์ลิสต์ที่ขายได้</div></div>
+        </div>
         <!-- 🔧 (2026-09-19 stats fix): แยกการ์ดสถิติเพลงเดี่ยว vs เพลงในเพลย์ลิสต์ -->
-        <!--   เดิม: มีแค่ "ออเดอร์เพลงเดี่ยว" + "ออเดอร์ยกเพลย์ลิสต์" (นับเป็นจำนวนออเดอร์) -->
-        <!--   ใหม่: แยกเป็นจำนวนเพลงเดี่ยวที่ขายได้ vs จำนวนเพลงในเพลย์ลิสต์ที่ขายได้ -->
-        <!--   ผลกระทบต่อระบบเดิม: 0% — คง ordStatSingleCount + ordStatPlaylistCount ไว้ (นับเป็นออเดอร์) -->
-        <!--   เพิ่ม ordStatSingleSongs + ordStatPlaylistSongs ใหม่ (นับเป็นเพลง) -->
+        <!--   นับเป็นจำนวนเพลงเดี่ยวที่ขายได้ vs จำนวนเพลงในเพลย์ลิสต์ที่ขายได้ -->
         <div class="stat-grid" style="margin-bottom:16px;">
           <div class="stat-card"><div class="num" id="ordStatSingleSongs" style="color:var(--accent-2,#ec4899);">0</div><div class="label">🎵 เพลงเดี่ยวที่ขายได้</div></div>
           <div class="stat-card"><div class="num" id="ordStatPlaylistSongs" style="color:var(--accent-2,#ec4899);">0</div><div class="label">🎶 เพลงในเพลย์ลิสต์ที่ขายได้</div></div>
-        </div>
-        <div class="stat-grid" style="margin-bottom:16px;">
-          <div class="stat-card"><div class="num" id="ordStatSingleCount">0</div><div class="label">ออเดอร์เพลงเดี่ยว (สำเร็จ)</div></div>
-          <div class="stat-card"><div class="num" id="ordStatPlaylistCount">0</div><div class="label">ออเดอร์ยกเพลย์ลิสต์ (สำเร็จ)</div></div>
         </div>
         <div class="stat-grid" style="margin-bottom:16px;">
           <div class="stat-card" style="grid-column:span 2;"><div class="num" id="ordStatDiscount" style="color:var(--accent-2,#ec4899);">0</div><div class="label">ส่วนลด/โปรโมชั่นรวม (LAK) — เฉพาะสำเร็จ</div></div>
