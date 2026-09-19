@@ -274,6 +274,18 @@ async function loadAllRemainingSongs() {
   try {
     let pagesLoaded = 0;
     let lastRenderAt = 0;
+    // 🔧 (2026-09-19 perf): ใช้ requestIdleCallback ถ้ามี (เบราว์เซอร์ใหม่) หรือ setTimeout(0) ถ้าไม่มี
+    //   เหตุผล: แต่ละ iteration ของ loop จะ yield ให้ browser ทำงานอื่น (เช่น scroll, paint) ก่อน
+    //   → กัน loadAllRemainingSongs แย่ง CPU จาก scroll → หน้าเว็บไม่กระตุกระหว่างโหลด background
+    //   ผลกระทบต่อระบบเดิม: 0% — ผลลัพธ์เหมือนเดิม แค่ช้าลงเล็กน้อยเพื่อให้ scroll ลื่น
+    const yieldToBrowser = () => new Promise((resolve) => {
+      if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(() => resolve(), { timeout: 50 });  // รอไม่เกิน 50ms
+      } else {
+        setTimeout(resolve, 0);  // fallback สำหรับเบราว์เซอร์เก่า
+      }
+    });
+
     // วนลูปโหลดทุก page จนกว่า songsHasMore=false
     // (สำหรับ 10,000 เพลง = 200 pages × ~50ms = ~10s — แต่ CDN cache ทำให้เร็วกว่า)
     while (STATE.songsHasMore) {
@@ -287,6 +299,8 @@ async function loadAllRemainingSongs() {
         togglePlaylistsVisibility();
         lastRenderAt = now;
       }
+      // 🔧 yield ให้ browser ระหว่าง loop → กันกระตุก scroll/paint
+      await yieldToBrowser();
       // Safety: กันลูปไม่รู้จบ (สูงสุด 500 pages = 25,000 เพลง)
       if (pagesLoaded > 500) break;
     }
