@@ -1522,18 +1522,13 @@ button:active {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  /* 🔧 (2026-09-20 mobile fix v10): ลบ padding ทั้งหมด + ใช้ negative margin ขยายให้เต็มจอ */
-  /*   เหตุผล: .stat-grid อยู่ใน .container ที่มี padding 0 16px → ขอบขวาการ์ดห่างจอ 16px */
-  /*   แต่ user ต้องการให้ขอบขวาชิดขอบจอเลย (เท่าปุ่มที่เห็นในวงเขียว) */
-  /*   วิธีแก้: ใช้ margin: 0 -16px ขยายออกไป 16px ทั้งซ้าย-ขวา → ขอบการ์ดชิดขอบจอ */
-  /*   แล้วใส่ padding กลับเข้าไปด้านใน 16px เพื่อให้เนื้อหาไม่ชิดขอบเกินไป */
-  /*   ผลกระทบต่อระบบเดิม: 0% — ผลลัพธ์เหมือนเดิม 100% แต่ขอบขวาชิดขอบจอ */
-  padding: 0 16px;
-  margin: 0 -16px;
-  width: calc(100% + 32px);
+  /* 🔧 (2026-09-20 mobile fix v13 - SIMPLEST): แค่ width 100% + padding 16px ธรรมดา */
+  /*   ไม่ใช้ negative margin, ไม่ใช้ 100vw — แค่ทำให้ .container ใน #view-orders ไม่มี padding */
+  width: 100%;
   box-sizing: border-box;
+  padding: 16px;
+  margin: 0;
 }
-/* เก็บ padding บน-ล่างไว้สำหรับ grid แรก/สุดท้าย */
 .stat-grid:first-child {
   padding-top: 16px;
 }
@@ -1541,12 +1536,22 @@ button:active {
   padding-bottom: 16px;
 }
 
-/* 🔧 (2026-09-20 mobile fix v10): สำหรับ #view-dashboard ที่ .stat-grid ไม่ได้อยู่ใน .container */
-/*   ใช้ padding ปกติ (ไม่ต้อง negative margin) */
+/* 🔧 (2026-09-20 mobile fix v13): บังคับ .container ใน #view-orders ให้ padding 0 */
+/*   เพื่อให้ .stat-grid ขยายเต็มจอจริง ๆ */
+#view-orders .container {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+}
+
+/* 🔧 (2026-09-20 mobile fix v13): #view-dashboard ใช้ width ปกติ */
 #view-dashboard > .stat-grid {
-  padding: 16px;
-  margin: 0;
   width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 16px;
 }
 
 /* 🔧 (2026-09-19 mobile fix v4): บน desktop ขนาดใหญ่ (>1366px) จำกัด 1080px + กึ่งกลาง */
