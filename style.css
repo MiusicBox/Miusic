@@ -3061,11 +3061,29 @@ button:active {
    ผลกระทบต่อระบบเดิม: 0% — เฉพาะตำแหน่งแถวราคา+ปุ่มซื้อทั้งเพลย์ลิสต์ ส่วนอื่นเหมือนเดิม
    ========================================================================== */
 .playlist-folder-btn .playlist-folder-bottom {
-  margin-right: -46px;
+  margin-right: -64px; /* 🔧 (2026-09-20 arrow icon): ปรับจาก -46px เพราะไอคอนลูกศรใหญ่ขึ้น (18px → 36px) */
 }
 @media (max-width: 480px) {
   .playlist-folder-btn .playlist-folder-bottom {
     width: auto;
-    margin-right: -42px;
+    margin-right: -60px; /* เดิม -42px — ปรับตามขนาดไอคอนใหม่ */
   }
+}
+
+/* ==========================================================================
+   🔧 (2026-09-20 arrow icon): ไอคอนลูกศรเปิด-ปิดเพลย์ลิสต์ แบบ "ลูกศรในกรอบมน" ขนาดใหญ่ + ย้ายไปมุมขวาบนของการ์ด
+   - ใช้ class เดิม (.playlist-folder-arrow / .dropdown-icon / .is-closed) → JS เปิด-ปิดเดิมทำงานเหมือนเดิมทุกอย่าง
+   - ปิด = หมุน -90° (ชี้ขวา) เปิด = ชี้ลง เหมือนเดิม (กฎ .is-closed เดิมยังใช้อยู่)
+   - align-self: flex-start = ลูกศรอยู่บนสุดของการ์ด แทนที่จะอยู่กลางแนวตั้ง
+   ========================================================================== */
+.playlist-folder-btn .playlist-folder-arrow {
+  align-self: flex-start;
+  color: #a78bfa;
+  width: 36px;
+  height: 36px;
+}
+.playlist-header-btn .dropdown-icon {
+  color: #a78bfa;
+  width: 32px;
+  height: 32px;
 }
