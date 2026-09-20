@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
 <title>Music Store</title>
-<link rel="stylesheet" href="style.css?v=20260920-v15">
+<link rel="stylesheet" href="style.css?v=20260920-v16">
 <style>
   /* โครงสร้าง Cart เดิมที่ app-cart.js ใช้งาน — คงไว้ในหน้า User */
   .cart-toggle-wrap { position:relative; margin-left:auto; display:flex; align-items:center; gap:8px; flex-shrink:0; flex-wrap:nowrap; }
@@ -286,7 +286,7 @@
   <div class="playlist-wrapper">
     <button class="playlist-header-btn" id="playlistToggleBtn">
       <span class="playlist-header-title">เพลย์ลิสต์</span>
-      <svg class="dropdown-icon" id="dropdownIcon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c7.2 0 9 1.8 9 9s-1.8 9 -9 9s-9 -1.8 -9 -9s1.8 -9 9 -9z"/><path d="M8 10l4 4l4 -4"/></svg>
+      <svg class="dropdown-icon" id="dropdownIcon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7l5 5l5 -5"/><path d="M7 13l5 5l5 -5"/></svg>
     </button>
     <div id="playlistsContainer" class="playlist-content-box"></div>
   </div>
@@ -546,6 +546,30 @@
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <!-- 🔧 (2026-09-20 player bar): วัดความสูงจริงของเมนูล่าง (.bottom-nav) แล้วเก็บไว้ใน --bottom-nav-h
+       เพื่อให้เครื่องเล่นเพลงลอย (.player-bar) วางติดขอบบนของเมนูพอดี ไม่ทับเมนู — ไม่แตะ/ไม่ลบสคริปต์เดิม -->
+  <script>
+    (function () {
+      function syncBottomNavHeight() {
+        var nav = document.querySelector('.bottom-nav');
+        if (!nav) return;
+        document.documentElement.style.setProperty('--bottom-nav-h', nav.offsetHeight + 'px');
+      }
+      syncBottomNavHeight();
+      document.addEventListener('DOMContentLoaded', syncBottomNavHeight);
+      window.addEventListener('load', syncBottomNavHeight);
+      window.addEventListener('resize', syncBottomNavHeight);
+      window.addEventListener('orientationchange', syncBottomNavHeight);
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(syncBottomNavHeight);
+      if (window.ResizeObserver) {
+        document.addEventListener('DOMContentLoaded', function () {
+          var nav = document.querySelector('.bottom-nav');
+          if (nav) new ResizeObserver(syncBottomNavHeight).observe(nav, { box: 'border-box' });
+        });
+      }
+    })();
+  </script>
 
   <!-- สคริปต์สลับการ เปิด-ปิด Dropdown -->
   <script>
