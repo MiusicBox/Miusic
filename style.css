@@ -2396,13 +2396,12 @@ button:active {
    ========================================================================== */
 
 /* การ์ดเพลงแบบแถวใหม่ — แทนที่ grid 2 คอลัมน์ */
-/* 🌈 (2026-09-20): เปลี่ยนเป็นสไตล์ L — Prism Rotate
-   - ขอบปริซึมรุ้ง 7 สีหมุนรอบการ์ดตลอดเวลา
-   - พื้นในเข้มโปร่งแสง ให้เห็นสีรุ้งลอด
-   - ชื่อเพลงเป็นรุ้งสีเคลื่อนที่ (เฉพาะชื่อ ส่วนอื่นยังอ่านง่าย)
+/* 💎 (2026-09-20): เปลี่ยนเป็นสไตล์ Y — Aurora Prism (Ultimate V5)
+   - ออโรราหมุนรอบการ์ด (conic gradient) สลับ 4 โทนสี
+   - ไล่เฉดภายใน + glow พรีเมียม
    - ใช้ !important เพื่อ override CSS เดิม */
 .song-card-row {
-  background: linear-gradient(135deg, rgba(10, 10, 26, 0.95), rgba(26, 26, 46, 0.95)) !important;
+  background: linear-gradient(135deg, #0f0a1e, #1a0f2e) !important;
   border: 1px solid transparent !important;
   border-radius: 14px !important;
   margin-bottom: 2px !important;
@@ -2413,36 +2412,73 @@ button:active {
   overflow: hidden;
   position: relative;
   isolation: isolate;
+  background-clip: padding-box;
 }
 
-/* 🔥 ขอบปริซึมรุ้งหมุนรอบการ์ด — ใช้ ::before ที่ inset -1px และ z-index: -1 */
+/* 🔥 ออโรราหมุนรอบการ์ด — conic gradient สลับ 4 โทนสี */
 .song-card-row::before {
   content: "";
   position: absolute;
-  inset: -1px;
-  border-radius: 14px;
+  inset: -50%;
   background: conic-gradient(
     from 0deg,
-    #ff0080, #ff8c00, #ffd700, #00ff7f, #00bfff, #8a2be2, #ff0080
+    transparent 0%,
+    var(--ap-1, #a855f7) 15%,
+    var(--ap-2, #ec4899) 30%,
+    transparent 50%,
+    var(--ap-1, #a855f7) 65%,
+    var(--ap-2, #ec4899) 80%,
+    transparent 100%
   );
-  z-index: -1;
-  animation: song-prism-spin 8s linear infinite;
-  filter: blur(2px);
+  animation: song-aurora-prism-spin 10s linear infinite;
+  z-index: 0;
+  filter: blur(28px);
+  opacity: 0.65;
   pointer-events: none;
 }
-@keyframes song-prism-spin {
+@keyframes song-aurora-prism-spin {
   to { transform: rotate(360deg); }
 }
 
-/* พื้นหลังดำโปร่งแสงทับลงไปด้านใน — ให้ขอบรุ้งเด่นชัด */
+/* สลับ 4 โทนสีตามลำดับเพลง */
+.song-card-row:nth-child(4n+1) {
+  --ap-1: #a855f7;
+  --ap-2: #ec4899;
+  --ap-glow: rgba(168, 85, 247, 0.18);
+}
+.song-card-row:nth-child(4n+2) {
+  --ap-1: #06b6d4;
+  --ap-2: #3b82f6;
+  --ap-glow: rgba(6, 182, 212, 0.18);
+}
+.song-card-row:nth-child(4n+3) {
+  --ap-1: #10b981;
+  --ap-2: #14b8a6;
+  --ap-glow: rgba(16, 185, 129, 0.18);
+}
+.song-card-row:nth-child(4n+4) {
+  --ap-1: #f97316;
+  --ap-2: #facc15;
+  --ap-glow: rgba(249, 115, 22, 0.18);
+}
+
+/* พื้นหลังเข้มโปร่งแสงทับลงไปด้านใน + glow สีออโรรา */
 .song-card-row::after {
   content: "";
   position: absolute;
-  inset: 1px;
-  background: linear-gradient(135deg, rgba(10, 10, 26, 0.97), rgba(26, 26, 46, 0.97));
+  inset: 1.5px;
+  background:
+    radial-gradient(circle at 30% 50%, var(--ap-glow, rgba(168, 85, 247, 0.18)), transparent 60%),
+    linear-gradient(135deg, rgba(15, 10, 30, 0.92), rgba(26, 15, 46, 0.92));
   border-radius: 13px;
-  z-index: -1;
+  z-index: 1;
   pointer-events: none;
+}
+
+/* z-index ให้ content อยู่ด้านบน */
+.song-card-row > * {
+  position: relative;
+  z-index: 3;
 }
 
 .song-card-row:first-child,
@@ -2451,12 +2487,13 @@ button:active {
 }
 
 .song-card-row:hover {
-  transform: translateY(-3px) scale(1.005) !important;
-  box-shadow: 0 12px 32px rgba(255, 0, 128, 0.35), 0 0 24px rgba(0, 191, 255, 0.25), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  transform: translateY(-4px) scale(1.01) !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5) !important;
 }
 
 .song-card-row:hover::before {
-  filter: blur(1px) brightness(1.3) !important;
+  opacity: 0.95 !important;
+  filter: blur(20px) !important;
 }
 
 /* รูปปกใหญ่ขึ้น + มี glow */
@@ -2719,12 +2756,12 @@ button:active {
    - ไม่กระทบ .playlist-folder-btn (หัวเพลย์ลิสต์) ที่ยังคงเดิม
    ========================================================================== */
 
-/* ปรับ .playlist-song-row ที่มี class song-card-row ให้เป็นสไตล์ L — Prism Rotate */
-/* 🌈 (2026-09-20): เปลี่ยนให้เหมือน .song-card-row หลัก — ขอบปริซึมรุ้งหมุน */
+/* ปรับ .playlist-song-row ที่มี class song-card-row ให้เป็นสไตล์ Y — Aurora Prism */
+/* 💎 (2026-09-20): เปลี่ยนให้เหมือน .song-card-row หลัก — ออโรราหมุนรอบ */
 /* 🔧 ปรับ (2026-09-14 รอบ 2): ลด margin รอบแถวเพลงในเพลย์ลิสต์จาก 4px → 2px ตามคำสั่งผู้ใช้
    - รักษา padding ซ้าย-ขวา (12px) เดิมไว้ ไม่กระทบขอบเพลย์ลิสต์ */
 .playlist-song-row.song-card-row {
-  background: linear-gradient(135deg, rgba(10, 10, 26, 0.95), rgba(26, 26, 46, 0.95)) !important;
+  background: linear-gradient(135deg, #0f0a1e, #1a0f2e) !important;
   border: 1px solid transparent !important;
   border-radius: 14px !important;
   margin: 2px 12px !important;
@@ -2735,31 +2772,46 @@ button:active {
   position: relative;
   isolation: isolate;
   overflow: hidden;
+  background-clip: padding-box;
 }
 
-/* ขอบปริซึมรุ้งหมุน — เหมือน .song-card-row หลัก */
+/* ออโรราหมุนรอบการ์ด — เหมือน .song-card-row หลัก */
 .playlist-song-row.song-card-row::before {
   content: "";
   position: absolute;
-  inset: -1px;
-  border-radius: 14px;
+  inset: -50%;
   background: conic-gradient(
     from 0deg,
-    #ff0080, #ff8c00, #ffd700, #00ff7f, #00bfff, #8a2be2, #ff0080
+    transparent 0%,
+    var(--ap-1, #a855f7) 15%,
+    var(--ap-2, #ec4899) 30%,
+    transparent 50%,
+    var(--ap-1, #a855f7) 65%,
+    var(--ap-2, #ec4899) 80%,
+    transparent 100%
   );
-  z-index: -1;
-  animation: song-prism-spin 8s linear infinite;
-  filter: blur(2px);
+  animation: song-aurora-prism-spin 10s linear infinite;
+  z-index: 0;
+  filter: blur(28px);
+  opacity: 0.65;
   pointer-events: none;
 }
 .playlist-song-row.song-card-row::after {
   content: "";
   position: absolute;
-  inset: 1px;
-  background: linear-gradient(135deg, rgba(10, 10, 26, 0.97), rgba(26, 26, 46, 0.97));
+  inset: 1.5px;
+  background:
+    radial-gradient(circle at 30% 50%, var(--ap-glow, rgba(168, 85, 247, 0.18)), transparent 60%),
+    linear-gradient(135deg, rgba(15, 10, 30, 0.92), rgba(26, 15, 46, 0.92));
   border-radius: 13px;
-  z-index: -1;
+  z-index: 1;
   pointer-events: none;
+}
+
+/* z-index ให้ content อยู่ด้านบน */
+.playlist-song-row.song-card-row > * {
+  position: relative;
+  z-index: 3;
 }
 
 .playlist-song-row.song-card-row:last-child {
@@ -2769,12 +2821,13 @@ button:active {
 }
 
 .playlist-song-row.song-card-row:hover {
-  transform: translateY(-3px) scale(1.005) !important;
-  box-shadow: 0 12px 32px rgba(255, 0, 128, 0.35), 0 0 24px rgba(0, 191, 255, 0.25), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  transform: translateY(-4px) scale(1.01) !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5) !important;
 }
 
 .playlist-song-row.song-card-row:hover::before {
-  filter: blur(1px) brightness(1.3) !important;
+  opacity: 0.95 !important;
+  filter: blur(20px) !important;
 }
 
 /* รูปปกเพลงในเพลย์ลิสต์ — ใหญ่ขึ้น + มี glow เหมือนเพลงหลัก */
@@ -2937,6 +2990,125 @@ button:active {
 .playlist-folder-btn:hover {
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(236, 72, 153, 0.08)) !important;
 }
+
+/* 💎 (2026-09-20): สไตล์ CC — Diamond Glow สำหรับหัวเพลย์ลิสต์
+   - เพชรเรืองแสงสลับ 5 สี + sparkle วิ่งที่ขอบบน
+   - glow หายใจตลอดเวลา
+   - เพิ่มใหม่ ไม่แทนที่ CSS เดิม แค่ override ด้วย specificity ที่สูงกว่า */
+.playlist-folder-btn {
+  background: linear-gradient(135deg, #1a1a3a, #0a0a1a) !important;
+  border: 1px solid rgba(168, 85, 247, 0.35) !important;
+  border-radius: 14px !important;
+  position: relative !important;
+  overflow: hidden !important;
+  isolation: isolate;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* glow หายใจ + sparkle ที่ขอบบน */
+.playlist-folder-btn::before {
+  content: "";
+  position: absolute;
+  top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background: radial-gradient(
+    circle at center,
+    rgba(168, 85, 247, 0.5) 0%,
+    transparent 30%
+  );
+  animation: playlist-diamond-pulse 4s ease-in-out infinite;
+  z-index: 0;
+  pointer-events: none;
+}
+@keyframes playlist-diamond-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.8); }
+  50%      { opacity: 1; transform: scale(1.3); }
+}
+
+.playlist-folder-btn::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.8), transparent);
+  animation: playlist-diamond-sparkle 3s ease-in-out infinite;
+  z-index: 2;
+  pointer-events: none;
+}
+@keyframes playlist-diamond-sparkle {
+  0%, 100% { opacity: 0.3; transform: translateX(-30%); }
+  50%      { opacity: 1; transform: translateX(30%); }
+}
+
+/* สลับสี 5 แบบ */
+.playlist-block:nth-child(5n+1) .playlist-folder-btn {
+  background: linear-gradient(135deg, #2a1a3a, #0a0a1a) !important;
+  border-color: rgba(168, 85, 247, 0.4) !important;
+}
+.playlist-block:nth-child(5n+2) .playlist-folder-btn {
+  background: linear-gradient(135deg, #1a2a3a, #0a0a1a) !important;
+  border-color: rgba(34, 211, 238, 0.4) !important;
+}
+.playlist-block:nth-child(5n+3) .playlist-folder-btn {
+  background: linear-gradient(135deg, #1a3a2a, #0a1a0a) !important;
+  border-color: rgba(16, 185, 129, 0.4) !important;
+}
+.playlist-block:nth-child(5n+4) .playlist-folder-btn {
+  background: linear-gradient(135deg, #3a2a1a, #1a0a0a) !important;
+  border-color: rgba(249, 115, 22, 0.4) !important;
+}
+.playlist-block:nth-child(5n+5) .playlist-folder-btn {
+  background: linear-gradient(135deg, #3a1a2a, #1a0a0a) !important;
+  border-color: rgba(236, 72, 153, 0.4) !important;
+}
+
+/* สลับสี glow + sparkle ตาม border */
+.playlist-block:nth-child(5n+1) .playlist-folder-btn::before {
+  background: radial-gradient(circle at center, rgba(168, 85, 247, 0.5) 0%, transparent 30%);
+}
+.playlist-block:nth-child(5n+2) .playlist-folder-btn::before {
+  background: radial-gradient(circle at center, rgba(34, 211, 238, 0.5) 0%, transparent 30%);
+}
+.playlist-block:nth-child(5n+3) .playlist-folder-btn::before {
+  background: radial-gradient(circle at center, rgba(16, 185, 129, 0.5) 0%, transparent 30%);
+}
+.playlist-block:nth-child(5n+4) .playlist-folder-btn::before {
+  background: radial-gradient(circle at center, rgba(249, 115, 22, 0.5) 0%, transparent 30%);
+}
+.playlist-block:nth-child(5n+5) .playlist-folder-btn::before {
+  background: radial-gradient(circle at center, rgba(236, 72, 153, 0.5) 0%, transparent 30%);
+}
+.playlist-block:nth-child(5n+1) .playlist-folder-btn::after {
+  background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.8), transparent);
+}
+.playlist-block:nth-child(5n+2) .playlist-folder-btn::after {
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.8), transparent);
+}
+.playlist-block:nth-child(5n+3) .playlist-folder-btn::after {
+  background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.8), transparent);
+}
+.playlist-block:nth-child(5n+4) .playlist-folder-btn::after {
+  background: linear-gradient(90deg, transparent, rgba(249, 115, 22, 0.8), transparent);
+}
+.playlist-block:nth-child(5n+5) .playlist-folder-btn::after {
+  background: linear-gradient(90deg, transparent, rgba(236, 72, 153, 0.8), transparent);
+}
+
+/* z-index ให้ content ของหัวเพลย์ลิสต์อยู่ด้านบน */
+.playlist-folder-btn > * {
+  position: relative;
+  z-index: 3;
+}
+
+.playlist-folder-btn:hover {
+  border-color: rgba(168, 85, 247, 0.7) !important;
+  box-shadow: 0 12px 32px rgba(168, 85, 247, 0.5) !important;
+}
+.playlist-block:nth-child(5n+1) .playlist-folder-btn:hover { border-color: rgba(168, 85, 247, 0.7) !important; box-shadow: 0 12px 32px rgba(168, 85, 247, 0.5) !important; }
+.playlist-block:nth-child(5n+2) .playlist-folder-btn:hover { border-color: rgba(34, 211, 238, 0.7) !important; box-shadow: 0 12px 32px rgba(34, 211, 238, 0.5) !important; }
+.playlist-block:nth-child(5n+3) .playlist-folder-btn:hover { border-color: rgba(16, 185, 129, 0.7) !important; box-shadow: 0 12px 32px rgba(16, 185, 129, 0.5) !important; }
+.playlist-block:nth-child(5n+4) .playlist-folder-btn:hover { border-color: rgba(249, 115, 22, 0.7) !important; box-shadow: 0 12px 32px rgba(249, 115, 22, 0.5) !important; }
+.playlist-block:nth-child(5n+5) .playlist-folder-btn:hover { border-color: rgba(236, 72, 153, 0.7) !important; box-shadow: 0 12px 32px rgba(236, 72, 153, 0.5) !important; }
 
 .playlist-folder-cover {
   width: 60px !important;
