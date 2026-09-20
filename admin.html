@@ -98,6 +98,13 @@
 
     <!-- ===================== ORDERS VIEW (ใหม่) ===================== -->
     <style>
+      /* 🔧 (2026-09-20 orders stats width fix): ให้การ์ดสถิติหน้า "จัดการออเดอร์" ยืดเต็มความกว้างเท่าปุ่ม "สร้างออเดอร์ใหม่" */
+      /*   สาเหตุ: .stat-grid ใน style.css กำหนด 3 คอลัมน์ แต่หน้านี้ใช้แค่ 2 คอลัมน์ (การ์ดคู่ + การ์ด span 2) → คอลัมน์ที่ 3 ว่าง */
+      /*   วิธีแก้: ใช้ selector #view-orders (เฉพาะหน้านี้) บังคับ 2 คอลัมน์ + ตัด padding ซ้อน ให้ขอบซ้าย-ขวาตรงกับปุ่ม */
+      /*   ผลกระทบต่อระบบเดิม: 0% — ไม่แตะ .stat-grid ใน style.css (หน้าแดชบอร์ดยังเหมือนเดิม), ไม่แตะ id/JS/HTML การ์ดใด ๆ */
+      #view-orders .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0; }
+      /* คงระยะห่างด้านบนของการ์ดชุดแรก (ใต้แถบหัว "จัดการออเดอร์") ไว้เท่าเดิม ~22px */
+      #view-orders .stat-grid:first-child { padding-top: 16px; }
       #view-orders .status-filter { display:flex; flex-wrap:wrap; gap:8px; padding:0 16px; margin:14px 0; }
       #view-orders .status-filter button {
         border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); color:var(--text-dim);
