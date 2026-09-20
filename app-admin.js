@@ -1124,6 +1124,12 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
       const res = await uploadToCloudinary(pendingCoverFile, null, controller.signal);
       coverUrl = res.url;
     }
+    // 🖼️ (2026-09-20): ถ้าแอดมินไม่ได้อัปโหลดรูปปกเพลง → ใช้ default-song-cover.svg อัตโนมัติ
+    //   - ใช้ relative path เพื่อให้ทำงานได้ทุกที่ (admin/user โหลดจาก root เดียวกัน)
+    //   - ถ้าแอดมินอัปโหลดภายหลัง → payload.cover_url จะถูก overwrite เป็น URL ของ Cloudinary
+    if (!coverUrl) {
+      coverUrl = "default-song-cover.svg";
+    }
     if (pendingFullSongFile) {
       document.getElementById("fullSongUploadProgressWrap").style.display = "block";
       const prog = document.getElementById("fullSongUploadProgress");
@@ -1750,6 +1756,12 @@ document.getElementById("playlistSaveBtn").addEventListener("click", async funct
       const res = await uploadToCloudinary(pendingPlaylistCoverFile);
       coverUrl = res.url;
     }
+    // 🖼️ (2026-09-20): ถ้าแอดมินไม่ได้อัปโหลดรูปปกเพลย์ลิสต์ → ใช้ default-playlist-cover.svg อัตโนมัติ
+    //   - ใช้ relative path เพื่อให้ทำงานได้ทุกที่
+    //   - ถ้าแอดมินอัปโหลดภายหลัง → payload.cover_url จะถูก overwrite เป็น URL ของ Cloudinary
+    if (!coverUrl) {
+      coverUrl = "default-playlist-cover.svg";
+    }
     const payload = {
       playlist_name: name,
       description: document.getElementById("fPlaylistDesc").value.trim(),
@@ -2114,6 +2126,12 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
     if (pendingBulkCoverFile) {
       const coverRes = await uploadToCloudinary(pendingBulkCoverFile, null, controller.signal);
       sharedCoverUrl = coverRes.url;
+      if (playlistId) await updateDoc(doc(db, "playlists", playlistId), { cover_url: sharedCoverUrl }).catch(() => {});
+    }
+    // 🖼️ (2026-09-20): ถ้าแอดมินไม่ได้อัปโหลดรูปปก bulk → ใช้ default-playlist-cover.svg อัตโนมัติ
+    //   - ใช้ร่วมกันทั้งเพลย์ลิสต์และเพลงทุกเพลงในชุด
+    if (!sharedCoverUrl) {
+      sharedCoverUrl = "default-playlist-cover.svg";
       if (playlistId) await updateDoc(doc(db, "playlists", playlistId), { cover_url: sharedCoverUrl }).catch(() => {});
     }
 
