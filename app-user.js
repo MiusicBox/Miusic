@@ -403,8 +403,11 @@ function renderCategoryChips() {
 function renderDjRow() {
   const wrap = document.getElementById("djRow");
   if (!wrap) return;
+  // 🎧 (2026-09-20) เพิ่ม class "selected" ให้ DJ ที่กำลังถูกเลือก (STATE.currentDj)
+  //   - CSS จะแสดงวงกลมสีแดง + เปลี่ยนสีชื่อ + ขยายขอบ avatar อัตโนมัติ
+  //   - ถ้า STATE.currentDj เป็น null → ไม่มี class selected → ไม่มีวงกลมแดง
   wrap.innerHTML = STATE.djs.map(d =>
-    `<div class="dj-item" data-dj="${d.id}">
+    `<div class="dj-item${STATE.currentDj === d.id ? " selected" : ""}" data-dj="${d.id}">
       <img class="dj-avatar" src="${d.image_url || ""}" loading="lazy" alt="">
       <div class="dj-name">${escapeHtml(d.dj_name)}</div>
     </div>`
@@ -415,6 +418,9 @@ function renderDjRow() {
       // กด DJ คนเดิมซ้ำอีกครั้งเพื่อยกเลิกตัวกรองและแสดงเพลงของ DJ ทุกคน
       STATE.currentDj = STATE.currentDj === selectedDjId ? null : selectedDjId;
       STATE.currentCategory = "all";
+      // 🎧 (2026-09-20) re-render DJ row ทันทีเพื่ออัปเดต class "selected" (วงกลมแดง)
+      //   - ถ้าไม่ re-render วงกลมแดงจะไม่โผล่/หายไป ทำให้ผู้ใช้สับสน
+      renderDjRow();
       // 🔧 (2026-09-18 v6 Full System): เมื่อกด DJ ถ้ายังโหลดเพลงไม่ครบ → trigger auto-load-all
       if (STATE.songsHasMore && !STATE.songsLoadingAllRemaining) {
         showToast("กำลังโหลดเพลงทั้งหมดเพื่อกรอง...", "progress");
@@ -492,13 +498,20 @@ function getFilteredSongs() {
       const dj = STATE.djs.find(d => d.id === STATE.currentDj);
       if (!dj || s.dj_name !== dj.dj_name) return false;
     }
+    // 🎧 (2026-09-20) เพิ่มใหม่: ในหน้า DJ (STATE.currentView === "dj") ถ้ายังไม่ได้เลือก DJ
+    //   → แสดงเฉพาะเพลงที่มี dj_name (มี DJ) — ซ่อนเพลงที่ไม่ได้แอดเข้า DJ ใด ๆ
+    //   - ถ้าเลือก DJ แล้ว → กรองจากด้านบน (s.dj_name === dj.dj_name) อยู่แล้ว
+    //   - หน้าอื่น ๆ (home/category/playlist) → ไม่กรอง แสดงเพลงทั้งหมดเหมือนเดิม
+    if (!STATE.currentDj && STATE.currentView === "dj") {
+      if (!s.dj_name || String(s.dj_name).trim() === "") return false;
+    }
     if (!songBelongsToCurrentCategory(s)) return false;
     if (STATE.search) {
       const q = STATE.search.toLowerCase();
       // ค้นหาทั้งจากข้อมูลเพลง และค้นหาชื่อเพลย์ลิสต์ที่เพลงนี้สังกัดอยู่ด้วย
       const pl = STATE.playlists.find(p => p.id === s.playlist_id);
       const playlistName = pl ? pl.playlist_name : "";
-      
+
       const hay = [s.song_name, s.artist, s.dj_name, s.category_name, playlistName].join(" ").toLowerCase();
       if (!hay.includes(q)) return false;
     }
@@ -1473,6 +1486,7 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       STATE.currentDj = null;
       setView("home");
       renderCategoryChips();
+      renderDjRow(); // 🎧 (2026-09-20) re-render DJ row เพื่อลบ class selected (วงกลมแดง) หลังออกจากหน้า DJ
       renderSongGrid();
       renderPlaylists();
       renderPromotionBanner(); // 🎁 (2026-09-20) เพิ่มใหม่: แสดงแบนเนอร์โปรโมชั่นใหม่ (เผื่อถูกซ่อนตอนอยู่แท็บอื่น)
@@ -1492,6 +1506,7 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       STATE.currentDj = null;
       setView("category");
       renderCategoryChips();
+      renderDjRow(); // 🎧 (2026-09-20) re-render DJ row เพื่อลบ class selected (วงกลมแดง) หลังออกจากหน้า DJ
       renderSongGrid();
       renderPlaylists();
       window.scrollTo({ top: 0, behavior: "smooth" });
