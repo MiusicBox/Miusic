@@ -3145,7 +3145,9 @@ button:active {
   --cp-yellow:    #ffff00;
   --cp-pink-glow: rgba(255, 0, 255, 0.5);
   --cp-cyan-glow: rgba(0, 255, 255, 0.5);
-  --cp-mono:      "Courier New", "Cascadia Mono", "Roboto Mono", monospace;
+  /* 🔧 (2026-09-20 fix): เปลี่ยนฟอนต์ให้รองรับภาษาไทย — ใช้ฟอนต์ไทยก่อน Courier New
+     ตัวอักษรไทยจะใช้ฟอนต์ไทย ส่วนตัวเลข/Latin จะ fallback ไป Courier New อัตโนมัติ (per-glyph) */
+  --cp-mono:      "Sukhumvit Set", "Noto Sans Thai", "Sarabun", "Tahoma", "Courier New", "Cascadia Mono", monospace;
 }
 
 /* ---------- แบนเนอร์โปรโมชั่นเด่น บนหน้าแรก ---------- */
