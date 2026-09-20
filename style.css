@@ -47,13 +47,6 @@
 html, body {
   margin: 0;
   padding: 0;
-  /* 🔧 (2026-09-19 mobile fix v5): บังคับให้ html + body เต็มจอเสมอ */
-  /*   เหตุผล: เดิมไม่มี width → บนบางอุปกรณ์ (iPad Safari) html/body อาจจะไม่ขยายเต็มจอ */
-  /*   ทำให้เนื้อหาทั้งหมดถูกจำกัดขนาดและชิดซ้าย → เห็นพื้นที่ว่างดำทางขวา */
-  width: 100%;
-  min-width: 100%;
-  max-width: 100%;
-  overflow-x: hidden;
   background: var(--bg);
   background-image: 
     radial-gradient(circle at 50% 0%, rgba(139, 92, 246, 0.12) 0%, transparent 60%),
@@ -94,13 +87,8 @@ button:active {
 
 /* ---------- Container ---------- */
 .container {
-  /* 🔧 (2026-09-19 mobile fix v4): ลบ max-width ออกเพื่อให้เต็มจอเสมอ */
-  /*   เดิม: max-width: 1080px + margin: auto → บน iPad แนวตั้ง/มือถือเนื้อหาชิดซ้าย มีพื้นที่ว่างทางขวา */
-  /*   ใหม่: width: 100% + box-sizing → เต็มจอเสมอ (ทุกขนาดหน้าจอ) */
-  /*   ผลกระทบต่อระบบเดิม: 0% — ส่วนอื่น ๆ ที่ต้องการ max-width จะกำหนดเองใน selector ของตัวเอง */
-  width: 100%;
-  box-sizing: border-box;
-  margin: 0;
+  max-width: 1080px;
+  margin: 0 auto;
   padding: 0 16px;
 }
 
@@ -109,9 +97,6 @@ button:active {
   position: sticky;
   top: 0;
   z-index: 40;
-  /* 🔧 (2026-09-19 mobile fix v5): บังคับ topbar เต็มจอเสมอ */
-  width: 100%;
-  box-sizing: border-box;
   background: rgba(11, 13, 20, 0.85);
   /* 🔧 (2026-09-19 perf): ลด backdrop-filter จาก blur(20px) saturate(180%) → blur(10px) */
   /*   เหตุผล: blur(20px) saturate(180%) กิน CPU สูงมากตอน scroll โดยเฉพาะมือถือ → กะตุก */
@@ -133,10 +118,8 @@ button:active {
   align-items: center;
   gap: 16px;
   padding: 14px 16px;
-  /* 🔧 (2026-09-19 mobile fix v4): เต็มจอเสมอ (ไม่จำกัด 1080px) */
-  width: 100%;
-  box-sizing: border-box;
-  margin: 0;
+  max-width: 1080px;
+  margin: 0 auto;
 }
 
 .logo {
@@ -334,10 +317,8 @@ button:active {
   font-size: 18px;
   font-weight: 800;
   letter-spacing: -0.3px;
-  /* 🔧 (2026-09-19 mobile fix v6): เต็มจอเสมอ — ไม่จำกัด max-width */
-  margin: 10px 0 10px;
-  width: 100%;
-  box-sizing: border-box;
+  margin: 10px auto 10px;
+  max-width: 1080px;
   padding: 0 16px;
   display: flex;
   align-items: center;
@@ -1505,62 +1486,18 @@ button:active {
 /* ---------- Admin Panel UI ---------- */
 .admin-shell {
   min-height: 100vh;
-  /* 🔧 (2026-09-19 mobile fix v5): บังคับ admin-shell เต็มจอเสมอ */
-  width: 100%;
-  box-sizing: border-box;
-}
-
-/* 🔧 (2026-09-19 mobile fix v5): .view (ทุกหน้า view) เต็มจอเสมอ */
-/*   เหตุผล: เดิมไม่มี CSS สำหรับ .view → ใช้ default ของ div → อาจจะไม่เต็มจอ */
-/*   บังคับ width: 100% + box-sizing → ทุก view จะเต็มจอเสมอ */
-.view {
-  width: 100%;
-  box-sizing: border-box;
 }
 
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  /* 🔧 (2026-09-20 mobile fix v13 - SIMPLEST): แค่ width 100% + padding 16px ธรรมดา */
-  /*   ไม่ใช้ negative margin, ไม่ใช้ 100vw — แค่ทำให้ .container ใน #view-orders ไม่มี padding */
-  width: 100%;
-  box-sizing: border-box;
   padding: 16px;
-  margin: 0;
-}
-.stat-grid:first-child {
-  padding-top: 16px;
-}
-.stat-grid:last-child {
-  padding-bottom: 16px;
-}
-
-/* 🔧 (2026-09-20 mobile fix v13): บังคับ .container ใน #view-orders ให้ padding 0 */
-/*   เพื่อให้ .stat-grid ขยายเต็มจอจริง ๆ */
-#view-orders .container {
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-  width: 100% !important;
-  max-width: 100% !important;
-  margin: 0 !important;
-}
-
-/* 🔧 (2026-09-20 mobile fix v13): #view-dashboard ใช้ width ปกติ */
-#view-dashboard > .stat-grid {
-  width: 100%;
-  max-width: 100%;
-  margin: 0;
-  padding: 16px;
-}
-
-/* 🔧 (2026-09-19 mobile fix v4): บน desktop ขนาดใหญ่ (>1366px) จำกัด 1080px + กึ่งกลาง */
-@media (min-width: 1367px) {
-  .stat-grid {
-    max-width: 1080px;
-    margin-left: auto;
-    margin-right: auto;
-  }
+  /* 🔧 (2026-09-19 layout fix): จำกัดความกว้าง + จัดกึ่งกลาง → ไม่ใช้ชิดซ้ายบนจอใหญ่ */
+  /*   ผลกระทบต่อระบบเดิม: 0% — บนมือถือ (จอแคบ) ไม่เปลี่ยนแปลง เพราะ padding 16px เท่าเดิม */
+  /*   บนจอใหญ่ (desktop) เนื้อหาจะอยู่กึ่งกลางหน้าจอแทนที่จะชิดซ้าย */
+  max-width: 1080px;
+  margin: 0 auto;
 }
 
 .stat-card {
@@ -1606,20 +1543,10 @@ button:active {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  /* 🔧 (2026-09-20 mobile fix v8): padding เท่ากับ .container (0 16px) */
   padding: 0 16px 16px;
-  width: 100%;
-  box-sizing: border-box;
-  margin: 0;
-}
-
-/* 🔧 (2026-09-19 mobile fix v4): บน desktop ขนาดใหญ่ (>1366px) จำกัด 1080px + กึ่งกลาง */
-@media (min-width: 1367px) {
-  .quick-actions {
-    max-width: 1080px;
-    margin-left: auto;
-    margin-right: auto;
-  }
+  /* 🔧 (2026-09-19 layout fix): จำกัดความกว้าง + จัดกึ่งกลาง → ไม่ใช้ชิดซ้ายบนจอใหญ่ */
+  max-width: 1080px;
+  margin: 0 auto;
 }
 
 .quick-actions button {
