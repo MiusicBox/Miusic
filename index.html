@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
 <title>Music Store</title>
-<link rel="stylesheet" href="style.css?v=20260920-v14">
+<link rel="stylesheet" href="style.css?v=20260920-v15">
 <style>
   /* โครงสร้าง Cart เดิมที่ app-cart.js ใช้งาน — คงไว้ในหน้า User */
   .cart-toggle-wrap { position:relative; margin-left:auto; display:flex; align-items:center; gap:8px; flex-shrink:0; flex-wrap:nowrap; }
@@ -256,7 +256,7 @@
   <div class="playlist-wrapper">
     <button class="playlist-header-btn" id="playlistToggleBtn">
       <span class="playlist-header-title">เพลย์ลิสต์</span>
-      <svg class="dropdown-icon" id="dropdownIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+      <svg class="dropdown-icon" id="dropdownIcon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c7.2 0 9 1.8 9 9s-1.8 9 -9 9s-9 -1.8 -9 -9s1.8 -9 9 -9z"/><path d="M8 10l4 4l4 -4"/></svg>
     </button>
     <div id="playlistsContainer" class="playlist-content-box"></div>
   </div>
@@ -536,6 +536,6 @@
   <!-- เปลี่ยนเลข v ทุกครั้งที่อัปโหลดไฟล์ใหม่ เพื่อไม่ให้มือถือใช้ไฟล์ JS จาก cache -->
   <!-- 🔧 v=20260917-p0: P0 แก้ Bug 1 (ลูกค้าตั้ง status เองไม่ได้) + Sec 1 (change-password ต้อง verify เดิม) -->
   <!-- 🔧 v=20260917-polling-fix: Phase 0 ยกเลิก polling ทุก 4 วิ + Phase 1 จุด 5 (admin view cache) + Phase 2 จุด 1 (state ฝั่ง client) -->
-  <script type="module" src="app-user.js?v=20260917-p1"></script>
+  <script type="module" src="app-user.js?v=20260920-arrow1"></script>
 </body>
 </html>
