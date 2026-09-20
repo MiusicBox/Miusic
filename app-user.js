@@ -32,12 +32,15 @@ import { initCart } from "./app-cart.js?v=20260912-login-fix";
 // ===== ลดราคา + โปรโมชั่น + ออเดอร์ของฉัน (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, applyDiscountToPrice, findActiveDiscountFor,
-  initMyOrdersView, cleanupMyOrdersView
+  initMyOrdersView, cleanupMyOrdersView,
+  // 🎁 (2026-09-20) เพิ่มใหม่: formatDateTime ใช้สำหรับแสดงวันที่ในหน้าโปรโมชั่นพรีวิว (เรียกจาก app-promotion.js ที่มีอยู่แล้ว)
+  formatDateTime
 } from "./app-promotion.js?v=20261101-promo1";
 
 const STATE = {
   songs: [], categories: [], djs: [], playlists: [], settings: {},
   discounts: [],  // ← ลดราคาที่ active อยู่ตอนนี้ (โหลดครั้งเดียวตอน init)
+  promotions: [], // 🎁 (2026-09-20) เพิ่มใหม่: โปรโมชั่นที่ active อยู่ตอนนี้ (โหลดครั้งเดียวตอน init — เชื่อมกับหน้า admin จัดการโปรโมชั่น)
   currentCategory: "all", currentDj: null, search: "",
   currentView: "home",
   currentPlayingId: null,   // id ของเพลงที่กำลังเล่น/พักอยู่ในเครื่องเล่น
@@ -185,6 +188,18 @@ async function init() {
     console.warn("โหลด promotions ไม่สำเร็จ — ตะกร้าจะยังไม่แสดงส่วนลดโปรโมชั่น (ราคาจริงตอนสั่งซื้อยังถูกต้อง)", e);
   }
 
+  // 🎁 (2026-09-20) เพิ่มใหม่: เก็บ active promotions ไว้ใน STATE.promotions เพื่อใช้ในหน้าพรีวิวโปรโมชั่น
+  //   - fetchActivePromotions() ด้านบนเก็บผลลัพธ์ใน cache (_promotionsCache ใน app-promotion.js) แล้ว
+  //   - ที่นี่ดึง cache นั้นมาเก็บใน STATE.promotions เพื่อใช้ในฝั่ง UI โดยตรง
+  //   - ไม่กระทบระบบ cart (cart จะ fetchActivePromotions(true) บังคับ refresh ใหม่ตอน checkout อยู่แล้ว)
+  //   - ถ้าไม่มีโปรโมชั่น active → STATE.promotions = [] (empty array) — หน้าพรีวิวจะแสดง empty state
+  try {
+    STATE.promotions = await fetchActivePromotions();
+  } catch (e) {
+    console.warn("โหลด promotions สำหรับหน้าพรีวิวไม่สำเร็จ — หน้าโปรโมชั่นจะแสดง empty state", e);
+    STATE.promotions = [];
+  }
+
   const siteNameEl = document.getElementById("siteName");
   if (siteNameEl) siteNameEl.textContent = STATE.settings.website_name || "Music Store";
   document.title = STATE.settings.website_name || "Music Store";
@@ -204,11 +219,16 @@ async function init() {
   renderDjRow();
   renderPlaylists();
   renderSongGrid();
+  renderPromotionBanner(); // 🎁 (2026-09-20) เพิ่มใหม่: แสดงแบนเนอร์โปรโมชั่นเด่นบนหน้าแรก (ถ้ามีโปร active)
   setView("home");
   togglePlaylistsVisibility();
   // 🔧 (2026-09-18 v6 perf): ติดตั้ง IntersectionObserver สำหรับ load-more-on-scroll
   //   เมื่อ user scroll ถึง card สุดท้าย → trigger loadMoreSongs() → append page ถัดไป
   setupSongListInfinityScroll();
+  // 🎁 (2026-09-20) เพิ่มใหม่: เริ่ม countdown timer สำหรับแบนเนอร์โปรโมชั่น (อัปเดตทุก 1 วินาที)
+  //   - ไม่กระทบระบบเดิม — ใช้ interval แยก ปิดได้ผ่าน stopPromoCountdown() ถ้าต้องการ
+  //   - ปลอดภัยเพราะเช็ค element ทุกรอบ ถ้า element ไม่อยู่ → ข้ามไปเงียบ ๆ
+  startPromoCountdown();
 }
 
 // 🔧 (2026-09-18 v6 perf): โหลดเพลง page ถัดไป (50 songs/page)
@@ -1442,6 +1462,10 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
     const tab = btn.getAttribute("data-tab");
     document.querySelectorAll(".bottom-nav button").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
+    // 🎁 (2026-09-20) เพิ่มใหม่: ซ่อน promotionsView ทุกครั้งที่กดแท็บใด ๆ
+    //   เพื่อให้แน่ใจว่า view โปรโมชั่นจะถูกซ่อนเสมอเมื่อเปลี่ยนไปแท็บอื่น
+    //   ไม่กระทบ branch เดิม — เพียงเรียกฟังก์ชัน hidePromotionsView() ที่เช็ค element เอง (ปลอดภัย)
+    hidePromotionsView();
     if (tab === "home") {
       hideMyOrdersView();
       cleanupMyOrdersView();
@@ -1451,6 +1475,7 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       renderCategoryChips();
       renderSongGrid();
       renderPlaylists();
+      renderPromotionBanner(); // 🎁 (2026-09-20) เพิ่มใหม่: แสดงแบนเนอร์โปรโมชั่นใหม่ (เผื่อถูกซ่อนตอนอยู่แท็บอื่น)
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
     else if (tab === "playlist") {
@@ -1485,6 +1510,16 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       // ===== เพิ่มใหม่: tab "ออเดอร์ของฉัน" =====
       showMyOrdersView();
       initMyOrdersView();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    else if (tab === "promotions") {
+      // 🎁 (2026-09-20) เพิ่มใหม่: tab "โปรโมชั่น" — หน้าพรีวิวโปรโมชั่นทั้งหมดที่ active
+      //   - ไม่แตะ branch เดิม ใช้ showPromotionsView()/hidePromotionsView() แยกต่างหาก
+      //   - เรียก renderPromotionsView() เพื่อวาดการ์ดโปรโมชั่น + countdown
+      //   - ซ่อน view อื่น ๆ ที่อาจเปิดอยู่ (myOrdersView)
+      hideMyOrdersView();
+      cleanupMyOrdersView();
+      showPromotionsView();
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
     else if (tab === "contact") {
@@ -2155,3 +2190,413 @@ window.__updateTrackOrderBadge = updateTrackOrderBadge;
 window.__refreshTrackOrderBadge = initTrackOrderBadgeListener;
 
 init().catch(err => showToast("โหลดข้อมูลไม่สำเร็จ: " + err.message, "error"));
+
+/* ==========================================================================
+   🎁 (2026-09-20) หน้าโปรโมชั่นพรีวิว (ฝั่ง User) — เพิ่มใหม่ทั้งบล็อก
+   ==========================================================================
+   ระบบนี้ "อ่าน" ข้อมูลจาก collection `promotions` ผ่าน fetchActivePromotions()
+   ที่มีอยู่แล้วใน app-promotion.js — เชื่อมกับหน้า admin จัดการโปรโมชั่น (view-promotions)
+   โดยตรง ไม่สร้าง query ใหม่ ไม่สร้าง API ใหม่
+
+   ฟังก์ชันทั้งหมดเป็น additive — ไม่แก้ signature ฟังก์ชันเดิมใด ๆ ในไฟล์นี้
+   ประกอบด้วย:
+   - promo_escapeHtml(str)             : escape HTML ป้องกัน XSS
+   - promo_formatDiscountValue(p)      : ฟอร์แมตค่าส่วนลด → ข้อความ (เช่น "10%", "5,000 LAK")
+   - promo_getTypeLabel(type)          : แปลง type code → ข้อความไทย
+   - promo_getCountdownParts(endIso)   : คำนวณ d/h/m/s ที่เหลือ พร้อมสถานะ urgent/expired
+   - promo_formatCountdownCompact(p)   : ฟอร์แมต compact สำหรับแบนเนอร์หน้าแรก
+   - promo_pickFeaturedPromotion()     : เลือกโปรเด่น (ใกล้หมดเวลาที่สุด + ยังไม่หมด)
+   - renderPromotionBanner()           : วาดแบนเนอร์หน้าแรก (ซ่อนถ้าไม่มีโปร)
+   - renderPromotionsView()            : วาดการ์ดโปรโมชั่นทั้งหมดใน #promotionsView
+   - showPromotionsView()              : แสดงหน้าโปรโมชั่น (ซ่อน view อื่น ๆ)
+   - hidePromotionsView()              : ซ่อนหน้าโปรโมชั่น
+   - updatePromoCountdowns()           : อัปเดตตัวเลข countdown ทุก ๆ วินาที
+   - startPromoCountdown()             : เริ่ม interval ของ countdown (เรียกครั้งเดียวตอน init)
+   ========================================================================== */
+
+function promo_escapeHtml(str) {
+  return String(str == null ? "" : str)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// ฟอร์แมตค่าส่วนลด → ข้อความสั้น (เช่น "10%", "5,000 LAK")
+function promo_formatDiscountValue(p) {
+  if (!p) return "-";
+  const v = Number(p.discount_value) || 0;
+  const t = p.type || "cart_percent";
+  if (t === "cart_percent" || t === "buy_x_get_y_percent") {
+    return v + "%";
+  }
+  if (t === "cart_fixed") {
+    return Number(v).toLocaleString("en-US") + " LAK";
+  }
+  return String(v);
+}
+
+// ฟอร์แมตค่าส่วนลด → แยก "value" กับ "unit" สำหรับการ์ด (เช่น { value: "10", unit: "% OFF" })
+function promo_formatDiscountParts(p) {
+  if (!p) return { value: "-", unit: "" };
+  const v = Number(p.discount_value) || 0;
+  const t = p.type || "cart_percent";
+  if (t === "cart_percent" || t === "buy_x_get_y_percent") {
+    return { value: String(v), unit: "% OFF" };
+  }
+  if (t === "cart_fixed") {
+    return { value: Number(v).toLocaleString("en-US"), unit: "LAK OFF" };
+  }
+  return { value: String(v), unit: "" };
+}
+
+// แปลง type code → ข้อความไทยสั้น ๆ สำหรับ tag
+function promo_getTypeLabel(type) {
+  if (type === "cart_percent") return "ลด % ทั้งยอด";
+  if (type === "cart_fixed")   return "ลดจำนวนเงิน";
+  if (type === "buy_x_get_y_percent") return "ซื้อ X ลด %";
+  return "โปรโมชั่น";
+}
+
+// คำนวณเวลาที่เหลือ (ms → วัน/ชม./นาที/วินาที) พร้อมสถานะ urgent/expired
+//   urgent = เหลือน้อยกว่า 24 ชม.
+//   expired = หมดเวลาแล้ว (end <= now)
+function promo_getCountdownParts(endIso) {
+  const result = { days: 0, hours: 0, minutes: 0, seconds: 0, total: 0, urgent: false, expired: false };
+  if (!endIso) return result;
+  const end = new Date(endIso).getTime();
+  if (isNaN(end)) return result;
+  const now = Date.now();
+  let diff = end - now;
+  if (diff <= 0) {
+    result.expired = true;
+    return result;
+  }
+  result.total = diff;
+  result.urgent = diff < 24 * 60 * 60 * 1000; // < 24h
+  result.days    = Math.floor(diff / (24 * 60 * 60 * 1000)); diff -= result.days * 24 * 60 * 60 * 1000;
+  result.hours   = Math.floor(diff / (60 * 60 * 1000));      diff -= result.hours * 60 * 60 * 1000;
+  result.minutes = Math.floor(diff / (60 * 1000));            diff -= result.minutes * 60 * 1000;
+  result.seconds = Math.floor(diff / 1000);
+  return result;
+}
+
+// ฟอร์แมต compact สำหรับแบนเนอร์หน้าแรก → ข้อความสั้นแบบ Cyberpunk
+//   รูปแบบ: "2D 14:32:08" หรือ "EXPIRED"
+function promo_formatCountdownCompact(endIso) {
+  const p = promo_getCountdownParts(endIso);
+  if (p.expired) return "EXPIRED";
+  const pad = n => String(n).padStart(2, "0");
+  if (p.days > 0) {
+    return `${p.days}D ${pad(p.hours)}:${pad(p.minutes)}:${pad(p.seconds)}`;
+  }
+  return `${pad(p.hours)}:${pad(p.minutes)}:${pad(p.seconds)}`;
+}
+
+// เลือกโปรเด่นสำหรับแบนเนอร์หน้าแรก
+//   หลักเกณฑ์: เลือกโปรที่ใกล้หมดเวลาที่สุด (แต่ยังไม่หมด) เพื่อสร้างความเร่งด่วน
+//   ถ้าไม่มีโปรที่ยังไม่หมด → คืน null (แบนเนอร์จะถูกซ่อน)
+function promo_pickFeaturedPromotion() {
+  if (!Array.isArray(STATE.promotions) || STATE.promotions.length === 0) return null;
+  const now = Date.now();
+  // เฉพาะโปรที่ยังไม่หมดเวลา
+  const upcoming = STATE.promotions.filter(p => {
+    if (!p.end_at) return false;
+    const end = new Date(p.end_at).getTime();
+    return !isNaN(end) && end > now;
+  });
+  if (upcoming.length === 0) return null;
+  // เรียงตาม end_at น้อยไปมาก → อันแรกคือใกล้หมดเวลาที่สุด
+  upcoming.sort((a, b) => new Date(a.end_at).getTime() - new Date(b.end_at).getTime());
+  return upcoming[0];
+}
+
+// วาดแบนเนอร์โปรโมชั่นเด่นบนหน้าแรก
+//   - ถ้าไม่มีโปร active → ซ่อนแบนเนอร์ (hidden)
+//   - ถ้ามี → แสดงชื่อ + ส่วนลด + countdown compact
+//   - กดที่แบนเนอร์ → สลับไปแท็บ "โปรโมชั่น"
+function renderPromotionBanner() {
+  const banner = document.getElementById("promoHomeBanner");
+  if (!banner) return;
+  const featured = promo_pickFeaturedPromotion();
+  if (!featured) {
+    banner.hidden = true;
+    return;
+  }
+  banner.hidden = false;
+  const titleEl = document.getElementById("promoHomeBannerTitle");
+  const discountEl = document.getElementById("promoHomeBannerDiscount");
+  const countdownEl = document.getElementById("promoHomeBannerCountdown");
+  if (titleEl) titleEl.textContent = featured.name || "PROMO";
+  if (discountEl) discountEl.textContent = "-" + promo_formatDiscountValue(featured);
+  if (countdownEl) {
+    const p = promo_getCountdownParts(featured.end_at);
+    countdownEl.textContent = promo_formatCountdownCompact(featured.end_at);
+    countdownEl.classList.toggle("urgent", p.urgent);
+  }
+  // ผูก click (ครั้งเดียว — กันซ้ำ)
+  if (!banner._promoBound) {
+    banner.addEventListener("click", () => {
+      const tabBtn = document.querySelector('.bottom-nav button[data-tab="promotions"]');
+      if (tabBtn) tabBtn.click();
+    });
+    banner._promoBound = true;
+  }
+}
+
+// วาดการ์ดโปรโมชั่นทั้งหมดใน #promotionsView
+function renderPromotionsView() {
+  const list = document.getElementById("promoViewList");
+  if (!list) return;
+
+  // กรณีไม่มีโปรโมชั่น active — สไตล์ Cyberpunk ใช้ข้อความเทคโนโลยี
+  if (!Array.isArray(STATE.promotions) || STATE.promotions.length === 0) {
+    list.innerHTML = `
+      <div class="promo-view-empty">
+        <div class="promo-view-empty-icon">⚡</div>
+        <div class="promo-view-empty-text">&gt; NO_PROMOTIONS_FOUND</div>
+        <div class="promo-view-empty-sub">// ติดต่อแอดมินเพื่อสอบถามโปรพิเศษ</div>
+      </div>`;
+    return;
+  }
+
+  // กรองเฉพาะโปรที่ active และยังอยู่ในช่วงเวลา (เผื่อ cache เก่า — ด่านความปลอดภัย)
+  const now = Date.now();
+  const visible = STATE.promotions.filter(p => {
+    if (p.active === false) return false;
+    const start = p.start_at ? new Date(p.start_at).getTime() : null;
+    const end   = p.end_at   ? new Date(p.end_at).getTime()   : null;
+    if (start && !isNaN(start) && now < start) return false;
+    if (end && !isNaN(end) && now > end) return false;
+    return true;
+  });
+
+  // เรียงตาม end_at น้อยไปมาก (ใกล้หมดเวลาก่อน) — สร้างความเร่งด่วน
+  visible.sort((a, b) => {
+    const ea = a.end_at ? new Date(a.end_at).getTime() : Infinity;
+    const eb = b.end_at ? new Date(b.end_at).getTime() : Infinity;
+    return ea - eb;
+  });
+
+  if (visible.length === 0) {
+    list.innerHTML = `
+      <div class="promo-view-empty">
+        <div class="promo-view-empty-icon">⚡</div>
+        <div class="promo-view-empty-text">&gt; NO_PROMOTIONS_FOUND</div>
+        <div class="promo-view-empty-sub">// ติดต่อแอดมินเพื่อสอบถามโปรพิเศษ</div>
+      </div>`;
+    return;
+  }
+
+  // วาดการ์ดทีละใบ
+  list.innerHTML = visible.map(p => {
+    const discountParts = promo_formatDiscountParts(p);
+    const cparts = promo_getCountdownParts(p.end_at);
+    const isUrgent = cparts.urgent && !cparts.expired;
+    const isExpired = cparts.expired;
+
+    // สร้าง countdown HTML — สไตล์ Cyberpunk ใช้ label "EXPIRES_IN" และ "EXPIRED"
+    let countdownHtml = "";
+    if (isExpired) {
+      countdownHtml = `
+        <div class="promo-countdown-box expired">
+          <span class="promo-countdown-label">&gt; STATUS</span>
+          <span class="promo-countdown-text-flat">EXPIRED</span>
+        </div>`;
+    } else {
+      const pad = n => String(n).padStart(2, "0");
+      const showDays = cparts.days > 0;
+      const daysHtml = showDays ? `
+        <span class="promo-countdown-unit">
+          <span class="promo-countdown-num" data-promo-num="d">${cparts.days}</span>
+          <span class="promo-countdown-text">D</span>
+        </span>
+        <span class="promo-countdown-sep">:</span>` : "";
+      countdownHtml = `
+        <div class="promo-countdown-box${isUrgent ? " urgent" : ""}" data-promo-end="${p.end_at || ""}">
+          <span class="promo-countdown-label">${isUrgent ? "&gt; EXPIRES_IN_URGENT" : "&gt; EXPIRES_IN"}</span>
+          <span class="promo-countdown-timer">
+            ${daysHtml}
+            <span class="promo-countdown-unit">
+              <span class="promo-countdown-num" data-promo-num="h">${pad(cparts.hours)}</span>
+              <span class="promo-countdown-text">H</span>
+            </span>
+            <span class="promo-countdown-sep">:</span>
+            <span class="promo-countdown-unit">
+              <span class="promo-countdown-num" data-promo-num="m">${pad(cparts.minutes)}</span>
+              <span class="promo-countdown-text">M</span>
+            </span>
+            <span class="promo-countdown-sep">:</span>
+            <span class="promo-countdown-unit">
+              <span class="promo-countdown-num" data-promo-num="s">${pad(cparts.seconds)}</span>
+              <span class="promo-countdown-text">S</span>
+            </span>
+          </span>
+        </div>`;
+    }
+
+    // สร้าง tag ย่อย ๆ
+    const tags = [];
+    tags.push(`<span class="promo-tag type">${promo_escapeHtml(promo_getTypeLabel(p.type))}</span>`);
+    if (p.applies_to === "category" && p.category_name) {
+      tags.push(`<span class="promo-tag scope">🎵 ${promo_escapeHtml(p.category_name)}</span>`);
+    } else {
+      tags.push(`<span class="promo-tag scope">🎵 ทุกเพลง</span>`);
+    }
+    if (p.min_quantity && Number(p.min_quantity) > 0) {
+      tags.push(`<span class="promo-tag min">🎯 ซื้อครบ ${Number(p.min_quantity)} เพลง</span>`);
+    }
+    if (p.min_subtotal && Number(p.min_subtotal) > 0) {
+      tags.push(`<span class="promo-tag min">💰 ขั้นต่ำ ${Number(p.min_subtotal).toLocaleString("en-US")} LAK</span>`);
+    }
+    const tagsHtml = tags.join("");
+
+    // วันที่เริ่มต้น/สิ้นสุด
+    const startDate = formatDateTime(p.start_at);
+    const endDate   = formatDateTime(p.end_at);
+
+    return `
+      <div class="promo-card${isUrgent ? " urgent" : ""}" data-promo-id="${promo_escapeHtml(p.id)}">
+        <div class="promo-card-body">
+          <div class="promo-card-top">
+            <div class="promo-card-name-wrap">
+              <h3 class="promo-card-name">${promo_escapeHtml(p.name || "(NO_NAME)")}</h3>
+              ${p.description ? `<div class="promo-card-desc">${promo_escapeHtml(p.description)}</div>` : ""}
+            </div>
+            <div class="promo-card-discount">
+              <div class="promo-card-discount-value">${promo_escapeHtml(discountParts.value)}</div>
+              <div class="promo-card-discount-unit">${promo_escapeHtml(discountParts.unit)}</div>
+            </div>
+          </div>
+          <div class="promo-card-tags">${tagsHtml}</div>
+          <div class="promo-card-dates">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+            <span class="promo-date-label">// VALID:</span>
+            <span class="promo-date-value">${promo_escapeHtml(startDate)}</span>
+            <span class="promo-date-sep">→</span>
+            <span class="promo-date-value">${promo_escapeHtml(endDate)}</span>
+          </div>
+          ${countdownHtml}
+          <button type="button" class="promo-card-cta" data-promo-cta>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
+            &gt; ADD_SONGS_TO_CLAIM
+          </button>
+        </div>
+      </div>`;
+  }).join("");
+
+  // ผูกปุ่ม CTA — กดแล้วสลับไปแท็บ "หน้าแรก" เพื่อให้ลูกค้าเลือกเพลง
+  list.querySelectorAll("[data-promo-cta]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const homeBtn = document.querySelector('.bottom-nav button[data-tab="home"]');
+      if (homeBtn) homeBtn.click();
+    });
+  });
+}
+
+// แสดงหน้าโปรโมชั่น (ซ่อน view อื่น ๆ ที่อาจเปิดอยู่)
+//   รูปแบบเดียวกับ showMyOrdersView() ที่มีอยู่ — ไม่แตะ setView() เดิม
+function showPromotionsView() {
+  // ซ่อน view อื่น ๆ
+  ["#gridTitle", "#songGrid", "#emptyState"].forEach(selector => {
+    const el = document.querySelector(selector);
+    if (el) el.style.display = "none";
+  });
+  const categoryChips = document.getElementById("categoryChips");
+  const djSection = document.getElementById("djSection");
+  if (categoryChips) categoryChips.style.display = "none";
+  if (djSection) djSection.style.display = "none";
+  // ซ่อน playlists container
+  const playlistsContainer = document.getElementById("playlistsContainer");
+  if (playlistsContainer) playlistsContainer.classList.add("is-closed");
+  // ซ่อนแบนเนอร์โปรโมชั่น (ไม่ให้ซ้อนทับกับหน้าเต็ม)
+  const promoBanner = document.getElementById("promoHomeBanner");
+  if (promoBanner) promoBanner.hidden = true;
+  // แสดง promotionsView
+  const view = document.getElementById("promotionsView");
+  if (view) view.style.display = "block";
+  // วาดการ์ดใหม่ทุกครั้งที่เปิด (เผื่อ cache หมดอายุ)
+  renderPromotionsView();
+}
+
+// ซ่อนหน้าโปรโมชั่น (เรียกจาก click handler ของ bottom-nav)
+function hidePromotionsView() {
+  const view = document.getElementById("promotionsView");
+  if (view) view.style.display = "none";
+  // 🎁 (2026-09-20) ซ่อนแบนเนอร์โปรโมชั่นด้วย — แบนเนอร์ควรอยู่แค่หน้าแรก
+  //   - ทุกแท็บอื่น ๆ (playlist/category/dj/myorders) จะไม่เห็นแบนเนอร์
+  //   - เมื่อกลับไปแท็บ "หน้าแรก" → branch home จะเรียก renderPromotionBanner() แสดงใหม่
+  const promoBanner = document.getElementById("promoHomeBanner");
+  if (promoBanner) promoBanner.hidden = true;
+}
+
+// อัปเดตตัวเลข countdown ทุก ๆ วินาที
+//   - อัปเดตทั้งแบนเนอร์หน้าแรกและการ์ดใน #promotionsView
+//   - ถ้า element ไม่อยู่ → ข้ามไปเงียบ ๆ (ปลอดภัย)
+function updatePromoCountdowns() {
+  // === อัปเดตแบนเนอร์หน้าแรก ===
+  const banner = document.getElementById("promoHomeBanner");
+  if (banner && !banner.hidden) {
+    const featured = promo_pickFeaturedPromotion();
+    const countdownEl = document.getElementById("promoHomeBannerCountdown");
+    if (featured && countdownEl) {
+      const p = promo_getCountdownParts(featured.end_at);
+      if (p.expired) {
+        // โปรหมดเวลา → รีเฟรชแบนเนอร์ใหม่ (อาจเลือกโปรอื่นแทน)
+        renderPromotionBanner();
+      } else {
+        countdownEl.textContent = promo_formatCountdownCompact(featured.end_at);
+        countdownEl.classList.toggle("urgent", p.urgent);
+      }
+    } else if (!featured) {
+      // ไม่มีโปรแล้ว → ซ่อนแบนเนอร์
+      banner.hidden = true;
+    }
+  }
+
+  // === อัปเดตการ์ดใน #promotionsView ===
+  const view = document.getElementById("promotionsView");
+  if (!view || view.style.display === "none") return;
+  const cards = view.querySelectorAll(".promo-card[data-promo-id]");
+  let needRerender = false;
+  cards.forEach(card => {
+    const endIso = card.querySelector("[data-promo-end]")?.getAttribute("data-promo-end");
+    if (!endIso) return;
+    const p = promo_getCountdownParts(endIso);
+    if (p.expired) {
+      // การ์ดนี้หมดเวลา → mark ไว้แล้ว rerender ทีเดียวหลังวนจบ
+      needRerender = true;
+      return;
+    }
+    // อัปเดต class urgent ถ้าสถานะเปลี่ยน
+    const box = card.querySelector(".promo-countdown-box");
+    if (box) {
+      const wasUrgent = box.classList.contains("urgent");
+      if (wasUrgent !== p.urgent) {
+        box.classList.toggle("urgent", p.urgent);
+        card.classList.toggle("urgent", p.urgent);
+      }
+    }
+    // อัปเดตตัวเลข
+    const pad = n => String(n).padStart(2, "0");
+    const dEl = card.querySelector('[data-promo-num="d"]');
+    const hEl = card.querySelector('[data-promo-num="h"]');
+    const mEl = card.querySelector('[data-promo-num="m"]');
+    const sEl = card.querySelector('[data-promo-num="s"]');
+    if (dEl) dEl.textContent = p.days;
+    if (hEl) hEl.textContent = pad(p.hours);
+    if (mEl) mEl.textContent = pad(p.minutes);
+    if (sEl) sEl.textContent = pad(p.seconds);
+  });
+  if (needRerender) {
+    renderPromotionsView();
+  }
+}
+
+// เริ่ม interval ของ countdown (เรียกครั้งเดียวตอน init)
+//   - ไม่กระทบระบบเดิม ใช้ interval แยก
+//   - อัปเดตทุก 1 วินาที (1000ms)
+let _promoCountdownInterval = null;
+function startPromoCountdown() {
+  if (_promoCountdownInterval) return; // กันเริ่มซ้ำ
+  _promoCountdownInterval = setInterval(updatePromoCountdowns, 1000);
+}
+
