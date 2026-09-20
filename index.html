@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
 <title>Music Store</title>
-<link rel="stylesheet" href="style.css?v=20260920-v16">
+<link rel="stylesheet" href="style.css?v=20260920-cyberpunk">
 <style>
   /* โครงสร้าง Cart เดิมที่ app-cart.js ใช้งาน — คงไว้ในหน้า User */
   .cart-toggle-wrap { position:relative; margin-left:auto; display:flex; align-items:center; gap:8px; flex-shrink:0; flex-wrap:nowrap; }
@@ -277,6 +277,26 @@
     <div class="chip-row" id="categoryChips"></div>
   </div>
 
+  <!-- 🎁 (2026-09-20) แบนเนอร์โปรโมชั่นเด่น บนหน้าแรก — สไตล์ J: CYBERPUNK
+       ซ่อน/แสดงผ่าน app-user.js: renderPromotionBanner() → แสดงเฉพาะตอนที่มีโปร active
+       กดที่แบนเนอร์ → สลับไปหน้าโปรโมชั่นเต็ม (#promotionsView) -->
+  <div class="promo-home-banner" id="promoHomeBanner" hidden>
+    <div class="promo-home-banner-inner">
+      <div class="promo-home-banner-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+      </div>
+      <div class="promo-home-banner-text">
+        <div class="promo-home-banner-label">⚡ SYSTEM_OFFER</div>
+        <div class="promo-home-banner-title" id="promoHomeBannerTitle">—</div>
+        <div class="promo-home-banner-meta">
+          <span class="promo-home-banner-discount" id="promoHomeBannerDiscount">—</span>
+          <span class="promo-home-banner-countdown" id="promoHomeBannerCountdown">—</span>
+        </div>
+      </div>
+      <div class="promo-home-banner-arrow" aria-hidden="true">&gt;</div>
+    </div>
+  </div>
+
   <div id="djSection">
     <div class="section-title">DJ</div>
     <div class="dj-row" id="djRow"></div>
@@ -330,6 +350,23 @@
   <!-- ===== เพิ่มใหม่: view สำหรับ tab "ออเดอร์ของฉัน" (ลูกค้าติดตามออเดอร์) ===== -->
   <div id="myOrdersView" class="container" style="display:none;padding:14px 16px 100px;"></div>
 
+  <!-- ===== 🎁 (2026-09-20) เพิ่มใหม่: view สำหรับ tab "โปรโมชั่น" — สไตล์ J: CYBERPUNK =====
+       - ข้อมูลมาจาก fetchActivePromotions() ใน app-promotion.js (collection เดียวกับที่ admin จัดการใน #view-promotions)
+       - มี countdown นับถอยหลังเป็นเรียลไทม์ (อัปเดตทุก 1 วินาที)
+       - ซ่อน/แสดงผ่าน showPromotionsView()/hidePromotionsView() — ไม่แตะ setView() เดิม -->
+  <div id="promotionsView" class="container" style="display:none;padding:14px 14px 100px;">
+    <div class="promo-view-header">
+      <div class="promo-view-header-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+      </div>
+      <div>
+        <h2 class="promo-view-title">PROMOTIONS</h2>
+        <p class="promo-view-subtitle">&gt; AUTO_DISCOUNT // NO_CODE_NEEDED</p>
+      </div>
+    </div>
+    <div id="promoViewList" class="promo-view-list"></div>
+  </div>
+
   <div class="bottom-nav">
     <button class="active" data-tab="home">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a1 1 0 01-1 1H4a1 1 0 01-1-1z"/></svg>
@@ -346,6 +383,11 @@
     <button data-tab="dj">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
       DJ
+    </button>
+    <!-- 🎁 (2026-09-20) เพิ่มแท็บใหม่ "โปรโมชั่น" — สไตล์ J: CYBERPUNK -->
+    <button data-tab="promotions" type="button" aria-label="โปรโมชั่น">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+      โปรโมชั่น
     </button>
     <button data-tab="contact">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
@@ -590,6 +632,6 @@
   <!-- เปลี่ยนเลข v ทุกครั้งที่อัปโหลดไฟล์ใหม่ เพื่อไม่ให้มือถือใช้ไฟล์ JS จาก cache -->
   <!-- 🔧 v=20260917-p0: P0 แก้ Bug 1 (ลูกค้าตั้ง status เองไม่ได้) + Sec 1 (change-password ต้อง verify เดิม) -->
   <!-- 🔧 v=20260917-polling-fix: Phase 0 ยกเลิก polling ทุก 4 วิ + Phase 1 จุด 5 (admin view cache) + Phase 2 จุด 1 (state ฝั่ง client) -->
-  <script type="module" src="app-user.js?v=20260920-arrow1"></script>
+  <script type="module" src="app-user.js?v=20260920-cyberpunk"></script>
 </body>
 </html>
