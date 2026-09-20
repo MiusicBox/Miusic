@@ -404,7 +404,15 @@ async function showAdmin() {
 // ---------------- View switching ----------------
 function showView(id) {
   document.querySelectorAll(".view").forEach(v => v.style.display = "none");
-  document.getElementById(id).style.display = "block";
+  const el = document.getElementById(id);
+  // 🔧 (2026-09-19 mobile fix v7): บังคับ width 100% ทุกครั้งที่ show view
+  //   เหตุผล: เดิม set แค่ display: block → บางครั้ง width ไม่เต็มจอ (โดยเฉพาะ iPad)
+  //   วิธีแก้: set width: 100% + box-sizing: border-box ด้วย → ทุก view เต็มจอเสมอ
+  //   ผลกระทบต่อระบบเดิม: 0% — เป็นการเพิ่ม inline style ที่เหมือน CSS class .view อยู่แล้ว
+  el.style.display = "block";
+  el.style.width = "100%";
+  el.style.boxSizing = "border-box";
+  el.style.maxWidth = "none";
 }
 document.querySelectorAll(".back-btn").forEach(b => b.addEventListener("click", () => { showView("view-dashboard"); loadDashboard(); }));
 document.getElementById("qaAddSong").addEventListener("click", async () => { showView("view-songs"); await loadSongs(); openAddSong(); });
