@@ -2416,6 +2416,7 @@ button:active {
 }
 
 /* 🔥 ออโรราหมุนรอบการ์ด — conic gradient สลับ 4 โทนสี */
+/* 🎨 (2026-09-20): ลด glow/blur ลง ไม่ให้แสบตา — opacity ลดจาก 0.65 → 0.30, blur ลดจาก 28px → 14px */
 .song-card-row::before {
   content: "";
   position: absolute;
@@ -2432,8 +2433,8 @@ button:active {
   );
   animation: song-aurora-prism-spin 10s linear infinite;
   z-index: 0;
-  filter: blur(28px);
-  opacity: 0.65;
+  filter: blur(14px);
+  opacity: 0.30;
   pointer-events: none;
 }
 @keyframes song-aurora-prism-spin {
@@ -2492,8 +2493,8 @@ button:active {
 }
 
 .song-card-row:hover::before {
-  opacity: 0.95 !important;
-  filter: blur(20px) !important;
+  opacity: 0.45 !important;
+  filter: blur(10px) !important;
 }
 
 /* รูปปกใหญ่ขึ้น + มี glow */
@@ -2820,8 +2821,8 @@ button:active {
 }
 
 .playlist-song-row.song-card-row:hover::before {
-  opacity: 0.95 !important;
-  filter: blur(20px) !important;
+  opacity: 0.45 !important;
+  filter: blur(10px) !important;
 }
 
 /* รูปปกเพลงในเพลย์ลิสต์ — ใหญ่ขึ้น + มี glow เหมือนเพลงหลัก */
@@ -2982,107 +2983,32 @@ button:active {
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(236, 72, 153, 0.08)) !important;
 }
 
-/* 💎 (2026-09-20): สไตล์ CC — Diamond Glow สำหรับหัวเพลย์ลิสต์
-   - เพชรเรืองแสงสลับ 5 สี + sparkle วิ่งที่ขอบบน
-   - glow หายใจตลอดเวลา
-   - เพิ่มใหม่ ไม่แทนที่ CSS เดิม แค่ override ด้วย specificity ที่สูงกว่า */
+/* 🎨 (2026-09-20): หัวเพลย์ลิสต์สลับ 3 สี (ม่วง / teal / เขียว) ตามรูป — สีเข้ม ๆ
+   - สลับ 3 สีไปเรื่อย ๆ (nth-child 3n+1/2/3)
+   - ลด glow/sparkle ออก ให้ดูสงบ ไม่แสบตา
+   - มี drop-shadow อ่อน ๆ */
 .playlist-folder-btn {
-  background: linear-gradient(135deg, #1a1a3a, #0a0a1a) !important;
-  border: 1px solid rgba(168, 85, 247, 0.35) !important;
+  background: linear-gradient(135deg, #2a1a4e, #1a0f2e) !important;
+  border: 1px solid rgba(139, 92, 246, 0.5) !important;
   border-radius: 14px !important;
   position: relative !important;
   overflow: hidden !important;
   isolation: isolate;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
 }
 
-/* glow หายใจ + sparkle ที่ขอบบน */
-.playlist-folder-btn::before {
-  content: "";
-  position: absolute;
-  top: -50%; left: -50%;
-  width: 200%; height: 200%;
-  background: radial-gradient(
-    circle at center,
-    rgba(168, 85, 247, 0.5) 0%,
-    transparent 30%
-  );
-  animation: playlist-diamond-pulse 4s ease-in-out infinite;
-  z-index: 0;
-  pointer-events: none;
+/* สลับ 3 สี: ม่วง / ฟ้า-เขียวมิ้น (teal) / เขียว */
+.playlist-block:nth-child(3n+1) .playlist-folder-btn {
+  background: linear-gradient(135deg, #2a1a4e, #1a0f2e) !important;
+  border: 1px solid rgba(139, 92, 246, 0.5) !important;
 }
-@keyframes playlist-diamond-pulse {
-  0%, 100% { opacity: 0.4; transform: scale(0.8); }
-  50%      { opacity: 1; transform: scale(1.3); }
+.playlist-block:nth-child(3n+2) .playlist-folder-btn {
+  background: linear-gradient(135deg, #0c2a3a, #061a26) !important;
+  border: 1px solid rgba(20, 184, 166, 0.5) !important;
 }
-
-.playlist-folder-btn::after {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.8), transparent);
-  animation: playlist-diamond-sparkle 3s ease-in-out infinite;
-  z-index: 2;
-  pointer-events: none;
-}
-@keyframes playlist-diamond-sparkle {
-  0%, 100% { opacity: 0.3; transform: translateX(-30%); }
-  50%      { opacity: 1; transform: translateX(30%); }
-}
-
-/* สลับสี 5 แบบ */
-.playlist-block:nth-child(5n+1) .playlist-folder-btn {
-  background: linear-gradient(135deg, #2a1a3a, #0a0a1a) !important;
-  border-color: rgba(168, 85, 247, 0.4) !important;
-}
-.playlist-block:nth-child(5n+2) .playlist-folder-btn {
-  background: linear-gradient(135deg, #1a2a3a, #0a0a1a) !important;
-  border-color: rgba(34, 211, 238, 0.4) !important;
-}
-.playlist-block:nth-child(5n+3) .playlist-folder-btn {
-  background: linear-gradient(135deg, #1a3a2a, #0a1a0a) !important;
-  border-color: rgba(16, 185, 129, 0.4) !important;
-}
-.playlist-block:nth-child(5n+4) .playlist-folder-btn {
-  background: linear-gradient(135deg, #3a2a1a, #1a0a0a) !important;
-  border-color: rgba(249, 115, 22, 0.4) !important;
-}
-.playlist-block:nth-child(5n+5) .playlist-folder-btn {
-  background: linear-gradient(135deg, #3a1a2a, #1a0a0a) !important;
-  border-color: rgba(236, 72, 153, 0.4) !important;
-}
-
-/* สลับสี glow + sparkle ตาม border */
-.playlist-block:nth-child(5n+1) .playlist-folder-btn::before {
-  background: radial-gradient(circle at center, rgba(168, 85, 247, 0.5) 0%, transparent 30%);
-}
-.playlist-block:nth-child(5n+2) .playlist-folder-btn::before {
-  background: radial-gradient(circle at center, rgba(34, 211, 238, 0.5) 0%, transparent 30%);
-}
-.playlist-block:nth-child(5n+3) .playlist-folder-btn::before {
-  background: radial-gradient(circle at center, rgba(16, 185, 129, 0.5) 0%, transparent 30%);
-}
-.playlist-block:nth-child(5n+4) .playlist-folder-btn::before {
-  background: radial-gradient(circle at center, rgba(249, 115, 22, 0.5) 0%, transparent 30%);
-}
-.playlist-block:nth-child(5n+5) .playlist-folder-btn::before {
-  background: radial-gradient(circle at center, rgba(236, 72, 153, 0.5) 0%, transparent 30%);
-}
-.playlist-block:nth-child(5n+1) .playlist-folder-btn::after {
-  background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.8), transparent);
-}
-.playlist-block:nth-child(5n+2) .playlist-folder-btn::after {
-  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.8), transparent);
-}
-.playlist-block:nth-child(5n+3) .playlist-folder-btn::after {
-  background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.8), transparent);
-}
-.playlist-block:nth-child(5n+4) .playlist-folder-btn::after {
-  background: linear-gradient(90deg, transparent, rgba(249, 115, 22, 0.8), transparent);
-}
-.playlist-block:nth-child(5n+5) .playlist-folder-btn::after {
-  background: linear-gradient(90deg, transparent, rgba(236, 72, 153, 0.8), transparent);
+.playlist-block:nth-child(3n+3) .playlist-folder-btn {
+  background: linear-gradient(135deg, #0c2e1a, #061a0c) !important;
+  border: 1px solid rgba(34, 197, 94, 0.5) !important;
 }
 
 /* z-index ให้ content ของหัวเพลย์ลิสต์อยู่ด้านบน */
@@ -3091,15 +3017,23 @@ button:active {
   z-index: 3;
 }
 
-.playlist-folder-btn:hover {
-  border-color: rgba(168, 85, 247, 0.7) !important;
-  box-shadow: 0 12px 32px rgba(168, 85, 247, 0.5) !important;
+/* hover — แต่ละสี hover ขึ้นสีเข้มกว่าเล็กน้อย */
+.playlist-block:nth-child(3n+1) .playlist-folder-btn:hover {
+  border-color: rgba(167, 139, 250, 0.8) !important;
+  box-shadow: 0 6px 18px rgba(139, 92, 246, 0.35) !important;
+  background: linear-gradient(135deg, #3a2a5e, #2a1f4e) !important;
 }
-.playlist-block:nth-child(5n+1) .playlist-folder-btn:hover { border-color: rgba(168, 85, 247, 0.7) !important; box-shadow: 0 12px 32px rgba(168, 85, 247, 0.5) !important; }
-.playlist-block:nth-child(5n+2) .playlist-folder-btn:hover { border-color: rgba(34, 211, 238, 0.7) !important; box-shadow: 0 12px 32px rgba(34, 211, 238, 0.5) !important; }
-.playlist-block:nth-child(5n+3) .playlist-folder-btn:hover { border-color: rgba(16, 185, 129, 0.7) !important; box-shadow: 0 12px 32px rgba(16, 185, 129, 0.5) !important; }
-.playlist-block:nth-child(5n+4) .playlist-folder-btn:hover { border-color: rgba(249, 115, 22, 0.7) !important; box-shadow: 0 12px 32px rgba(249, 115, 22, 0.5) !important; }
-.playlist-block:nth-child(5n+5) .playlist-folder-btn:hover { border-color: rgba(236, 72, 153, 0.7) !important; box-shadow: 0 12px 32px rgba(236, 72, 153, 0.5) !important; }
+.playlist-block:nth-child(3n+2) .playlist-folder-btn:hover {
+  border-color: rgba(45, 212, 191, 0.8) !important;
+  box-shadow: 0 6px 18px rgba(20, 184, 166, 0.35) !important;
+  background: linear-gradient(135deg, #1c3a4a, #0c2a36) !important;
+}
+.playlist-block:nth-child(3n+3) .playlist-folder-btn:hover {
+  border-color: rgba(74, 222, 128, 0.8) !important;
+  box-shadow: 0 6px 18px rgba(34, 197, 94, 0.35) !important;
+  background: linear-gradient(135deg, #1c4a2a, #0c2e1c) !important;
+}
+
 
 .playlist-folder-cover {
   width: 60px !important;
