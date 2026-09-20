@@ -314,9 +314,9 @@ button:active {
 }
 
 /* 🎧 (2026-09-20) วงกลมสีแดงเมื่อเลือก DJ — เพิ่มใหม่ ไม่แตะสไตล์เดิม
-   - ใช้ ::after สร้างวงกลม absolute ที่มุมขวาบนของ avatar
-   - มี pulse animation กระพริดเล็กน้อยให้สะดุดตา
-   - กดอีกที (toggle) → ยกเลิก class selected → วงกลมหายไป */
+   - ใช้ขอบสีแดงรอบ avatar + เปลี่ยนสีชื่อเป็นแดง
+   - 🎧 (2026-09-20 fix): ลบจุดสีแดงเล็ก ๆ ที่มุมขวาบน (::after + pulse) ออก
+     เก็บเฉพาะขอบแดงและชื่อแดงไว้เหมือนเดิม */
 .dj-item.selected {
   position: relative;
 }
@@ -329,30 +329,6 @@ button:active {
 .dj-item.selected .dj-name {
   color: #ef4444;
   font-weight: 800;
-}
-.dj-item.selected::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  right: 6px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #ef4444;
-  border: 2px solid #fff;
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.8), 0 2px 6px rgba(0, 0, 0, 0.4);
-  z-index: 5;
-  animation: dj-pulse 1.4s ease-in-out infinite;
-}
-@keyframes dj-pulse {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 0 8px rgba(239, 68, 68, 0.8), 0 2px 6px rgba(0, 0, 0, 0.4);
-  }
-  50% {
-    transform: scale(1.18);
-    box-shadow: 0 0 14px rgba(239, 68, 68, 1), 0 2px 8px rgba(0, 0, 0, 0.5);
-  }
 }
 
 .section-title {
