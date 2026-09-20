@@ -2,7 +2,7 @@
 // ใช้ collection "songs" ที่มีอยู่แล้วเป็นแหล่งข้อมูลเพลง/ราคา
 // และสร้าง collection ใหม่ชื่อ "orders" สำหรับเก็บออเดอร์
 // ===================================================
-import { db } from "./firebase-init.js?v=20260905-fix1";
+import { db, auth } from "./firebase-init.js?v=20260905-fix1";
 import {
   collection, getDocs, getDoc, setDoc, query, orderBy, where, doc, updateDoc, deleteDoc,
   // 🔧 (2026-09-17 Phase 2): เพิ่ม getDocsByIds สำหรับ batch fetch songs (ลด HTTP requests + Worker invocations)
@@ -25,6 +25,45 @@ const STATUS_CONFIG = {
 
 function escapeHtml(str) {
   return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+/* ---------------- 🔧 (2026-09-20 admin audit): บันทึก "แอดมินคนไหนสร้างออเดอร์ / เปลี่ยนสถานะ" ----------------
+   เก็บเป็นฟิลด์เพิ่มใน JSON ของออเดอร์เดิม (collection "orders" ใน D1 เป็น JSON blob → ไม่ต้องแก้ schema/Worker/API)
+   - created_by_name         : ชื่อแอดมินที่สร้างออเดอร์ (ตั้งครั้งเดียวตอนสร้าง)
+   - status_changed_by_name  : ชื่อแอดมินที่เปลี่ยนสถานะล่าสุด
+   - status_changed_at       : เวลาที่เปลี่ยนสถานะล่าสุด (ISO)
+   เก็บเฉพาะ "ชื่อที่แสดง" (display_name) ไม่เก็บอีเมล เพื่อไม่ให้อีเมลแอดมินหลุดไปกับข้อมูลออเดอร์
+   ออเดอร์เก่าที่ไม่มีฟิลด์เหล่านี้ → ไม่แสดงบรรทัดนี้ (ระบบเดิมทำงานเหมือนเดิม) */
+function getActingAdminName() {
+  try {
+    const u = auth && auth.currentUser;
+    if (!u) return "";
+    return String(u.displayName || (u.email ? String(u.email).split("@")[0] : "") || "").trim();
+  } catch (_) {
+    return "";
+  }
+}
+function buildCreatedByAudit() {
+  const name = getActingAdminName();
+  return name ? { created_by_name: name } : {};
+}
+function buildStatusAudit(isoTime) {
+  const name = getActingAdminName();
+  return name ? { status_changed_by_name: name, status_changed_at: isoTime || new Date().toISOString() } : {};
+}
+function buildAdminAuditInfoHtml(o) {
+  const parts = [];
+  if (o && o.created_by_name) {
+    parts.push(`<div class="n2">👤 สร้างโดย: ${escapeHtml(o.created_by_name)}</div>`);
+  }
+  if (o && o.status_changed_by_name) {
+    const d = o.status_changed_at ? new Date(o.status_changed_at) : null;
+    const t = d && !isNaN(d.getTime())
+      ? " · " + d.toLocaleDateString("th-TH") + " " + d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
+      : "";
+    parts.push(`<div class="n2">🔄 เปลี่ยนสถานะโดย: ${escapeHtml(o.status_changed_by_name)}${t}</div>`);
+  }
+  return parts.join("");
 }
 // Safari (และเบราว์เซอร์มือถือส่วนใหญ่) เมิน HTML `download` attribute สำหรับลิงก์ข้ามโดเมน
 // เลยเปิดไฟล์เสียง/วิดีโอด้วยเครื่องเล่นในตัวแทนที่จะดาวน์โหลดให้ — ต้องสั่ง Cloudinary ให้ส่งไฟล์
@@ -1323,6 +1362,8 @@ function renderHistory() {
           : "";
     // ===== เพิ่มใหม่: แสดง badge ส่วนลด/โปรโมชั่น ถ้า order มี snapshot =====
     const discountInfo = buildAdminHistoryDiscountBadge(o);
+    // 🔧 (2026-09-20 admin audit): แสดง "สร้างโดย" / "เปลี่ยนสถานะโดย" (ถ้าออเดอร์มีข้อมูล)
+    const auditInfo = buildAdminAuditInfoHtml(o);
     return `
       <div class="list-row" style="flex-direction:column;align-items:stretch;gap:8px;">
         <div class="info">
@@ -1331,6 +1372,7 @@ function renderHistory() {
           <div class="n2">${dateStr} · ${escapeHtml(o.whatsapp)}</div>
           <div class="n2">${songNames}</div>
           ${discountInfo}
+          ${auditInfo}
           ${zipInfo}
         </div>
         <span class="status-badge" style="background:${cfg.bg};color:${cfg.color};">${cfg.emoji} ${cfg.label}</span>
@@ -1825,9 +1867,11 @@ async function handleStatusChange(orderId, newStatus) {
     return;
   }
   try {
-    await updateDoc(doc(db, "orders", orderId), { status: newStatus, updated_at: new Date().toISOString() });
+    // 🔧 (2026-09-20 admin audit): บันทึกชื่อแอดมิน + เวลา ที่เปลี่ยนสถานะ (ฟิลด์เพิ่ม ไม่กระทบฟิลด์เดิม)
+    const statusAudit = buildStatusAudit();
+    await updateDoc(doc(db, "orders", orderId), { status: newStatus, updated_at: new Date().toISOString(), ...statusAudit });
     // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client แทน re-fetch ทั้งหมด (ลด D1 reads)
-    await updateOrderInState(orderId, { status: newStatus, updated_at: new Date().toISOString() });
+    await updateOrderInState(orderId, { status: newStatus, updated_at: new Date().toISOString(), ...statusAudit });
     renderFromState();
   } catch (err) {
     alert("เปลี่ยนสถานะไม่สำเร็จ: " + err.message);
@@ -1857,10 +1901,13 @@ async function confirmPaymentAndCreateZip(orderId) {
 
   try {
     const now = new Date().toISOString();
+    // 🔧 (2026-09-20 admin audit): บันทึกชื่อแอดมินที่กด "ยืนยันโอนแล้ว" (เปลี่ยนสถานะเป็น processing)
+    const statusAudit = buildStatusAudit(now);
     await updateDoc(doc(db, "orders", orderId), {
       status: "processing",
       payment_verified_at: now,
       updated_at: now,
+      ...statusAudit,
     });
     // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client แทน re-fetch ทั้งหมด (ลด D1 reads)
     //   รวมถึง zip fields ที่ createOrderZip ตั้งไว้ (zip_status, zip_download_url, etc.)
@@ -1870,6 +1917,7 @@ async function confirmPaymentAndCreateZip(orderId) {
       status: "processing",
       payment_verified_at: now,
       updated_at: now,
+      ...statusAudit,
       // sync zip fields จาก result ด้วย (createOrderZip คืน url กลับมา)
       ...(result.url ? { zip_download_url: result.url } : {}),
       ...(result.publicId ? { zip_public_id: result.publicId } : {}),
@@ -2599,6 +2647,8 @@ async function handleSubmitOrder() {
     discount_amount: discountAmount,
     promotion_applied: promotionApplied,
     final_total: finalTotal,
+    // 🔧 (2026-09-20 admin audit): บันทึกว่าแอดมินคนไหนสร้างออเดอร์นี้
+    ...buildCreatedByAudit(),
   };
 
   try {
