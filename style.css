@@ -2571,10 +2571,7 @@ button:active {
 }
 
 /* ชื่อเพลงใหญ่เด่น */
-/* ✍️ (2026-09-20): สไตล์ YC6 — Mali (ทำมะดา) + Green-Cyan Cycle
-   - ฟอนต์: Mali (Google Fonts) — ตัวทำมะดาสวย ๆ
-   - สี: สลับเขียว-ฟ้าเรืองแสง พัลส์กระพริบ
-   - มี drop-shadow ให้อ่านง่าย */
+/* 🎨 (2026-09-20): สีขาว + Mali (ตัวทำมะดา) + drop-shadow ให้อ่านง่าย */
 .song-card-row .song-name {
   font-family: "Mali", cursive !important;
   font-size: 16px !important;
@@ -2583,20 +2580,9 @@ button:active {
   padding-right: 0 !important;
   -webkit-line-clamp: 1 !important;
   letter-spacing: -0.2px;
-  color: #86efac !important;
-  text-shadow: 0 0 6px rgba(134, 239, 172, 0.8), 0 0 12px rgba(134, 239, 172, 0.4) !important;
-  animation: song-green-cyan-cycle 3.5s ease-in-out infinite !important;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
-}
-@keyframes song-green-cyan-cycle {
-  0%, 100% {
-    color: #86efac !important;
-    text-shadow: 0 0 6px rgba(134, 239, 172, 0.8), 0 0 12px rgba(134, 239, 172, 0.4) !important;
-  }
-  50% {
-    color: #67e8f9 !important;
-    text-shadow: 0 0 6px rgba(103, 232, 249, 0.8), 0 0 12px rgba(103, 232, 249, 0.4) !important;
-  }
+  color: #ffffff !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6) !important;
+  filter: drop-shadow(0 0 6px rgba(196, 181, 253, 0.3));
 }
 
 /* แถว meta — DJ tag + ศิลปิน */
@@ -2918,7 +2904,7 @@ button:active {
 }
 
 /* ชื่อเพลงในเพลย์ลิสต์ — ใหญ่เด่นเหมือนเพลงหลัก */
-/* ✍️ (2026-09-20): สไตล์ YC6 — Mali (ทำมะดา) + Green-Cyan Cycle เหมือน .song-name */
+/* 🎨 (2026-09-20): สีขาว + Mali (ตัวทำมะดา) + drop-shadow ให้อ่านง่าย */
 .playlist-song-row.song-card-row .playlist-item-name {
   font-family: "Mali", cursive !important;
   font-size: 16px !important;
@@ -2929,10 +2915,9 @@ button:active {
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   letter-spacing: -0.2px;
-  color: #86efac !important;
-  text-shadow: 0 0 6px rgba(134, 239, 172, 0.8), 0 0 12px rgba(134, 239, 172, 0.4) !important;
-  animation: song-green-cyan-cycle 3.5s ease-in-out infinite !important;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+  color: #ffffff !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6) !important;
+  filter: drop-shadow(0 0 6px rgba(196, 181, 253, 0.3));
 }
 
 /* ====== Responsive: จอเล็ก ====== */
@@ -3169,10 +3154,7 @@ button:active {
 }
 
 /* ชื่อเพลย์ลิสต์ใหญ่เด่น */
-/* 🔥 (2026-09-20): สไตล์ CC6 — Bai Jamjuree 900 (ตัวหนา) + Neon Pulse
-   - ฟอนต์: Bai Jamjuree 900 (Google Fonts) — ตัวหนา สันสดใส
-   - สี: สลับฟ้า-ชมพูนีออนพัลส์กระพริบ
-   - มี drop-shadow ให้อ่านง่าย */
+/* 🎨 (2026-09-20): สีขาว + Bai Jamjuree 900 (ตัวหนา) + drop-shadow ให้อ่านง่าย */
 .playlist-folder-btn .playlist-folder-name {
   font-family: "Bai Jamjuree", sans-serif !important;
   font-size: 18px !important;
@@ -3183,20 +3165,9 @@ button:active {
   overflow: hidden;
   text-overflow: ellipsis;
   padding-right: 0 !important;
-  color: #22d3ee !important;
-  text-shadow: 0 0 8px rgba(34, 211, 238, 0.9), 0 0 16px rgba(34, 211, 238, 0.5) !important;
-  animation: playlist-neon-pulse 2.5s ease-in-out infinite !important;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
-}
-@keyframes playlist-neon-pulse {
-  0%, 100% {
-    color: #22d3ee !important;
-    text-shadow: 0 0 8px rgba(34, 211, 238, 0.9), 0 0 16px rgba(34, 211, 238, 0.5) !important;
-  }
-  50% {
-    color: #ec4899 !important;
-    text-shadow: 0 0 10px rgba(236, 72, 153, 1), 0 0 20px rgba(236, 72, 153, 0.7) !important;
-  }
+  color: #ffffff !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6) !important;
+  filter: drop-shadow(0 0 6px rgba(196, 181, 253, 0.4));
 }
 
 /* จำนวนเพลง */
@@ -3231,9 +3202,9 @@ button:active {
 .playlist-folder-btn .playlist-folder-price-block .song-price {
   font-size: 17px !important;
   font-weight: 800 !important;
-  color: #ec4899 !important;
+  color: #4ade80 !important;
   letter-spacing: -0.5px;
-  text-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
+  text-shadow: 0 0 10px rgba(74, 222, 128, 0.4);
   white-space: nowrap;
 }
 
