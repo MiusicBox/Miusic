@@ -1522,22 +1522,26 @@ button:active {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  /* 🔧 (2026-09-20 mobile fix v8): ปรับ padding ให้เท่ากับ .container (0 16px) */
-  /*   เหตุผล: เดิม padding: 16px (รอบด้าน) → ขอบการ์ดชิดขวา 32px จากจอ */
-  /*   ปุ่ม "สร้างออเดอร์ใหม่" อยู่ใน .container ที่มี padding 0 16px → ขอบปุ่มชิดขวา 16px */
-  /*   ทำให้การ์ดสถิติดูไม่เต็มจอเท่าปุ่ม → แก้โดยปรับ padding ให้เท่ากัน (0 16px) */
-  padding: 0 16px;
+  /* 🔧 (2026-09-20 mobile fix v9): ลบ padding ออก เพราะ .stat-grid อยู่ใน .container ที่มี padding 0 16px อยู่แล้ว */
+  /*   เดิม: padding: 0 16px → ซ้อนกับ .container padding → ขอบขวาห่าง 32px จากจอ */
+  /*   ใหม่: padding: 0 → ขอบขวาห่าง 16px จากจอ (เท่าปุ่ม "สร้างออเดอร์ใหม่") */
+  padding: 0;
   width: 100%;
   box-sizing: border-box;
   margin: 0;
-  /* เก็บ padding บน-ล่างไว้สำหรับ grid ที่อยู่ห่างจาก element อื่น */
 }
-/* แต่ละ stat-grid ที่ใช้ inline style margin-bottom จะยังคงทำงาน */
+/* เก็บ padding บน-ล่างไว้สำหรับ grid แรก/สุดท้าย */
 .stat-grid:first-child {
   padding-top: 16px;
 }
 .stat-grid:last-child {
   padding-bottom: 16px;
+}
+
+/* 🔧 (2026-09-20 mobile fix v9): สำหรับ .stat-grid ที่ไม่ได้อยู่ใน .container (เช่น #view-dashboard) */
+/*   → ต้องมี padding ของตัวเอง */
+#view-dashboard > .stat-grid {
+  padding: 16px;
 }
 
 /* 🔧 (2026-09-19 mobile fix v4): บน desktop ขนาดใหญ่ (>1366px) จำกัด 1080px + กึ่งกลาง */
