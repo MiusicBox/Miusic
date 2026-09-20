@@ -1,0 +1,12 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="p3bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#f97316"/>
+      <stop offset="1" stop-color="#facc15"/>
+    </linearGradient>
+  </defs>
+  <rect width="100" height="100" fill="url(#p3bg)"/>
+  <path d="M22 32 L42 32 L48 40 L78 40 L78 70 L22 70 Z" fill="rgba(0,0,0,0.25)"/>
+  <path d="M22 32 L42 32 L48 40 L78 40 L78 70 L22 70 Z" fill="none" stroke="#fff" stroke-width="2" opacity="0.9"/>
+  <text x="50" y="60" font-size="22" text-anchor="middle" fill="#fff">🎵</text>
+</svg>
