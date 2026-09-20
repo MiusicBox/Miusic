@@ -415,6 +415,10 @@ function renderDjRow() {
   wrap.querySelectorAll(".dj-item").forEach(el => {
     el.addEventListener("click", () => {
       const selectedDjId = el.getAttribute("data-dj");
+      // บันทึกสถานะก่อน toggle เพื่อเช็คว่าเป็นการ "เลือกใหม่" หรือ "ยกเลิก"
+      //   🎧 (2026-09-20 fix): ถ้าเป็นการยกเลิก (currentDj เดิม === selectedDjId → หลัง toggle เป็น null)
+      //   ห้าม scroll ลงล่าง เพราะทำให้ UX แย่ — ผู้ใช้แค่อยากยกเลิก ไม่ได้อยากดูเพลง
+      const isCanceling = STATE.currentDj === selectedDjId;
       // กด DJ คนเดิมซ้ำอีกครั้งเพื่อยกเลิกตัวกรองและแสดงเพลงของ DJ ทุกคน
       STATE.currentDj = STATE.currentDj === selectedDjId ? null : selectedDjId;
       STATE.currentCategory = "all";
@@ -435,8 +439,13 @@ function renderDjRow() {
       renderSongGrid();
       renderPlaylists();
       togglePlaylistsVisibility();
-      const gridTitle = document.getElementById("gridTitle");
-      if (gridTitle) gridTitle.scrollIntoView({ behavior: "smooth" });
+      // 🎧 (2026-09-20 fix): scroll ไปที่ gridTitle เฉพาะตอน "เลือก DJ ใหม่"
+      //   - ถ้าเป็นการยกเลิก (isCanceling=true) → ห้าม scroll ปล่อยให้ผู้ใช้อยู่ที่ตำแหน่งเดิม
+      //   - ป้องกันปัญหา "เด้งลงข้างล่าง" ตอนที่ผู้ใช้แค่ต้องการยกเลิกการเลือก
+      if (!isCanceling) {
+        const gridTitle = document.getElementById("gridTitle");
+        if (gridTitle) gridTitle.scrollIntoView({ behavior: "smooth" });
+      }
     });
   });
 }
