@@ -547,7 +547,7 @@ function renderSongGrid() {
   grid.innerHTML = list.map(s => `
     <div class="song-card song-card-row" data-id="${s.id}">
       <div class="song-cover">
-        <img src="${s.cover_url || ""}" loading="lazy" alt="${escapeHtml(s.song_name)}" onerror="this.style.display='none'">
+        <img src="${s.cover_url || "default-song-cover.svg"}" loading="lazy" alt="${escapeHtml(s.song_name)}" onerror="this.src='default-song-cover.svg'">
         <button class="play-btn" data-play="${s.id}" aria-label="เล่น ${escapeHtml(s.song_name)}"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg></button>
       </div>
       <div class="song-info">
@@ -632,7 +632,7 @@ function renderPlaylists() {
     // 🔧 เพิ่ม (2026-09-14): เมื่อเลือก DJ ให้ auto-expand เพลย์ลิสต์ที่มีเพลงของ DJ คนนั้น เพื่อให้เห็นเพลงเลย
     const isAutoOpenForDj = !!selectedDjName;
     const finalIsOpen = isOpen || isAutoOpenForDj;
-    const cover = pl.cover_url || songs[0].cover_url || "";
+    const cover = pl.cover_url || songs[0]?.cover_url || "default-playlist-cover.svg";
     // 🔧 เพิ่ม (2026-09-14): ป้ายจำนวนเพลงแสดงเฉพาะเพลงของ DJ คนนั้น ถ้าเลือก DJ
     const songCountLabel = selectedDjName
       ? `${displaySongs.length} เพลง`
@@ -665,7 +665,7 @@ function renderPlaylists() {
             ${displaySongs.map(s => `
               <div class="playlist-song-row song-card-row" data-id="${s.id}">
                 <div class="playlist-cover song-cover">
-                  <img src="${s.cover_url || pl.cover_url || ""}" loading="lazy" alt="${escapeHtml(s.song_name)}" onerror="this.style.display='none'">
+                  <img src="${s.cover_url || pl.cover_url || "default-song-cover.svg"}" loading="lazy" alt="${escapeHtml(s.song_name)}" onerror="this.src='default-song-cover.svg'">
                   <button class="playlist-play-btn play-btn" data-play="${s.id}" aria-label="เล่น ${escapeHtml(s.song_name)}">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
                   </button>
@@ -717,7 +717,7 @@ function renderPlaylists() {
       addToCart({
         id: `playlist:${pl.id}`,
         song_name: `เพลย์ลิสต์: ${pl.playlist_name}`,
-        cover_url: pl.cover_url || firstSong?.cover_url || "",
+        cover_url: pl.cover_url || firstSong?.cover_url || "default-playlist-cover.svg",
         dj_name: `${plSongs.length} เพลง`,
         price: pl.price,
         kind: "playlist",
@@ -920,7 +920,7 @@ function playSong(songId) {
   const durTimeEl = document.getElementById("playerDuration");
   const seekEl = document.getElementById("playerSeek");
 
-  if (coverEl) coverEl.src = song.cover_url || "";
+  if (coverEl) coverEl.src = song.cover_url || "default-song-cover.svg";
   if (titleEl) titleEl.textContent = song.song_name;
   if (subEl) subEl.textContent = song.dj_name || song.artist || "";
   if (barEl) barEl.classList.add("show");
@@ -1097,7 +1097,7 @@ function openSongModal(songId) {
   const currTimeEl = document.getElementById("modalCurrTime");
   const durTimeEl = document.getElementById("modalDurTime");
 
-  if (coverEl) coverEl.src = song.cover_url || "";
+  if (coverEl) coverEl.src = song.cover_url || "default-song-cover.svg";
   if (nameEl) nameEl.textContent = song.song_name;
   if (artistEl) artistEl.textContent = song.artist || "";
 
