@@ -2396,10 +2396,14 @@ button:active {
    ========================================================================== */
 
 /* การ์ดเพลงแบบแถวใหม่ — แทนที่ grid 2 คอลัมน์ */
-/* 🔧 ปรับ (2026-09-14 รอบ 2): ลด margin-bottom ของการ์ดเพลงเดี่ยวจาก 4px → 2px ตามคำสั่งผู้ใช้ */
+/* 🌈 (2026-09-20): เปลี่ยนเป็นสไตล์ L — Prism Rotate
+   - ขอบปริซึมรุ้ง 7 สีหมุนรอบการ์ดตลอดเวลา
+   - พื้นในเข้มโปร่งแสง ให้เห็นสีรุ้งลอด
+   - ชื่อเพลงเป็นรุ้งสีเคลื่อนที่ (เฉพาะชื่อ ส่วนอื่นยังอ่านง่าย)
+   - ใช้ !important เพื่อ override CSS เดิม */
 .song-card-row {
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(168, 85, 247, 0.15) 40%, rgba(236, 72, 153, 0.12) 70%, rgba(11, 13, 20, 0.95) 100%) !important;
-  border: 1px solid rgba(168, 85, 247, 0.25) !important;
+  background: linear-gradient(135deg, rgba(10, 10, 26, 0.95), rgba(26, 26, 46, 0.95)) !important;
+  border: 1px solid transparent !important;
   border-radius: 14px !important;
   margin-bottom: 2px !important;
   padding: 12px !important;
@@ -2407,6 +2411,38 @@ button:active {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25) !important;
   transition: all 0.25s cubic-bezier(.4, 0, .2, 1) !important;
   overflow: hidden;
+  position: relative;
+  isolation: isolate;
+}
+
+/* 🔥 ขอบปริซึมรุ้งหมุนรอบการ์ด — ใช้ ::before ที่ inset -1px และ z-index: -1 */
+.song-card-row::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 14px;
+  background: conic-gradient(
+    from 0deg,
+    #ff0080, #ff8c00, #ffd700, #00ff7f, #00bfff, #8a2be2, #ff0080
+  );
+  z-index: -1;
+  animation: song-prism-spin 8s linear infinite;
+  filter: blur(2px);
+  pointer-events: none;
+}
+@keyframes song-prism-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* พื้นหลังดำโปร่งแสงทับลงไปด้านใน — ให้ขอบรุ้งเด่นชัด */
+.song-card-row::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  background: linear-gradient(135deg, rgba(10, 10, 26, 0.97), rgba(26, 26, 46, 0.97));
+  border-radius: 13px;
+  z-index: -1;
+  pointer-events: none;
 }
 
 .song-card-row:first-child,
@@ -2415,10 +2451,12 @@ button:active {
 }
 
 .song-card-row:hover {
-  transform: translateY(-2px);
-  border-color: rgba(168, 85, 247, 0.5) !important;
-  box-shadow: 0 12px 32px rgba(168, 85, 247, 0.3), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(168, 85, 247, 0.25) 40%, rgba(236, 72, 153, 0.2) 70%, rgba(11, 13, 20, 1) 100%) !important;
+  transform: translateY(-3px) scale(1.005) !important;
+  box-shadow: 0 12px 32px rgba(255, 0, 128, 0.35), 0 0 24px rgba(0, 191, 255, 0.25), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+.song-card-row:hover::before {
+  filter: blur(1px) brightness(1.3) !important;
 }
 
 /* รูปปกใหญ่ขึ้น + มี glow */
@@ -2503,7 +2541,17 @@ button:active {
   padding-right: 0 !important;
   -webkit-line-clamp: 1 !important;
   letter-spacing: -0.3px;
-  color: var(--text) !important;
+  /* 🌈 (2026-09-20): สไตล์ L — ชื่อเพลงเป็นรุ้งสีเคลื่อนที่ */
+  background: linear-gradient(90deg, #ff0080, #ff8c00, #ffd700, #00ff7f, #00bfff, #8a2be2, #ff0080) !important;
+  background-size: 200% 100% !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  color: transparent !important;
+  animation: song-prism-text 4s linear infinite !important;
+}
+@keyframes song-prism-text {
+  to { background-position: 200% 0; }
 }
 
 /* แถว meta — DJ tag + ศิลปิน */
@@ -2671,18 +2719,47 @@ button:active {
    - ไม่กระทบ .playlist-folder-btn (หัวเพลย์ลิสต์) ที่ยังคงเดิม
    ========================================================================== */
 
-/* ปรับ .playlist-song-row ที่มี class song-card-row ให้เป็น Style D */
+/* ปรับ .playlist-song-row ที่มี class song-card-row ให้เป็นสไตล์ L — Prism Rotate */
+/* 🌈 (2026-09-20): เปลี่ยนให้เหมือน .song-card-row หลัก — ขอบปริซึมรุ้งหมุน */
 /* 🔧 ปรับ (2026-09-14 รอบ 2): ลด margin รอบแถวเพลงในเพลย์ลิสต์จาก 4px → 2px ตามคำสั่งผู้ใช้
    - รักษา padding ซ้าย-ขวา (12px) เดิมไว้ ไม่กระทบขอบเพลย์ลิสต์ */
 .playlist-song-row.song-card-row {
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(168, 85, 247, 0.15) 40%, rgba(236, 72, 153, 0.12) 70%, rgba(11, 13, 20, 0.95) 100%) !important;
-  border: 1px solid rgba(168, 85, 247, 0.25) !important;
+  background: linear-gradient(135deg, rgba(10, 10, 26, 0.95), rgba(26, 26, 46, 0.95)) !important;
+  border: 1px solid transparent !important;
   border-radius: 14px !important;
   margin: 2px 12px !important;
   padding: 12px !important;
   gap: 14px !important;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25) !important;
   transition: all 0.25s cubic-bezier(.4, 0, .2, 1) !important;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+/* ขอบปริซึมรุ้งหมุน — เหมือน .song-card-row หลัก */
+.playlist-song-row.song-card-row::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 14px;
+  background: conic-gradient(
+    from 0deg,
+    #ff0080, #ff8c00, #ffd700, #00ff7f, #00bfff, #8a2be2, #ff0080
+  );
+  z-index: -1;
+  animation: song-prism-spin 8s linear infinite;
+  filter: blur(2px);
+  pointer-events: none;
+}
+.playlist-song-row.song-card-row::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  background: linear-gradient(135deg, rgba(10, 10, 26, 0.97), rgba(26, 26, 46, 0.97));
+  border-radius: 13px;
+  z-index: -1;
+  pointer-events: none;
 }
 
 .playlist-song-row.song-card-row:last-child {
@@ -2692,10 +2769,12 @@ button:active {
 }
 
 .playlist-song-row.song-card-row:hover {
-  transform: translateY(-2px);
-  border-color: rgba(168, 85, 247, 0.5) !important;
-  box-shadow: 0 12px 32px rgba(168, 85, 247, 0.3), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(168, 85, 247, 0.25) 40%, rgba(236, 72, 153, 0.2) 70%, rgba(11, 13, 20, 1) 100%) !important;
+  transform: translateY(-3px) scale(1.005) !important;
+  box-shadow: 0 12px 32px rgba(255, 0, 128, 0.35), 0 0 24px rgba(0, 191, 255, 0.25), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+.playlist-song-row.song-card-row:hover::before {
+  filter: blur(1px) brightness(1.3) !important;
 }
 
 /* รูปปกเพลงในเพลย์ลิสต์ — ใหญ่ขึ้น + มี glow เหมือนเพลงหลัก */
@@ -2787,7 +2866,14 @@ button:active {
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   letter-spacing: -0.3px;
-  color: var(--text) !important;
+  /* 🌈 (2026-09-20): สไตล์ L — ชื่อเพลงเป็นรุ้งสีเคลื่อนที่เหมือน .song-name */
+  background: linear-gradient(90deg, #ff0080, #ff8c00, #ffd700, #00ff7f, #00bfff, #8a2be2, #ff0080) !important;
+  background-size: 200% 100% !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  color: transparent !important;
+  animation: song-prism-text 4s linear infinite !important;
 }
 
 /* ====== Responsive: จอเล็ก ====== */
