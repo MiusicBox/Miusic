@@ -2494,6 +2494,8 @@ function renderPromotionsView() {
 
 // แสดงหน้าโปรโมชั่น (ซ่อน view อื่น ๆ ที่อาจเปิดอยู่)
 //   รูปแบบเดียวกับ showMyOrdersView() ที่มีอยู่ — ไม่แตะ setView() เดิม
+//   🔧 (2026-09-20 fix): เพิ่มการซ่อน .playlist-wrapper ทั้งกล่อง (เดิมซ่อนแค่ #playlistsContainer
+//   ทำให้ปุ่มหัวข้อ "เพลย์ลิสต์" ยังโผล่อยู่บนหน้าโปรโมชั่น)
 function showPromotionsView() {
   // ซ่อน view อื่น ๆ
   ["#gridTitle", "#songGrid", "#emptyState"].forEach(selector => {
@@ -2504,7 +2506,12 @@ function showPromotionsView() {
   const djSection = document.getElementById("djSection");
   if (categoryChips) categoryChips.style.display = "none";
   if (djSection) djSection.style.display = "none";
-  // ซ่อน playlists container
+  // 🔧 (2026-09-20 fix): ซ่อน .playlist-wrapper ทั้งกล่อง (ไม่ใช่แค่ยุบ #playlistsContainer)
+  //   เพื่อให้ปุ่มหัวข้อ "เพลย์ลิสต์" หายไปจากหน้าโปรโมชั่นด้วย
+  //   เมื่อกลับหน้าแรก → setView("home") → togglePlaylistsVisibility() จะแสดงกลับมาเอง
+  const playlistWrapper = document.querySelector(".playlist-wrapper");
+  if (playlistWrapper) playlistWrapper.style.display = "none";
+  // ซ่อน playlists container (เก็บไว้เผื่อกรณี .playlist-wrapper ถูกเปิดกลับโดย code อื่น)
   const playlistsContainer = document.getElementById("playlistsContainer");
   if (playlistsContainer) playlistsContainer.classList.add("is-closed");
   // ซ่อนแบนเนอร์โปรโมชั่น (ไม่ให้ซ้อนทับกับหน้าเต็ม)
