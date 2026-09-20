@@ -2279,14 +2279,14 @@ function promo_getCountdownParts(endIso) {
   return result;
 }
 
-// ฟอร์แมต compact สำหรับแบนเนอร์หน้าแรก → ข้อความสั้นแบบ Cyberpunk
-//   รูปแบบ: "2D 14:32:08" หรือ "EXPIRED"
+// ฟอร์แมต compact สำหรับแบนเนอร์หน้าแรก → ข้อความสั้นภาษาไทย
+//   รูปแบบ: "2 วัน 12:34:56" หรือ "หมดเวลาแล้ว"
 function promo_formatCountdownCompact(endIso) {
   const p = promo_getCountdownParts(endIso);
-  if (p.expired) return "EXPIRED";
+  if (p.expired) return "หมดเวลาแล้ว";
   const pad = n => String(n).padStart(2, "0");
   if (p.days > 0) {
-    return `${p.days}D ${pad(p.hours)}:${pad(p.minutes)}:${pad(p.seconds)}`;
+    return `${p.days} วัน ${pad(p.hours)}:${pad(p.minutes)}:${pad(p.seconds)}`;
   }
   return `${pad(p.hours)}:${pad(p.minutes)}:${pad(p.seconds)}`;
 }
@@ -2325,8 +2325,8 @@ function renderPromotionBanner() {
   const titleEl = document.getElementById("promoHomeBannerTitle");
   const discountEl = document.getElementById("promoHomeBannerDiscount");
   const countdownEl = document.getElementById("promoHomeBannerCountdown");
-  if (titleEl) titleEl.textContent = featured.name || "PROMO";
-  if (discountEl) discountEl.textContent = "-" + promo_formatDiscountValue(featured);
+  if (titleEl) titleEl.textContent = featured.name || "โปรโมชั่นพิเศษ";
+  if (discountEl) discountEl.textContent = "ลด " + promo_formatDiscountValue(featured);
   if (countdownEl) {
     const p = promo_getCountdownParts(featured.end_at);
     countdownEl.textContent = promo_formatCountdownCompact(featured.end_at);
@@ -2347,13 +2347,13 @@ function renderPromotionsView() {
   const list = document.getElementById("promoViewList");
   if (!list) return;
 
-  // กรณีไม่มีโปรโมชั่น active — สไตล์ Cyberpunk ใช้ข้อความเทคโนโลยี
+  // กรณีไม่มีโปรโมชั่น active
   if (!Array.isArray(STATE.promotions) || STATE.promotions.length === 0) {
     list.innerHTML = `
       <div class="promo-view-empty">
-        <div class="promo-view-empty-icon">⚡</div>
-        <div class="promo-view-empty-text">&gt; NO_PROMOTIONS_FOUND</div>
-        <div class="promo-view-empty-sub">// ติดต่อแอดมินเพื่อสอบถามโปรพิเศษ</div>
+        <div class="promo-view-empty-icon">🎁</div>
+        <div class="promo-view-empty-text">ยังไม่มีโปรโมชั่นในขณะนี้</div>
+        <div class="promo-view-empty-sub">กดแท็บ "ติดต่อ" เพื่อสอบถามโปรพิเศษจากร้านได้</div>
       </div>`;
     return;
   }
@@ -2379,9 +2379,9 @@ function renderPromotionsView() {
   if (visible.length === 0) {
     list.innerHTML = `
       <div class="promo-view-empty">
-        <div class="promo-view-empty-icon">⚡</div>
-        <div class="promo-view-empty-text">&gt; NO_PROMOTIONS_FOUND</div>
-        <div class="promo-view-empty-sub">// ติดต่อแอดมินเพื่อสอบถามโปรพิเศษ</div>
+        <div class="promo-view-empty-icon">🎁</div>
+        <div class="promo-view-empty-text">ยังไม่มีโปรโมชั่นในขณะนี้</div>
+        <div class="promo-view-empty-sub">กดแท็บ "ติดต่อ" เพื่อสอบถามโปรพิเศษจากร้านได้</div>
       </div>`;
     return;
   }
@@ -2393,13 +2393,13 @@ function renderPromotionsView() {
     const isUrgent = cparts.urgent && !cparts.expired;
     const isExpired = cparts.expired;
 
-    // สร้าง countdown HTML — สไตล์ Cyberpunk ใช้ label "EXPIRES_IN" และ "EXPIRED"
+    // สร้าง countdown HTML — ใช้ข้อความภาษาไทย (สไตล์ Cyberpunk เป็นแค่ภาพ ไม่ใช่ข้อความ)
     let countdownHtml = "";
     if (isExpired) {
       countdownHtml = `
         <div class="promo-countdown-box expired">
-          <span class="promo-countdown-label">&gt; STATUS</span>
-          <span class="promo-countdown-text-flat">EXPIRED</span>
+          <span class="promo-countdown-label">สถานะ</span>
+          <span class="promo-countdown-text-flat">หมดเวลาแล้ว</span>
         </div>`;
     } else {
       const pad = n => String(n).padStart(2, "0");
@@ -2407,27 +2407,27 @@ function renderPromotionsView() {
       const daysHtml = showDays ? `
         <span class="promo-countdown-unit">
           <span class="promo-countdown-num" data-promo-num="d">${cparts.days}</span>
-          <span class="promo-countdown-text">D</span>
+          <span class="promo-countdown-text">วัน</span>
         </span>
         <span class="promo-countdown-sep">:</span>` : "";
       countdownHtml = `
         <div class="promo-countdown-box${isUrgent ? " urgent" : ""}" data-promo-end="${p.end_at || ""}">
-          <span class="promo-countdown-label">${isUrgent ? "&gt; EXPIRES_IN_URGENT" : "&gt; EXPIRES_IN"}</span>
+          <span class="promo-countdown-label">${isUrgent ? "⏰ หมดเวลาในอีก" : "⏳ หมดเวลาในอีก"}</span>
           <span class="promo-countdown-timer">
             ${daysHtml}
             <span class="promo-countdown-unit">
               <span class="promo-countdown-num" data-promo-num="h">${pad(cparts.hours)}</span>
-              <span class="promo-countdown-text">H</span>
+              <span class="promo-countdown-text">ชม.</span>
             </span>
             <span class="promo-countdown-sep">:</span>
             <span class="promo-countdown-unit">
               <span class="promo-countdown-num" data-promo-num="m">${pad(cparts.minutes)}</span>
-              <span class="promo-countdown-text">M</span>
+              <span class="promo-countdown-text">นาที</span>
             </span>
             <span class="promo-countdown-sep">:</span>
             <span class="promo-countdown-unit">
               <span class="promo-countdown-num" data-promo-num="s">${pad(cparts.seconds)}</span>
-              <span class="promo-countdown-text">S</span>
+              <span class="promo-countdown-text">วิ</span>
             </span>
           </span>
         </div>`;
@@ -2458,7 +2458,7 @@ function renderPromotionsView() {
         <div class="promo-card-body">
           <div class="promo-card-top">
             <div class="promo-card-name-wrap">
-              <h3 class="promo-card-name">${promo_escapeHtml(p.name || "(NO_NAME)")}</h3>
+              <h3 class="promo-card-name">${promo_escapeHtml(p.name || "(ไม่มีชื่อ)")}</h3>
               ${p.description ? `<div class="promo-card-desc">${promo_escapeHtml(p.description)}</div>` : ""}
             </div>
             <div class="promo-card-discount">
@@ -2469,7 +2469,7 @@ function renderPromotionsView() {
           <div class="promo-card-tags">${tagsHtml}</div>
           <div class="promo-card-dates">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-            <span class="promo-date-label">// VALID:</span>
+            <span class="promo-date-label">ใช้ได้ตั้งแต่</span>
             <span class="promo-date-value">${promo_escapeHtml(startDate)}</span>
             <span class="promo-date-sep">→</span>
             <span class="promo-date-value">${promo_escapeHtml(endDate)}</span>
@@ -2477,7 +2477,7 @@ function renderPromotionsView() {
           ${countdownHtml}
           <button type="button" class="promo-card-cta" data-promo-cta>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
-            &gt; ADD_SONGS_TO_CLAIM
+            เพิ่มเพลงลงตะกร้าเพื่อรับส่วนลด
           </button>
         </div>
       </div>`;
