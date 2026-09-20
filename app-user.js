@@ -616,7 +616,7 @@ function renderPlaylists() {
             </div>
             ` : ""}
           </div>
-          <svg class="playlist-folder-arrow${finalIsOpen ? "" : " is-closed"}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          <svg class="playlist-folder-arrow${finalIsOpen ? "" : " is-closed"}" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c7.2 0 9 1.8 9 9s-1.8 9 -9 9s-9 -1.8 -9 -9s1.8 -9 9 -9z"/><path d="M8 10l4 4l4 -4"/></svg>
         </div>
         <div class="playlist-row-wrap${finalIsOpen ? "" : " is-closed"}">
           <div class="playlist-row">
