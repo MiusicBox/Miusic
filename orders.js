@@ -51,17 +51,58 @@ function buildStatusAudit(isoTime) {
   const name = getActingAdminName();
   return name ? { status_changed_by_name: name, status_changed_at: isoTime || new Date().toISOString() } : {};
 }
+
+// 🔧 (2026-09-20 admin audit v2): เก็บ "ประวัติการเปลี่ยนสถานะทุกครั้ง" (status_history) — ใครเปลี่ยนเป็นสถานะอะไร เมื่อไหร่
+//   - อ่านออเดอร์ล่าสุดจาก DB ก่อนต่อท้าย (กันกรณีแอดมินอีกคนเพิ่งเปลี่ยนไป แล้วหน้าจอเราเป็นข้อมูลเก่า → ไม่ทับประวัติของเขา)
+//   - ถ้าอ่านไม่ได้ → ใช้ข้อมูลใน state แทน (ไม่ทำให้การเปลี่ยนสถานะล้มเหลว)
+//   - ออเดอร์ที่เคยบันทึกแค่ status_changed_by_name (เวอร์ชันก่อน) จะถูกนำมาเป็นรายการแรกของประวัติให้อัตโนมัติ
+//   - เก็บสูงสุด 20 รายการล่าสุดต่อออเดอร์ (กันข้อมูลบวม)
+//   - ยังเขียน status_changed_by_name / status_changed_at (ล่าสุด) ต่อไปเหมือนเดิม เพื่อความเข้ากันได้ย้อนหลัง
+async function buildStatusAuditWithHistory(orderId, newStatus, isoTime) {
+  const name = getActingAdminName();
+  if (!name) return {};
+  const at = isoTime || new Date().toISOString();
+  let base = state.allOrders.find((o) => o.id === orderId) || {};
+  try {
+    const snap = await getDoc(doc(db, "orders", orderId));
+    if (snap.exists()) base = snap.data() || base;
+  } catch (_) { /* ใช้ข้อมูลใน state แทน */ }
+  let history = Array.isArray(base.status_history) ? base.status_history.slice() : [];
+  if (history.length === 0 && base.status_changed_by_name) {
+    history.push({ by: base.status_changed_by_name, status: base.status || "", at: base.status_changed_at || "" });
+  }
+  history.push({ by: name, status: newStatus, at });
+  if (history.length > 20) history = history.slice(-20);
+  return { status_changed_by_name: name, status_changed_at: at, status_history: history };
+}
 function buildAdminAuditInfoHtml(o) {
   const parts = [];
+  const fmtTime = (iso) => {
+    const d = iso ? new Date(iso) : null;
+    return d && !isNaN(d.getTime())
+      ? " · " + d.toLocaleDateString("th-TH") + " " + d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
+      : "";
+  };
   if (o && o.created_by_name) {
     parts.push(`<div class="n2">👤 สร้างโดย: ${escapeHtml(o.created_by_name)}</div>`);
   }
-  if (o && o.status_changed_by_name) {
-    const d = o.status_changed_at ? new Date(o.status_changed_at) : null;
-    const t = d && !isNaN(d.getTime())
-      ? " · " + d.toLocaleDateString("th-TH") + " " + d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
-      : "";
-    parts.push(`<div class="n2">🔄 เปลี่ยนสถานะโดย: ${escapeHtml(o.status_changed_by_name)}${t}</div>`);
+  const history = o && Array.isArray(o.status_history) ? o.status_history.filter((h) => h && h.by) : [];
+  if (history.length > 0) {
+    // 🔧 (2026-09-20 admin audit v2): แสดงประวัติการเปลี่ยนสถานะ เรียงเก่า → ใหม่ (โชว์ล่าสุด 5 รายการ)
+    const SHOW_MAX = 5;
+    const shown = history.slice(-SHOW_MAX);
+    const hidden = history.length - shown.length;
+    if (hidden > 0) {
+      parts.push(`<div class="n2" style="opacity:.7;">… ก่อนหน้านี้อีก ${hidden} รายการ</div>`);
+    }
+    shown.forEach((h) => {
+      const cfg = STATUS_CONFIG[h.status];
+      const label = cfg ? ` → ${cfg.emoji} ${escapeHtml(cfg.label)}` : "";
+      parts.push(`<div class="n2">🔄 ${escapeHtml(h.by)}${label}${fmtTime(h.at)}</div>`);
+    });
+  } else if (o && o.status_changed_by_name) {
+    // ออเดอร์ที่มีแค่ "ผู้เปลี่ยนสถานะล่าสุด" (ก่อนมีประวัติ) → แสดงแบบเดิม
+    parts.push(`<div class="n2">🔄 เปลี่ยนสถานะโดย: ${escapeHtml(o.status_changed_by_name)}${fmtTime(o.status_changed_at)}</div>`);
   }
   return parts.join("");
 }
@@ -1868,7 +1909,7 @@ async function handleStatusChange(orderId, newStatus) {
   }
   try {
     // 🔧 (2026-09-20 admin audit): บันทึกชื่อแอดมิน + เวลา ที่เปลี่ยนสถานะ (ฟิลด์เพิ่ม ไม่กระทบฟิลด์เดิม)
-    const statusAudit = buildStatusAudit();
+    const statusAudit = await buildStatusAuditWithHistory(orderId, newStatus);
     await updateDoc(doc(db, "orders", orderId), { status: newStatus, updated_at: new Date().toISOString(), ...statusAudit });
     // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client แทน re-fetch ทั้งหมด (ลด D1 reads)
     await updateOrderInState(orderId, { status: newStatus, updated_at: new Date().toISOString(), ...statusAudit });
@@ -1902,7 +1943,7 @@ async function confirmPaymentAndCreateZip(orderId) {
   try {
     const now = new Date().toISOString();
     // 🔧 (2026-09-20 admin audit): บันทึกชื่อแอดมินที่กด "ยืนยันโอนแล้ว" (เปลี่ยนสถานะเป็น processing)
-    const statusAudit = buildStatusAudit(now);
+    const statusAudit = await buildStatusAuditWithHistory(orderId, "processing", now);
     await updateDoc(doc(db, "orders", orderId), {
       status: "processing",
       payment_verified_at: now,
