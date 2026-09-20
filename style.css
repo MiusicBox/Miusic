@@ -1522,11 +1522,22 @@ button:active {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  padding: 16px;
-  /* 🔧 (2026-09-19 mobile fix v4): เต็มจอเสมอ — ไม่จำกัด max-width */
+  /* 🔧 (2026-09-20 mobile fix v8): ปรับ padding ให้เท่ากับ .container (0 16px) */
+  /*   เหตุผล: เดิม padding: 16px (รอบด้าน) → ขอบการ์ดชิดขวา 32px จากจอ */
+  /*   ปุ่ม "สร้างออเดอร์ใหม่" อยู่ใน .container ที่มี padding 0 16px → ขอบปุ่มชิดขวา 16px */
+  /*   ทำให้การ์ดสถิติดูไม่เต็มจอเท่าปุ่ม → แก้โดยปรับ padding ให้เท่ากัน (0 16px) */
+  padding: 0 16px;
   width: 100%;
   box-sizing: border-box;
   margin: 0;
+  /* เก็บ padding บน-ล่างไว้สำหรับ grid ที่อยู่ห่างจาก element อื่น */
+}
+/* แต่ละ stat-grid ที่ใช้ inline style margin-bottom จะยังคงทำงาน */
+.stat-grid:first-child {
+  padding-top: 16px;
+}
+.stat-grid:last-child {
+  padding-bottom: 16px;
 }
 
 /* 🔧 (2026-09-19 mobile fix v4): บน desktop ขนาดใหญ่ (>1366px) จำกัด 1080px + กึ่งกลาง */
@@ -1581,8 +1592,8 @@ button:active {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+  /* 🔧 (2026-09-20 mobile fix v8): padding เท่ากับ .container (0 16px) */
   padding: 0 16px 16px;
-  /* 🔧 (2026-09-19 mobile fix v4): เต็มจอเสมอ — ไม่จำกัด max-width */
   width: 100%;
   box-sizing: border-box;
   margin: 0;
