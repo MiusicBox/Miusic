@@ -3102,3 +3102,488 @@ button:active {
   transform: translateX(-50%) translateZ(0);
   bottom: var(--bottom-nav-h, calc(65px + var(--safe-bottom)));
 }
+
+/* ==========================================================================
+   🎁 (2026-09-20) หน้าโปรโมชั่นพรีวิว (ฝั่ง User) — สไตล์ J: CYBERPUNK
+   - นีออนชมพู (#ff00ff) + ฟ้า (#00ffff) + เหลือง (#ffff00) บนพื้น #0a0014
+   - ฟอนต์ "Courier New", monospace ทุกที่
+   - มุมตัด (clip-path polygon) + glow/text-shadow นีออน + glitch effect
+   - คลาสทั้งหมดขึ้นต้นด้วย .promo-* ไม่ทับซ้อนกับคลาสเดิม
+   - ไม่กระทบระบบเดิมใด ๆ — ทุกส่วนเป็น additive
+   ========================================================================== */
+
+/* ---------- ปรับ bottom-nav ให้รองรับ 6 ปุ่ม (เดิม 5) ---------- */
+/* 🔧 ไม่เปลี่ยนโครงสร้าง .bottom-nav เดิม — ปรับแค่ค่าที่จำเป็น:
+   - ลด font-size และ padding เล็กน้อยเพื่อให้ 6 ปุ่มพอดีจอมือถือ
+   - ค่าเดิมยังทำงานทั้งหมด (flex:1 ทำให้กระจายพื้นที่อัตโนมัติ) */
+.bottom-nav button {
+  font-size: 10px;
+  padding: 8px 2px 6px;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+.bottom-nav button svg {
+  flex-shrink: 0;
+}
+.bottom-nav button span,
+.bottom-nav button {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 360px) {
+  .bottom-nav button { font-size: 9px; }
+  .bottom-nav button svg { width: 18px; height: 18px; }
+}
+
+/* ---------- ตัวแปรสีเฉพาะสไตล์ Cyberpunk ---------- */
+:root {
+  --cp-bg:        #0a0014;
+  --cp-pink:      #ff00ff;
+  --cp-cyan:      #00ffff;
+  --cp-yellow:    #ffff00;
+  --cp-pink-glow: rgba(255, 0, 255, 0.5);
+  --cp-cyan-glow: rgba(0, 255, 255, 0.5);
+  --cp-mono:      "Courier New", "Cascadia Mono", "Roboto Mono", monospace;
+}
+
+/* ---------- แบนเนอร์โปรโมชั่นเด่น บนหน้าแรก ---------- */
+.promo-home-banner {
+  margin: 8px 12px 4px;
+  padding: 0;
+  border-radius: 4px;
+  background: linear-gradient(135deg, rgba(255, 0, 255, 0.12), rgba(0, 255, 255, 0.12));
+  border: 1px solid var(--cp-pink);
+  box-shadow: 0 0 20px var(--cp-pink-glow), inset 0 0 20px rgba(0, 255, 255, 0.1);
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  /* มุมตัดแบบ cyberpunk */
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+  font-family: var(--cp-mono);
+}
+.promo-home-banner:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 28px var(--cp-pink-glow), 0 0 16px var(--cp-cyan-glow), inset 0 0 24px rgba(0, 255, 255, 0.15);
+}
+.promo-home-banner[hidden] { display: none; }
+.promo-home-banner-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+.promo-home-banner-icon {
+  width: 44px; height: 44px;
+  border-radius: 0;
+  background: rgba(255, 0, 255, 0.2);
+  border: 1px solid var(--cp-pink);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 0 12px var(--cp-pink-glow);
+  transform: skew(-5deg);
+}
+.promo-home-banner-icon svg {
+  width: 24px; height: 24px;
+  color: var(--cp-cyan);
+  stroke-width: 2.4;
+  transform: skew(5deg); /* คืน skew ของ icon */
+  filter: drop-shadow(0 0 4px var(--cp-cyan));
+}
+.promo-home-banner-text {
+  flex: 1; min-width: 0;
+}
+.promo-home-banner-label {
+  font-size: 10.5px; font-weight: 800;
+  color: var(--cp-cyan);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 2px;
+  text-shadow: 0 0 6px var(--cp-cyan), 1px 1px 0 var(--cp-pink);
+}
+.promo-home-banner-title {
+  font-size: 15px; font-weight: 900;
+  color: #fff;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-bottom: 3px;
+  text-shadow: 0 0 8px var(--cp-pink), 2px 0 0 rgba(0, 255, 255, 0.7), -2px 0 0 rgba(255, 0, 255, 0.7);
+}
+.promo-home-banner-meta {
+  font-size: 11.5px; color: var(--cp-pink);
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.promo-home-banner-discount {
+  color: var(--cp-cyan); font-weight: 800;
+  text-shadow: 0 0 6px var(--cp-cyan);
+}
+.promo-home-banner-countdown {
+  display: inline-flex; align-items: center; gap: 3px;
+  background: var(--cp-cyan); color: var(--cp-bg);
+  padding: 2px 8px;
+  border-radius: 0;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+  box-shadow: 0 0 8px var(--cp-cyan-glow);
+  letter-spacing: 1px;
+}
+.promo-home-banner-countdown.urgent {
+  background: var(--cp-pink);
+  color: #fff;
+  box-shadow: 0 0 10px var(--cp-pink-glow);
+  animation: cp-blink 1s ease-in-out infinite;
+}
+@keyframes cp-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+.promo-home-banner-arrow {
+  flex-shrink: 0;
+  color: var(--cp-pink);
+  font-weight: 900;
+  font-size: 22px;
+  line-height: 1;
+  transition: transform 0.2s, color 0.2s, text-shadow 0.2s;
+  text-shadow: 0 0 6px var(--cp-pink);
+}
+.promo-home-banner:hover .promo-home-banner-arrow {
+  transform: translateX(3px);
+  color: var(--cp-cyan);
+  text-shadow: 0 0 8px var(--cp-cyan);
+}
+
+/* ---------- หน้าโปรโมชั่นเต็ม (#promotionsView) ---------- */
+#promotionsView {
+  padding: 14px 14px calc(var(--bottom-nav-h, 80px) + 24px);
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: var(--cp-bg);
+  font-family: var(--cp-mono);
+}
+.promo-view-header {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 4px;
+  position: relative;
+}
+.promo-view-header-icon {
+  width: 40px; height: 40px;
+  border-radius: 0;
+  background: rgba(255, 0, 255, 0.15);
+  border: 1px solid var(--cp-pink);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 0 12px var(--cp-pink-glow);
+  transform: skew(-5deg);
+}
+.promo-view-header-icon svg {
+  width: 22px; height: 22px;
+  color: var(--cp-cyan);
+  transform: skew(5deg);
+  filter: drop-shadow(0 0 4px var(--cp-cyan));
+}
+.promo-view-title {
+  font-size: 22px; font-weight: 900; color: #fff;
+  margin: 0;
+  text-shadow: 0 0 8px var(--cp-pink), 2px 0 0 rgba(0, 255, 255, 0.7), -2px 0 0 rgba(255, 0, 255, 0.7);
+  letter-spacing: 1px;
+}
+.promo-view-subtitle {
+  font-size: 12px; color: var(--cp-cyan);
+  margin: 3px 0 0;
+  text-shadow: 0 0 4px var(--cp-cyan-glow);
+  letter-spacing: 0.5px;
+}
+.promo-view-list {
+  display: flex; flex-direction: column;
+  gap: 14px;
+  margin-top: 18px;
+}
+.promo-view-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--cp-cyan);
+  font-family: var(--cp-mono);
+  border: 1px dashed var(--cp-cyan);
+  border-radius: 4px;
+  background: rgba(0, 255, 255, 0.04);
+}
+.promo-view-empty-icon {
+  font-size: 48px; margin-bottom: 12px;
+  text-shadow: 0 0 12px var(--cp-cyan-glow);
+}
+.promo-view-empty-text {
+  font-size: 15px; font-weight: 800;
+  margin-bottom: 6px;
+  text-shadow: 0 0 6px var(--cp-cyan-glow);
+  letter-spacing: 1px;
+}
+.promo-view-empty-sub {
+  font-size: 12px;
+  color: var(--cp-pink);
+  opacity: 0.85;
+}
+.promo-view-loading {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--cp-cyan);
+  font-size: 13px;
+  font-family: var(--cp-mono);
+}
+
+/* ---------- การ์ดโปรโมชั่นเดี่ยว ---------- */
+.promo-card {
+  position: relative;
+  border-radius: 4px;
+  background: rgba(10, 0, 20, 0.85);
+  border: 1px solid var(--cp-pink);
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 0 20px var(--cp-pink-glow), inset 0 0 20px rgba(0, 255, 255, 0.05);
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+  font-family: var(--cp-mono);
+}
+.promo-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 28px var(--cp-pink-glow), 0 0 16px var(--cp-cyan-glow), inset 0 0 24px rgba(0, 255, 255, 0.10);
+}
+.promo-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--cp-pink), var(--cp-cyan), var(--cp-pink));
+  box-shadow: 0 0 8px var(--cp-pink);
+  z-index: 2;
+}
+.promo-card.urgent {
+  border-color: var(--cp-pink);
+  box-shadow: 0 0 28px var(--cp-pink-glow), 0 0 16px rgba(255, 255, 0, 0.3), inset 0 0 24px rgba(255, 0, 255, 0.08);
+  animation: cp-pulse 1.4s ease-in-out infinite;
+}
+.promo-card.urgent::before {
+  background: linear-gradient(90deg, var(--cp-pink), var(--cp-yellow), var(--cp-pink));
+  box-shadow: 0 0 10px var(--cp-pink), 0 0 6px var(--cp-yellow);
+}
+@keyframes cp-pulse {
+  0%, 100% { box-shadow: 0 0 28px var(--cp-pink-glow), 0 0 16px rgba(255, 255, 0, 0.3), inset 0 0 24px rgba(255, 0, 255, 0.08); }
+  50%      { box-shadow: 0 0 36px var(--cp-pink-glow), 0 0 22px rgba(255, 255, 0, 0.5), inset 0 0 32px rgba(255, 0, 255, 0.12); }
+}
+.promo-card-body {
+  padding: 18px;
+}
+.promo-card-top {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 12px; margin-bottom: 12px;
+}
+.promo-card-name-wrap {
+  flex: 1; min-width: 0;
+}
+.promo-card-name {
+  font-size: 17px; font-weight: 900;
+  color: #fff;
+  margin: 0 0 4px;
+  line-height: 1.3;
+  word-break: break-word;
+  text-shadow: 0 0 8px var(--cp-pink);
+  letter-spacing: 0.5px;
+}
+.promo-card-desc {
+  font-size: 12.5px; color: var(--cp-cyan);
+  opacity: 0.85;
+  line-height: 1.5;
+  word-break: break-word;
+}
+.promo-card-discount {
+  flex-shrink: 0;
+  padding: 10px 16px;
+  border-radius: 0;
+  background: rgba(255, 0, 255, 0.15);
+  border: 1px solid var(--cp-pink);
+  text-align: center;
+  min-width: 80px;
+  box-shadow: 0 0 12px var(--cp-pink-glow);
+}
+.promo-card-discount-value {
+  font-size: 24px; font-weight: 900;
+  color: var(--cp-cyan);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 8px var(--cp-cyan);
+}
+.promo-card-discount-unit {
+  font-size: 10px; font-weight: 800;
+  color: var(--cp-pink);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 3px;
+}
+.promo-card-tags {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 12px 0 12px;
+}
+.promo-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px;
+  border-radius: 0;
+  font-size: 11px; font-weight: 800;
+  background: rgba(0, 255, 255, 0.10);
+  border: 1px solid rgba(0, 255, 255, 0.4);
+  color: var(--cp-cyan);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.promo-tag.type {
+  background: rgba(0, 255, 255, 0.10);
+  border-color: rgba(0, 255, 255, 0.5);
+  color: var(--cp-cyan);
+}
+.promo-tag.scope {
+  background: rgba(255, 0, 255, 0.10);
+  border-color: rgba(255, 0, 255, 0.4);
+  color: var(--cp-pink);
+}
+.promo-tag.min {
+  background: rgba(255, 255, 0, 0.10);
+  border-color: rgba(255, 255, 0, 0.4);
+  color: var(--cp-yellow);
+}
+.promo-card-dates {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--cp-cyan);
+  padding: 10px 12px;
+  background: rgba(0, 255, 255, 0.05);
+  border: 1px solid rgba(0, 255, 255, 0.25);
+  border-radius: 0;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.promo-card-dates svg { flex-shrink: 0; opacity: 0.7; filter: drop-shadow(0 0 3px var(--cp-cyan-glow)); }
+.promo-card-dates .promo-date-label {
+  color: var(--cp-pink); font-weight: 800;
+  letter-spacing: 0.5px;
+}
+.promo-card-dates .promo-date-value {
+  color: #fff; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.promo-card-dates .promo-date-sep {
+  color: var(--cp-pink); margin: 0 2px;
+}
+
+/* ---------- กล่องนาฬิกานับถอยหลัง ---------- */
+.promo-countdown-box {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 14px;
+  border-radius: 0;
+  background: rgba(255, 0, 255, 0.10);
+  border: 1px solid var(--cp-pink);
+  box-shadow: 0 0 12px rgba(255, 0, 255, 0.3);
+}
+.promo-countdown-box.urgent {
+  background: rgba(255, 0, 255, 0.18);
+  border-color: var(--cp-pink);
+  border-width: 2px;
+  box-shadow: 0 0 18px var(--cp-pink-glow), inset 0 0 12px rgba(255, 255, 0, 0.10);
+  animation: cp-blink 1.2s ease-in-out infinite;
+}
+.promo-countdown-box.expired {
+  background: rgba(100, 100, 100, 0.10);
+  border-color: rgba(150, 150, 150, 0.3);
+  box-shadow: none;
+}
+.promo-countdown-label {
+  font-size: 11px; font-weight: 800;
+  color: var(--cp-cyan);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-right: auto;
+  text-shadow: 0 0 6px var(--cp-cyan);
+}
+.promo-countdown-box.urgent .promo-countdown-label {
+  color: var(--cp-pink);
+  text-shadow: 0 0 6px var(--cp-pink);
+}
+.promo-countdown-box.expired .promo-countdown-label { color: #999; text-shadow: none; }
+.promo-countdown-timer {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.promo-countdown-unit {
+  display: inline-flex; flex-direction: column;
+  align-items: center; gap: 0;
+  min-width: 28px;
+}
+.promo-countdown-num {
+  font-size: 18px; font-weight: 900;
+  color: var(--cp-cyan);
+  line-height: 1;
+  text-shadow: 0 0 8px var(--cp-cyan);
+}
+.promo-countdown-box.urgent .promo-countdown-num {
+  color: var(--cp-pink);
+  text-shadow: 0 0 8px var(--cp-pink);
+}
+.promo-countdown-box.expired .promo-countdown-num {
+  color: #888; text-shadow: none;
+}
+.promo-countdown-text {
+  font-size: 9px; font-weight: 800;
+  color: var(--cp-pink);
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.promo-countdown-box.expired .promo-countdown-text { color: #888; }
+.promo-countdown-sep {
+  font-size: 14px; font-weight: 900;
+  color: var(--cp-pink);
+  opacity: 0.7;
+  margin: 0 1px;
+  align-self: flex-start;
+  line-height: 1;
+}
+.promo-countdown-box.expired .promo-countdown-sep { color: #888; opacity: 0.5; }
+.promo-countdown-text-flat {
+  font-size: 13px; font-weight: 900;
+  color: var(--cp-pink);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 6px var(--cp-pink);
+  letter-spacing: 1px;
+}
+.promo-countdown-box.expired .promo-countdown-text-flat {
+  color: #888; text-shadow: none;
+}
+
+/* ---------- ปุ่ม CTA ภายในการ์ด ---------- */
+.promo-card-cta {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 0;
+  border: 1px solid var(--cp-cyan);
+  background: rgba(0, 255, 255, 0.12);
+  color: var(--cp-cyan);
+  font-size: 13px; font-weight: 800;
+  font-family: var(--cp-mono);
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  text-shadow: 0 0 6px var(--cp-cyan-glow);
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+}
+.promo-card-cta:hover {
+  background: rgba(0, 255, 255, 0.22);
+  transform: translateY(-1px);
+  box-shadow: 0 0 16px var(--cp-cyan-glow);
+  color: #fff;
+  text-shadow: 0 0 8px var(--cp-cyan);
+}
+.promo-card-cta:active { transform: translateY(0); }
+.promo-card-cta svg {
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 3px var(--cp-cyan));
+}
