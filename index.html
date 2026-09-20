@@ -143,6 +143,36 @@
     background:var(--success, #28c76f); color:#fff; border:0; cursor:pointer;
     margin-top:8px;
   }
+
+  /* 🔧 (2026-09-20 popup buttons): แต่งปุ่มใน popup รายละเอียดเพลงให้สวยเหมือนปุ่มด้านนอก — เปลี่ยนเฉพาะสีตัวอักษร/สีพื้นหลัง/ขอบ/เงา
+     ข้อความ ไอคอน ขนาด และการทำงาน (onclick, หยุดเพลง/กำลังโหลด) เหมือนเดิมทุกอย่าง
+     - ปุ่มฟังเพลง       = สไตล์ชมพู เหมือนปุ่ม "ซื้อทั้งเพลย์ลิสต์"
+     - ปุ่มเพิ่มเข้าตะกร้า = สไตล์เขียว เหมือนปุ่ม "เพิ่มลงตะกร้า" ด้านนอก */
+  #songModalBackdrop #modalPlayBtn {
+    background:linear-gradient(135deg, rgba(236,72,153,.25), rgba(236,72,153,.15));
+    border:1px solid rgba(236,72,153,.4);
+    color:#ec4899;
+    box-shadow:0 4px 14px rgba(236,72,153,.3);
+    transition:all .2s ease;
+  }
+  #songModalBackdrop #modalPlayBtn:hover:not(:disabled) {
+    transform:translateY(-1px);
+    background:linear-gradient(135deg, rgba(236,72,153,.35), rgba(236,72,153,.25));
+    box-shadow:0 6px 18px rgba(236,72,153,.45);
+  }
+  #modalPlayBtn .spinner { border-color:rgba(236,72,153,.25); border-top-color:#ec4899; }
+  #songModalBackdrop #modalBuyBtn {
+    background:linear-gradient(135deg, rgba(74,222,128,.25), rgba(34,197,94,.15));
+    border:1px solid rgba(74,222,128,.4);
+    color:#4ade80;
+    box-shadow:0 4px 14px rgba(74,222,128,.3);
+    transition:all .2s ease;
+  }
+  #songModalBackdrop #modalBuyBtn:hover {
+    transform:translateY(-1px);
+    background:linear-gradient(135deg, rgba(74,222,128,.35), rgba(34,197,94,.25));
+    box-shadow:0 6px 18px rgba(74,222,128,.45);
+  }
   #modalMetaLine {
     font-size:11px; color:var(--text-dim); text-align:center; line-height:1.5;
   }
