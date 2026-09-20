@@ -3152,7 +3152,7 @@ button:active {
 
 /* ---------- แบนเนอร์โปรโมชั่นเด่น บนหน้าแรก ---------- */
 .promo-home-banner {
-  margin: 8px 12px 4px;
+  margin: 10px 12px 6px;
   padding: 0;
   border-radius: 4px;
   background: linear-gradient(135deg, rgba(255, 0, 255, 0.12), rgba(0, 255, 255, 0.12));
@@ -3174,11 +3174,11 @@ button:active {
 .promo-home-banner-inner {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: 14px;
+  padding: 18px 20px;
 }
 .promo-home-banner-icon {
-  width: 44px; height: 44px;
+  width: 56px; height: 56px;
   border-radius: 0;
   background: rgba(255, 0, 255, 0.2);
   border: 1px solid var(--cp-pink);
@@ -3188,7 +3188,7 @@ button:active {
   transform: skew(-5deg);
 }
 .promo-home-banner-icon svg {
-  width: 24px; height: 24px;
+  width: 30px; height: 30px;
   color: var(--cp-cyan);
   stroke-width: 2.4;
   transform: skew(5deg); /* คืน skew ของ icon */
@@ -3198,36 +3198,37 @@ button:active {
   flex: 1; min-width: 0;
 }
 .promo-home-banner-label {
-  font-size: 10.5px; font-weight: 800;
+  font-size: 13px; font-weight: 800;
   color: var(--cp-cyan);
   text-transform: uppercase;
   letter-spacing: 2px;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
   text-shadow: 0 0 6px var(--cp-cyan), 1px 1px 0 var(--cp-pink);
 }
 .promo-home-banner-title {
-  font-size: 15px; font-weight: 900;
+  font-size: 19px; font-weight: 900;
   color: #fff;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  margin-bottom: 3px;
+  margin-bottom: 5px;
   text-shadow: 0 0 8px var(--cp-pink), 2px 0 0 rgba(0, 255, 255, 0.7), -2px 0 0 rgba(255, 0, 255, 0.7);
 }
 .promo-home-banner-meta {
-  font-size: 11.5px; color: var(--cp-pink);
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 14px; color: var(--cp-pink);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
 }
 .promo-home-banner-discount {
-  color: var(--cp-cyan); font-weight: 800;
+  color: var(--cp-cyan); font-weight: 900;
+  font-size: 15px;
   text-shadow: 0 0 6px var(--cp-cyan);
 }
 .promo-home-banner-countdown {
   display: inline-flex; align-items: center; gap: 3px;
   background: var(--cp-cyan); color: var(--cp-bg);
-  padding: 2px 8px;
+  padding: 4px 12px;
   border-radius: 0;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
-  font-size: 10.5px;
+  font-size: 13px;
   box-shadow: 0 0 8px var(--cp-cyan-glow);
   letter-spacing: 1px;
 }
@@ -3245,7 +3246,7 @@ button:active {
   flex-shrink: 0;
   color: var(--cp-pink);
   font-weight: 900;
-  font-size: 22px;
+  font-size: 28px;
   line-height: 1;
   transition: transform 0.2s, color 0.2s, text-shadow 0.2s;
   text-shadow: 0 0 6px var(--cp-pink);
@@ -3270,7 +3271,7 @@ button:active {
   position: relative;
 }
 .promo-view-header-icon {
-  width: 40px; height: 40px;
+  width: 48px; height: 48px;
   border-radius: 0;
   background: rgba(255, 0, 255, 0.15);
   border: 1px solid var(--cp-pink);
@@ -3280,19 +3281,19 @@ button:active {
   transform: skew(-5deg);
 }
 .promo-view-header-icon svg {
-  width: 22px; height: 22px;
+  width: 26px; height: 26px;
   color: var(--cp-cyan);
   transform: skew(5deg);
   filter: drop-shadow(0 0 4px var(--cp-cyan));
 }
 .promo-view-title {
-  font-size: 22px; font-weight: 900; color: #fff;
+  font-size: 26px; font-weight: 900; color: #fff;
   margin: 0;
   text-shadow: 0 0 8px var(--cp-pink), 2px 0 0 rgba(0, 255, 255, 0.7), -2px 0 0 rgba(255, 0, 255, 0.7);
   letter-spacing: 1px;
 }
 .promo-view-subtitle {
-  font-size: 12px; color: var(--cp-cyan);
+  font-size: 14px; color: var(--cp-cyan);
   margin: 3px 0 0;
   text-shadow: 0 0 4px var(--cp-cyan-glow);
   letter-spacing: 0.5px;
@@ -3312,17 +3313,17 @@ button:active {
   background: rgba(0, 255, 255, 0.04);
 }
 .promo-view-empty-icon {
-  font-size: 48px; margin-bottom: 12px;
+  font-size: 56px; margin-bottom: 14px;
   text-shadow: 0 0 12px var(--cp-cyan-glow);
 }
 .promo-view-empty-text {
-  font-size: 15px; font-weight: 800;
+  font-size: 17px; font-weight: 800;
   margin-bottom: 6px;
   text-shadow: 0 0 6px var(--cp-cyan-glow);
   letter-spacing: 1px;
 }
 .promo-view-empty-sub {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--cp-pink);
   opacity: 0.85;
 }
@@ -3373,63 +3374,63 @@ button:active {
   50%      { box-shadow: 0 0 36px var(--cp-pink-glow), 0 0 22px rgba(255, 255, 0, 0.5), inset 0 0 32px rgba(255, 0, 255, 0.12); }
 }
 .promo-card-body {
-  padding: 18px;
+  padding: 22px;
 }
 .promo-card-top {
   display: flex; justify-content: space-between; align-items: flex-start;
-  gap: 12px; margin-bottom: 12px;
+  gap: 14px; margin-bottom: 14px;
 }
 .promo-card-name-wrap {
   flex: 1; min-width: 0;
 }
 .promo-card-name {
-  font-size: 17px; font-weight: 900;
+  font-size: 20px; font-weight: 900;
   color: #fff;
-  margin: 0 0 4px;
+  margin: 0 0 6px;
   line-height: 1.3;
   word-break: break-word;
   text-shadow: 0 0 8px var(--cp-pink);
   letter-spacing: 0.5px;
 }
 .promo-card-desc {
-  font-size: 12.5px; color: var(--cp-cyan);
+  font-size: 14px; color: var(--cp-cyan);
   opacity: 0.85;
   line-height: 1.5;
   word-break: break-word;
 }
 .promo-card-discount {
   flex-shrink: 0;
-  padding: 10px 16px;
+  padding: 12px 18px;
   border-radius: 0;
   background: rgba(255, 0, 255, 0.15);
   border: 1px solid var(--cp-pink);
   text-align: center;
-  min-width: 80px;
+  min-width: 90px;
   box-shadow: 0 0 12px var(--cp-pink-glow);
 }
 .promo-card-discount-value {
-  font-size: 24px; font-weight: 900;
+  font-size: 30px; font-weight: 900;
   color: var(--cp-cyan);
   line-height: 1;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 0 8px var(--cp-cyan);
 }
 .promo-card-discount-unit {
-  font-size: 10px; font-weight: 800;
+  font-size: 12px; font-weight: 800;
   color: var(--cp-pink);
   text-transform: uppercase;
   letter-spacing: 1px;
   margin-top: 3px;
 }
 .promo-card-tags {
-  display: flex; flex-wrap: wrap; gap: 6px;
-  margin: 12px 0 12px;
+  display: flex; flex-wrap: wrap; gap: 7px;
+  margin: 14px 0 14px;
 }
 .promo-tag {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 10px;
+  padding: 5px 12px;
   border-radius: 0;
-  font-size: 11px; font-weight: 800;
+  font-size: 12.5px; font-weight: 800;
   background: rgba(0, 255, 255, 0.10);
   border: 1px solid rgba(0, 255, 255, 0.4);
   color: var(--cp-cyan);
@@ -3452,9 +3453,9 @@ button:active {
   color: var(--cp-yellow);
 }
 .promo-card-dates {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 11.5px; color: var(--cp-cyan);
-  padding: 10px 12px;
+  display: flex; align-items: center; gap: 7px;
+  font-size: 13.5px; color: var(--cp-cyan);
+  padding: 12px 14px;
   background: rgba(0, 255, 255, 0.05);
   border: 1px solid rgba(0, 255, 255, 0.25);
   border-radius: 0;
@@ -3476,8 +3477,8 @@ button:active {
 
 /* ---------- กล่องนาฬิกานับถอยหลัง ---------- */
 .promo-countdown-box {
-  display: flex; align-items: center; gap: 8px;
-  padding: 12px 14px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px;
   border-radius: 0;
   background: rgba(255, 0, 255, 0.10);
   border: 1px solid var(--cp-pink);
@@ -3496,7 +3497,7 @@ button:active {
   box-shadow: none;
 }
 .promo-countdown-label {
-  font-size: 11px; font-weight: 800;
+  font-size: 13px; font-weight: 800;
   color: var(--cp-cyan);
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -3515,10 +3516,10 @@ button:active {
 .promo-countdown-unit {
   display: inline-flex; flex-direction: column;
   align-items: center; gap: 0;
-  min-width: 28px;
+  min-width: 34px;
 }
 .promo-countdown-num {
-  font-size: 18px; font-weight: 900;
+  font-size: 22px; font-weight: 900;
   color: var(--cp-cyan);
   line-height: 1;
   text-shadow: 0 0 8px var(--cp-cyan);
@@ -3531,7 +3532,7 @@ button:active {
   color: #888; text-shadow: none;
 }
 .promo-countdown-text {
-  font-size: 9px; font-weight: 800;
+  font-size: 10.5px; font-weight: 800;
   color: var(--cp-pink);
   margin-top: 2px;
   text-transform: uppercase;
@@ -3539,7 +3540,7 @@ button:active {
 }
 .promo-countdown-box.expired .promo-countdown-text { color: #888; }
 .promo-countdown-sep {
-  font-size: 14px; font-weight: 900;
+  font-size: 18px; font-weight: 900;
   color: var(--cp-pink);
   opacity: 0.7;
   margin: 0 1px;
@@ -3548,7 +3549,7 @@ button:active {
 }
 .promo-countdown-box.expired .promo-countdown-sep { color: #888; opacity: 0.5; }
 .promo-countdown-text-flat {
-  font-size: 13px; font-weight: 900;
+  font-size: 15px; font-weight: 900;
   color: var(--cp-pink);
   font-variant-numeric: tabular-nums;
   text-shadow: 0 0 6px var(--cp-pink);
@@ -3560,15 +3561,15 @@ button:active {
 
 /* ---------- ปุ่ม CTA ภายในการ์ด ---------- */
 .promo-card-cta {
-  display: flex; align-items: center; justify-content: center; gap: 6px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
   width: 100%;
-  margin-top: 14px;
-  padding: 12px 14px;
+  margin-top: 16px;
+  padding: 14px 16px;
   border-radius: 0;
   border: 1px solid var(--cp-cyan);
   background: rgba(0, 255, 255, 0.12);
   color: var(--cp-cyan);
-  font-size: 13px; font-weight: 800;
+  font-size: 15px; font-weight: 800;
   font-family: var(--cp-mono);
   cursor: pointer;
   transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
