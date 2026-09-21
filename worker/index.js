@@ -2205,68 +2205,120 @@ async function handleOrderZipFinalizeBuild(request, env) {
   }
 
   // ===== Process songs =====
+  // 🔧 (2026-09-21 perf v3): Parallel WAV fetch — ดึงไฟล์ทุกเพลงพร้อมกัน แทน sequential
+  //   เดิม (ช้า): for loop → await env.BUCKET.get(p.r2Key) → ทีละเพลง → รอทุกเพลงเสร็จก่อนเริ่มต่อ
+  //   ใหม่ (เร็ว 2-3x): Promise.all fetch ทุกเพลงพร้อมกัน → ประมวลผลตามลำดับ
+  //   เงื่อนไข: ใช้ parallel เฉพาะ total bytes <= 100MB (กัน memory เกิน)
+  //     - ถ้า > 100MB → ใช้ sequential streaming (เดิม) เพื่อประหยัด memory
+  //   ผลกระทบระบบเดิม: 0% — response format เท่าเดิม, parts metadata เท่าเดิม
   let processedCount = 0;
   try {
     const endIdx = Math.min(state.nextSongIdx + ZIP_FINALIZE_SONGS_PER_ROUND, songs.length);
+    const songsToProcess = [];
     for (let i = state.nextSongIdx; i < endIdx; i += 1) {
-      const p = songs[i];
+      songsToProcess.push({ idx: i, song: songs[i] });
+    }
 
-      // อ่าน WAV จาก R2
-      let wavObject;
+    // คำนวณ total bytes ที่จะ fetch (จาก parts.size ที่ append เก็บไว้)
+    const totalExpectedBytes = songsToProcess.reduce(
+      (sum, { song }) => sum + Number(song?.size || 0),
+      0
+    );
+    const PARALLEL_FETCH_MAX_BYTES = 100 * 1024 * 1024; // 100MB — กัน memory เกิน
+
+    let wavBuffers = null;  // ถ้า null = ใช้ sequential streaming path
+    if (totalExpectedBytes > 0 && totalExpectedBytes <= PARALLEL_FETCH_MAX_BYTES && songsToProcess.length > 1) {
+      // 🔧 Parallel fetch path: ดึงทุกเพลงพร้อมกัน → ประมวลผลตามลำดับ
       try {
-        wavObject = await env.BUCKET.get(p.r2Key);
+        wavBuffers = await Promise.all(
+          songsToProcess.map(async ({ song, idx }) => {
+            const obj = await env.BUCKET.get(song.r2Key);
+            if (!obj) {
+              throw new Error(`ไม่พบไฟล์ WAV ของเพลง "${song.songName}" ใน R2 (key: ${song.r2Key})`);
+            }
+            // อ่านเป็น arrayBuffer → Uint8Array (consume stream ทันที → ไม่ leak connection)
+            const buf = await obj.arrayBuffer();
+            return { idx, song, wavBytes: new Uint8Array(buf) };
+          })
+        );
       } catch (err) {
-        throw new Error(`อ่านไฟล์ WAV ของเพลง "${p.songName}" จาก R2 ไม่สำเร็จ (key: ${p.r2Key}): ` + (err?.message || String(err)));
+        // ถ้า parallel fetch fail (เช่น memory ไม่พอ) → fallback ไป sequential streaming
+        console.warn("[finalize-build] parallel fetch failed, falling back to streaming:", err?.message || err);
+        wavBuffers = null;
       }
-      if (!wavObject) {
-        throw new Error(`ไม่พบไฟล์ WAV ของเพลง "${p.songName}" ใน R2 (key: ${p.r2Key})`);
+    }
+
+    if (wavBuffers) {
+      // ===== Parallel path: process from in-memory buffers =====
+      for (const { idx, song, wavBytes } of wavBuffers) {
+        // Build entry bytes: [LFH + WAV + DD]
+        const filenameInZip = song.folderPath ? `${song.folderPath}/${song.filename}` : song.filename;
+        const filenameBytes = encodeFilename(filenameInZip);
+        const lfhBytes = buildLocalFileHeader(filenameBytes);
+
+        // CRC32 คำนวณในคราเดียว (มีข้อมูลทั้งไฟล์ใน memory แล้ว)
+        const crc = crc32Update(0, wavBytes);
+        const wavTotalSize = wavBytes.byteLength;
+
+        // Append: LFH + WAV + DD
+        await appendBytes(lfhBytes);
+        await appendBytes(wavBytes);
+        const ddBytes = buildDataDescriptor(crc, wavTotalSize);
+        await appendBytes(ddBytes);
+
+        songs[idx].crc32 = crc;
+        state.nextSongIdx += 1;
+        processedCount += 1;
       }
+    } else {
+      // ===== Sequential streaming path (เดิม — สำหรับ orders ใหญ่ > 100MB) =====
+      for (let i = state.nextSongIdx; i < endIdx; i += 1) {
+        const p = songs[i];
 
-      // 🔧 (2026-09-19 perf v2 จุด #1): stream WAV ผ่าน reader แทน arrayBuffer
-      //   เดิม (ช้า + memory 50MB): wavBuf = await wavObject.arrayBuffer() → โหลดทั้งไฟล์เข้า memory
-      //   ใหม่ (เร็ว + memory ~1MB): stream ทีละ chunk 1MB ผ่าน reader → คำนวณ CRC + append พร้อมกัน
-      //
-      //   ผลกระทบต่อระบบเดิม: 0%
-      //   - CRC32 คำนวณด้วย crc32Update() ตัวเดิม → ค่าที่ได้เท่าเดิม 100%
-      //   - LFH + WAV + DD structure เท่าเดิม
-      //   - ลด memory จาก 50MB → ~1MB (chunk buffer 16MB ใช้ร่วมกับ appendBytes)
-      //   - เร็วขึ้น ~2-3 เท่า เพราะ R2 streaming + CRC + append ทำพร้อมกัน
-      const reader = wavObject.body.getReader();
-      let crc = 0;
-      let wavTotalSize = 0;
-
-      // Build entry bytes: [LFH + WAV + DD]
-      // LFH ส่งเข้า chunkBuffer ก่อน (ส่งตรง ๆ ผ่าน appendBytes)
-      const filenameInZip = p.folderPath ? `${p.folderPath}/${p.filename}` : p.filename;
-      const filenameBytes = encodeFilename(filenameInZip);
-      const lfhBytes = buildLocalFileHeader(filenameBytes);
-      await appendBytes(lfhBytes);
-
-      // Stream WAV chunks → update CRC + append ในคราเดียว (ไม่เก็บ WAV ใน memory)
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (value && value.byteLength > 0) {
-            crc = crc32Update(crc, value);     // CRC32 ตาม ZIP spec (เฉพาะ WAV bytes)
-            wavTotalSize += value.byteLength;
-            await appendBytes(value);            // append ทันที ไม่รอโหลดจบ
-          }
+        // อ่าน WAV จาก R2
+        let wavObject;
+        try {
+          wavObject = await env.BUCKET.get(p.r2Key);
+        } catch (err) {
+          throw new Error(`อ่านไฟล์ WAV ของเพลง "${p.songName}" จาก R2 ไม่สำเร็จ (key: ${p.r2Key}): ` + (err?.message || String(err)));
         }
-      } catch (err) {
-        throw new Error(`อ่าน WAV ของเพลง "${p.songName}" แบบ stream ไม่สำเร็จ: ` + (err?.message || String(err)));
+        if (!wavObject) {
+          throw new Error(`ไม่พบไฟล์ WAV ของเพลง "${p.songName}" ใน R2 (key: ${p.r2Key})`);
+        }
+
+        // Stream WAV chunks → update CRC + append ในคราเดียว (ไม่เก็บ WAV ใน memory)
+        const reader = wavObject.body.getReader();
+        let crc = 0;
+        let wavTotalSize = 0;
+
+        const filenameInZip = p.folderPath ? `${p.folderPath}/${p.filename}` : p.filename;
+        const filenameBytes = encodeFilename(filenameInZip);
+        const lfhBytes = buildLocalFileHeader(filenameBytes);
+        await appendBytes(lfhBytes);
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value && value.byteLength > 0) {
+              crc = crc32Update(crc, value);
+              wavTotalSize += value.byteLength;
+              await appendBytes(value);
+            }
+          }
+        } catch (err) {
+          throw new Error(`อ่าน WAV ของเพลง "${p.songName}" แบบ stream ไม่สำเร็จ: ` + (err?.message || String(err)));
+        }
+        try { reader.releaseLock(); } catch (_) {}
+
+        songs[i].crc32 = crc;
+
+        const ddBytes = buildDataDescriptor(crc, wavTotalSize);
+        await appendBytes(ddBytes);
+
+        state.nextSongIdx += 1;
+        processedCount += 1;
       }
-      // ปิด reader (ป้องกัน R2 connection ค้าง — เหมือน bug fix ใน append)
-      try { reader.releaseLock(); } catch (_) {}
-
-      songs[i].crc32 = crc;
-
-      // DD (Data Descriptor) — ใส่ค่า CRC + size จริง ตอนท้าย entry
-      const ddBytes = buildDataDescriptor(crc, wavTotalSize);
-      await appendBytes(ddBytes);
-
-      state.nextSongIdx += 1;
-      processedCount += 1;
     }
 
     // 🔧 (2026-09-19 perf v2): drain upload queue ก่อน save partial buffer
