@@ -4119,3 +4119,34 @@ button:active {
     color: #fecaca;
   }
 }
+
+
+/* ==========================================================================
+   🎨 (2026-09-21) ปุ่ม "ซื้อทั้งเพลย์ลิสต์" — ปรับให้สว่าง/สดขึ้น ใสน้อยลง (เพิ่มต่อท้ายไฟล์ ทับบล็อกกระจกแดงด้านบน)
+   - แตะเฉพาะ .playlist-folder-btn .playlist-folder-buy-btn ปุ่มเดียว ไม่แตะปุ่มเพิ่มลงตะกร้า/HTML/JS
+   - ย้อนกลับ: ลบบล็อกนี้ ปุ่มจะกลับเป็นกระจกแดงแบบเดิม
+   ========================================================================== */
+.playlist-folder-btn .playlist-folder-buy-btn {
+  background: linear-gradient(180deg, #ff7a7a 0%, #ef4444 55%, #dc2626 100%) !important;
+  border: 1px solid #fecaca !important;
+  color: #ffffff !important;
+  text-shadow: 0 1px 2px rgba(120, 0, 0, 0.55);
+  box-shadow: 0 0 18px rgba(255, 82, 82, 0.60), 0 4px 10px rgba(220, 38, 38, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -6px 10px rgba(153, 27, 27, 0.35);
+}
+.playlist-folder-btn .playlist-folder-buy-btn:hover {
+  background: linear-gradient(180deg, #ff9494 0%, #f75a5a 55%, #e63a3a 100%) !important;
+  box-shadow: 0 0 24px rgba(255, 82, 82, 0.80), 0 6px 14px rgba(220, 38, 38, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.65), inset 0 -6px 10px rgba(153, 27, 27, 0.3);
+}
+.playlist-folder-btn .playlist-folder-buy-btn:active {
+  box-shadow: 0 0 10px rgba(255, 82, 82, 0.45), inset 0 2px 6px rgba(120, 0, 0, 0.45);
+}
+@media (max-width: 480px) {
+  .playlist-folder-btn .playlist-folder-buy-btn {
+    background: linear-gradient(180deg, #ff7a7a 0%, #ef4444 55%, #dc2626 100%) !important;
+    border: 1px solid #fecaca !important;
+  }
+  .playlist-folder-btn .playlist-folder-buy-btn::after {
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(120, 0, 0, 0.55);
+  }
+}
