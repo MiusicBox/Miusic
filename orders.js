@@ -1711,7 +1711,14 @@ async function openReceipt(orderId) {
   const whatsappBtn = document.getElementById("receiptWhatsAppBtn");
   if (whatsappBtn) {
     whatsappBtn.onclick = () => {
-      const number = String(order.whatsapp || "").replace(/[^0-9]/g, "");
+      // 🔧 (2026-09-21 fix): prepend Laos country code 856 ก่อนสร้าง wa.me URL
+      //   order.whatsapp เก็บเป็น "20XXXXXXXX" (ลด 856 และ 0 ออกตอน normalize ใน app-cart.js)
+      //   ถ้าส่ง wa.me/20XXXXXXXX ตรงๆ → WhatsApp ตีความเป็นอียิปต์ (+20) → ไม่เปิดแชทลูกค้าลาว
+      //   วิธีแก้: ถ้ายังไม่มี 856 นำหน้า ให้ prepend เข้าไป
+      //   ผลกระทบระบบเดิม: 0% — DB ยังเก็บ "20XXXXXXXX" เหมือนเดิม แค่เปลี่ยน URL ที่ส่งให้ wa.me
+      //   guard: ถ้าเบอร์เริ่มต้นด้วย 856 อยู่แล้ว (เช่น ออเดอร์เก่าที่เก็บรูปแบบ international) → ไม่ prepend ซ้ำ
+      let number = String(order.whatsapp || "").replace(/[^0-9]/g, "");
+      if (number && !number.startsWith("856")) number = "856" + number;
       if (!number) {
         orderToast("ออเดอร์นี้ไม่มีเบอร์ WhatsApp ของลูกค้า", "error");
         return;
@@ -1866,7 +1873,10 @@ async function openFullFilesModal(orderId) {
   const whatsappBtn = document.getElementById("fullFilesWhatsAppBtn");
   if (whatsappBtn) {
     whatsappBtn.onclick = () => {
-      const number = String(order.whatsapp || "").replace(/[^0-9]/g, "");
+      // 🔧 (2026-09-21 fix): prepend Laos country code 856 ก่อนสร้าง wa.me URL
+      //   เหตุผลเดียวกับ receiptWhatsAppBtn ด้านบน — ดูคอมเมนต์ที่จุดนั้น
+      let number = String(order.whatsapp || "").replace(/[^0-9]/g, "");
+      if (number && !number.startsWith("856")) number = "856" + number;
       if (!number) {
         orderToast("ออเดอร์นี้ไม่มีเบอร์ WhatsApp ของลูกค้า", "error");
         return;
