@@ -1942,10 +1942,32 @@ function renderTrackOrderResult(order) {
   const deleteBtn = document.getElementById("trackOrderDeleteBtn");
   if (deleteBtn) {
     deleteBtn.onclick = () => {
-      handleCustomerDeleteOrder(order, () => {
-        resultEl.hidden = true;
-        resultEl.innerHTML = "";
-      });
+      // 🔧 (2026-09-22 fix v2): Optimistic UI — ลบจากหน้าจอทันทีก่อนส่ง request
+      const confirmed = window.confirm(`ต้องการลบ Order ${order.receipt_number || ""} ใช่หรือไม่? เมื่อลบแล้วจะไม่สามารถกู้คืนได้`);
+      if (!confirmed) return;
+      // 1. ลบจากหน้าจอทันที (ก่อนเรียก API)
+      resultEl.hidden = true;
+      resultEl.innerHTML = "";
+      // 2. ลบจาก local state ด้วย (ถ้าอยู่ใน trackOrderAllOrders จะได้ไม่ค้างตอนกลับไปลิสต์)
+      trackOrderAllOrders = trackOrderAllOrders.filter(o => o._docId !== order._docId);
+      if (window.__refreshTrackOrderBadge) window.__refreshTrackOrderBadge();
+      // 3. ส่ง request ลบจริงใน background (ไม่ block UI)
+      (async () => {
+        try {
+          await deleteDoc(doc(db, "orders", order._docId), {
+            body: {
+              customer_name: order.customer_name || "",
+              whatsapp: order.whatsapp || "",
+            },
+          });
+          showToast("ลบออเดอร์เรียบร้อยแล้ว", "success");
+        } catch (err) {
+          console.error("handleCustomerDeleteOrder error:", err);
+          showToast(getFriendlyErrorMessage(err), "error");
+          // ถ้าลบไม่สำเร็จ → re-fetch เพื่อ restore ข้อมูล
+          fetchTrackOrderAllOnce();
+        }
+      })();
     };
   }
 }
@@ -2153,23 +2175,37 @@ function openTrackOrderAllDetail(order) {
   const deleteBtn = document.getElementById("trackOrderAllDeleteBtn");
   if (deleteBtn) {
     deleteBtn.onclick = () => {
-      // 🔧 (2026-09-22 fix): Optimistic UI — ลบจาก local state ทันที ไม่รอ fetch
-      //   ปัญหาเดิม: หลังลบ → fetchTrackOrderAllOnce() ทันที → D1 ยังไม่ propagate → ส่งข้อมูลเก่า → ออเดอร์ยังค้าง
-      //   วิธีแก้: ลบจาก trackOrderAllOrders ทันที + re-render → ลูกค้าเห็นหายทันที
-      //           แล้วค่อย fetch ใน background เพื่อ sync ข้อมูลจริง (อัปเดต badge)
-      handleCustomerDeleteOrder(order, () => {
-        // 1. ลบออกจาก local array ทันที
-        trackOrderAllOrders = trackOrderAllOrders.filter(o => o._docId !== order._docId);
-        // 2. ปิด detail view กลับไปลิสต์
-        closeTrackOrderAllDetail();
-        // 3. re-render ลิสต์ด้วยข้อมูลที่ลบแล้ว (optimistic — ลูกค้าเห็นหายทันที)
-        renderTrackOrderAllList(trackOrderAllOrders);
-        // 4. อัปเดต badge (ถ้ามี)
-        if (window.__refreshTrackOrderBadge) window.__refreshTrackOrderBadge();
-        // 5. silent fetch ใน background เพื่อ sync ข้อมูลจริง (ไม่ block UI)
-        //    ถ้า D1 ส่งข้อมูลใหม่ → re-render อีกครั้ง (อาจจะเหมือนเดิม = ไม่มีผล)
-        setTimeout(() => fetchTrackOrderAllOnce(), 500);  // รอ 500ms ให้ D1 propagate
-      });
+      // 🔧 (2026-09-22 fix v2): Optimistic UI — ลบจากหน้าจอทันทีก่อนส่ง request
+      //   ปัญหาเดิม: รอ deleteDoc เสร็จ → callback → UI update → ลูกค้าเห็น delay
+      //   วิธีแก้: ลบจาก local state + re-render ทันที → ส่ง request ใน background
+      //   ถ้า request fail → re-fetch เพื่อ restore
+      const confirmed = window.confirm(`ต้องการลบ Order ${order.receipt_number || ""} ใช่หรือไม่? เมื่อลบแล้วจะไม่สามารถกู้คืนได้`);
+      if (!confirmed) return;
+      // 1. ลบจาก local array ทันที (ก่อน API call)
+      trackOrderAllOrders = trackOrderAllOrders.filter(o => o._docId !== order._docId);
+      // 2. ปิด detail view กลับไปลิสต์
+      closeTrackOrderAllDetail();
+      // 3. re-render ลิสต์ทันที — ลูกค้าเห็นออเดอร์หายทันที
+      renderTrackOrderAllList(trackOrderAllOrders);
+      // 4. อัปเดต badge
+      if (window.__refreshTrackOrderBadge) window.__refreshTrackOrderBadge();
+      // 5. ส่ง request ลบจริงใน background (ไม่ block UI)
+      (async () => {
+        try {
+          await deleteDoc(doc(db, "orders", order._docId), {
+            body: {
+              customer_name: order.customer_name || "",
+              whatsapp: order.whatsapp || "",
+            },
+          });
+          showToast("ลบออเดอร์เรียบร้อยแล้ว", "success");
+        } catch (err) {
+          console.error("handleCustomerDeleteOrder error:", err);
+          showToast(getFriendlyErrorMessage(err), "error");
+          // ถ้าลบไม่สำเร็จ → re-fetch เพื่อ restore ข้อมูลที่หายไป
+          fetchTrackOrderAllOnce();
+        }
+      })();
     };
   }
 }
