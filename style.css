@@ -2448,8 +2448,8 @@ button:active {
   );
   animation: song-aurora-prism-spin 10s linear infinite;
   z-index: 0;
-  filter: blur(14px);
-  opacity: 0.30;
+  filter: blur(8px);
+  opacity: 0.60;
   pointer-events: none;
 }
 @keyframes song-aurora-prism-spin {
@@ -2508,8 +2508,8 @@ button:active {
 }
 
 .song-card-row:hover::before {
-  opacity: 0.45 !important;
-  filter: blur(10px) !important;
+  opacity: 0.80 !important;
+  filter: blur(6px) !important;
 }
 
 /* รูปปกใหญ่ขึ้น + มี glow */
@@ -2836,8 +2836,8 @@ button:active {
 }
 
 .playlist-song-row.song-card-row:hover::before {
-  opacity: 0.45 !important;
-  filter: blur(10px) !important;
+  opacity: 0.80 !important;
+  filter: blur(6px) !important;
 }
 
 /* รูปปกเพลงในเพลย์ลิสต์ — ใหญ่ขึ้น + มี glow เหมือนเพลงหลัก */
@@ -2998,32 +2998,35 @@ button:active {
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(236, 72, 153, 0.08)) !important;
 }
 
-/* 🎨 (2026-09-20): หัวเพลย์ลิสต์สลับ 3 สี (ม่วง / teal / เขียว) ตามรูป — สีเข้ม ๆ
+/* 🎨 (2026-09-20): หัวเพลย์ลิสต์สลับ 3 สี (ม่วง / teal / เขียว) — เพิ่มความชัดเจน
    - สลับ 3 สีไปเรื่อย ๆ (nth-child 3n+1/2/3)
-   - ลด glow/sparkle ออก ให้ดูสงบ ไม่แสบตา
-   - มี drop-shadow อ่อน ๆ */
+   - เพิ่ม border ความชัด (0.5 → 0.8) + box-shadow สีตรงกับ border
+   - มี drop-shadow ให้พรีเมียม */
 .playlist-folder-btn {
-  background: linear-gradient(135deg, #2a1a4e, #1a0f2e) !important;
-  border: 1px solid rgba(139, 92, 246, 0.5) !important;
+  background: linear-gradient(135deg, #3a1a6e, #1a0f3e) !important;
+  border: 2px solid rgba(139, 92, 246, 0.8) !important;
   border-radius: 14px !important;
   position: relative !important;
   overflow: hidden !important;
   isolation: isolate;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.3) !important;
 }
 
-/* สลับ 3 สี: ม่วง / ฟ้า-เขียวมิ้น (teal) / เขียว */
+/* สลับ 3 สี: ม่วง / ฟ้า-เขียวมิ้น (teal) / เขียว — เพิ่มความชัด */
 .playlist-block:nth-child(3n+1) .playlist-folder-btn {
-  background: linear-gradient(135deg, #2a1a4e, #1a0f2e) !important;
-  border: 1px solid rgba(139, 92, 246, 0.5) !important;
+  background: linear-gradient(135deg, #3a1a6e, #1a0f3e) !important;
+  border: 2px solid rgba(139, 92, 246, 0.8) !important;
+  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.3) !important;
 }
 .playlist-block:nth-child(3n+2) .playlist-folder-btn {
-  background: linear-gradient(135deg, #0c2a3a, #061a26) !important;
-  border: 1px solid rgba(20, 184, 166, 0.5) !important;
+  background: linear-gradient(135deg, #0c3a4a, #062a36) !important;
+  border: 2px solid rgba(20, 184, 166, 0.8) !important;
+  box-shadow: 0 4px 14px rgba(20, 184, 166, 0.3) !important;
 }
 .playlist-block:nth-child(3n+3) .playlist-folder-btn {
-  background: linear-gradient(135deg, #0c2e1a, #061a0c) !important;
-  border: 1px solid rgba(34, 197, 94, 0.5) !important;
+  background: linear-gradient(135deg, #0c4e1a, #063a0c) !important;
+  border: 2px solid rgba(34, 197, 94, 0.8) !important;
+  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.3) !important;
 }
 
 /* z-index ให้ content ของหัวเพลย์ลิสต์อยู่ด้านบน */
