@@ -1499,6 +1499,14 @@ document.getElementById("djSaveBtn").addEventListener("click", async function ()
       const res = await uploadToCloudinary(pendingDjImageFile);
       imageUrl = res.url;
     }
+    // 🖼️ (2026-09-21): เฉพาะการ "เพิ่ม DJ ใหม่" ถ้าแอดมินไม่ได้อัปโหลดรูป → ใช้ default-dj-cover.svg อัตโนมัติ
+    //   - กรณี "แก้ไข DJ เดิม" ที่ไม่มีรูป → ปล่อยให้ image_url ว่างอยู่เหมือนเดิม (ไม่บังคับตั้ง default)
+    //   - ทำแบบเดียวกับ default-song-cover.svg (บรรทัด 1131) และ default-playlist-cover.svg (บรรทัด 1763)
+    //   - ใช้ relative path เพื่อให้ทำงานได้ทุกที่ (admin/user โหลดจาก root เดียวกัน)
+    //   - ถ้าแอดมินอัปโหลดภายหลัง → payload.image_url จะถูก overwrite เป็น URL ของ Cloudinary
+    if (!imageUrl && !editingDjId) {
+      imageUrl = "default-dj-cover.svg";
+    }
     const payload = { dj_name: name, description: document.getElementById("fDjDesc").value.trim(), image_url: imageUrl };
     if (editingDjId) await updateDoc(doc(db, "djs", editingDjId), payload);
     else { payload.created_at = new Date().toISOString(); await addDoc(collection(db, "djs"), payload); }
