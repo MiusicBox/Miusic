@@ -153,3 +153,39 @@ CREATE TABLE IF NOT EXISTS order_zip_jobs (
 
 CREATE INDEX IF NOT EXISTS idx_order_zip_jobs_order ON order_zip_jobs(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_zip_jobs_status ON order_zip_jobs(status);
+
+-- ===================================================
+-- 🔒 (2026-09-21 fix Bug #2 ZIP URL permanent public): download_tokens table
+--   เก็บ one-time use tokens สำหรับลูกค้าดาวน์โหลด ZIP ออเดอร์
+--   แทนที่การใช้ R2 public URL ถาวร (ที่แชร์ได้ตลอดไป)
+--
+--   Flow:
+--     1) แอดมินกด "ส่ง ZIP ผ่าน WhatsApp" → app ใหม่เรียก
+--        POST /api/order-zip/get-customer-url?orderId=xxx
+--        → Worker สร้าง token (crypto.randomUUID) + บันทึก row ใหม่
+--        → คืน URL: /api/download/<orderId>?token=<token>
+--     2) ลูกค้าคลิก URL → GET /api/download/<orderId>?token=<token>
+--        → Worker ตรวจ token ใน DB (valid + ยังไม่หมดอายุ + ยังไม่ used)
+--        → ทำเครื่องหมาย used_at (one-time)
+--        → ดึง ZIP จาก R2 ผ่าน env.BUCKET.get(bucket_key).body → stream ส่งลูกค้า
+--        → R2 public URL ไม่เคยเปิดเผย
+--
+--   ความปลอดภัย:
+--     - Token สุ่มด้วย crypto.randomUUID() (122 บิต entropy) → brute-force ไม่ได้
+--     - One-time use → ใช้แล้วใช้ซ้ำไม่ได้ (กันแชร์)
+--     - หมดอายุใน 24 ชม. → แม้ลิงก์รั่ว ใช้ได้แค่ชั่วคราว
+--     - ผูกกับ orderId → ใช้กับออเดอร์อื่นไม่ได้
+--
+--   ผลกระทบต่อระบบเดิม: 0% — เพิ่มตารางใหม่ ไม่แตะ documents/admin_users/sessions
+-- ===================================================
+CREATE TABLE IF NOT EXISTS download_tokens (
+  token        TEXT PRIMARY KEY,    -- crypto.randomUUID() — 122 บิต entropy
+  order_id     TEXT NOT NULL,       -- orderId ที่ token นี้ใช้ดาวน์โหลดได้
+  created_at   TEXT NOT NULL,       -- ISO 8601 string
+  expires_at   TEXT NOT NULL,       -- ISO 8601 string — ปกติ created_at + 24h
+  used_at      TEXT,                -- NULL = ยังไม่ใช้, ISO = ใช้แล้ว (one-time)
+  created_by   TEXT                -- admin_id ของคนสร้าง token (audit log)
+);
+
+CREATE INDEX IF NOT EXISTS idx_download_tokens_order ON download_tokens(order_id);
+CREATE INDEX IF NOT EXISTS idx_download_tokens_expires ON download_tokens(expires_at);
