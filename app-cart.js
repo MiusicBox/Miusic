@@ -269,8 +269,8 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         if (promoApplied && promoDiscount > 0) {
           rows += `
             <div class="cart-summary-row">
-              <span style="color:var(--success);">🎁 ${escapeHtml(promoApplied.name || 'โปรโมชั่น')}</span>
-              <strong style="color:var(--success);">-${formatPrice(promoDiscount)}</strong>
+              <span style="color:var(--danger);">🎁 ${escapeHtml(promoApplied.name || 'โปรโมชั่น')}</span>
+              <strong style="color:var(--danger);">-${formatPrice(promoDiscount)}</strong>
             </div>`;
         }
         discountRowsEl.innerHTML = rows;
@@ -330,8 +330,8 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       if (promoApplied && promoDiscount > 0) {
         rows += `
           <div class="cart-summary-row">
-            <span style="color:var(--success);">🎁 ${escapeHtml(promoApplied.name || 'โปรโมชั่น')}</span>
-            <strong style="color:var(--success);">-${formatPrice(promoDiscount)}</strong>
+            <span style="color:var(--danger);">🎁 ${escapeHtml(promoApplied.name || 'โปรโมชั่น')}</span>
+            <strong style="color:var(--danger);">-${formatPrice(promoDiscount)}</strong>
           </div>`;
       }
       rows += `
