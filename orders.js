@@ -477,39 +477,56 @@ async function createOrderZip(orderId) {
     }
 
     // ===== Step 2: append ทีละเพลง =====
-    // แต่ละ append เป็น Worker invocation แยก → ไม่เกิน CPU/time limit ของ free plan
-    for (let i = 0; i < plan.length; i += 1) {
-      const item = plan[i];
-      orderToast(`กำลังสร้าง ZIP ${i + 1}/${totalSongs}${item.folderPath ? ` (ในโฟลเดอร์ ${item.folderPath})` : ""}...`, "progress");
-      let appendRes;
+    // 🔧 (2026-09-21 perf v3): Parallel append — ส่ง 3 เพลงพร้อมกัน (ลด 9-15 วิ → 3-5 วิ)
+    //   แต่ละ append ยังเป็น Worker invocation แยก → ไม่เกิน CPU/time limit ของ free plan
+    //   ข้อดี: ลด network round-trip + R2 fetch ทำพร้อมกัน (Worker แต่ละตัว fetch WAV ของตัวเอง)
+    //   ข้อเสีย: ถ้าเพลงเยอะ → ใช้ chunk เพื่อกัน D1 update race
+    const PARALLEL_APPEND_CHUNK = 3;  // 3 พร้อมกัน (Cloudflare Worker subrequest limit ~6, เผื่อไว้)
+    for (let i = 0; i < plan.length; i += PARALLEL_APPEND_CHUNK) {
+      const chunk = plan.slice(i, Math.min(i + PARALLEL_APPEND_CHUNK, plan.length));
+      const progressPct = Math.round((i / plan.length) * 100);
+      orderToast(`⏳ กำลังสร้าง ZIP ${i}/${totalSongs} เพลง (${progressPct}%)...`, "progress");
       try {
-        appendRes = await fetch("/api/order-zip/append", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "same-origin",
-          body: JSON.stringify({
-            jobId,
-            partNumber: i + 1,
-            songId: item.songId,
-            folderPath: item.folderPath || "",
-            songName: item.songName || "เพลง",
-          }),
-          signal,
-        });
+        await Promise.all(chunk.map(async (item, idx) => {
+          const partNumber = i + idx + 1;
+          let appendRes;
+          try {
+            appendRes = await fetch("/api/order-zip/append", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "same-origin",
+              body: JSON.stringify({
+                jobId,
+                partNumber,
+                songId: item.songId,
+                folderPath: item.folderPath || "",
+                songName: item.songName || "เพลง",
+              }),
+              signal,
+            });
+          } catch (err) {
+            if (err?.name === "AbortError" || signal.aborted) {
+              throw new Error("__ABORTED__");
+            }
+            throw new Error(`ส่งเพลงที่ ${partNumber} "${item.songName}" เข้า ZIP ไม่สำเร็จ (network): ${err?.message || err}`);
+          }
+          let appendData;
+          try { appendData = await appendRes.json(); } catch {
+            throw new Error(`อ่านผลลัพธ์จาก Worker ไม่สำเร็จ (HTTP ${appendRes.status}) — เพลงที่ ${partNumber}`);
+          }
+          if (!appendRes.ok || !appendData.ok) {
+            throw new Error(appendData?.error || `ส่งเพลงที่ ${partNumber} "${item.songName}" เข้า ZIP ไม่สำเร็จ (HTTP ${appendRes.status})`);
+          }
+        }));
       } catch (err) {
-        if (err?.name === "AbortError" || signal.aborted) {
+        if (err?.message === "__ABORTED__" || signal.aborted) {
           return { ok: false, error: "ยกเลิกการสร้าง ZIP โดยแอดมิน", aborted: true };
         }
-        throw new Error(`ส่งเพลงที่ ${i + 1} "${item.songName}" เข้า ZIP ไม่สำเร็จ (network): ${err?.message || err}`);
-      }
-      let appendData;
-      try { appendData = await appendRes.json(); } catch {
-        throw new Error(`อ่านผลลัพธ์จาก Worker ไม่สำเร็จ (HTTP ${appendRes.status}) — เพลงที่ ${i + 1}`);
-      }
-      if (!appendRes.ok || !appendData.ok) {
-        throw new Error(appendData?.error || `ส่งเพลงที่ ${i + 1} "${item.songName}" เข้า ZIP ไม่สำเร็จ (HTTP ${appendRes.status})`);
+        throw err;  // re-throw ให้ catch ด้านนอกจัดการ
       }
     }
+    // อัปเดต progress ครั้งสุดท้าย (100%)
+    orderToast(`⏳ ส่งเพลงเข้า ZIP เสร็จแล้ว (${totalSongs}/${totalSongs}) — กำลัง finalize...`, "progress");
 
     // ===== Step 3: finalize-build หลายรอบ (แต่ละรอบ process 10 เพลง) =====
     // 🔧 (2026-09-18 v5): แทนที่ finalize 1 ครั้งด้วย finalize-build × M + finalize-compose × 1
