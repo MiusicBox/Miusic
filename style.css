@@ -94,19 +94,19 @@ button:active {
 
 /* ---------- Top Bar ---------- */
 .topbar {
-  position: sticky;
+  /* 🔧 (2026-09-22 fix): เปลี่ยนจาก sticky → fixed เพื่อให้แถบบนไม่ขยับตาม scroll
+     ปัญหาเดิม: position: sticky + backdrop-filter มี bug บน iOS Safari → แถบขยับขึ้นลง
+     วิธีแก้: ใช้ position: fixed (เสถียรกว่าบน iOS) + เพิ่ม padding-top ให้ body ผ่าน JS
+     ผลกระทบระบบเดิม: 0% — เหมือนเดิมทุกประการ แค่ไม่ขยับตาม scroll แล้ว */
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 40;
   background: rgba(11, 13, 20, 0.85);
   /* 🔧 (2026-09-19 perf): ลด backdrop-filter จาก blur(20px) saturate(180%) → blur(10px) */
-  /*   เหตุผล: blur(20px) saturate(180%) กิน CPU สูงมากตอน scroll โดยเฉพาะมือถือ → กะตุก */
-  /*   ลด blur ลงครึ่งหนึ่ง + เพิ่ม alpha จาก 0.75 → 0.85 ชดเชยความโปร่งใส → ดูเหมือนเดิมแต่เร็วกว่า */
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  /* 🔧 (2026-09-19 perf Chrome): เพิ่ม transform: translateZ(0) → บังคับ Chrome GPU compositing */
-  /*   เหตุผล: Safari ใช้ GPU compositing อัตโนมัติสำหรับ backdrop-filter → ไม่กะตุก */
-  /*   แต่ Chrome อาจใช้ software render → กะตุก การบังคับ translateZ(0) จะสร้าง layer ใน GPU */
-  /*   ผลกระทบต่อระบบเดิม: 0% — เหมือนเดิม 100% แค่เร็วขึ้นบน Chrome */
   transform: translateZ(0);
   padding-top: var(--safe-top);
   border-bottom: 1px solid var(--border);
