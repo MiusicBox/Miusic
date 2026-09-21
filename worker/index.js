@@ -503,14 +503,26 @@ const SONG_SENSITIVE_FIELDS = ["full_file_url", "full_file_public_id", "full_fil
 // ผลกระทบ: ลูกค้า Laos ที่สั่งด้วยเบอร์ +85620... จะหาออเดอร์ได้ถ้ากรอก 020... หรือ 20...
 //   สอดคล้องกับ normalizePhone ฝั่ง client (app-user.js, app-promotion.js) ที่แก้พร้อมกัน
 function normalizePhoneServer(v) {
-  let s = String(v || "").replace(/[^0-9]/g, "");
-  // 🔒 แก้บั๊ก C5: strip country code Laos (+856 / 856) ออก เพื่อให้เบอร์ Laos ทุกรูปแบบเทียบเท่ากัน
-  if (s.startsWith("856")) s = s.slice(3);
-  // 🔒 แก้บั๊ก C5: strip "0" นำหน้าออก (เช่น "020..." → "20...")
-  //   เพราะเบอร์มือถือ Laos มักขึ้นต้นด้วย "20" หลัง strip country code แล้ว
-  //   บางคนกรอก "020..." บางคนกรอก "20..." ต้องเทียบเท่ากัน
-  if (s.startsWith("0")) s = s.replace(/^0+/, "");
-  return s;
+  // 🔧 (2026-09-22 v2 — รองรับทััง ลาว+ไทย): เก็บเบอร์ WITH country code ใน DB
+  //   sync กับ normalizePhoneForStorage ใน app-cart.js + myOrders_normalizePhone ใน app-promotion.js
+  //   + normalizePhone ใน app-user.js
+  //   รูปแบบที่เก็บ:
+  //     ลาว: "85620XXXXXXXX" (มี country code 856)
+  //     ไทย: "668XXXXXXXX" (มี country code 66)
+  //   ทำให้ลูกค้าค้นหาออเดอร์ได้โดยใส่เบอร์รูปแบบใดก็ได้ (local/international/with or without +)
+  let s = String(v || "").replace(/[^0-9+]/g, "");
+  s = s.replace(/^\+/, "");
+  if (s.startsWith("856")) {
+    let rest = s.slice(3).replace(/^0+/, "");
+    return "856" + rest;
+  }
+  if (s.startsWith("66")) {
+    let rest = s.slice(2).replace(/^0+/, "");
+    return "66" + rest;
+  }
+  // ไม่มี country code → สันนิษฐานว่าเป็นลาว (ลูกค้าส่วนใหญ่เป็นลาว)
+  let rest = s.replace(/^0+/, "");
+  return "856" + rest;
 }
 function normalizeNameServer(v) { return String(v || "").trim().toLowerCase(); }
 
