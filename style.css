@@ -126,12 +126,27 @@ button:active {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-weight: 800;
-  font-size: 20px;
+  font-family: "Bai Jamjuree", sans-serif;
+  font-weight: 900;
+  font-size: 22px;
   letter-spacing: -0.3px;
-  background: linear-gradient(135deg, #fff 30%, var(--text-dim));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+}
+
+/* 💙 (2026-09-20): สไตล์ C2 Vivid Cyan — ฟ้านีออนสดชัด→มืด + กระโดดทีละตัว
+   - JavaScript ใน app-user.js จะแยกตัวอักษรเป็น <span class="char"> อัตโนมัติ
+   - สีและ animation-delay ถูก set แบบ inline โดย JS ตามตำแหน่งตัวอักษร */
+.logo #siteName {
+  display: inline-flex;
+  align-items: baseline;
+}
+.logo #siteName .char {
+  display: inline-block;
+  transform-origin: center bottom;
+  animation: store-name-jump 1.5s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+}
+@keyframes store-name-jump {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-10px); }
 }
 
 .logo img {
