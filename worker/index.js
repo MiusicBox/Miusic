@@ -2815,4 +2815,91 @@ export default {
 
     return jsonResponse({ error: "ไม่พบ endpoint นี้" }, 404);
   },
+
+  // 🔒 (2026-09-21 auto-cleanup ZIP): Cron Trigger — ลบ ZIP อัตโนมัติหลัง 24 ชม.
+  //   รันทุก 6 ชม. (จาก wrangler.jsonc triggers.crons) → ค้นหา orders ที่:
+  //     - zip_status = 'ready' (ZIP พร้อมดาวน์โหลด)
+  //     - zip_created_at < (now - 24h) (สร้างเกิน 24 ชม. แล้ว)
+  //   สำหรับแต่ละ order:
+  //     1. ลบไฟล์ ZIP ออกจาก R2 (ใช้ zip_public_id เป็น bucket key)
+  //     2. อัปเดต order: zip_status='expired', zip_download_url='', zip_public_id='', zip_expired_at=now
+  //   ผลกระทบระบบเดิม: 0% — cron ทำงานแยกจาก fetch handler (request handling)
+  //   ผลกระทบต่อ admin UI:
+  //     - ปุ่ม "ดาวน์โหลด ZIP" → URL 404 (ไฟล์ถูกลบแล้ว) → admin ต้องกด "สร้าง ZIP ใหม่"
+  //     - ปุ่ม "ส่ง ZIP ผ่าน WhatsApp" → Worker ตรวจ zip_status='expired' → return error → admin ต้องสร้างใหม่
+  //   ประโยชน์: URL ถาวรที่รั่วจะใช้ได้แค่ 24 ชม. (เทียบเท่า token expiry)
+  async scheduled(event, env, ctx) {
+    try {
+      if (!env.DB || !env.BUCKET) {
+        console.warn("[cleanup] DB or BUCKET binding not configured — skip");
+        return;
+      }
+
+      // คำนวณ cutoff = now - 24 ชม.
+      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      console.log(`[cleanup] Looking for ZIPs created before ${cutoff}`);
+
+      // ค้นหา orders ที่ zip_status='ready' + อายุเกิน 24 ชม.
+      //   ใช้ json_extract บน data column (เหมือน queryDocuments)
+      //   ผลลัพธ์: array ของ { id, data } — data คือ JSON string
+      const { results } = await env.DB.prepare(
+        "SELECT id, data FROM documents WHERE collection = 'orders' " +
+        "AND json_extract(data, '$.zip_status') = 'ready' " +
+        "AND json_extract(data, '$.zip_created_at') IS NOT NULL " +
+        "AND json_extract(data, '$.zip_created_at') < ?"
+      ).bind(cutoff).all();
+
+      const expiredCount = results?.length || 0;
+      console.log(`[cleanup] Found ${expiredCount} ZIPs to expire`);
+
+      if (expiredCount === 0) {
+        return; // ไม่มี ZIP ต้อง cleanup → จบการทำงาน
+      }
+
+      // วนลูปลบทีละ order
+      let successCount = 0;
+      let errorCount = 0;
+      for (const row of results) {
+        try {
+          const order = JSON.parse(row.data);
+          const bucketKey = order.zip_public_id;
+
+          // 1) ลบไฟล์ ZIP ออกจาก R2 (ถ้ามี bucket key)
+          if (bucketKey) {
+            try {
+              await env.BUCKET.delete(bucketKey);
+              console.log(`[cleanup] Deleted R2 object: ${bucketKey}`);
+            } catch (r2Err) {
+              // ถ้า R2 delete fail (เช่น ไฟล์ไม่มีแล้ว) → ยัง update order อยู่ (ลบ stale reference)
+              console.warn(`[cleanup] R2 delete failed for ${bucketKey}:`, r2Err?.message || r2Err);
+            }
+          }
+
+          // 2) อัปเดต order: zip_status='expired', ลบ URL + public_id
+          const nowIso = new Date().toISOString();
+          const updatedData = {
+            ...order,
+            zip_status: "expired",
+            zip_download_url: "",
+            zip_public_id: "",
+            zip_expired_at: nowIso,
+            updated_at: nowIso,
+          };
+          await env.DB.prepare(
+            "UPDATE documents SET data = ?, updated_at = ? WHERE collection = 'orders' AND id = ?"
+          ).bind(JSON.stringify(updatedData), nowIso, row.id).run();
+          console.log(`[cleanup] Expired ZIP for order ${row.id}`);
+          successCount += 1;
+        } catch (err) {
+          console.error(`[cleanup] Failed to expire ZIP for order ${row.id}:`, err?.message || err);
+          errorCount += 1;
+        }
+      }
+
+      console.log(`[cleanup] Done: ${successCount} expired, ${errorCount} failed`);
+    } catch (err) {
+      // cron error ไม่ควรทำให้ Cloudflare ลบ trigger → log แล้วจบ
+      console.error("[cleanup] Cron error:", err?.message || err);
+    }
+  },
 };
