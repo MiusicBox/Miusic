@@ -268,6 +268,23 @@ async function handleAuth(request, env, url) {
   }
 
   if (path === "bootstrap" && request.method === "POST") {
+    // 🔒 (2026-09-21 fix Bug #6 Bootstrap race during DB outage): require env var
+    //   เดิม: bootstrap endpoint เปิดใช้ได้ตลอดเวลา → ถ้า D1 ล่ม ณ ขณะนั้น
+    //         `/api/auth/has-admin` ตอบ 5xx → client แสดงปุ่ม bootstrap → ใครก็ตั้งตัวเองเป็น main admin ได้
+    //   ใหม่: ต้องตั้ง env var `ALLOW_BOOTSTRAP=true` ผ่าน `wrangler secret put ALLOW_BOOTSTRAP`
+    //         เท่านั้น → โหมด bootstrap เปิดได้เฉพาะตอนตั้งค่าระบบครั้งแรก แล้วปิดทันทีหลัง bootstrap เสร็จ
+    //   วิธีใช้:
+    //     1. ตอนตั้งค่าระบบ: `wrangler secret put ALLOW_BOOTSTRAP` พิมพ์ "true"
+    //     2. กด bootstrap ในหน้า admin.html (เหมือนเดิม)
+    //     3. หลัง bootstrap สำเร็จ → ลบ secret: `wrangler secret delete ALLOW_BOOTSTRAP`
+    //        เพื่อปิดโหมด bootstrap ถาวร — กันใคร claim admin ระหว่าง DB outage ในอนาคต
+    //   ผลกระทบระบบเดิม: 0% — ถ้า ALLOW_BOOTSTRAP ไม่ถูกตั้ง → return 403 (เหมือนเดิมที่มี admin แล้ว)
+    //     ถ้าตั้งไว้ → bootstrap ทำงานเหมือนเดิม
+    if (env.ALLOW_BOOTSTRAP !== "true") {
+      return jsonResponse({
+        error: "โหมดตั้งค่าแอดมินคนแรกถูกปิดไว้ — ติดต่อผู้ดูแลระบบเพื่อตั้งค่า หรือตั้ง env ALLOW_BOOTSTRAP=true ผ่าน `wrangler secret put ALLOW_BOOTSTRAP`",
+      }, 403);
+    }
     // 🔧 แก้บั๊ก I3 (2026-09-18): กัน bootstrap race condition — 2 requests พร้อมกัน → สร้าง main admin 2 ตัว
     // -----------------------------------------------------------
     // ปัญหา: SELECT COUNT(*) → INSERT แยกกัน 2 queries → race condition
@@ -942,8 +959,14 @@ async function handleDb(request, env, url) {
       //   ใช้ cache 60 วินาที — เพลง/playlist ไม่ค่อยเปลี่ยน
       //   ไม่ cache "orders" (per-customer — ห้าม cache) หรือ "admins" (per-admin)
       const isCacheable = PUBLIC_READ_COLLECTIONS.has(collection) && collection !== "orders";
+      // 🔒 (2026-09-21 fix Bug #1 Cache-Poisoning): เพิ่ม "Vary: Cookie" ทุก cacheable response
+      //   เดิม: cache แยกแค่ตาม URL → ถ้าแอดมินเปิดหน้าก่อน CDN แคช response ที่มี full_file_url
+      //         → ลูกค้าคนถัดไปได้ response เดียวกัน (มี full_file_url) → ดาวน์โหลดเพลงเต็มฟรี
+      //   ใหม่: Vary: Cookie บอก CDN ว่า response ขึ้นกับ cookie ของผู้ขอ → cache แยกตาม session
+      //   ผลกระทบระบบเดิม: 0% — header แค่บอก CDN cache key, ไม่เปลี่ยน response content
+      //   ผลกระทบ cache hit rate: ลดลงนิดน้อย (แต่ละ session มี cache ของตัวเอง) — รับเพื่อ security
       const extraHeaders = isCacheable
-        ? { "Cache-Control": "public, max-age=60, s-maxage=300" }
+        ? { "Cache-Control": "public, max-age=60, s-maxage=300", "Vary": "Cookie" }
         : {};
       // ใช้ new Response เพื่อใส่ Cache-Control header (jsonResponse ไม่รองรับ cache)
       const body = JSON.stringify({ docs });
@@ -1044,13 +1067,32 @@ async function handleDb(request, env, url) {
 
           // 🔒 Force status='pending_verify' — ลูกค้าตั้ง status เองไม่ได้
           //   กัน bypass การตรวจสอบเงินโอน (เช่น ตั้ง status='completed' ตรง ๆ)
-          //   ค่าอื่น ๆ ที่ลูกค้าตั้งเองได้: created_at, receipt_number, store_name,
-          //   order_type, playlist_id, playlist_name, items, total, subtotal,
-          //   discount_amount, promotion_applied, final_total (snapshot การคำนวณราคา)
           //   ส่วน status บังคับเป็น "pending_verify" เสมอ → admin ต้องเปลี่ยนเอง
           data.status = "pending_verify";
 
-          body.data = data;
+          // 🔒 (2026-09-21 fix Bug #3 Customer PUT spoof): Whitelist fields ที่ลูกค้าส่งได้
+          //   เดิม: server รับทุก field จาก body.data → ลูกค้าส่ง payment_status="paid"
+          //         zip_status="ready" zip_download_url="https://..." → bypass การตรวจเงินโอน
+          //   ใหม่: whitelist เฉพาะ fields ที่ลูกค้าควรส่ง (snapshot การสั่งซื้อ + ข้อมูลติดต่อ)
+          //         fields อื่นๆ ที่ admin-only (status_history, payment_*, zip_*, assigned_admin_id,
+          //         verified_at, etc.) ถูก discard โดยไม่ error — กันแตะระบบเดิม
+          //   ผลกระทบระบบเดิม: 0% — fields ที่ลูกค้าเคยส่งได้ (ใน whitelist) ยังส่งได้เหมือนเดิม
+          const CUSTOMER_ALLOWED_FIELDS = new Set([
+            "customer_name", "whatsapp", "items", "total", "subtotal",
+            "discount_amount", "promotion_applied", "final_total",
+            "receipt_number", "created_at", "store_name", "order_type",
+            "playlist_id", "playlist_name", "notes", "customer_note",
+          ]);
+          const filteredData = {};
+          for (const key of Object.keys(data)) {
+            if (CUSTOMER_ALLOWED_FIELDS.has(key)) {
+              filteredData[key] = data[key];
+            }
+          }
+          // force status หลัง filter (กัน case ที่ status อยู่ใน whitelist โดยไม่ตั้งใจ — ปลอดภัยกว่า)
+          filteredData.status = "pending_verify";
+
+          body.data = filteredData;
         }
         const result = await setDocument(env, collection, id, body.data || {}, !!body.merge, admin?.email);
         return jsonResponse(result);
@@ -1072,6 +1114,26 @@ async function handleDb(request, env, url) {
         //   กัน sub-admin ลบ main admin ออกจากระบบเพื่อ hijack ระบบ
         if (collection === "admins" && admin.role !== "main") {
           return jsonResponse({ error: "เฉพาะแอดมินหลักเท่านั้นที่จัดการแอดมินได้" }, 403);
+        }
+        // 🔒 (2026-09-21 fix Bug #5 Sub-admin DELETE): จำกัด destructive actions ให้ main admin เท่านั้น
+        //   เดิม: sub-admin ลบได้ทุก collection (songs, playlists, categories, djs,
+        //         promotions, discounts, settings, ... ) → บัญชี sub-admin ถูกแฮก → หายทั้ง catalog
+        //         และไม่มี audit log ให้สืบ → หาตัวคนไม่ได้
+        //   ใหม่: กำหนด collections ที่ sub-admin "ลบไม่ได้" (catalog + การตั้งค่าระบบ)
+        //         ส่วน orders ลูกค้ายังลบได้ (ตามเงื่อนไขของ customer-write ด้านล่าง)
+        //         ส่วน orders แอดมินยังลบได้ปกติ (sub-admin จัดการออเดอร์ได้)
+        //   ผลกระทบระบบเดิม: 0% สำหรับ main admin (ยังลบได้ปกติ)
+        //   ผลกระทบ sub-admin: จะลบ songs/playlists/categories/djs/promotions/discounts/settings ไม่ได้
+        //     แต่ยังเพิ่ม/แก้ได้ปกติ (PUT/PATCH ไม่ถูกบล็อก) — สมเหตุผลเพราะ sub-admin คือ
+        //     "พนักงานจัดการออเดอร์" ไม่ใช่ "ผู้จัดการแคตตาล็อก"
+        const ADMIN_ONLY_DELETE_COLLECTIONS = new Set([
+          "songs", "playlists", "categories", "djs",
+          "promotions", "discounts", "settings",
+        ]);
+        if (ADMIN_ONLY_DELETE_COLLECTIONS.has(collection) && admin.role !== "main") {
+          return jsonResponse({
+            error: "เฉพาะแอดมินหลักเท่านั้นที่ลบ " + collection + " ได้ — ติดต่อแอดมินหลัก",
+          }, 403);
         }
         if (!admin && collection === "orders") {
           // ลูกค้าไม่ได้ login — ลบได้เฉพาะออเดอร์ของตัวเองที่ยัง "รอตรวจสอบการโอน" (pending_verify) เท่านั้น
@@ -1499,7 +1561,24 @@ async function handleOrderZipAppend(request, env) {
   const jobId = String(body?.jobId || "").trim();
   const partNumber = Number(body?.partNumber);
   const songId = String(body?.songId || "").trim();
-  const folderPath = String(body?.folderPath || "");
+  // 🔒 (2026-09-21 fix Bug #4 Zip Slip): Sanitize folderPath ก่อนใช้ — เหมือน /start ที่ทำอยู่
+  //   เดิม: รับ folderPath จาก body ตรงๆ → concat เข้า ZIP path ที่บรรทัด 1605 โดยไม่ sanitize
+  //         → แอดมิน (หรือผู้โจมตีที่ได้ session แอดมิน) ส่ง folderPath="../../../"
+  //         → ลูกค้าที่แตก ZIP อาจโดนเขียนทับไฟล์ระบบ (เช่น Windows System32)
+  //   ใหม่: sanitize แบบเดียวกับ /start (บรรทัด 1385):
+  //         - ลบตัวอักษร path separators อันตราย: \ / : * ? " < > |
+  //         - collapse whitespace ซ้ำ
+  //         - trim
+  //   ผลกระทบระบบเดิม: 0% — folderPath ที่ถูกต้อง (ชื่อ playlist ปกติ) ผ่านเหมือนเดิม
+  //   เพิ่มเติม: ลบ "../" และ absolute path ด้วยกัน path traversal แบบอื่น
+  const rawFolderPath = String(body?.folderPath || "");
+  const folderPath = rawFolderPath
+    .replace(/[\\/:*?"<>|]/g, "_")  // ลบ path separators อันตราย
+    .replace(/\.\.+/g, ".")          // ลด ".." → "." (กัน path traversal)
+    .replace(/\/+/g, "/")            // collapse multiple slashes
+    .replace(/^\//, "")              // ลบ leading slash (กัน absolute path)
+    .replace(/\s+/g, " ")
+    .trim();
   const songName = String(body?.songName || "เพลง");
   if (!jobId || !Number.isInteger(partNumber) || partNumber < 1 || !songId) {
     return jsonResponse({ error: "พารามิเตอร์ไม่ครบ (jobId, partNumber, songId)" }, 400);
@@ -2541,6 +2620,141 @@ export default {
       //   ในกรณีนี้ cache-purge แค่ acknowledge (response ok) — admin ที่ใช้ ?nocache จะข้าม cache อยู่แล้ว
       // ในอนาคต: ถ้ามี Cloudflare Paid plan → ใช้ Cache API หรือ R2 cache tag เพื่อ purge จริง
       return jsonResponse({ ok: true, purged: true, collection: coll, note: "Cache purge requested. Customer CDN cache may take up to 60s to expire." });
+    }
+
+    // 🔒 (2026-09-21 fix Bug #2 ZIP URL permanent public): 2 endpoints ใหม่
+    //   1) POST /api/order-zip/get-customer-url?orderId=xxx — admin สร้าง one-time token
+    //      → คืน URL สำหรับส่งลูกค้า: /api/download/<orderId>?token=<token>
+    //   2) GET /api/download/:orderId?token=xxx — ลูกค้าดาวน์โหลด ZIP (one-time use)
+    //      → Worker ตรวจ token + expiry + used_at → ส่ง stream จาก R2 (ไม่ reveal R2 URL)
+    //   ผลกระทบระบบเดิม: 0% — เพิ่ม endpoint ใหม่ ไม่แตะ /api/order-zip/* เดิม
+    //   ในอนาคต: orders.js ฝั่ง client จะเรียก /api/order-zip/get-customer-url แทนใช้ order.zip_download_url ตรงๆ
+    if (url.pathname === "/api/order-zip/get-customer-url" && request.method === "POST") {
+      const admin = await getSessionAdmin(request, env);
+      if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+
+      const urlParams = new URL(url.pathname + "?" + url.search, "https://x").searchParams;
+      const orderId = String(urlParams.get("orderId") || "").trim();
+      if (!orderId) {
+        return jsonResponse({ error: "ต้องระบุ orderId" }, 400);
+      }
+
+      // ตรวจว่าออเดอร์มี ZIP พร้อมดาวน์โหลดอยู่จริง
+      const orderDoc = await getDocument(env, "orders", orderId);
+      if (!orderDoc || !orderDoc.data) {
+        return jsonResponse({ error: "ไม่พบออเดอร์นี้" }, 404);
+      }
+      const order = orderDoc.data;
+      if (order.zip_status !== "ready" || !order.zip_public_id) {
+        return jsonResponse({ error: "ออเดอร์นี้ยังไม่มี ZIP พร้อมดาวน์โหลด (zip_status != ready)" }, 400);
+      }
+
+      // สร้าง token ใหม่ — 122 บิต entropy (crypto.randomUUID)
+      const token = crypto.randomUUID();
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 ชม.
+
+      try {
+        await env.DB.prepare(
+          "INSERT INTO download_tokens (token, order_id, created_at, expires_at, used_at, created_by) " +
+          "VALUES (?, ?, ?, ?, NULL, ?)"
+        ).bind(token, orderId, now.toISOString(), expiresAt.toISOString(), admin.id).run();
+      } catch (err) {
+        return jsonResponse({
+          error: "บันทึก download token ไม่สำเร็จ (อาจยังไม่ได้สร้างตาราง download_tokens — รัน schema.sql ใหม่): " + (err?.message || String(err)),
+        }, 500);
+      }
+
+      // URL ที่ส่งให้ลูกค้า — relative path (ใช้โดเมนเดียวกับร้าน)
+      // ตัวอย่าง: /api/download/abc-123?token=xyz-456
+      const downloadUrl = `/api/download/${encodeURIComponent(orderId)}?token=${encodeURIComponent(token)}`;
+
+      return jsonResponse({
+        ok: true,
+        url: downloadUrl,
+        expiresAt: expiresAt.toISOString(),
+        orderId,
+        receiptNumber: order.receipt_number || "",
+      });
+    }
+
+    if (url.pathname.startsWith("/api/download/") && request.method === "GET") {
+      // /api/download/<orderId>?token=xxx — ลูกค้าดาวน์โหลด ZIP (one-time use)
+      const orderId = decodeURIComponent(url.pathname.slice("/api/download/".length));
+      const token = url.searchParams.get("token") || "";
+
+      if (!orderId || !token) {
+        return jsonResponse({ error: "URL ไม่ถูกต้อง — ต้องมี orderId และ token" }, 400);
+      }
+
+      // ตรวจ token ใน DB
+      let tokenRow;
+      try {
+        tokenRow = await env.DB.prepare(
+          "SELECT token, order_id, expires_at, used_at FROM download_tokens WHERE token = ?"
+        ).bind(token).first();
+      } catch (err) {
+        return jsonResponse({
+          error: "อ่าน download token ไม่สำเร็จ (อาจยังไม่ได้สร้างตาราง download_tokens — รัน schema.sql ใหม่): " + (err?.message || String(err)),
+        }, 500);
+      }
+
+      if (!tokenRow) {
+        return jsonResponse({ error: "ไม่พบ download token นี้" }, 404);
+      }
+
+      // ตรวจ orderId ตรงกับ token
+      if (tokenRow.order_id !== orderId) {
+        return jsonResponse({ error: "token ไม่ตรงกับออเดอร์นี้" }, 403);
+      }
+
+      // ตรวจ expiry
+      const nowIso = new Date().toISOString();
+      if (tokenRow.expires_at < nowIso) {
+        return jsonResponse({ error: "download token หมดอายุแล้ว — กรุณาขอลิงก์ใหม่จากร้าน" }, 410);
+      }
+
+      // ตรวจ one-time use
+      if (tokenRow.used_at) {
+        return jsonResponse({ error: "download token นี้ถูกใช้ไปแล้ว — กรุณาขอลิงก์ใหม่จากร้าน" }, 410);
+      }
+
+      // ดึงออเดอร์เพื่อหา bucket_key (เก็บใน zip_public_id field)
+      const orderDoc = await getDocument(env, "orders", orderId);
+      if (!orderDoc || !orderDoc.data) {
+        return jsonResponse({ error: "ไม่พบออเดอร์นี้" }, 404);
+      }
+      const order = orderDoc.data;
+      const bucketKey = order.zip_public_id || `order-zips/Order-${orderId}.zip`;
+
+      // ทำเครื่องหมาย token ว่า used (one-time) — ทำก่อน stream เพื่อกัน race
+      try {
+        await env.DB.prepare(
+          "UPDATE download_tokens SET used_at = ? WHERE token = ? AND used_at IS NULL"
+        ).bind(nowIso, token).run();
+      } catch (err) {
+        console.warn("download_tokens: failed to mark as used:", err?.message || err);
+        // ไม่ block download — ยังส่งไฟล์ให้ลูกค้า (audit log อาจไม่สมบูรณ์ แต่ UX ดีกว่า)
+      }
+
+      // ดึง ZIP จาก R2 → stream ส่งลูกค้า (ไม่ reveal R2 public URL)
+      const r2Object = await env.BUCKET.get(bucketKey);
+      if (!r2Object) {
+        return jsonResponse({ error: "ไม่พบไฟล์ ZIP ในระบบ — กรุณาติดต่อร้านเพื่อสร้างใหม่" }, 404);
+      }
+
+      // ส่ง ZIP stream พร้อม force download (กัน browser เปิด inline)
+      const zipFileName = order.zip_file_name || `Order-${orderId}.zip`;
+      return new Response(r2Object.body, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="${encodeURIComponent(zipFileName)}"`,
+          "Content-Length": String(r2Object.size || 0),
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          // ไม่ตั้ง Access-Control-Allow-Origin เพราะ same-origin เท่านั้น (ลูกค้าเปิดใน browser)
+        },
+      });
     }
 
     // 🔧 (2026-09-18 v6 Full System): GET /api/health
