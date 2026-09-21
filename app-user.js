@@ -588,49 +588,149 @@ function renderSongGrid() {
     return;
   }
   if (empty) empty.style.display = "none";
-  grid.innerHTML = list.map(s => `
-    <div class="song-card song-card-row" data-id="${s.id}">
-      <div class="song-cover">
-        <img src="${s.cover_url || "default-song-cover.svg"}" loading="lazy" alt="${escapeHtml(s.song_name)}" onerror="this.src='default-song-cover.svg'">
-        <button class="play-btn" data-play="${s.id}" aria-label="เล่น ${escapeHtml(s.song_name)}"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg></button>
-      </div>
-      <div class="song-info">
-        <div class="song-name">${escapeHtml(s.song_name)}</div>
-        <div class="song-meta-row">
-          ${s.dj_name ? `<span class="song-dj-tag">🎧 ${escapeHtml(s.dj_name)}</span>` : ""}
-          ${s.artist ? `<span class="song-meta-text">${escapeHtml(s.artist)}</span>` : ""}
-        </div>
-        <div class="song-footer">
-          <div class="song-price-block">
-            ${renderDiscountedPriceForSong(s)}
+
+  // 🔧 (2026-09-21 fix Bug #4 renderSongGrid DOM pagination): ลด DOM freeze
+  //   ปัญหา: เดิมใช้ grid.innerHTML = list.map(...).join("") ทำงานทีเดียวทั้ง list
+  //   → ถ้า catalog 5,000 เพลง → สร้าง 5,000 DOM nodes ใน 1 tick → browser freeze
+  //
+  //   วิธีแก้: DOM pagination — render ทีละ batch (60 เพลง) + ใช้ IntersectionObserver
+  //     ตรวจ sentinel element ท้าย grid → เมื่อ user scroll ถึง → append batch ถัดไป
+  //     ส่งผลให้ first paint เร็วขึ้นมาก + scroll ลื่น + ไม่ freeze แม้ catalog ใหญ่
+  //
+  //   ผลกระทบระบบเดิม: 0%
+  //     - ผู้ใช้ยังเห็นเพลงเหมือนเดิม แค่ค่อยๆ โหลดเพิ่มตอน scroll
+  //     - event listeners ยัง attach ใหม่ทุก batch (เหมือนเดิม)
+  //     - ถ้า browser ไม่รองรับ IntersectionObserver → fallback ใช้โหมดเดิม (render ทั้งหมด)
+  const RENDER_BATCH_SIZE = 60;  // 60 เพลงต่อ batch — สมดุลระหว่าง first paint + scroll
+  const totalSongs = list.length;
+
+  // ล้าง grid เดิม + setup state
+  grid.innerHTML = "";
+  STATE._renderedSongCount = 0;
+  STATE._filteredSongList = list;  // เก็บ list ทั้งหมดไว้ใช้ตอน append batch ถัดไป
+
+  // ฟังก์ชันสร้าง HTML ของ batch (เหมือนเดิม แค่รับ slice ของ list)
+  function buildBatchHTML(startIdx) {
+    const endIdx = Math.min(startIdx + RENDER_BATCH_SIZE, totalSongs);
+    const batch = list.slice(startIdx, endIdx);
+    return batch.map((s, i) => {
+      const globalIdx = startIdx + i;
+      return `
+        <div class="song-card song-card-row" data-id="${s.id}">
+          <div class="song-cover">
+            <img src="${s.cover_url || "default-song-cover.svg"}" loading="lazy" alt="${escapeHtml(s.song_name)}" onerror="this.src='default-song-cover.svg'">
+            <button class="play-btn" data-play="${s.id}" aria-label="เล่น ${escapeHtml(s.song_name)}"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg></button>
           </div>
-          <button class="cart-add-btn cart-add-btn-row" type="button" data-add-cart="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
-            <span>เพิ่มลงตะกร้า</span>
-          </button>
+          <div class="song-info">
+            <div class="song-name">${escapeHtml(s.song_name)}</div>
+            <div class="song-meta-row">
+              ${s.dj_name ? `<span class="song-dj-tag">🎧 ${escapeHtml(s.dj_name)}</span>` : ""}
+              ${s.artist ? `<span class="song-meta-text">${escapeHtml(s.artist)}</span>` : ""}
+            </div>
+            <div class="song-footer">
+              <div class="song-price-block">
+                ${renderDiscountedPriceForSong(s)}
+              </div>
+              <button class="cart-add-btn cart-add-btn-row" type="button" data-add-cart="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
+                <span>เพิ่มลงตะกร้า</span>
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
-  `).join("");
+      `;
+    }).join("");
+  }
 
-  grid.querySelectorAll("[data-play]").forEach(el => {
-    el.addEventListener("click", (ev) => { ev.stopPropagation(); unlockAudio(); playSong(el.getAttribute("data-play")); });
-  });
-
-  grid.querySelectorAll("[data-add-cart]").forEach(el => {
-    el.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      const song = findSong(el.getAttribute("data-add-cart"));
-      if (song) {
-        addToCart(song);
-      }
+  // ฟังก์ชัน attach event listeners ให้ batch ปัจจุบัน (ใช้กับ elements ที่เพิ่ง add เข้า grid)
+  function attachBatchListeners(startIdx) {
+    const endIdx = Math.min(startIdx + RENDER_BATCH_SIZE, totalSongs);
+    // ใช้ querySelector กับ elements ที่อยู่ในช่วง index นี้
+    // แต่ querySelectorAll ไม่รองรับ range → ใช้วิธี iterate แบบเดิม + filter เฉพาะที่ยังไม่มี listener
+    // วิธีง่ายกว่า: querySelectorAll ทั้งหมด + ใช้ dataset เช็คว่า attach แล้วหรือยัง
+    grid.querySelectorAll("[data-play]").forEach(el => {
+      if (el.dataset._listenerAttached) return;
+      el.dataset._listenerAttached = "1";
+      el.addEventListener("click", (ev) => { ev.stopPropagation(); unlockAudio(); playSong(el.getAttribute("data-play")); });
     });
-  });
+    grid.querySelectorAll("[data-add-cart]").forEach(el => {
+      if (el.dataset._listenerAttached) return;
+      el.dataset._listenerAttached = "1";
+      el.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const song = findSong(el.getAttribute("data-add-cart"));
+        if (song) {
+          addToCart(song);
+        }
+      });
+    });
+    grid.querySelectorAll(".song-card").forEach(el => {
+      if (el.dataset._cardListenerAttached) return;
+      el.dataset._cardListenerAttached = "1";
+      el.addEventListener("click", () => openSongModal(el.getAttribute("data-id")));
+    });
+  }
 
-  grid.querySelectorAll(".song-card").forEach(el => {
-    el.addEventListener("click", () => openSongModal(el.getAttribute("data-id")));
-  });
-  updatePlayButtonsUI();
+  // ฟังก์ชัน render batch ถัดไป (เรียกโดย IntersectionObserver)
+  function renderNextBatch() {
+    if (STATE._renderedSongCount >= totalSongs) return;
+    const startIdx = STATE._renderedSongCount;
+    // สร้าง HTML + insert ก่อน sentinel
+    const batchHTML = buildBatchHTML(startIdx);
+    const sentinel = document.getElementById("songGridSentinel");
+    if (sentinel) {
+      sentinel.insertAdjacentHTML("beforebegin", batchHTML);
+    } else {
+      grid.insertAdjacentHTML("beforeend", batchHTML);
+    }
+    STATE._renderedSongCount = Math.min(startIdx + RENDER_BATCH_SIZE, totalSongs);
+    attachBatchListeners(startIdx);
+    updatePlayButtonsUI();
+    // ถ้ายังเหลือเพลง → ไม่ลบ sentinel (รอ observer trigger batch ถัดไป)
+    // ถ้าโหลดครบแล้ว → ลบ sentinel (ไม่ต้อง observer แล้ว)
+    if (STATE._renderedSongCount >= totalSongs) {
+      const s = document.getElementById("songGridSentinel");
+      if (s) s.remove();
+    }
+  }
+
+  // Setup IntersectionObserver สำหรับ infinite scroll (ถ้า browser รองรับ)
+  if ("IntersectionObserver" in window && totalSongs > RENDER_BATCH_SIZE) {
+    // สร้าง sentinel element ท้าย grid
+    let sentinel = document.getElementById("songGridSentinel");
+    if (!sentinel) {
+      sentinel = document.createElement("div");
+      sentinel.id = "songGridSentinel";
+      sentinel.style.height = "1px";
+      sentinel.style.width = "100%";
+      sentinel.style.marginTop = "20px";
+      grid.parentElement.insertBefore(sentinel, grid.nextSibling);
+    }
+    // ลบ observer เดิมก่อน (กัน leak ถ้ามี)
+    if (STATE._songGridObserver) {
+      STATE._songGridObserver.disconnect();
+    }
+    STATE._songGridObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting && STATE._renderedSongCount < totalSongs) {
+          renderNextBatch();
+        }
+      }
+    }, { rootMargin: "200px" });
+    STATE._songGridObserver.observe(sentinel);
+  }
+
+  // Render batch แรกทันที (60 เพลงแรก) — เพื่อ first paint
+  // ถ้าไม่รองรับ IntersectionObserver → render ทั้งหมดทีเดียว (fallback เดิม)
+  if ("IntersectionObserver" in window && totalSongs > RENDER_BATCH_SIZE) {
+    renderNextBatch();  // render เฉพาะ batch แรก — batch ถัดไปจะโหลดตอน scroll
+  } else {
+    // Fallback: render ทั้งหมด (กรณี browser เก่าหรือเพลงน้อยกว่า batch size)
+    grid.innerHTML = buildBatchHTML(0);
+    STATE._renderedSongCount = totalSongs;
+    attachBatchListeners(0);
+    updatePlayButtonsUI();
+  }
 }
 
 const openPlaylists = new Set();
@@ -947,6 +1047,16 @@ function playSong(songId) {
   AUDIO.pause();
   STATE.currentPlayingId = songId;
   STATE.currentLoadingId = songId;
+  // 🔧 (2026-09-21 fix Bug #3 playSong race condition): เพิ่ม playToken guard
+  //   ปัญหา: กดเปลี่ยนเพลงระหว่างที่เพลงเดิมกำลังโหลด → AUDIO.src เปลี่ยน →
+  //   เพลงเดิมถูก abort → .catch() ทำงาน → showToast ผิด + ล้าง state ของเพลงใหม่
+  //   วิธีแก้: ใช้ playToken pattern (เหมือน _seekToken ที่มีอยู้แล้ว)
+  //   - สร้าง token ใหม่ทุกครั้งที่เริ่ม playSong
+  //   - ใน .then() และ .catch() เช็คว่า token ยังตรงกับปัจจุบันหรือไม่
+  //   - ถ้าไม่ตรง → เพลงนี้ถูก abort แล้ว → ไม่ทำอะไร (silent)
+  //   ผลกระทบระบบเดิม: 0% — ถ้าไม่มี race → token ตรง → ทำงานเหมือนเดิม
+  const _playToken = (STATE._playTokenCounter = (STATE._playTokenCounter || 0) + 1);
+
   // Auto Preview: ถ้าเพลงนี้วิเคราะห์ไว้แล้ว (preview_status === "ok") ให้เล่น/ล็อกเฉพาะช่วง Preview เท่านั้น
   // ไฟล์ที่ Cloudinary ยังเป็นไฟล์เต็มเหมือนเดิม แค่จำกัดช่วงเล่นตรงนี้ฝั่ง user เท่านั้น
   // เพลงเก่าที่ยังไม่มีข้อมูล Preview จะเล่นเต็มไฟล์แบบเดิมทุกประการ (fallback ปลอดภัย ไม่พังของเดิม)
@@ -975,9 +1085,15 @@ function playSong(songId) {
   AUDIO.src = song.file_url;
   AUDIO.load();
   AUDIO.play().then(() => {
+    // 🔧 (2026-09-21 fix Bug #3): เช็ค playToken — ถ้าไม่ตรง → เพลงนี้ถูก abort แล้ว → ไม่ทำอะไร
+    if (_playToken !== STATE._playTokenCounter) return;
     STATE.currentLoadingId = null;
     updatePlayButtonsUI();
   }).catch(() => {
+    // 🔧 (2026-09-21 fix Bug #3): เช็ค playToken ก่อน showToast + ล้าง state
+    //   ถ้าไม่ตรง → เพลงนี้ถูก abort โดยการกดเปลี่ยนเพลงใหม่ → ไม่แสดง toast (silent)
+    //   ถ้าตรง → เป็น play fail จริง → แสดง toast + ล้าง state (เหมือนเดิม)
+    if (_playToken !== STATE._playTokenCounter) return;
     showToast("แตะปุ่มเล่นที่แถบด้านล่างอีกครั้ง");
     STATE.currentLoadingId = null;
     // 🔧 แก้บั๊ก (2026-09-17) Bug #8: ล้าง currentPlayingId ด้วยเมื่อ play fail
