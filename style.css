@@ -3150,13 +3150,13 @@ button:active {
   justify-content: flex-end;
 }
 
-/* ราคาปกติในหัวเพลย์ลิสต์ — 🔧 (2026-09-19): เล็กลงสำหรับมือถือ */
+/* ราคาปกติในหัวเพลย์ลิสต์ — 🔧 (2026-09-20): เปลี่ยนสีราคาให้ตรงกับปุ่มซื้อทั้งเพลย์ลิสต์ (#ec4899) */
 .playlist-folder-btn .playlist-folder-price-block .song-price {
   font-size: 17px !important;
   font-weight: 800 !important;
-  color: #4ade80 !important;
+  color: #ec4899 !important;
   letter-spacing: -0.5px;
-  text-shadow: 0 0 10px rgba(74, 222, 128, 0.4);
+  text-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
   white-space: nowrap;
 }
 
