@@ -1665,6 +1665,19 @@ if (searchInputEl) {
   });
 }
 
+// 🔧 (2026-09-22): เลื่อนหน้าขึ้นบนสุด — รองรับโหมดล็อกแถบเบราว์เซอร์
+//   หน้าร้าน (html.store-page) ให้ <body> เป็นตัวเลื่อน จึงใช้ window.scrollTo ไม่ได้
+//   ถ้าไม่ใช่โหมดนี้ → fallback ไปใช้ window.scrollTo เหมือนเดิมทุกประการ
+function scrollPageToTop() {
+  const useBodyScroll = document.documentElement.classList.contains("store-page")
+    && typeof document.body.scrollTo === "function";
+  if (useBodyScroll) {
+    document.body.scrollTo({ top: 0, behavior: "smooth" });
+  } else {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+}
+
 document.querySelectorAll(".bottom-nav button").forEach(btn => {
   btn.addEventListener("click", () => {
     const tab = btn.getAttribute("data-tab");
@@ -1685,14 +1698,14 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       renderSongGrid();
       renderPlaylists();
       renderPromotionBanner(); // 🎁 (2026-09-20) เพิ่มใหม่: แสดงแบนเนอร์โปรโมชั่นใหม่ (เผื่อถูกซ่อนตอนอยู่แท็บอื่น)
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollPageToTop();
     }
     else if (tab === "playlist") {
       hideMyOrdersView();
       cleanupMyOrdersView();
       setView("playlist");
       renderPlaylists();
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollPageToTop();
     }
     else if (tab === "category") {
       hideMyOrdersView();
@@ -1704,7 +1717,7 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       renderDjRow(); // 🎧 (2026-09-20) re-render DJ row เพื่อลบ class selected (วงกลมแดง) หลังออกจากหน้า DJ
       renderSongGrid();
       renderPlaylists();
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollPageToTop();
     }
     else if (tab === "dj") {
       hideMyOrdersView();
@@ -1714,13 +1727,13 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       setView("dj");
       renderDjRow();
       renderSongGrid();
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollPageToTop();
     }
     else if (tab === "myorders") {
       // ===== เพิ่มใหม่: tab "ออเดอร์ของฉัน" =====
       showMyOrdersView();
       initMyOrdersView();
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollPageToTop();
     }
     else if (tab === "promotions") {
       // 🎁 (2026-09-20) เพิ่มใหม่: tab "โปรโมชั่น" — หน้าพรีวิวโปรโมชั่นทั้งหมดที่ active
@@ -1730,7 +1743,7 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       hideMyOrdersView();
       cleanupMyOrdersView();
       showPromotionsView();
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollPageToTop();
     }
     else if (tab === "contact") {
       window.open(buildWhatsAppLink(STATE.settings.whatsapp_number, "สวัสดีครับ/ค่ะ ต้องการสอบถามเกี่ยวกับร้านเพลง"), "_blank");
