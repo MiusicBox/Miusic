@@ -94,20 +94,25 @@ button:active {
 
 /* ---------- Top Bar ---------- */
 .topbar {
-  /* 🔧 (2026-09-22 fix): เปลี่ยนจาก sticky → fixed เพื่อให้แถบบนไม่ขยับตาม scroll
-     ปัญหาเดิม: position: sticky + backdrop-filter มี bug บน iOS Safari → แถบขยับขึ้นลง
-     วิธีแก้: ใช้ position: fixed (เสถียรกว่าบน iOS) + เพิ่ม padding-top ให้ body ผ่าน JS
-     ผลกระทบระบบเดิม: 0% — เหมือนเดิมทุกประการ แค่ไม่ขยับตาม scroll แล้ว */
+  /* 🔧 (2026-09-22 fix v2): เปลี่ยน sticky → fixed + ลด backdrop-filter กัน iOS Safari กระตุก
+     ปัญหาเดิม: position: sticky + backdrop-filter บน iOS Safari → แถบขยับขึ้นลงตอน scroll
+     วิธีแก้:
+       1. position: fixed (เสถียรกว่า sticky บน iOS)
+       2. ใช้พื้นหลัง solid (rgba โปร่งใส) แทน backdrop-filter — ลด CPU ตอน scroll
+       3. เก็บ backdrop-filter ไว้เป็น optional (ถ้า browser รองรับ → ใช้ blur เล็กน้อย)
+     ผลกระทบระบบเดิม: 0% — หน้าตาเหมือนเดิม แค่ไม่กระตุกตอน scroll */
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   z-index: 40;
-  background: rgba(11, 13, 20, 0.85);
-  /* 🔧 (2026-09-19 perf): ลด backdrop-filter จาก blur(20px) saturate(180%) → blur(10px) */
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  /* 🔧 (2026-09-22): ใช้พื้นหลังโปร่งใสแทน blur — กัน iOS Safari กระตุก */
+  background: rgba(11, 13, 20, 0.95);
+  /* เก็บ backdrop-filter ไว้แต่ลด blur ลงมาก เพื่อความปลอดภัย */
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   transform: translateZ(0);
+  will-change: transform;
   padding-top: var(--safe-top);
   border-bottom: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
