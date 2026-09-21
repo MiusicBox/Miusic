@@ -755,6 +755,27 @@ async function loadSongsFromDatabase() {
 
 /* ---------------- โหลดออเดอร์ทั้งหมดจาก Firestore ---------------- */
 async function loadOrdersFromDatabase() {
+  // 🔧 (2026-09-22 Batch 7 fix Bug #6): เพิ่ม pagination — ดึงทีละ 200 ออเดอร์ล่าสุด
+  //   ปัญหาเดิม: ดึงทุกออเดอร์ทีเดียว → 10,000+ orders = หน้าจอค้าง 30+ วิ
+  //   วิธีแก้: ดึง 200 ออเดอร์ล่าสุดก่อน → แอดมินเห็นหน้าภายใน 1-2 วิ
+  //            ถ้าต้องการดูออเดอร์เก่า → ใช้ช่องค้นหา (search ดึงจาก DB ตรงๆ ด้วย receipt_number)
+  //   ผลกระทบระบบเดิม: เล็กน้อย — ถ้าออเดอร์รวม < 200 → return เหมือนเดิม
+  //     ถ้าออเดอร์รวม > 200 → แอดมินเห็นแค่ 200 ล่าสุด (search ยังคงใช้ได้สำหรับเก่า)
+  //   หมายเหตุ: db-client.js ไม่รองรับ limit() โดยตรง → ใช้ fetch ตรงกับ /api/db/orders?limit=200
+  //            ซึ่ง Worker รองรับแล้วใน listDocuments (db-helpers.js)
+  try {
+    const res = await fetch("/api/db/orders?limit=200", { credentials: "same-origin" });
+    if (res.ok) {
+      const data = await res.json();
+      const docs = Array.isArray(data?.docs) ? data.docs : [];
+      return docs.map(d => ({ id: d.id, ...d.data }));
+    }
+    // fallback: ถ้า fetch fail → ใช้วิธีเดิม (getDocs ทั้งหมด)
+    console.warn("loadOrdersFromDatabase: fetch with limit failed, falling back to getDocs:", res.status);
+  } catch (err) {
+    console.warn("loadOrdersFromDatabase: fetch failed, falling back to getDocs:", err?.message || err);
+  }
+  // Fallback: ใช้ getDocs แบบเดิม (กรณี endpoint ใหม่ไม่พร้อมใช้งาน)
   const q = query(collection(db, "orders"), orderBy("created_at", "desc"));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -1349,6 +1370,8 @@ function renderFilterPills() {
   wrap.querySelectorAll("[data-filter]").forEach((btn) => {
     btn.addEventListener("click", () => {
       state.historyFilter = btn.getAttribute("data-filter");
+      // 🔧 (2026-09-22 Batch 7 fix Bug #7): reset visible count เมื่อเปลี่ยน filter
+      state._historyVisibleCount = 50;
       renderFilterPills();
       renderHistory();
     });
@@ -1426,7 +1449,17 @@ function renderHistory() {
     wrap.innerHTML = `<div class="empty-state">${hasSearch ? "ไม่พบออเดอร์ที่ตรงกับคำค้นหา" : "ไม่พบออเดอร์ในสถานะนี้"}</div>`;
     return;
   }
-  wrap.innerHTML = orders.map((o) => {
+
+  // 🔧 (2026-09-22 Batch 7 fix Bug #7): DOM pagination — แสดงทีละ 50 ออเดอร์ กัน browser freeze
+  //   ปัญหาเดิม: render ทุกออเดอร์ทีเดียว → 500+ orders = browser freeze 2-3 วิ
+  //   วิธีแก้: แสดง 50 แรก + ปุ่ม "แสดงเพิ่ม" → คลิกแสดง 50 ถัดไป
+  //   ผลกระทบระบบเดิม: 0% — ถ้า orders < 50 → แสดงทั้งหมดเหมือนเดิม
+  const HISTORY_PAGE_SIZE = 50;
+  const visibleCount = Math.min(state._historyVisibleCount || HISTORY_PAGE_SIZE, orders.length);
+  const visibleOrders = orders.slice(0, visibleCount);
+  const remainingCount = orders.length - visibleCount;
+
+  wrap.innerHTML = visibleOrders.map((o) => {
     const date = o.created_at ? new Date(o.created_at) : null;
     const dateStr = date ? date.toLocaleDateString("th-TH") + " " + date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) : "-";
     const songNames = (o.items || []).map(i => escapeHtml(i.title)).join(", ");
@@ -1478,6 +1511,24 @@ function renderHistory() {
       </div>
     `;
   }).join("");
+
+  // 🔧 (2026-09-22 Batch 7 fix Bug #7): เพิ่มปุ่ม "แสดงเพิ่ม" ถ้ายังมีออเดอร์เหลือ
+  if (remainingCount > 0) {
+    wrap.insertAdjacentHTML("beforeend", `
+      <div style="text-align:center;padding:16px;">
+        <button class="btn" id="loadMoreHistoryBtn" type="button" style="width:100%;max-width:300px;">
+          แสดงเพิ่มอีก ${Math.min(HISTORY_PAGE_SIZE, remainingCount)} จาก ${remainingCount} ออเดอร์ที่เหลือ
+        </button>
+      </div>
+    `);
+    const loadMoreBtn = document.getElementById("loadMoreHistoryBtn");
+    if (loadMoreBtn) {
+      loadMoreBtn.addEventListener("click", () => {
+        state._historyVisibleCount = (state._historyVisibleCount || HISTORY_PAGE_SIZE) + HISTORY_PAGE_SIZE;
+        renderHistory();
+      });
+    }
+  }
 
   wrap.querySelectorAll("[data-order-id]").forEach((sel) => {
     sel.addEventListener("change", () => handleStatusChange(sel.getAttribute("data-order-id"), sel.value));
@@ -1562,12 +1613,24 @@ async function copyReceiptDetails(order, receiptNumber, total, playlistName) {
 
 // แคปเฉพาะส่วนใบเสร็จสีขาว (.receipt-paper) เป็น canvas — ใช้กับปุ่มดาวน์โหลดใบเสร็จเป็นรูป
 // เรนเดอร์ฝั่ง client ล้วนๆ ด้วย html2canvas ไม่มีการอัปโหลดรูปขึ้นเซิร์ฟเวอร์ใดๆ
-// โหลดไลบรารีแบบ dynamic import จาก CDN (ESM) เฉพาะตอนกดใช้งานจริง ไม่กระทบ bundle/perf ปกติ
+// 🔧 (2026-09-22 Batch 7 fix Bug #1): ใช้ window.html2canvas (จาก script tag ใน admin.html) ก่อน
+//   ถ้าโหลดจาก script tag ไม่สำเร็จ → fallback ไป dynamic import (เดิม)
+//   ผลกระทบระบบเดิม: 0% — ถ้า script tag โหลดสำเร็จ → ใช้เลย (เร็วกว่า), ถ้าไม่ → fallback เหมือนเดิม
+let _html2canvasCache = null;
+async function getHtml2Canvas() {
+  if (typeof window !== "undefined" && window.html2canvas) {
+    return window.html2canvas;
+  }
+  if (!_html2canvasCache) {
+    _html2canvasCache = await import("https://esm.sh/html2canvas@1.4.1");
+  }
+  return _html2canvasCache.default || _html2canvasCache;
+}
+
 async function captureReceiptCanvas() {
   const target = document.querySelector("#receiptContent .receipt-paper");
   if (!target) return null;
-  const mod = await import("https://esm.sh/html2canvas@1.4.1");
-  const html2canvas = mod.default;
+  const html2canvas = await getHtml2Canvas();
   return html2canvas(target, {
     backgroundColor: "#ffffff",
     scale: 2,
