@@ -789,7 +789,9 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   function saveLastOrderRecord(order, receiptNumber) {
     try {
       localStorage.setItem(LAST_ORDER_STORAGE_KEY, JSON.stringify({ order, receiptNumber, contacted: false }));
-      sessionStorage.removeItem(BANNER_DISMISS_KEY); // ออเดอร์ใหม่ ให้แถบเตือนกลับมาแสดงได้อีกครั้งถ้าจำเป็น
+      // 🔧 (2026-09-22 Batch 7 fix Bug #4): ใช้ localStorage.removeItem แทน sessionStorage.removeItem
+      //   เพราะ BANNER_DISMISS_KEY ย้ายไป localStorage แล้ว → ต้องลบจาก localStorage ด้วย
+      localStorage.removeItem(BANNER_DISMISS_KEY);
     } catch (_) {}
   }
 
@@ -818,7 +820,20 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     const banner = document.getElementById("pendingOrderBanner");
     if (!banner) return;
     const record = getLastOrderRecord();
-    const dismissed = sessionStorage.getItem(BANNER_DISMISS_KEY) === "1";
+    // 🔧 (2026-09-22 Batch 7 fix Bug #4): ใช้ localStorage + 24h TTL แทน sessionStorage
+    //   เดิม: sessionStorage → หายตอนปิด tab → ลูกค้าเปิด tab ค้างไว้ → banner หายตลอดวัน
+    //   ใหม่: localStorage เก็บ timestamp หมดอายุ → ครบ 24h แสดง banner อีกครั้ง
+    //   ผลกระทบระบบเดิม: 0% — ถ้าไม่ dismiss → banner แสดงเหมือนเดิม
+    const DISMISS_TTL_MS = 24 * 60 * 60 * 1000; // 24 ชั่วโมง
+    let dismissed = false;
+    try {
+      const dismissedUntil = Number(localStorage.getItem(BANNER_DISMISS_KEY) || "0");
+      dismissed = dismissedUntil > Date.now();
+      if (!dismissed) {
+        // หมดอายุแล้ว → ลบค่าเก่าออกจาก localStorage (keep clean)
+        localStorage.removeItem(BANNER_DISMISS_KEY);
+      }
+    } catch (_) {}
     const shouldShow = !!record && !record.contacted && !dismissed;
     banner.hidden = !shouldShow;
   }
@@ -890,11 +905,26 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   }
 
   // แคปเฉพาะส่วนใบเสร็จสีขาว (.receipt-paper) เป็นรูป — โค้ดเดียวกับฝั่งแอดมิน (captureReceiptCanvas/downloadReceiptAsImage ใน orders.js)
+  // 🔧 (2026-09-22 Batch 7 fix Bug #1): ใช้ window.html2canvas (จาก script tag ใน HTML) ก่อน
+  //   ถ้าโหลดจาก script tag ไม่สำเร็จ → fallback ไป dynamic import (เดิม)
+  //   วิธีทำ: สร้าง helper function getHtml2Canvas() ที่ cache module → เรียกครั้งแรก fetch จาก CDN, ครั้งถัดไปใช้ cache
+  let _html2canvasCache = null;
+  async function getHtml2Canvas() {
+    // ลองใช้ window.html2canvas ก่อน (จาก script tag)
+    if (typeof window !== "undefined" && window.html2canvas) {
+      return window.html2canvas;
+    }
+    // Fallback: dynamic import (เดิม)
+    if (!_html2canvasCache) {
+      _html2canvasCache = await import("https://esm.sh/html2canvas@1.4.1");
+    }
+    return _html2canvasCache.default || _html2canvasCache;
+  }
+
   async function captureReceiptCanvas() {
     const target = document.querySelector("#receiptContent .receipt-paper");
     if (!target) return null;
-    const mod = await import("https://esm.sh/html2canvas@1.4.1");
-    const html2canvas = mod.default;
+    const html2canvas = await getHtml2Canvas();
     return html2canvas(target, { backgroundColor: "#ffffff", scale: 2, useCORS: true });
   }
 
@@ -1152,6 +1182,29 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
         // เพิ่มใหม่: ไม่มีเน็ต
         feedbackMessage = "ไม่มีสัญญาณอินเทอร์เน็ต กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง";
+      } else if (err?.message && err.message.includes("ปิดการขายแล้ว")) {
+        // 🔧 (2026-09-22 Batch 7 fix Bug #5): ลูกค้า checkout มีเพลง hidden ในตะกร้า
+        //   ปัญหาเดิม: โยน error ทำให้ checkout พัง → ลูกค้างง ไม่รู้ว่าเพลงไหน ต้องทำยังไง
+        //   วิธีแก้: auto-remove เพลง hidden ออกจากตะกร้า + บอกชื่อเพลง + แนะนำให้ลอง checkout อีกครั้ง
+        //   1. parse ชื่อเพลงจาก error message ("เพลง "X" ปิดการขายแล้ว")
+        const songNameMatch = err.message.match(/เพลง\s+"([^"]+)"\s+ปิดการขาย/);
+        const hiddenSongName = songNameMatch ? songNameMatch[1] : "";
+        // 2. ลบเพลง hidden ออกจาก state.cart (match ด้วย song_name)
+        const beforeCount = state.cart.length;
+        state.cart = state.cart.filter(item =>
+          !(item.song_name === hiddenSongName || item.songName === hiddenSongName)
+        );
+        const removedCount = beforeCount - state.cart.length;
+        // 3. save cart ใหม่ลง localStorage
+        try { localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(state.cart)); } catch (_) {}
+        // 4. re-render cart + badge
+        renderCart();
+        // 5. แจ้งเตือนลูกค้าชัดเจน
+        if (removedCount > 0) {
+          feedbackMessage = `เพลง "${hiddenSongName}" ถูกปิดขายแล้ว — ลบออกจากตะกร้าให้อัตโนมัติ กรุณากด "ยืนยันสั่งซื้อ" อีกครั้ง`;
+        } else {
+          feedbackMessage = err.message + " — กรุณาลบเพลงนี้ออกจากตะกร้าแล้วลองใหม่";
+        }
       } else if (!err?.code && err?.message) {
         // ข้อความที่ระบบโยนเองอยู่แล้ว (เช่น timeout ด้านบน) เป็นภาษาไทยที่เข้าใจง่ายอยู่แล้ว ใช้ตรงๆ ได้เลย
         feedbackMessage = err.message;
@@ -1236,6 +1289,29 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     document.getElementById("checkoutBackdrop")?.addEventListener("click", event => {
       if (event.target === event.currentTarget) closeCheckout();
     });
+
+    // 🔧 (2026-09-22 Batch 7 fix Bug #3): Cart sync between browser tabs
+    //   ปัญหา: ลูกค้าเปิด 2 tabs → add ใน tab A → tab B ไม่ update → add ซ้ำ → double-add
+    //   วิธีแก้: ฟัง storage event → ถ้า localStorage.cart เปลี่ยน (จาก tab อื่น) → reload cart
+    //   ผลกระทบระบบเดิม: 0% — เพิ่ม event listener ไม่แตะฟังก์ชันเดิม
+    //   หมายเหตุ: storage event ทำงานเฉพาะเมื่อ ANOTHER tab/document เปลี่ยนค่า
+    //   ไม่ trigger ตอน tab ปัจจุบันเปลี่ยน → ไม่มี loop
+    window.addEventListener("storage", (event) => {
+      if (event.key === CART_STORAGE_KEY) {
+        // cart เปลี่ยนจาก tab อื่น → reload ตะกร้า + re-render
+        loadCart();
+        if (typeof renderCart === "function") renderCart();
+        if (typeof renderPendingOrderBanner === "function") renderPendingOrderBanner();
+      }
+      if (event.key === BANNER_DISMISS_KEY) {
+        // banner dismiss เปลี่ยน → re-render banner (sync ระหว่าง tabs)
+        if (typeof renderPendingOrderBanner === "function") renderPendingOrderBanner();
+      }
+      if (event.key === LAST_ORDER_STORAGE_KEY) {
+        // last order เปลี่ยน → re-render banner (เผื่อออเดอร์ใหม่จาก tab อื่น)
+        if (typeof renderPendingOrderBanner === "function") renderPendingOrderBanner();
+      }
+    });
     document.getElementById("cartItems")?.addEventListener("click", event => {
       const button = event.target.closest("button");
       if (!button) return;
@@ -1278,7 +1354,13 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       showReceipt(record.order, record.receiptNumber, state.settings?.whatsapp_number, record.contacted);
     });
     document.getElementById("pendingOrderBannerDismiss")?.addEventListener("click", () => {
-      try { sessionStorage.setItem(BANNER_DISMISS_KEY, "1"); } catch (_) {}
+      // 🔧 (2026-09-22 Batch 7 fix Bug #4): localStorage + 24h TTL แทน sessionStorage "1"
+      //   เดิม: sessionStorage → หายตอนปิด tab → ลูกค้าเปิด tab ค้างไว้ → banner หายตลอดวัน
+      //   ใหม่: localStorage เก็บ timestamp หมดอายุ (now + 24h) → ครบ 24h แสดง banner อีกครั้ง
+      const DISMISS_TTL_MS = 24 * 60 * 60 * 1000; // 24 ชั่วโมง
+      try {
+        localStorage.setItem(BANNER_DISMISS_KEY, String(Date.now() + DISMISS_TTL_MS));
+      } catch (_) {}
       renderPendingOrderBanner();
     });
   }
