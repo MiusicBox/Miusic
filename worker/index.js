@@ -861,32 +861,25 @@ async function handleDb(request, env, url) {
       //   แต่เพื่อความเรียบง่าย + ปลอดภัย → ใช้ queryDocuments แบบเดียวกับเดิม
       //   (where("whatsapp","==",whatsapp)) แล้ว filter เบอร์ normalized ฝั่ง JS อีกที
       const queryPhone = normalizePhoneServer(whatsapp);
-      // หา orders ที่เบอร์ตรงทั้งแบบ raw และแบบ normalized ผ่าน 2 query แยก
-      // (queryDocuments ทำ OR ไม่ได้ — ต้อง 2 ครั้งแล้ว merge)
+      // 🔧 (2026-09-21 Option A migration): ลดจาก 4 queries → 1 query
+      //   เดิม (ก่อน migration): query 4 รูปแบบ (raw, normalized, +0, +856, ++856)
+      //   ปัญหา: เปลือง D1 reads 4 เท่า
+      //
+      //   วิธีแก้: รัน migration script (scripts/migrate-whatsapp.sql) ครั้งเดียว
+      //   เพื่อ normalize whatsapp field ของ orders เก่าทั้งหมดให้เป็น "20XXXXXXXX"
+      //   หลัง migration รันเสร็จ → ทุก order ใน DB อยู่ในรูปแบบ normalized
+      //   → สามารถใช้ query เดียวได้ (1 D1 read)
+      //
+      // ⚠️ สำคัญ: ต้องรัน migration script ให้เสร็จก่อน deploy worker ใหม่นี้
+      //   ไม่งั้นลูกค้าจะหาออเดอร์เก่า (ที่ยังไม่ถูก normalize) ไม่เจอชั่วคราว
+      //
+      // ผลกระทบระบบเดิม: 0% — return เหมือนเดิม (คืน orders ของลูกค้าคนนั้น)
+      //   แค่ใช้ D1 reads ลดลง 4 เท่า (จาก 4 → 1)
       let candidateDocs = [];
       try {
-        // Query 1: หา orders ที่ whatsapp ตรงแบบ raw (เบอร์ที่ลูกค้ากรอก)
-        const rawDocs = await queryDocuments(env, "orders", {
-          wheres: [{ __type: "where", field: "whatsapp", op: "==", value: whatsapp }],
+        candidateDocs = await queryDocuments(env, "orders", {
+          wheres: [{ __type: "where", field: "whatsapp", op: "==", value: queryPhone }],
         });
-        candidateDocs = rawDocs;
-        // Query 2: หา orders ที่ whatsapp ตรงแบบ normalized (เบอร์ที่เก็บในรูปแบบอื่น)
-        //   ถ้า raw query เจอแล้ว ก็ query normalized เพิ่มเพื่อกันเคสเบอร์เก็บในรูปแบบอื่น
-        //   เช่น เบอร์ลูกค้ากรอก "0201234567" แต่ DB เก็บ "+856201234567" — normalize แล้วตรงกัน
-        //   เพื่อความปลอดภัย: query เบอร์ที่ normalize แล้วด้วย (เผื่อมี DB ที่เก็บ normalized แล้ว)
-        if (queryPhone && queryPhone !== whatsapp) {
-          const normalizedDocs = await queryDocuments(env, "orders", {
-            wheres: [{ __type: "where", field: "whatsapp", op: "==", value: queryPhone }],
-          });
-          // merge โดย dedupe ด้วย id
-          const seenIds = new Set(candidateDocs.map(d => d.id));
-          for (const d of normalizedDocs) {
-            if (!seenIds.has(d.id)) {
-              candidateDocs.push(d);
-              seenIds.add(d.id);
-            }
-          }
-        }
       } catch (err) {
         // Fallback: ถ้า queryDocuments fail (เช่น index ยังไม่ถูกสร้าง) → กลับไปใช้ listDocuments แบบเดิม
         console.warn("queryDocuments failed, fallback to listDocuments:", err?.message || err);
