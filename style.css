@@ -4294,3 +4294,24 @@ body.modal-open .modal-backdrop.show .modal {
   touch-action: pan-y;
 }
 
+
+/* ============================================================
+   🔧 (2026-09-22): ล็อกแถบบนของเบราว์เซอร์ (แถบ URL/แท็บ) ไม่ให้หดตอน scroll — เฉพาะหน้าร้าน
+   ------------------------------------------------------------
+   วิธี: ให้ <html> ไม่เลื่อน แล้วให้ <body> เป็นตัวเลื่อนเอง
+         → เอกสารหลักไม่ scroll → เบราว์เซอร์ไม่หดแถบด้านบน
+   ขอบเขต: ใช้เฉพาะ html.store-page (index.html เท่านั้น)
+           admin.html ใช้ style.css ร่วมกันแต่ไม่มีคลาสนี้ → ไม่ได้รับผลกระทบ
+   ระบบเดิมที่ยังทำงานเหมือนเดิม: .topbar / .bottom-nav / .player-bar (fixed),
+           body padding-top/bottom, body.modal-open (ล็อกพื้นหลังตอนเปิด popup)
+   ============================================================ */
+html.store-page {
+  height: 100%;
+  overflow: hidden;
+}
+html.store-page body {
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
