@@ -2416,7 +2416,7 @@ button:active {
    - ไล่เฉดภายใน + glow พรีเมียม
    - ใช้ !important เพื่อ override CSS เดิม */
 .song-card-row {
-  background: linear-gradient(135deg, #0f0a1e, #1a0f2e) !important;
+  background: linear-gradient(135deg, #0B0B14, #13131F) !important;
   border: 1px solid transparent !important;
   border-radius: 14px !important;
   margin-bottom: 2px !important;
@@ -2432,50 +2432,55 @@ button:active {
 
 /* 🔥 ออโรราหมุนรอบการ์ด — conic gradient สลับ 4 โทนสี */
 /* 🎨 (2026-09-20): ลด glow/blur ลง ไม่ให้แสบตา — opacity ลดจาก 0.65 → 0.30, blur ลดจาก 28px → 14px */
+/* 🎨 (2026-09-21): เปลี่ยน Aurora Prism → Mesh Gradient (สไตล์ 1.6 Modern Dark Mesh)
+   - ใช้ radial gradients หลายจุดแทน conic-gradient หมุนรอบ
+   - สีโทนม่วง/ฟ้า/ชมพู/ไซยาน (จาก 1.6 palette)
+   - คง keyframes เดิมไว้เผื่อมีการอ้างถึง */
 .song-card-row::before {
   content: "";
   position: absolute;
-  inset: -50%;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0%,
-    var(--ap-1, #a855f7) 15%,
-    var(--ap-2, #ec4899) 30%,
-    transparent 50%,
-    var(--ap-1, #a855f7) 65%,
-    var(--ap-2, #ec4899) 80%,
-    transparent 100%
-  );
-  animation: song-aurora-prism-spin 10s linear infinite;
+  inset: -30%;
+  background:
+    radial-gradient(circle at 20% 30%, var(--ap-1, #a855f7), transparent 50%),
+    radial-gradient(circle at 80% 70%, var(--ap-2, #3b82f6), transparent 50%),
+    radial-gradient(circle at 50% 50%, var(--ap-glow, rgba(168, 85, 247, 0.25)), transparent 60%);
+  background-size: 150% 150%;
+  animation: song-mesh-shift 18s ease-in-out infinite alternate;
   z-index: 0;
-  filter: blur(8px);
-  opacity: 0.60;
+  filter: blur(20px);
+  opacity: 0.40;
   pointer-events: none;
 }
 @keyframes song-aurora-prism-spin {
   to { transform: rotate(360deg); }
 }
+@keyframes song-mesh-shift {
+  0%   { background-position: 0% 0%, 100% 100%, 50% 50%; }
+  50%  { background-position: 30% 70%, 70% 30%, 30% 70%; }
+  100% { background-position: 100% 100%, 0% 0%, 70% 30%; }
+}
 
 /* สลับ 4 โทนสีตามลำดับเพลง */
+/* 🎨 (2026-09-21): 4 โทนสี mesh gradient — ทั้งหมดอยู่ใน palette ม่วง/ฟ้า/ชมพู/ไซยาน (1.6) */
 .song-card-row:nth-child(4n+1) {
   --ap-1: #a855f7;
-  --ap-2: #ec4899;
-  --ap-glow: rgba(168, 85, 247, 0.18);
+  --ap-2: #3b82f6;
+  --ap-glow: rgba(168, 85, 247, 0.22);
 }
 .song-card-row:nth-child(4n+2) {
-  --ap-1: #06b6d4;
-  --ap-2: #3b82f6;
-  --ap-glow: rgba(6, 182, 212, 0.18);
+  --ap-1: #3b82f6;
+  --ap-2: #06b6d4;
+  --ap-glow: rgba(59, 130, 246, 0.22);
 }
 .song-card-row:nth-child(4n+3) {
-  --ap-1: #10b981;
-  --ap-2: #14b8a6;
-  --ap-glow: rgba(16, 185, 129, 0.18);
+  --ap-1: #ec4899;
+  --ap-2: #a855f7;
+  --ap-glow: rgba(236, 72, 153, 0.22);
 }
 .song-card-row:nth-child(4n+4) {
-  --ap-1: #f97316;
-  --ap-2: #facc15;
-  --ap-glow: rgba(249, 115, 22, 0.18);
+  --ap-1: #06b6d4;
+  --ap-2: #8b5cf6;
+  --ap-glow: rgba(6, 182, 212, 0.22);
 }
 
 /* พื้นหลังเข้มโปร่งแสงทับลงไปด้านใน + glow สีออโรรา */
@@ -2485,7 +2490,7 @@ button:active {
   inset: 1.5px;
   background:
     radial-gradient(circle at 30% 50%, var(--ap-glow, rgba(168, 85, 247, 0.18)), transparent 60%),
-    linear-gradient(135deg, rgba(15, 10, 30, 0.92), rgba(26, 15, 46, 0.92));
+    linear-gradient(135deg, rgba(11, 11, 20, 0.85), rgba(19, 19, 31, 0.90));
   border-radius: 13px;
   z-index: 1;
   pointer-events: none;
@@ -2503,13 +2508,13 @@ button:active {
 }
 
 .song-card-row:hover {
-  transform: translateY(-4px) scale(1.01) !important;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5) !important;
+  transform: translateY(-3px) !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5), 0 0 24px var(--ap-glow, rgba(168, 85, 247, 0.3)) !important;
 }
 
 .song-card-row:hover::before {
-  opacity: 0.80 !important;
-  filter: blur(6px) !important;
+  opacity: 0.65 !important;
+  filter: blur(16px) !important;
 }
 
 /* รูปปกใหญ่ขึ้น + มี glow */
@@ -2653,14 +2658,14 @@ button:active {
   min-width: 0;
 }
 
-/* ราคาเพลงเดี่ยวในกริด — 🔧 (2026-09-19): เขียวอ่อน */
+/* 🎨 (2026-09-21): ราคาเพลงเปลี่ยนจากเขียว → ม่วงอ่อน ตามสไตล์ 1.6 Mesh Gradient */
 .song-card-row .song-price {
   font-size: 17px !important;
   font-weight: 900 !important;
-  color: #4ade80 !important;
+  color: #c4b5fd !important;
   letter-spacing: -0.5px;
   white-space: nowrap;
-  text-shadow: 0 0 10px rgba(74, 222, 128, 0.4);
+  text-shadow: 0 0 10px rgba(196, 181, 253, 0.4);
 }
 
 /* ราคาเก่าขีดฆ่า */
@@ -2682,11 +2687,11 @@ button:active {
   text-shadow: 0 0 12px rgba(251, 191, 36, 0.4);
 }
 
-/* ปุ่มเพิ่มลงตะกร้าแบบใหม่ — 🔧 (2026-09-19): เปลี่ยนสีพื้นเป็นเขียวอ่อน เหมือนมือถือ */
+/* 🎨 (2026-09-21): ปุ่ม cart เปลี่ยนจากเขียว → ม่วง/ฟ้า gradient ตามสไตล์ 1.6 */
 .song-card-row .cart-add-btn-row {
-  background: linear-gradient(135deg, rgba(74, 222, 128, 0.25), rgba(34, 197, 94, 0.15)) !important;
-  border: 1px solid rgba(74, 222, 128, 0.4) !important;
-  color: #4ade80 !important;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(59, 130, 246, 0.15)) !important;
+  border: 1px solid rgba(139, 92, 246, 0.4) !important;
+  color: #c4b5fd !important;
   font-size: 11.5px !important;
   font-weight: 700;
   padding: 8px 14px !important;
@@ -2695,7 +2700,7 @@ button:active {
   align-items: center;
   gap: 5px !important;
   white-space: nowrap;
-  box-shadow: 0 4px 14px rgba(74, 222, 128, 0.3);
+  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.3);
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
@@ -2705,8 +2710,8 @@ button:active {
 
 .song-card-row .cart-add-btn-row:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(74, 222, 128, 0.45);
-  background: linear-gradient(135deg, rgba(74, 222, 128, 0.35), rgba(34, 197, 94, 0.25)) !important;
+  box-shadow: 0 6px 18px rgba(139, 92, 246, 0.45);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.35), rgba(59, 130, 246, 0.25)) !important;
 }
 
 .song-card-row .cart-add-btn-row:active {
@@ -2739,8 +2744,8 @@ button:active {
   .song-card-row .cart-add-btn-row {
     padding: 8px 14px !important;
     font-size: 12px !important;
-    background: rgba(74, 222, 128, 0.15) !important;
-    border: 1px solid rgba(74, 222, 128, 0.4) !important;
+    background: rgba(139, 92, 246, 0.15) !important;
+    border: 1px solid rgba(139, 92, 246, 0.4) !important;
     border-radius: 8px !important;
   }
   /* 🔧 (2026-09-19): บนมือถือ แสดงตัวหนังสือสั้น "เพิ่ม" แทนที่จะซ่อนหมด */
@@ -2751,7 +2756,7 @@ button:active {
     content: "เพิ่ม";
     font-size: 12px;
     font-weight: 700;
-    color: #4ade80;
+    color: #c4b5fd;
   }
   .song-card-row .cart-add-btn-row svg {
     width: 16px;
@@ -2771,7 +2776,7 @@ button:active {
 /* 🔧 ปรับ (2026-09-14 รอบ 2): ลด margin รอบแถวเพลงในเพลย์ลิสต์จาก 4px → 2px ตามคำสั่งผู้ใช้
    - รักษา padding ซ้าย-ขวา (12px) เดิมไว้ ไม่กระทบขอบเพลย์ลิสต์ */
 .playlist-song-row.song-card-row {
-  background: linear-gradient(135deg, #0f0a1e, #1a0f2e) !important;
+  background: linear-gradient(135deg, #0B0B14, #13131F) !important;
   border: 1px solid transparent !important;
   border-radius: 14px !important;
   margin: 2px 12px !important;
@@ -2785,25 +2790,20 @@ button:active {
   background-clip: padding-box;
 }
 
-/* ออโรราหมุนรอบการ์ด — เหมือน .song-card-row หลัก */
+/* 🎨 (2026-09-21): Mesh gradient เหมือน .song-card-row หลัก (สไตล์ 1.6) */
 .playlist-song-row.song-card-row::before {
   content: "";
   position: absolute;
-  inset: -50%;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0%,
-    var(--ap-1, #a855f7) 15%,
-    var(--ap-2, #ec4899) 30%,
-    transparent 50%,
-    var(--ap-1, #a855f7) 65%,
-    var(--ap-2, #ec4899) 80%,
-    transparent 100%
-  );
-  animation: song-aurora-prism-spin 10s linear infinite;
+  inset: -30%;
+  background:
+    radial-gradient(circle at 20% 30%, var(--ap-1, #a855f7), transparent 50%),
+    radial-gradient(circle at 80% 70%, var(--ap-2, #3b82f6), transparent 50%),
+    radial-gradient(circle at 50% 50%, var(--ap-glow, rgba(168, 85, 247, 0.25)), transparent 60%);
+  background-size: 150% 150%;
+  animation: song-mesh-shift 18s ease-in-out infinite alternate;
   z-index: 0;
-  filter: blur(28px);
-  opacity: 0.65;
+  filter: blur(20px);
+  opacity: 0.40;
   pointer-events: none;
 }
 .playlist-song-row.song-card-row::after {
@@ -2812,7 +2812,7 @@ button:active {
   inset: 1.5px;
   background:
     radial-gradient(circle at 30% 50%, var(--ap-glow, rgba(168, 85, 247, 0.18)), transparent 60%),
-    linear-gradient(135deg, rgba(15, 10, 30, 0.92), rgba(26, 15, 46, 0.92));
+    linear-gradient(135deg, rgba(11, 11, 20, 0.85), rgba(19, 19, 31, 0.90));
   border-radius: 13px;
   z-index: 1;
   pointer-events: none;
@@ -2831,13 +2831,13 @@ button:active {
 }
 
 .playlist-song-row.song-card-row:hover {
-  transform: translateY(-4px) scale(1.01) !important;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5) !important;
+  transform: translateY(-3px) !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5), 0 0 24px var(--ap-glow, rgba(168, 85, 247, 0.3)) !important;
 }
 
 .playlist-song-row.song-card-row:hover::before {
-  opacity: 0.80 !important;
-  filter: blur(6px) !important;
+  opacity: 0.65 !important;
+  filter: blur(16px) !important;
 }
 
 /* รูปปกเพลงในเพลย์ลิสต์ — ใหญ่ขึ้น + มี glow เหมือนเพลงหลัก */
@@ -2953,8 +2953,8 @@ button:active {
   .playlist-song-row.song-card-row .cart-add-btn-row {
     padding: 8px 14px !important;
     font-size: 12px !important;
-    background: rgba(74, 222, 128, 0.15) !important;
-    border: 1px solid rgba(74, 222, 128, 0.4) !important;
+    background: rgba(139, 92, 246, 0.15) !important;
+    border: 1px solid rgba(139, 92, 246, 0.4) !important;
     border-radius: 8px !important;
   }
   /* 🔧 (2026-09-19): บนมือถือ แสดงตัวหนังสือสั้น "เพิ่ม" */
@@ -2965,7 +2965,7 @@ button:active {
     content: "เพิ่ม";
     font-size: 12px;
     font-weight: 700;
-    color: #4ade80;
+    color: #c4b5fd;
   }
   .playlist-song-row.song-card-row .cart-add-btn-row svg {
     width: 16px;
