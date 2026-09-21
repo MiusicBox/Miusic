@@ -80,12 +80,26 @@ let _songsAllCacheAt = 0;           // timestamp ของ SONGS_CACHE ล่า
 let _playlistsAllCacheAt = 0;       // timestamp ของ PLAYLISTS_CACHE ล่าสุด (disc_loadData)
 let _categoriesAllCacheAt = 0;      // timestamp ของ CATEGORIES_CACHE ล่าสุด (promo_loadData)
 
+// 🔧 (2026-09-22 Batch 7 fix Bug #2): TTL สำหรับ customer-side cache (_discountsCache, _promotionsCache)
+//   ปัญหา: cache ไม่มี TTL → แอดมินเปลี่ยนราคา → ลูกค้ายังเห็นราคาเก่า → checkout จ่ายราคาใหม่ → ลูกค้าโวยวาย
+//   วิธีแก้: เพิ่ม timestamp ให้ cache → ครบ 5 นาที → force refresh จาก DB
+//   ผลกระทบระบบเดิม: 0% — caller เดิมที่ไม่ส่ง forceRefresh จะได้ behavior เดิม + TTL
+//     ถ้าภายใน 5 นาที → ใช้ cache (เหมือนเดิม)
+//     ถ้าเกิน 5 นาที → ถือว่า cache หมดอายุ → fetch ใหม่จาก DB
+const CUSTOMER_CACHE_TTL_MS = 5 * 60 * 1000; // 5 นาที — สมดุลระหว่าง freshness + D1 reads
+let _discountsCacheAt = 0;          // timestamp ของ _discountsCache ล่าสุด
+let _promotionsCacheAt = 0;          // timestamp ของ _promotionsCache ล่าสุด
+
 // ---------------- ดึง discount ที่ active ทั้งหมด ----------------
 export async function fetchActiveDiscounts(forceRefresh) {
-  if (_discountsCache && !forceRefresh) return _discountsCache;
+  // 🔧 (2026-09-22 Batch 7 fix Bug #2): ตรวจ TTL ก่อนใช้ cache
+  //   เดิม: if (_discountsCache && !forceRefresh) → ใช้ cache ตลอด (ไม่มี TTL)
+  //   ใหม่: เพิ่มเช็ค timestamp → ครบ 5 นาที → treat as cache miss → fetch ใหม่
+  const now = Date.now();
+  const cacheExpired = _discountsCacheAt === 0 || (now - _discountsCacheAt) >= CUSTOMER_CACHE_TTL_MS;
+  if (_discountsCache && !forceRefresh && !cacheExpired) return _discountsCache;
   try {
     const snap = await getDocs(collection(db, "discounts"));
-    const now = Date.now();
     const items = [];
     snap.forEach(d => {
       const data = d.data();
@@ -94,6 +108,7 @@ export async function fetchActiveDiscounts(forceRefresh) {
       }
     });
     _discountsCache = items;
+    _discountsCacheAt = Date.now();  // 🔧 (2026-09-22 Batch 7 fix Bug #2): บันทึก timestamp ตอน cache
     return items;
   } catch (err) {
     console.warn("fetchActiveDiscounts error:", err);
@@ -103,10 +118,12 @@ export async function fetchActiveDiscounts(forceRefresh) {
 
 // ---------------- ดึง promotions ที่ active ทั้งหมด ----------------
 export async function fetchActivePromotions(forceRefresh) {
-  if (_promotionsCache && !forceRefresh) return _promotionsCache;
+  // 🔧 (2026-09-22 Batch 7 fix Bug #2): ตรวจ TTL ก่อนใช้ cache (เหมือน fetchActiveDiscounts)
+  const now = Date.now();
+  const cacheExpired = _promotionsCacheAt === 0 || (now - _promotionsCacheAt) >= CUSTOMER_CACHE_TTL_MS;
+  if (_promotionsCache && !forceRefresh && !cacheExpired) return _promotionsCache;
   try {
     const snap = await getDocs(collection(db, "promotions"));
-    const now = Date.now();
     const items = [];
     snap.forEach(d => {
       const data = d.data();
@@ -116,6 +133,7 @@ export async function fetchActivePromotions(forceRefresh) {
     });
     items.sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
     _promotionsCache = items;
+    _promotionsCacheAt = Date.now();  // 🔧 (2026-09-22 Batch 7 fix Bug #2): บันทึก timestamp ตอน cache
     return items;
   } catch (err) {
     console.warn("fetchActivePromotions error:", err);
@@ -178,6 +196,10 @@ export function clearPricingCache() {
   _songsAllCacheAt = 0;
   _playlistsAllCacheAt = 0;
   _categoriesAllCacheAt = 0;
+  // 🔧 (2026-09-22 Batch 7 fix Bug #2): ล้าง customer-side TTL timestamps ด้วย
+  //   ถ้าไม่ล้าง → cache จะถือว่ายัง "ภายใน 5 นาที" → ใช้ค่า null แทน fetch ใหม่ → bug
+  _discountsCacheAt = 0;
+  _promotionsCacheAt = 0;
 }
 
 // ---------------- หา discount ที่ active ของ song/playlist ----------------
