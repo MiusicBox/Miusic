@@ -4335,3 +4335,23 @@ html.store-page body {
   -webkit-backdrop-filter: none;
   background: rgba(11, 13, 20, 0.98);
 }
+
+/* ============================================================
+   🔧 (2026-09-22): หน้า Admin — ล็อก header + ล็อกแถบเบราว์เซอร์ (Chrome/Safari) ไม่ให้หดตอน scroll
+   ------------------------------------------------------------
+   อาการเดิม: header (.topbar แบบ sticky) เลื่อนขึ้นตามแล้วตกกลับลงมา
+   สาเหตุ:    แถบเบราว์เซอร์หด/ขยายตอน scroll → viewport เปลี่ยนขนาด → sticky กระตุก
+   วิธีแก้:   ให้ <html> ไม่เลื่อน แล้วให้ <body> เป็นตัวเลื่อนเอง (แนวทางเดียวกับ html.store-page ของหน้าร้าน)
+              → เอกสารหลักไม่ scroll → เบราว์เซอร์ไม่หดแถบ → header (sticky ใน body) นิ่งอยู่กับที่
+   ขอบเขต:    ใช้เฉพาะ html.admin-page (admin.html เท่านั้น) — หน้าร้านไม่ได้รับผลกระทบ
+   ============================================================ */
+html.admin-page {
+  height: 100%;
+  overflow: hidden;
+}
+html.admin-page body {
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
