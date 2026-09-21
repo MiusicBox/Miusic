@@ -4315,3 +4315,23 @@ html.store-page body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
+
+/* ============================================================
+   🔧 (2026-09-22): แก้หน้า Admin — header (.topbar) ลอยทับเมนู/ปุ่มด้านล่างจนกดไม่ได้
+   ------------------------------------------------------------
+   สาเหตุ: .topbar ถูกเปลี่ยนเป็น position: fixed เพื่อแก้หน้าร้าน (index.html)
+           แต่ admin.html ใช้คลาส .topbar เดียวกัน และไม่มี padding-top เว้นที่ให้ header
+           → header ลอยทับเนื้อหาส่วนบนของหน้า admin
+   วิธีแก้: เฉพาะหน้า admin (.admin-shell) ให้ .topbar กลับมาเป็น sticky (อยู่ในแนวเลย์เอาต์)
+           - ปิด backdrop-filter + ใช้พื้นหลังทึบ เพื่อกัน iOS Safari กระตุกตอน scroll
+   ขอบเขต: .admin-shell มีเฉพาะใน admin.html — หน้าร้านไม่ได้รับผลกระทบ
+   ============================================================ */
+.admin-shell .topbar {
+  position: sticky;
+  top: 0;
+  left: auto;
+  right: auto;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: rgba(11, 13, 20, 0.98);
+}
