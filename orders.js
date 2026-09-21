@@ -533,9 +533,18 @@ async function createOrderZip(orderId) {
     //   เหตุผล: ออเดอร์ใหญ่ > 100MB finalize 1 ครั้งจะเกิน Worker CPU time limit 30s ของ Free plan
     //   วิธีแก้: แบ่ง finalize ออกเป็นหลาย Worker invocations → แต่ละรอบใช้ CPU ~5 วินาที
     //   รองรับออเดอร์ขนาดหลาย GB บน Free plan โดยไม่เสียเงิน
+    //
+    // 🔧 (2026-09-21 progress v2): แสดง % ที่แม่นยำตามจริง — ใช้ totalProcessed/totalSongs จาก Worker
+    //   แบ่ง % รวมตาม phase:
+    //     - Append phase: 0% → 50% (ส่ง metadata เพลง)
+    //     - Finalize-build phase: 50% → 90% (ประมวลผล WAV + build ZIP entries)
+    //     - Finalize-compose phase: 90% → 100% (build CD + EOCD + complete upload)
     let finalizeDone = false;
+    let lastProcessed = 0;
     while (!finalizeDone) {
-      orderToast("กำลังประมวลผลเพลง (split finalize)...", "progress");
+      // คำนวณ % ก่อนเริ่มรอบนี้ (indeterminate ระหว่างรอ Worker response)
+      const beforePct = 50 + Math.round((lastProcessed / Math.max(totalSongs, 1)) * 40);
+      orderToast(`⏳ กำลังประมวลผลเพลง... (${beforePct}%)`, "progress");
       let buildRes;
       try {
         buildRes = await fetch("/api/order-zip/finalize-build", {
@@ -559,12 +568,31 @@ async function createOrderZip(orderId) {
         throw new Error(buildData?.error || `finalize-build ไม่สำเร็จ (HTTP ${buildRes.status})`);
       }
       finalizeDone = !!buildData.done;
-      const progressMsg = `กำลังสร้าง ZIP ${buildData.totalProcessed}/${buildData.totalSongs} เพลง...`;
-      orderToast(progressMsg, "progress");
+      lastProcessed = Number(buildData.totalProcessed || lastProcessed);
+      const totalSongsFinalize = Number(buildData.totalSongs || totalSongs);
+      // คำนวณ % รวม (50% base + 40% ของ finalize phase)
+      const overallPct = 50 + Math.round((lastProcessed / Math.max(totalSongsFinalize, 1)) * 40);
+      orderToast(`⏳ กำลังประมวลผลเพลง ${lastProcessed}/${totalSongsFinalize} (${overallPct}%)`, "progress");
     }
 
     // ===== Step 4: finalize-compose — build CD+EOCD + upload trailing chunk + complete =====
-    orderToast("กำลังสร้างลิงก์ดาวน์โหลด...", "progress");
+    // 🔧 (2026-09-21 progress v2): แสดง sub-status แบบ step-by-step ในขั้นตอนสร้างลิงก์
+    //   เพราะ finalize-compose มีหลาย sub-step ที่ใช้เวลา (build CD, upload, complete multipart)
+    //   ถ้าแสดงแค่ "กำลังสร้างลิงก์..." → user ไม่รู้ว่าทำอะไรอยู่ → เข้าใจว่าค้าง
+    //   ใหม่: แสดง % 90% → 100% พร้อม sub-status ที่ rotate ทุก 2 วิ (กัน user กังวล)
+    let composeStatusIdx = 0;
+    const composeStatuses = [
+      "🔗 กำลังสร้างลิงก์ดาวน์โหลด... (90%)",
+      "📦 กำลัง build Central Directory... (92%)",
+      "⬆️ กำลัง upload chunk สุดท้าย... (95%)",
+      "✅ กำลัง complete multipart upload... (98%)",
+      "📝 กำลังบันทึกข้อมูลออเดอร์... (99%)",
+    ];
+    orderToast(composeStatuses[composeStatusIdx], "progress");
+    const composeStatusInterval = setInterval(() => {
+      composeStatusIdx = (composeStatusIdx + 1) % composeStatuses.length;
+      orderToast(composeStatuses[composeStatusIdx], "progress");
+    }, 2000);  // rotate ทุก 2 วิ — กัน user คิดว่าค้าง
     let composeRes;
     try {
       composeRes = await fetch("/api/order-zip/finalize-compose", {
@@ -575,11 +603,13 @@ async function createOrderZip(orderId) {
         signal,
       });
     } catch (err) {
+      clearInterval(composeStatusInterval);
       if (err?.name === "AbortError" || signal.aborted) {
         return { ok: false, error: "ยกเลิกการสร้าง ZIP โดยแอดมิน", aborted: true };
       }
       throw new Error(`สร้างลิงก์ดาวน์โหลด ZIP ไม่สำเร็จ (network): ${err?.message || err}`);
     }
+    clearInterval(composeStatusInterval);  // หยุด rotate ทันทีที่ได้ response
     let composeData;
     try { composeData = await composeRes.json(); } catch {
       throw new Error(`อ่านผลลัพธ์จาก Worker ไม่สำเร็จ (HTTP ${composeRes.status})`);
