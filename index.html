@@ -5,11 +5,44 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
 <title>Music Store</title>
+
+<!-- 🔧 (2026-09-22 Batch 7 fix Bug #15): Open Graph tags สำหรับแชร์ Facebook/Line -->
+<!--   ปัญหา: แชร์ URL ใน Line/Facebook → แสดงแค่ URL ไม่มีรูป preview
+     วิธีแก้: เพิ่ม meta tags og:title, og:description, og:image, og:url
+     ผลกระทบ: แชร์เว็บใน social → แสดง title + รูป + description สวยงาม → คนคลิกเยอะขึ้น -->
+<!-- Open Graph tags จะถูกอัปเดตจาก settings.website_name + settings.meta_description + settings.website_logo ตอน init() รันใน app-user.js -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Music Store — ร้านเพลงออนไลน์">
+<meta property="og:description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
+<meta property="og:url" content="">
+<meta property="og:image" content="default-song-cover.svg">
+<meta property="og:site_name" content="Music Store">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Music Store — ร้านเพลงออนไลน์">
+<meta name="twitter:description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
+<meta name="twitter:image" content="default-song-cover.svg">
+
 <!-- 🎨 (2026-09-20) Google Fonts: Mali (ตัวทำมะดา สำหรับชื่อเพลง) + Bai Jamjuree (ตัวหนา สำหรับหัวเพลย์ลิสต์) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Mali:wght@400;700&family=Bai+Jamjuree:wght@400;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260921-mesh-1.6">
+<link rel="stylesheet" href="style.css?v=20260922-batch7">
+
+<!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): เพิ่ม .visually-hidden class สำหรับ h1 SEO -->
+<style>
+  .visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0,0,0,0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+</style>
+
 <style>
   /* โครงสร้าง Cart เดิมที่ app-cart.js ใช้งาน — คงไว้ในหน้า User */
   .cart-toggle-wrap { position:relative; margin-left:auto; display:flex; align-items:center; gap:8px; flex-shrink:0; flex-wrap:nowrap; }
@@ -252,8 +285,22 @@
     background:transparent; border:0; color:var(--text-dim); font-size:16px; padding:4px 6px; cursor:pointer;
   }
 </style>
+
+<!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): html2canvas เป็น regular script (ไม่ใช่ dynamic import)
+     เดิม: app-cart.js ใช้ `await import("https://esm.sh/html2canvas@1.4.1")` ทุกครั้งที่สร้างใบเสร็จ
+            → ถ้า esm.sh ล่ม → ลูกค้าไม่มีใบเสร็จ
+            → ถ้าเน็ตช้า → โหลดช้าทุกครั้งที่สร้าง
+     ใหม่: โหลดครั้งเดียวตอน page load → cache ไว้ใน window.html2canvas
+            → เร็วขึ้น + ถ้า CDN ล่ม → page load error ตั้งแต่แรก (รู้ชัดเจน)
+            → ใช้ jsdelivr CDN (UMD version) แทน esm.sh (ESM version)
+     ผลกระทบระบบเดิม: 0% — app-cart.js จะใช้ window.html2canvas ถ้ามี, fallback ไป dynamic import ถ้าไม่มี
+     fallback: ถ้า window.html2canvas undefined (CDN ไม่โหลด) → ใช้ dynamic import เดิม -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer
+  onerror="console.warn('html2canvas CDN failed to load — will fallback to dynamic import');"></script>
 </head>
 <body>
+<!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): h1 สำหรับ SEO (hidden visually, visible to crawlers) -->
+<h1 class="visually-hidden" id="seoH1">Music Store — ร้านเพลงออนไลน์ ฟังเพลง ซื้อเพลง ส่งทาง WhatsApp</h1>
 
   <div class="topbar">
     <div class="topbar-inner">
