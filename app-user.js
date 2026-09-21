@@ -140,6 +140,45 @@ const { loadCart, bindCartEvents, addToCart, getLastOrderRecord, showReceipt } =
   buildWhatsAppLink
 });
 
+// 💙 (2026-09-20): สไตล์ C2 Vivid Cyan — แยกตัวอักษรชื่อร้านเป็น span.char
+//   แต่ละตัวได้สีฟ้าไล่จากสว่าง→มืด + animation-delay ต่างกัน → กระโดดทีละตัว
+//   สี: #67e8f9 (นีออนสว่าง) → #22d3ee → #06b6d4 → #0891b2 → ... → #083344 (มืด)
+//   รองรับชื่อร้านความยาวเท่าไหร่ก็ได้ — คำนวณสีตามตำแหน่ง % ของตัวอักษร
+function applyStoreNameAnimation(el) {
+  if (!el) return;
+  const text = el.textContent || "Music Store";
+  // สีฟ้าไล่จากสว่าง→มืด (C2 Vivid Cyan palette)
+  const colors = [
+    { c: "#67e8f9", g: "rgba(103, 232, 249, 0.8)" },
+    { c: "#22d3ee", g: "rgba(34, 211, 238, 0.9)" },
+    { c: "#06b6d4", g: "rgba(6, 182, 212, 1)" },
+    { c: "#0891b2", g: "rgba(8, 145, 178, 1)" },
+    { c: "#0e7490", g: "rgba(14, 116, 144, 1)" },
+    { c: "#155e75", g: "rgba(21, 94, 117, 1)" },
+    { c: "#164e63", g: "rgba(22, 78, 99, 1)" },
+    { c: "#083344", g: "rgba(8, 51, 68, 1)" }
+  ];
+  const chars = text.split("");
+  const half = Math.floor(chars.length / 2);
+  el.innerHTML = chars.map((ch, i) => {
+    if (ch === " ") return '<span class="char">&nbsp;</span>';
+    // ไล่สีจากสว่าง→มืด โดยใช้ตำแหน่ง % ของตัวอักษร
+    // ครึ่งแรก: สว่าง→มืด, ครึ่งหลัง: มืด→สว่าง (วนกลับ เหมือนคลื่น)
+    let pos;
+    if (i <= half) {
+      pos = i / Math.max(half, 1);
+    } else {
+      pos = (chars.length - 1 - i) / Math.max(half, 1);
+    }
+    const colorIdx = Math.min(Math.floor(pos * (colors.length - 1)), colors.length - 1);
+    const color = colors[colorIdx];
+    const delay = (i * 0.06).toFixed(2);
+    const glow1 = `0 0 9px ${color.g}`;
+    const glow2 = `0 0 18px ${color.g.replace(/[\d.]+\)$/, "0.5)")}`;
+    return `<span class="char" style="color:${color.c};text-shadow:${glow1},${glow2};animation-delay:${delay}s;">${ch}</span>`;
+  }).join("");
+}
+
 async function init() {
   loadCart();
   bindCartEvents();
@@ -201,7 +240,12 @@ async function init() {
   }
 
   const siteNameEl = document.getElementById("siteName");
-  if (siteNameEl) siteNameEl.textContent = STATE.settings.website_name || "Music Store";
+  if (siteNameEl) {
+    siteNameEl.textContent = STATE.settings.website_name || "Music Store";
+    // 💙 (2026-09-20): สไตล์ C2 Vivid Cyan — แยกตัวอักษรเป็น span.char
+    //   แต่ละตัวได้สีฟ้าไล่จากสว่าง→มืด + animation-delay ต่างกัน (กระโดดทีละตัว)
+    applyStoreNameAnimation(siteNameEl);
+  }
   document.title = STATE.settings.website_name || "Music Store";
 
   if (STATE.settings.meta_description) {
