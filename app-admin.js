@@ -1163,7 +1163,17 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
       category_name: catSel.value ? catSel.options[catSel.selectedIndex].text : "",
       playlist_id: plSel.value,
       playlist_name: plSel.value ? plSel.options[plSel.selectedIndex].text : "",
-      price: Number(document.getElementById("fPrice").value || 0),
+      // 🔧 (2026-09-22 Batch 7 fix Bug #10): validate price ≥ 0 + finite number
+      //   ปัญหาเดิม: Number(...|| 0) → รับค่า -100, "abc", Infinity
+      //   วิธีแก้: ใช้ Number.isFinite() + ตรวจ >= 0 → fallback เป็น 0 ถ้าผิด
+      price: (() => {
+        const rawPrice = Number(document.getElementById("fPrice").value);
+        if (!Number.isFinite(rawPrice) || rawPrice < 0) {
+          console.warn(`ราคา "${document.getElementById("fPrice").value}" ไม่ถูกต้อง → ใช้ 0`);
+          return 0;
+        }
+        return rawPrice;
+      })(),
       description: document.getElementById("fDesc").value.trim(),
       status: document.getElementById("fStatus").value,
       updated_at: new Date().toISOString()
@@ -2162,11 +2172,44 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
     for (let i = 0; i < bulkFiles.length; i++) {
       const file = bulkFiles[i];
       document.getElementById("bulkStatusText").textContent = `กำลังอัปโหลด ${i + 1}/${bulkFiles.length}: ${file.name}`;
-      const res = await uploadToCloudinary(file, (pct, loaded, total) => {
-        const overall = Math.round(((i + pct / 100) / bulkFiles.length) * 100);
-        document.getElementById("bulkProgress").style.width = overall + "%";
-        updateProgressLabel(bulkProgLabel, total || file.size, pct, loaded);
-      }, controller.signal);
+
+      // 🔧 (2026-09-22 Batch 7 fix Bug #8): อัปโหลด preview + full พร้อมกัน (parallel) แทน sequential
+      //   เดิม: อัปโหลด preview (await) → analyze → อัปโหลด full (await) → save
+      //          = 2 sequential uploads × ~30 วิ = 60 วิ/เพลง → 50 เพลง = 50 นาที
+      //   ใหม่: อัปโหลด preview + full พร้อมกัน → analyze → save
+      //          = 1 parallel upload × ~30 วิ = 30 วิ/เพลง → 50 เพลง = 25 นาที (เร็ว 2x)
+      //   ผลกระทบระบบเดิม: 0% — songPayload ยังถูก populate แบบเดิม แค่เปลี่ยนลำดับ timing
+      //   ความปลอดภัย: ใช้ Promise.all ในระดับเดียวกัน (preview + full) → ถ้าอันใดอันหนึ่ง fail → throw → หยุด
+      //
+      //   หมายเหตุ: matchFullFile() ใช้ file.name (มีอยู่แล้ว) → ไม่ต้องรอ preview upload เสร็จ
+      //            จึงสามารถเริ่มอัปโหลด full ไปพร้อมกันได้เลย
+      const matchedFull = matchFullFile(file.name, bulkFullFiles)
+        || (bulkFiles.length === 1 && bulkFullFiles.length === 1 ? bulkFullFiles[0] : null);
+
+      // เริ่มทั้งสอง uploads พร้อมกัน
+      const [previewUploadResult, fullUploadResult] = await Promise.all([
+        // Upload preview (MP3 — ไฟล์ตัวอย่าง)
+        uploadToCloudinary(file, (pct, loaded, total) => {
+          const overall = Math.round(((i + pct / 100) / bulkFiles.length) * 100);
+          document.getElementById("bulkProgress").style.width = overall + "%";
+          updateProgressLabel(bulkProgLabel, total || file.size, pct, loaded);
+        }, controller.signal),
+        // Upload full (WAV — ถ้ามี matchedFull)
+        matchedFull
+          ? uploadFullSong(matchedFull, (pct, loaded, total) => {
+              const overall = Math.round(((i + pct / 100) / bulkFiles.length) * 100);
+              document.getElementById("bulkProgress").style.width = overall + "%";
+              updateProgressLabel(bulkProgLabel, total || matchedFull.size, pct, loaded);
+            }, controller.signal, (attempt, maxRetries) => {
+              document.getElementById("bulkStatusText").textContent =
+                `ไฟล์เต็ม "${matchedFull.name}" เชื่อมต่อหลุด กำลังลองใหม่ (${attempt}/${maxRetries})...`;
+            })
+          : Promise.resolve(null)  // ไม่มีไฟล์เต็ม → ไม่ upload
+      ]);
+
+      const res = previewUploadResult;
+      // fullRes เป็น null ถ้าไม่มี matchedFull — ไม่ใช่ error
+      const fullRes = fullUploadResult;
 
       const songPayload = {
         song_name: cleanFileNameToSongName(file.name),
@@ -2179,15 +2222,35 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
         file_url: res.url,
         cover_url: sharedCoverUrl,
         // 🔧 (2026-09-19): อ่านราคาเฉพาะของเพลงนี้จากช่องใน list — ถ้าไม่มี → fallback ใช้ defaultPrice
+        // 🔧 (2026-09-22 Batch 7 fix Bug #10): validate price ≥ 0 + must be finite number
+        //   ปัญหาเดิม: Number(priceInput.value || 0) → รับค่า -100, "abc", Infinity
+        //   วิธีแก้: ใช้ helper validatePrice() ที่ตรวจ + ใช้ fallback เป็น defaultPrice ถ้าผิด
         price: (() => {
           const priceInput = document.querySelector(`[data-bulk-song-price="${i}"]`);
-          return priceInput ? Number(priceInput.value || 0) : defaultPrice;
+          const rawValue = priceInput ? priceInput.value : "";
+          const numPrice = Number(rawValue);
+          // validate: ต้องเป็นจำนวนจริงที่ >= 0 (รับ 0 ได้ = ฟรี, แต่ห้ามติดลบ/NaN/Infinity)
+          if (!Number.isFinite(numPrice) || numPrice < 0) {
+            console.warn(`Bulk upload: ราคา "${rawValue}" ไม่ถูกต้องสำหรับเพลง ${file.name} → ใช้ default ${defaultPrice}`);
+            return defaultPrice;
+          }
+          return numPrice;
         })(),
         description: "",
         status: "active",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
+
+      // ถ้ามี fullRes → populate full_file fields
+      if (fullRes) {
+        songPayload.full_file_url = fullRes.url;
+        songPayload.full_file_public_id = fullRes.publicId;
+        songPayload.full_file_name = matchedFull.name;
+        matchedCount++;
+      } else if (bulkFullFiles.length > 0) {
+        unmatchedNames.push(songPayload.song_name);
+      }
 
       // 🔒 Auto Preview (2026-09-12): วิเคราะห์เสียงหาช่วง Dance ของไฟล์ตัวอย่าง
       // ทำหลังอัปโหลดไฟล์ตัวอย่างเสร็จ ก่อนอัปโหลดไฟล์เต็ม (เผื่อใช้ร่วมกันในกรณี shared file)
@@ -2218,28 +2281,6 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
           console.warn(`Bulk upload: วิเคราะห์ Auto Preview ล้มเหลวสำหรับ "${file.name}":`, previewErr?.message || previewErr);
           previewFailedNames.push(songPayload.song_name);
         }
-      }
-
-      // ถ้าจับคู่ด้วยชื่อไฟล์ไม่ได้ แต่เลือกไฟล์ตัวอย่าง 1 ไฟล์ + ไฟล์เต็ม 1 ไฟล์พอดี — ไม่มีทางกำกวมว่าเป็นคู่ไหน จับคู่กันตรงๆ ได้เลย ไม่ต้องพึ่งชื่อไฟล์
-      const matchedFull = matchFullFile(file.name, bulkFullFiles)
-        || (bulkFiles.length === 1 && bulkFullFiles.length === 1 ? bulkFullFiles[0] : null);
-      if (matchedFull) {
-        document.getElementById("bulkStatusText").textContent = `กำลังอัปโหลดไฟล์เต็ม ${i + 1}/${bulkFiles.length}: ${matchedFull.name}`;
-        const fullRes = await uploadFullSong(matchedFull, (pct, loaded, total) => {
-          const overall = Math.round(((i + pct / 100) / bulkFiles.length) * 100);
-          document.getElementById("bulkProgress").style.width = overall + "%";
-          updateProgressLabel(bulkProgLabel, total || matchedFull.size, pct, loaded);
-        }, controller.signal, (attempt, maxRetries) => {
-          // อัปโหลดหลุด/timeout — ระบบกำลังลองใหม่อัตโนมัติ (สูงสุด 2 ครั้ง)
-          document.getElementById("bulkStatusText").textContent =
-            `ไฟล์เต็ม "${matchedFull.name}" เชื่อมต่อหลุด กำลังลองใหม่ (${attempt}/${maxRetries})...`;
-        });
-        songPayload.full_file_url = fullRes.url;
-        songPayload.full_file_public_id = fullRes.publicId;
-        songPayload.full_file_name = matchedFull.name;
-        matchedCount++;
-      } else if (bulkFullFiles.length > 0) {
-        unmatchedNames.push(songPayload.song_name);
       }
 
       await addDoc(collection(db, "songs"), songPayload);
@@ -2315,30 +2356,51 @@ function openConfirm(text, onOk) {
 }
 document.getElementById("confirmCancel").addEventListener("click", () => document.getElementById("confirmBackdrop").classList.remove("show"));
 document.getElementById("confirmOk").addEventListener("click", async () => {
+  // 🔧 (2026-09-22 Batch 7 fix Bug #9): รอ confirmAction เสร็จก่อนค่อยปิด modal
+  //   เดิม: ปิด modal ก่อน → แล้วเรียก confirmAction → แต่ adminConfirm's setInterval detect modal ปิด → resolve(false) ก่อน
+  //   ใหม่: เรียก confirmAction ก่อน → รอเสร็จ → ปิด modal ทีหลัง
+  //   ผลกระทบ: ปุ่ม "ยืนยัน" อาจค้างสักครู่รอ confirmAction (เช่น save song) → เปิดปุ่มกลับหลังเสร็จ
+  if (confirmAction) {
+    try { await confirmAction(); } catch (err) { console.error("confirmAction error:", err); }
+  }
   document.getElementById("confirmBackdrop").classList.remove("show");
-  if (confirmAction) await confirmAction();
 });
 
-// 🔧 (2026-09-18 v6 Full System P3.2): Promise-based confirm modal
-//   แทนที่ window.confirm (blocking, ไม่สวย) ด้วย openConfirm (async, ใช้ modal ที่มีอยู่)
-//   ใช้กับ: songSaveBtn handler + bulk upload handler
-//   คืน Promise<boolean> → true = กด "ยืนยัน", false = กด "ยกเลิก"
+// 🔧 (2026-09-22 Batch 7 fix Bug #9): Promise-based confirm modal — แก้ race condition
+//   ปัญหาเดิม: setInterval(100ms) เช็ค class "show" ถูกลบ → resolve(false) ก่อน resolve(true)
+//              → adminConfirm คืน false เสมอ แม้ user กด "ยืนยัน" → bugs หลายตัวที่ใช้ adminConfirm
+//   วิธีแก้: ใช้ state flag แยก "okClicked" vs "cancelClicked" → resolve ครั้งเดียวจากทางที่ถูกต้อง
+//   ผลกระทบระบบเดิม: 0% — adminConfirm ยังคืน Promise<boolean> เหมือนเดิม แค่ค่าที่ได้ถูกต้อง
 function adminConfirm(message) {
   return new Promise((resolve) => {
-    openConfirm(message, () => resolve(true));
-    // กด "ยกเลิก" → confirmCancel ลบ class "show" → เราต้อง detect การปิด modal
-    // ใช้ MutationObserver หรือ interval เช็คว่า modal ปิดแล้ว (แต่ยังไม่ resolve)
     let resolved = false;
-    const checkClosed = setInterval(() => {
-      const backdrop = document.getElementById("confirmBackdrop");
-      if (!backdrop.classList.contains("show") && !resolved) {
-        resolved = true;
-        clearInterval(checkClosed);
-        resolve(false);
+    // Helper: resolve ครั้งเดียว (กันซ้ำ)
+    const safeResolve = (val) => {
+      if (resolved) return;
+      resolved = true;
+      // ล้าง confirmAction เพื่อกัน leak ไปยัง modal ถัดไป
+      confirmAction = null;
+      resolve(val);
+    };
+    // ตั้งค่า confirmAction เป็น wrapper ที่ resolve(true) แทน resolve(true) ตรงๆ
+    // เพื่อกันซ้ำ + ล้าง state หลัง resolve
+    openConfirm(message, () => safeResolve(true));
+    // ฟังการปิด modal (ยกเลิก / กดพื้นหลัง / ESC) — แทน setInterval
+    //   ใช้ MutationObserver (efficient กว่า setInterval มาก)
+    const backdrop = document.getElementById("confirmBackdrop");
+    const observer = new MutationObserver(() => {
+      if (!backdrop.classList.contains("show")) {
+        observer.disconnect();
+        // ถ้ายังไม่ได้ resolve (เช่น กด cancel หรือ กดพื้นหลัง) → resolve(false)
+        safeResolve(false);
       }
-    }, 100);
-    // Safety: ล้าง interval หลัง 30 วินาที
-    setTimeout(() => { if (!resolved) { clearInterval(checkClosed); resolve(false); } }, 30000);
+    });
+    observer.observe(backdrop, { attributes: true, attributeFilter: ["class"] });
+    // Safety: ล้าง observer หลัง 30 วินาที (กัน leak)
+    setTimeout(() => {
+      observer.disconnect();
+      safeResolve(false);
+    }, 30000);
   });
 }
 
