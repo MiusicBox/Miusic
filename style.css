@@ -4048,3 +4048,74 @@ button:active {
   }
   .playlist-folder-btn .playlist-folder-buy-btn::after { color: #052e16; font-weight: 800; }
 }
+
+
+/* ==========================================================================
+   🎨 (2026-09-21) ปุ่มมีมิติ แบบ B "กระจกเรืองแสง" — เพิ่มต่อท้ายไฟล์ (ทับบล็อกปุ่มเขียวด้านบน ไม่ลบของเดิม)
+   - ปุ่ม "เพิ่มลงตะกร้า" (.cart-add-btn-row) = กระจกมิ้นต์เรืองแสง
+   - ปุ่ม "ซื้อทั้งเพลย์ลิสต์" (.playlist-folder-buy-btn) = กระจกเรืองแสงสีแดง
+   - แตะเฉพาะสไตล์ของปุ่มสองชนิดนี้ ไม่แตะ HTML/JS/ตำแหน่งปุ่ม
+   - ย้อนกลับ: ลบบล็อกนี้ (ปุ่มจะกลับเป็นเขียวทึบ) หรือลบบล็อก "แบบ B" ด้วยเพื่อกลับหน้าตาเดิมทั้งหมด
+   ========================================================================== */
+
+/* ---- ปุ่มเพิ่มลงตะกร้า : กระจกมิ้นต์ ---- */
+.song-card-row .cart-add-btn-row {
+  background: linear-gradient(180deg, rgba(52, 211, 153, 0.38), rgba(6, 182, 212, 0.16)) !important;
+  border: 1px solid rgba(110, 231, 183, 0.65) !important;
+  color: #bbf7d0 !important;
+  font-weight: 800;
+  text-shadow: 0 0 8px rgba(110, 231, 183, 0.7);
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -8px 14px rgba(6, 182, 212, 0.18);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  -webkit-tap-highlight-color: transparent;
+}
+.song-card-row .cart-add-btn-row:hover {
+  background: linear-gradient(180deg, rgba(52, 211, 153, 0.50), rgba(6, 182, 212, 0.24)) !important;
+  box-shadow: 0 0 16px rgba(52, 211, 153, 0.50), inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -8px 14px rgba(6, 182, 212, 0.22);
+}
+.song-card-row .cart-add-btn-row:active {
+  transform: scale(0.96);
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.30), inset 0 2px 6px rgba(0, 0, 0, 0.30);
+}
+
+/* ---- ปุ่มซื้อทั้งเพลย์ลิสต์ : กระจกแดงเรืองแสง ---- */
+.playlist-folder-btn .playlist-folder-buy-btn {
+  background: linear-gradient(180deg, rgba(248, 113, 113, 0.40), rgba(244, 63, 94, 0.18)) !important;
+  border: 1px solid rgba(252, 165, 165, 0.65) !important;
+  color: #fecaca !important;
+  font-weight: 800;
+  text-shadow: 0 0 8px rgba(252, 165, 165, 0.7);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -8px 14px rgba(244, 63, 94, 0.20);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  -webkit-tap-highlight-color: transparent;
+}
+.playlist-folder-btn .playlist-folder-buy-btn:hover {
+  background: linear-gradient(180deg, rgba(248, 113, 113, 0.52), rgba(244, 63, 94, 0.26)) !important;
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -8px 14px rgba(244, 63, 94, 0.24);
+}
+.playlist-folder-btn .playlist-folder-buy-btn:active {
+  transform: scale(0.96);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.32), inset 0 2px 6px rgba(0, 0, 0, 0.30);
+}
+
+/* ---- จอเล็ก (มือถือ) : ข้อความสั้น "เพิ่ม" / "ซื้อ" เปลี่ยนสีให้เข้ากับปุ่มใหม่ ---- */
+@media (max-width: 480px) {
+  .song-card-row .cart-add-btn-row,
+  .playlist-song-row.song-card-row .cart-add-btn-row {
+    background: linear-gradient(180deg, rgba(52, 211, 153, 0.38), rgba(6, 182, 212, 0.16)) !important;
+    border: 1px solid rgba(110, 231, 183, 0.65) !important;
+  }
+  .song-card-row .cart-add-btn-row::after,
+  .playlist-song-row.song-card-row .cart-add-btn-row::after {
+    color: #bbf7d0;
+  }
+  .playlist-folder-btn .playlist-folder-buy-btn {
+    background: linear-gradient(180deg, rgba(248, 113, 113, 0.40), rgba(244, 63, 94, 0.18)) !important;
+    border: 1px solid rgba(252, 165, 165, 0.65) !important;
+  }
+  .playlist-folder-btn .playlist-folder-buy-btn::after {
+    color: #fecaca;
+  }
+}
