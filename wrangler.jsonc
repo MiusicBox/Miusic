@@ -22,5 +22,12 @@
   ],
   "vars": {
     "R2_PUBLIC_BASE_URL": "https://pub-1c69acdb5ecc47469099f274456c724f.r2.dev"
+  },
+  // 🔒 (2026-09-21 auto-cleanup ZIP): Cron Trigger — รันทุก 6 ชม.
+  //   ค้นหา ZIP ที่สร้างเกิน 24 ชม. → ลบออกจาก R2 + update order zip_status='expired'
+  //   กัน URL ถาวรรั่ว → ถ้ารั่ว ใช้ได้แค่ 24 ชม. แล้วหาย
+  //   ดู handler ที่ worker/index.js → async scheduled(event, env, ctx)
+  "triggers": {
+    "crons": ["0 */6 * * *"]
   }
 }
