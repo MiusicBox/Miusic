@@ -1154,17 +1154,26 @@ function myOrders_escapeHtml(str) {
 }
 function myOrders_formatPrice(v) { return Number(v || 0).toLocaleString("en-US") + " LAK"; }
 function myOrders_normalizePhone(v) {
-  let s = String(v || "").replace(/[^0-9]/g, "");
-  // 🔧 แก้บั๊ก C5 (2026-09-17): strip country code Laos + 0 นำหน้าออก ให้เบอร์ Laos ทุกรูปแบบเทียบเท่ากัน
-  //   "+85620XXXXXXXX" → "20XXXXXXXX"
-  //   "85620XXXXXXXX"  → "20XXXXXXXX"
-  //   "020XXXXXXXX"     → "20XXXXXXXX"
-  //   "20XXXXXXXX"      → "20XXXXXXXX" (ไม่เปลี่ยน)
-  //   สอดคล้องกับ normalizePhoneServer ฝั่ง worker/index.js + normalizePhone ใน app-user.js (ที่แก้พร้อมกัน)
-  //   ทำให้ลูกค้า Laos ที่สั่งด้วยเบอร์ +85620... จะหาออเดอร์ได้ถ้ากรอก 020... หรือ 20...
-  if (s.startsWith("856")) s = s.slice(3);
-  if (s.startsWith("0")) s = s.replace(/^0+/, "");
-  return s;
+  // 🔧 (2026-09-22 v2 — รองรับทั้ัง ลาว+ไทย): เก็บเบอร์ WITH country code ใน DB
+  //   สอดคล้องกับ normalizePhoneForStorage ใน app-cart.js (ที่แก้พร้อมกัน)
+  //   + normalizePhoneServer ใน worker/index.js + normalizePhone ใน app-user.js
+  //   รูปแบบที่เก็บ:
+  //     ลาว: "85620XXXXXXXX" (มี country code 856)
+  //     ไทย: "668XXXXXXXX" (มี country code 66)
+  //   ทำให้ลูกค้าค้นหาออเดอร์ได้โดยใส่เบอร์รูปแบบใดก็ได้ (local/international/with or without +)
+  let s = String(v || "").replace(/[^0-9+]/g, "");
+  s = s.replace(/^\+/, "");
+  if (s.startsWith("856")) {
+    let rest = s.slice(3).replace(/^0+/, "");
+    return "856" + rest;
+  }
+  if (s.startsWith("66")) {
+    let rest = s.slice(2).replace(/^0+/, "");
+    return "66" + rest;
+  }
+  // ไม่มี country code → สันนิษฐานว่าเป็นลาว
+  let rest = s.replace(/^0+/, "");
+  return "856" + rest;
 }
 function myOrders_normalizeName(v) { return String(v || "").trim().toLowerCase(); }
 
