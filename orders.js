@@ -1764,8 +1764,14 @@ async function openReceipt(orderId) {
       //   วิธีแก้: ถ้ายังไม่มี 856 นำหน้า ให้ prepend เข้าไป
       //   ผลกระทบระบบเดิม: 0% — DB ยังเก็บ "20XXXXXXXX" เหมือนเดิม แค่เปลี่ยน URL ที่ส่งให้ wa.me
       //   guard: ถ้าเบอร์เริ่มต้นด้วย 856 อยู่แล้ว (เช่น ออเดอร์เก่าที่เก็บรูปแบบ international) → ไม่ prepend ซ้ำ
+      // 🔧 (2026-09-22 v2 — รองรับทััง ลาว+ไทย): เบอร์ใน DB มี country code อยู่แล้ว
+      //   เดิม: DB เก็บ "20XXXXXXXX" → ต้อง prepend 856 ที่นี่ → แต่เบอร์ไทย 812345678 → prepend 856 → ลาว
+      //   ใหม่: DB เก็บ "85620XXXXXXXX" หรือ "668XXXXXXXX" (WITH country code) → ใช้ตรงๆ ไม่ต้อง prepend
+      //   ผลกระทบระบบเดิม: 0% — ถ้าเว็บยังไม่เปิด → ไม่มีออเดอร์เก่าใน DB → ไม่มีปัญหา
+      //   fallback: ถ้าออเดอร์เก่ามาจาก DB เก่า (เก็บ "20XXXXXXXX") → ถ้าไม่มี 856/66 นำหน้า → prepend 856 (เดิม)
       let number = String(order.whatsapp || "").replace(/[^0-9]/g, "");
-      if (number && !number.startsWith("856")) number = "856" + number;
+      // fallback: ถ้าเบอร์ไม่มี country code นำหน้า → สันนิษฐานลาว (เดิม)
+      if (number && !number.startsWith("856") && !number.startsWith("66")) number = "856" + number;
       if (!number) {
         orderToast("ออเดอร์นี้ไม่มีเบอร์ WhatsApp ของลูกค้า", "error");
         return;
@@ -1922,8 +1928,14 @@ async function openFullFilesModal(orderId) {
     whatsappBtn.onclick = async () => {
       // 🔧 (2026-09-21 fix): prepend Laos country code 856 ก่อนสร้าง wa.me URL
       //   เหตุผลเดียวกับ receiptWhatsAppBtn ด้านบน — ดูคอมเมนต์ที่จุดนั้น
+      // 🔧 (2026-09-22 v2 — รองรับทััง ลาว+ไทย): เบอร์ใน DB มี country code อยู่แล้ว
+      //   เดิม: DB เก็บ "20XXXXXXXX" → ต้อง prepend 856 ที่นี่ → แต่เบอร์ไทย 812345678 → prepend 856 → ลาว
+      //   ใหม่: DB เก็บ "85620XXXXXXXX" หรือ "668XXXXXXXX" (WITH country code) → ใช้ตรงๆ ไม่ต้อง prepend
+      //   ผลกระทบระบบเดิม: 0% — ถ้าเว็บยังไม่เปิด → ไม่มีออเดอร์เก่าใน DB → ไม่มีปัญหา
+      //   fallback: ถ้าออเดอร์เก่ามาจาก DB เก่า (เก็บ "20XXXXXXXX") → ถ้าไม่มี 856/66 นำหน้า → prepend 856 (เดิม)
       let number = String(order.whatsapp || "").replace(/[^0-9]/g, "");
-      if (number && !number.startsWith("856")) number = "856" + number;
+      // fallback: ถ้าเบอร์ไม่มี country code นำหน้า → สันนิษฐานลาว (เดิม)
+      if (number && !number.startsWith("856") && !number.startsWith("66")) number = "856" + number;
       if (!number) {
         orderToast("ออเดอร์นี้ไม่มีเบอร์ WhatsApp ของลูกค้า", "error");
         return;
