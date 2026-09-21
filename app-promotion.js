@@ -1320,7 +1320,10 @@ async function handleSearchMyOrders() {
   }
   if (phone.length < 8) {
     if (feedback) {
-      feedback.textContent = "เบอร์ WhatsApp ไม่ถูกต้อง (ต้องมีอย่างน้อย 8 หลัก)";
+      // 🔧 (2026-09-21 fix Bug #2 Phone validation): เปลี่ยนข้อความ error ให้ชัดเจนขึ้น
+      //   เดิม: "เบอร์ WhatsApp ไม่ถูกต้อง (ต้องมีอย่างน้อย 8 หลัก)"
+      //   ใหม่: บอกตัวอย่างรูปแบบที่รองรับ → ลูกค้ารู้จะแก้ยังไง
+      feedback.textContent = "เบอร์ WhatsApp ไม่ถูกต้อง — ตัวอย่างที่ใช้ได้: 02012345678, 2012345678, +8562012345678";
       feedback.style.color = "var(--danger)";
       feedback.style.display = "block";
     }
