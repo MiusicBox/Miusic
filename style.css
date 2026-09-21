@@ -4150,3 +4150,37 @@ button:active {
     text-shadow: 0 1px 2px rgba(120, 0, 0, 0.55);
   }
 }
+
+/* ============================================================
+   🔧 (2026-09-21 fix iOS input zoom): บังคับ input ทุกตัว ≥ 16px
+   ------------------------------------------------------------
+   ปัญหา: input ขนาด 14-15px → iOS Safari จะ auto-zoom หน้าเว็บทุกครั้ง focus
+   → ลูกค้า iPhone ต้อง pinch-zoom กลับทุก field (โดยเฉพาะตอน checkout)
+   → friction สูง → ทิ้งตะกร้า
+
+   วิธีแก้: บังคับ input, select, textarea ทุกตัว ≥ 16px
+   - iOS Safari auto-zoom เฉพาะเมื่อ font-size < 16px → ข้ามได้
+   - ไม่กระทบ desktop (browser อื่นๆ ไม่สนใจ font-size ตอน focus)
+
+   ผลกระทบต่อระบบเดิม: นิดหน่อย — input ที่เคยเล็กจะโตขึ้นเล็กน้อย (1-2px)
+   แต่เป็นผลดีเพราะ input ที่ใหญ่ขึ้น = พิมพ์ง่ายขึ้น + แตะพิมพ์แม่นยำขึ้นบนมือถือ
+   ============================================================ */
+input,
+select,
+textarea {
+  font-size: 16px !important;
+}
+
+/* แต่ยังคงรักษา font-size เดิมของ non-input elements (labels, hints, etc.) */
+.field label,
+.field small,
+.field .hint {
+  font-size: inherit;  /* ใช้ค่าเดิม */
+}
+
+/* โทรศัพท์เลข + placeholder ยังคง 16px (เพื่อกัน zoom) */
+input::placeholder,
+textarea::placeholder {
+  font-size: 16px;
+  color: var(--text-dim, rgba(255, 255, 255, 0.45));
+}
