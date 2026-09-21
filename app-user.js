@@ -1604,8 +1604,34 @@ if (modalSeekEl) {
 
 const modalCloseBtn = document.getElementById("songModalClose");
 const backdropEl = document.getElementById("songModalBackdrop");
-if (modalCloseBtn) modalCloseBtn.addEventListener("click", () => backdropEl && backdropEl.classList.remove("show"));
-if (backdropEl) backdropEl.addEventListener("click", (e) => { if (e.target === e.currentTarget) e.currentTarget.classList.remove("show"); });
+// 🔧 (2026-09-22 Batch 7 fix Bug #12 part 2): Modal scroll lock
+//   เดิม: modal เปิด → background ยัง scroll ได้ → iOS modal เด้งตาม scroll → UX แย่
+//   ใหม่: เปิด modal → body.modal-open (CSS overflow:hidden) → background ล็อค scroll
+//         ปิด modal → ลบ class → กลับมา scroll ได้
+if (modalCloseBtn) modalCloseBtn.addEventListener("click", () => {
+  if (backdropEl) backdropEl.classList.remove("show");
+  document.body.classList.remove("modal-open");
+});
+if (backdropEl) backdropEl.addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) {
+    e.currentTarget.classList.remove("show");
+    document.body.classList.remove("modal-open");
+  }
+});
+
+// 🔧 (2026-09-22 Batch 7 fix Bug #12 part 2): hook openSongModal ให้ lock scroll ตอนเปิด
+//   ใช้ MutationObserver เพื่อ detect class "show" ของ backdrop → add/remove body.modal-open
+//   (วิธีนี้ไม่ต้องแก้ openSongModal โดยตรง → ลด risk ของระบบเดิม)
+if (backdropEl && "MutationObserver" in window) {
+  const modalObserver = new MutationObserver(() => {
+    if (backdropEl.classList.contains("show")) {
+      document.body.classList.add("modal-open");
+    } else {
+      document.body.classList.remove("modal-open");
+    }
+  });
+  modalObserver.observe(backdropEl, { attributes: true, attributeFilter: ["class"] });
+}
 
 const searchInputEl = document.getElementById("searchInput");
 if (searchInputEl) {
