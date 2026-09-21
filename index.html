@@ -642,6 +642,8 @@
 
   <!-- 🔧 (2026-09-20 player bar): วัดความสูงจริงของเมนูล่าง (.bottom-nav) แล้วเก็บไว้ใน --bottom-nav-h
        เพื่อให้เครื่องเล่นเพลงลอย (.player-bar) วางติดขอบบนของเมนูพอดี ไม่ทับเมนู — ไม่แตะ/ไม่ลบสคริปต์เดิม -->
+  <!-- 🔧 (2026-09-22 fix topbar): วัดความสูงจริงของแถบบน (.topbar) แล้วเก็บไว้ใน --topbar-h
+       เพื่อให้ body มี padding-top พอดี → เนื้อหาไม่ทับแถบบน (position: fixed ไม่ดันเนื้อหาอัตโนมัติ) -->
   <script>
     (function () {
       function syncBottomNavHeight() {
@@ -649,16 +651,42 @@
         if (!nav) return;
         document.documentElement.style.setProperty('--bottom-nav-h', nav.offsetHeight + 'px');
       }
+      // 🔧 (2026-09-22 fix topbar): วัดความสูงแถบบน + ตั้ง padding-top ให้ body
+      function syncTopbarHeight() {
+        var topbar = document.querySelector('.topbar');
+        if (!topbar) return;
+        var h = topbar.offsetHeight;
+        document.documentElement.style.setProperty('--topbar-h', h + 'px');
+        document.body.style.paddingTop = h + 'px';
+      }
       syncBottomNavHeight();
-      document.addEventListener('DOMContentLoaded', syncBottomNavHeight);
-      window.addEventListener('load', syncBottomNavHeight);
-      window.addEventListener('resize', syncBottomNavHeight);
-      window.addEventListener('orientationchange', syncBottomNavHeight);
-      if (document.fonts && document.fonts.ready) document.fonts.ready.then(syncBottomNavHeight);
+      syncTopbarHeight();
+      document.addEventListener('DOMContentLoaded', function() {
+        syncBottomNavHeight();
+        syncTopbarHeight();
+      });
+      window.addEventListener('load', function() {
+        syncBottomNavHeight();
+        syncTopbarHeight();
+      });
+      window.addEventListener('resize', function() {
+        syncBottomNavHeight();
+        syncTopbarHeight();
+      });
+      window.addEventListener('orientationchange', function() {
+        syncBottomNavHeight();
+        syncTopbarHeight();
+      });
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(function() {
+        syncBottomNavHeight();
+        syncTopbarHeight();
+      });
       if (window.ResizeObserver) {
         document.addEventListener('DOMContentLoaded', function () {
           var nav = document.querySelector('.bottom-nav');
           if (nav) new ResizeObserver(syncBottomNavHeight).observe(nav, { box: 'border-box' });
+          var topbar = document.querySelector('.topbar');
+          if (topbar) new ResizeObserver(syncTopbarHeight).observe(topbar, { box: 'border-box' });
         });
       }
     })();
