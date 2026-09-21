@@ -3814,3 +3814,237 @@ button:active {
   flex-shrink: 0;
   filter: drop-shadow(0 0 3px var(--cp-cyan));
 }
+
+
+/* ==========================================================================
+   🎨 (2026-09-21) แบบ B — แถวเพลง/หัวเพลย์ลิสต์แบบเรียบ + ป้ายราคาม่วงอ่อน + ปุ่มเขียว
+   - เพิ่มต่อท้ายไฟล์เท่านั้น (ไม่ลบ/ไม่แก้กฎเดิมด้านบน — กฎ Mesh Gradient เดิมยังอยู่ แค่ถูกซ่อนด้วย display:none)
+   - แตะเฉพาะ .song-card-row / .playlist-song-row.song-card-row / .playlist-folder-btn
+   - ไม่แตะ .song-price .price-original .price-discounted ตัวหลัก (หน้าตะกร้า/โปรโมชั่น/แอดมินใช้ร่วม)
+   - ไม่แตะ HTML/JS, ลูกศรเปิด-ปิดเพลย์ลิสต์, ตำแหน่งปุ่มซื้อทั้งเพลย์ลิสต์ (margin-right ติดลบเดิม)
+   - ย้อนกลับ: ลบบล็อกนี้ทั้งบล็อก ระบบจะกลับเป็นหน้าตาเดิมทันที
+   ========================================================================== */
+
+/* ---- แถวเพลง (หน้าหลัก + เพลงในเพลย์ลิสต์) : พื้นเรียบ ขอบบาง ไม่มีแสงเมช ---- */
+.song-card-row,
+.playlist-song-row.song-card-row {
+  background: #141824 !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-radius: 10px !important;
+  padding: 10px !important;
+  gap: 12px !important;
+  box-shadow: none !important;
+  align-items: center;
+}
+.song-card-row { margin-bottom: 6px !important; }
+.playlist-song-row.song-card-row { margin: 4px 12px !important; }
+
+.song-card-row::before,
+.song-card-row::after,
+.playlist-song-row.song-card-row::before,
+.playlist-song-row.song-card-row::after {
+  display: none !important;
+}
+
+.song-card-row:first-child,
+.song-card-row:last-child,
+.playlist-song-row.song-card-row:last-child {
+  border-radius: 10px !important;
+  border-bottom-color: rgba(255, 255, 255, 0.10) !important;
+}
+.playlist-song-row.song-card-row:last-child { margin-bottom: 4px !important; }
+
+.song-card-row:hover,
+.playlist-song-row.song-card-row:hover {
+  transform: none !important;
+  background: #181d2b !important;
+  border-color: rgba(167, 139, 250, 0.45) !important;
+  box-shadow: none !important;
+}
+
+/* รูปปก 60px */
+.song-card-row .song-cover,
+.playlist-song-row.song-card-row .playlist-cover {
+  width: 60px !important;
+  height: 60px !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+.song-card-row .song-cover .play-btn,
+.playlist-song-row.song-card-row .playlist-play-btn {
+  width: 40px !important;
+  height: 40px !important;
+}
+.song-card-row .song-cover .play-btn svg,
+.playlist-song-row.song-card-row .playlist-play-btn svg {
+  width: 22px !important;
+  height: 22px !important;
+}
+
+/* ข้อมูล: ชื่อเพลงขาว 15px + บรรทัด DJ/ศิลปิน สีม่วงอ่อนเรียบ ๆ */
+.song-card-row .song-info,
+.playlist-song-row.song-card-row .playlist-info {
+  justify-content: center;
+  gap: 4px;
+}
+.song-card-row .song-name,
+.playlist-song-row.song-card-row .playlist-item-name {
+  font-family: "Bai Jamjuree", "Mali", sans-serif !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0;
+  color: #ffffff !important;
+  text-shadow: none !important;
+  filter: none !important;
+}
+.song-card-row .song-meta-row { gap: 6px; margin-top: 0; }
+.song-card-row .song-dj-tag {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: #a5b4fc !important;
+}
+.song-card-row .song-meta-text { font-size: 12px; color: #a5b4fc; }
+.song-card-row .song-dj-tag + .song-meta-text::before { content: "· "; }
+
+/* ---- ป้ายราคา (เฉพาะในแถวเพลง) : ปกติ = ป้ายม่วงอ่อน / ลดราคา = ป้ายเขียว ---- */
+.song-card-row .song-price {
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0;
+  color: #ddd6fe !important;
+  background: rgba(139, 92, 246, 0.16);
+  border: 1px solid rgba(139, 92, 246, 0.40);
+  padding: 3px 10px;
+  border-radius: 8px;
+  text-shadow: none !important;
+}
+.song-card-row .price-discounted {
+  display: inline-block;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0;
+  color: #6ee7b7 !important;
+  background: rgba(52, 211, 153, 0.14);
+  border: 1px solid rgba(52, 211, 153, 0.45);
+  padding: 3px 10px;
+  border-radius: 8px;
+  text-shadow: none !important;
+}
+.song-card-row .price-original {
+  font-size: 11.5px !important;
+  color: #94a3b8 !important;
+}
+
+/* ---- ปุ่มเพิ่มลงตะกร้า : เขียวไล่เฉด + เงาเรืองเบา ๆ ---- */
+.song-card-row .cart-add-btn-row {
+  background: linear-gradient(135deg, #4ade80, #22c55e) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  color: #052e16 !important;
+  font-size: 12px !important;
+  font-weight: 800;
+  padding: 7px 12px !important;
+  border-radius: 10px !important;
+  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.35);
+}
+.song-card-row .cart-add-btn-row:hover {
+  background: linear-gradient(135deg, #86efac, #4ade80) !important;
+  box-shadow: 0 6px 18px rgba(34, 197, 94, 0.50);
+}
+
+/* ---- หัวเพลย์ลิสต์ : พื้นเรียบ + แถบม่วงอ่อนด้านซ้าย ---- */
+.playlist-block:nth-child(3n+1) .playlist-folder-btn,
+.playlist-block:nth-child(3n+2) .playlist-folder-btn,
+.playlist-block:nth-child(3n+3) .playlist-folder-btn {
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0.10), #141824 60%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-left: 4px solid #a78bfa !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+.playlist-block:nth-child(3n+1) .playlist-folder-btn:hover,
+.playlist-block:nth-child(3n+2) .playlist-folder-btn:hover,
+.playlist-block:nth-child(3n+3) .playlist-folder-btn:hover {
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0.16), #181d2b 60%) !important;
+  border-color: rgba(167, 139, 250, 0.45) !important;
+  border-left-color: #a78bfa !important;
+  box-shadow: none !important;
+}
+.playlist-folder-btn .playlist-folder-cover {
+  width: 64px !important;
+  height: 64px !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+.playlist-folder-btn .playlist-folder-name {
+  font-size: 17px !important;
+  text-shadow: none !important;
+  filter: none;
+}
+.playlist-folder-btn .playlist-folder-count { color: #a5b4fc; }
+
+/* ป้ายราคาในหัวเพลย์ลิสต์ */
+.playlist-folder-btn .playlist-folder-price-block .song-price {
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0;
+  color: #ddd6fe !important;
+  background: rgba(139, 92, 246, 0.16);
+  border: 1px solid rgba(139, 92, 246, 0.40);
+  padding: 3px 10px;
+  border-radius: 8px;
+  text-shadow: none !important;
+}
+.playlist-folder-btn .playlist-folder-price-block .price-discounted {
+  display: inline-block;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0;
+  color: #6ee7b7 !important;
+  background: rgba(52, 211, 153, 0.14);
+  border: 1px solid rgba(52, 211, 153, 0.45);
+  padding: 3px 10px;
+  border-radius: 8px;
+  text-shadow: none !important;
+}
+
+/* ปุ่มซื้อทั้งเพลย์ลิสต์ : เขียวไล่เฉดเหมือนปุ่มเพิ่มลงตะกร้า */
+.playlist-folder-btn .playlist-folder-buy-btn {
+  background: linear-gradient(135deg, #4ade80, #22c55e) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  color: #052e16 !important;
+  font-weight: 800;
+  border-radius: 10px !important;
+  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.35);
+}
+.playlist-folder-btn .playlist-folder-buy-btn:hover {
+  background: linear-gradient(135deg, #86efac, #4ade80) !important;
+  box-shadow: 0 6px 18px rgba(34, 197, 94, 0.50);
+}
+
+/* ---- จอเล็ก (มือถือ) ---- */
+@media (max-width: 480px) {
+  .playlist-song-row.song-card-row { margin: 4px 8px !important; }
+  .song-card-row .cart-add-btn-row,
+  .playlist-song-row.song-card-row .cart-add-btn-row {
+    background: linear-gradient(135deg, #4ade80, #22c55e) !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    border-radius: 10px !important;
+    padding: 7px 12px !important;
+  }
+  .song-card-row .cart-add-btn-row::after,
+  .playlist-song-row.song-card-row .cart-add-btn-row::after {
+    color: #052e16;
+    font-weight: 800;
+  }
+  .playlist-folder-btn .playlist-folder-cover { width: 56px !important; height: 56px !important; }
+  .playlist-folder-btn .playlist-folder-name { font-size: 15px !important; }
+  .playlist-folder-btn .playlist-folder-buy-btn {
+    background: linear-gradient(135deg, #4ade80, #22c55e) !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    border-radius: 10px !important;
+  }
+  .playlist-folder-btn .playlist-folder-buy-btn::after { color: #052e16; font-weight: 800; }
+}
