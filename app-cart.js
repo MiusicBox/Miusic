@@ -469,6 +469,36 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     return s;
   }
 
+  // 🔧 (2026-09-21 fix Bug #2 Phone validation): ฟังก์ชัน validate เบอร์ลาว
+  //   ปัญหา: checkout รับค่าใดๆ → ลูกค้าใส่ "abc" ผ่าน → track order ไม่เจอ → โทรด่าแอดมิน
+  //   วิธีแก้: ใช้ regex เดียวกันทั้ง checkout + track order (sync กับ app-promotion.js)
+  //   รองรับรูปแบบ:
+  //     - 20XXXXXXXX (normalized — 8-10 หลัก)
+  //     - 020XXXXXXXX (local มี 0 นำหน้า)
+  //     - 85620XXXXXXXX (international ไม่มี +)
+  //     - +85620XXXXXXXX (international มี +)
+  //   หมายเหตุ: regex ยืดหยุ่น — รองรับ Laos mobile (20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31 ฯลฯ)
+  //   ผลกระทบระบบเดิม: 0% — เบอร์ที่ถูกต้องยังผ่านได้, เบอร์ผิดถูกปฏิเสธก่อนเข้า DB
+  function isValidLaosPhone(raw) {
+    const s = String(raw || "").trim();
+    // ลบ whitespace + dash + paren + space ก่อน regex
+    const cleaned = s.replace(/[\s\-()]/g, "");
+    // Regex: optional + หรือ 856, optional 0, แล้ว [2-9] + 6-9 หลัก = รวม 8-12 หลัก
+    //   ^(\+?856|0?)?0?[2-9]\d{6,9}$
+    //   แต่เพื่อความเข้มงวด: Laos mobile ปกติเริ่มด้วย 2X หลัง strip 856/0
+    const re = /^(\+?856)?0?([2-9]\d{7,9})$/;
+    return re.test(cleaned);
+  }
+
+  function getPhoneValidationError(raw) {
+    const s = String(raw || "").trim();
+    if (!s) return "กรุณากรอกเบอร์ WhatsApp";
+    if (!isValidLaosPhone(s)) {
+      return "รูปแบบเบอร์ไม่ถูกต้อง — ตัวอย่างที่ใช้ได้: 02012345678, 2012345678, +8562012345678";
+    }
+    return null;  // ไม่มี error
+  }
+
   function getCheckoutKey(customerName, whatsapp) {
     return hashCheckoutKey(JSON.stringify({
       customerName,
@@ -959,6 +989,16 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     const whatsapp = whatsappInput?.value.trim() || "";
     if (!customerName || !whatsapp) {
       setCheckoutFeedback("กรุณากรอกชื่อลูกค้าและเบอร์ WhatsApp");
+      return;
+    }
+    // 🔧 (2026-09-21 fix Bug #2 Phone validation): ตรวจเบอร์ลาวก่อนส่ง
+    //   ป้องกัน: ลูกค้าใส่ "abc" → ผ่าน checkout → แต่ track order ไม่เจอ → โทรด่าแอดมิน
+    //   วิธี: ใช้ getPhoneValidationError() (เพิ่มใหม่ด้านบน)
+    const phoneError = getPhoneValidationError(whatsapp);
+    if (phoneError) {
+      setCheckoutFeedback(phoneError);
+      // focus input กลับเพื่อให้ลูกค้าแก้ได้ทันที
+      if (whatsappInput) { whatsappInput.focus(); whatsappInput.select(); }
       return;
     }
     if (state.cart.length === 0) {
