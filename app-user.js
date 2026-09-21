@@ -2153,10 +2153,22 @@ function openTrackOrderAllDetail(order) {
   const deleteBtn = document.getElementById("trackOrderAllDeleteBtn");
   if (deleteBtn) {
     deleteBtn.onclick = () => {
-      // 🔧 (2026-09-17): ลบแล้วปิดหน้า detail กลับไปที่ลิสต์ + ยิง refresh ทันที (เดิมใช้ polling อัปเดตเอง)
+      // 🔧 (2026-09-22 fix): Optimistic UI — ลบจาก local state ทันที ไม่รอ fetch
+      //   ปัญหาเดิม: หลังลบ → fetchTrackOrderAllOnce() ทันที → D1 ยังไม่ propagate → ส่งข้อมูลเก่า → ออเดอร์ยังค้าง
+      //   วิธีแก้: ลบจาก trackOrderAllOrders ทันที + re-render → ลูกค้าเห็นหายทันที
+      //           แล้วค่อย fetch ใน background เพื่อ sync ข้อมูลจริง (อัปเดต badge)
       handleCustomerDeleteOrder(order, () => {
+        // 1. ลบออกจาก local array ทันที
+        trackOrderAllOrders = trackOrderAllOrders.filter(o => o._docId !== order._docId);
+        // 2. ปิด detail view กลับไปลิสต์
         closeTrackOrderAllDetail();
-        fetchTrackOrderAllOnce();  // one-shot refresh ลิสต์หลังลบ
+        // 3. re-render ลิสต์ด้วยข้อมูลที่ลบแล้ว (optimistic — ลูกค้าเห็นหายทันที)
+        renderTrackOrderAllList(trackOrderAllOrders);
+        // 4. อัปเดต badge (ถ้ามี)
+        if (window.__refreshTrackOrderBadge) window.__refreshTrackOrderBadge();
+        // 5. silent fetch ใน background เพื่อ sync ข้อมูลจริง (ไม่ block UI)
+        //    ถ้า D1 ส่งข้อมูลใหม่ → re-render อีกครั้ง (อาจจะเหมือนเดิม = ไม่มีผล)
+        setTimeout(() => fetchTrackOrderAllOnce(), 500);  // รอ 500ms ให้ D1 propagate
       });
     };
   }
