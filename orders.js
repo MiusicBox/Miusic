@@ -1872,7 +1872,7 @@ async function openFullFilesModal(orderId) {
 
   const whatsappBtn = document.getElementById("fullFilesWhatsAppBtn");
   if (whatsappBtn) {
-    whatsappBtn.onclick = () => {
+    whatsappBtn.onclick = async () => {
       // 🔧 (2026-09-21 fix): prepend Laos country code 856 ก่อนสร้าง wa.me URL
       //   เหตุผลเดียวกับ receiptWhatsAppBtn ด้านบน — ดูคอมเมนต์ที่จุดนั้น
       let number = String(order.whatsapp || "").replace(/[^0-9]/g, "");
@@ -1882,10 +1882,39 @@ async function openFullFilesModal(orderId) {
         return;
       }
       const receiptNumber = order.receipt_number || getReceiptNumber(order.id, order.created_at);
-      const zipUrl = order.zip_download_url || "";
+
+      // 🔒 (2026-09-21 fix Bug #2 ZIP URL permanent public): ใช้ proxy URL แทน R2 URL ตรงๆ
+      //   เดิม: ใช้ order.zip_download_url ตรงๆ → URL ถาวร → แชร์ได้ตลอดไป
+      //   ใหม่: เรียก POST /api/order-zip/get-customer-url?orderId=xxx เพื่อขอ one-time token
+      //         → Worker คืน /api/download/<orderId>?token=<token> (one-time use, หมดอายุใน 24 ชม.)
+      //         → URL ส่งให้ลูกค้าผ่าน WhatsApp → ลูกค้าคลิก → Worker stream ZIP จาก R2
+      //         → R2 public URL ไม่เคยเปิดเผย กันแชร์ต่อ
+      //   ผลกระทบระบบเดิม: 0% — orders เก่าที่ยังเก็บ zip_download_url ไว้ ยังใช้ได้ผ่าน fallback ด้านล่าง
+      let zipUrl = order.zip_download_url || "";
+      try {
+        const res = await fetch(`/api/order-zip/get-customer-url?orderId=${encodeURIComponent(order.id)}`, {
+          method: "POST",
+          credentials: "same-origin",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.url) {
+            // แปลง relative URL (/api/download/...) เป็น absolute URL สำหรับ WhatsApp
+            // ใช้ window.location.origin (เช่น https://ร้าน.com) เป็น base
+            zipUrl = window.location.origin + data.url;
+          } else if (data?.error) {
+            orderToast("ไม่สามารถสร้างลิงก์ดาวน์โหลด: " + data.error, "error");
+            return;
+          }
+        }
+        // ถ้า fetch fail หรือ res.ok=false → ใช้ zipUrl เดิม (R2 public URL) เป็น fallback
+        // เผื่อกรณี Worker ใหม่ยังไม่ deploy หรือ DB ยังไม่ได้รัน schema.sql ใหม่
+      } catch (err) {
+        console.warn("get-customer-url failed, falling back to zip_download_url:", err?.message || err);
+      }
+
       // 🔧 (2026-09-16): แบบที่ 2 — สุภาพ + ขอบคุณ + ลิงก์ดาวน์โหลด (เปลี่ยนจากเดิมที่ไม่ส่งลิงก์)
-      // เพราะ R2 public URL ปลอดภัยพอแล้ว (UUID + no directory listing)
-      // ถ้ายังไม่มี zip_download_url → ส่งแค่ข้อความทักทาย ไม่มีลิงก์
+      // ถ้ายังไม่มี zipUrl (ทั้ง token และ zip_download_url) → ส่งแค่ข้อความทักทาย ไม่มีลิงก์
       let text;
       if (zipUrl) {
         text =
