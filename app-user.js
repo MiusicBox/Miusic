@@ -1942,16 +1942,39 @@ function renderTrackOrderResult(order) {
   const deleteBtn = document.getElementById("trackOrderDeleteBtn");
   if (deleteBtn) {
     deleteBtn.onclick = () => {
-      // 🔧 (2026-09-22 fix v2): Optimistic UI — ลบจากหน้าจอทันทีก่อนส่ง request
+      // 🔧 (2026-09-22 fix v3): อัปเดต UI ทุกส่วนทันที — list + badge + banner
       const confirmed = window.confirm(`ต้องการลบ Order ${order.receipt_number || ""} ใช่หรือไม่? เมื่อลบแล้วจะไม่สามารถกู้คืนได้`);
       if (!confirmed) return;
-      // 1. ลบจากหน้าจอทันที (ก่อนเรียก API)
+      // 1. ลบจากหน้าจอทันที
       resultEl.hidden = true;
       resultEl.innerHTML = "";
-      // 2. ลบจาก local state ด้วย (ถ้าอยู่ใน trackOrderAllOrders จะได้ไม่ค้างตอนกลับไปลิสต์)
+      // 2. ลบจาก local state
       trackOrderAllOrders = trackOrderAllOrders.filter(o => o._docId !== order._docId);
-      if (window.__refreshTrackOrderBadge) window.__refreshTrackOrderBadge();
-      // 3. ส่ง request ลบจริงใน background (ไม่ block UI)
+      // 3. ลด badge ทันที (ไม่รอ fetch)
+      const badgeEl = document.getElementById("trackOrderBadge");
+      if (badgeEl && !badgeEl.hidden) {
+        const currentCount = Number(badgeEl.textContent || "0");
+        const newCount = Math.max(0, currentCount - 1);
+        if (newCount > 0) {
+          badgeEl.textContent = String(newCount);
+        } else {
+          badgeEl.hidden = true;
+        }
+      }
+      // 4. ล้าง pending order banner ถ้าเป็นออเดอร์สุดท้าย
+      try {
+        const raw = localStorage.getItem("music_store_last_order_v1");
+        if (raw) {
+          const lastOrder = JSON.parse(raw);
+          if (lastOrder && lastOrder.order && lastOrder.order._docId === order._docId) {
+            localStorage.removeItem("music_store_last_order_v1");
+          }
+        }
+      } catch (_) {}
+      // 5. ซ่อน banner ทันที (ถ้าแสดงอยู่)
+      const bannerEl = document.getElementById("pendingOrderBanner");
+      if (bannerEl) bannerEl.hidden = true;
+      // 6. ส่ง request ลบจริงใน background
       (async () => {
         try {
           await deleteDoc(doc(db, "orders", order._docId), {
@@ -1962,9 +1985,10 @@ function renderTrackOrderResult(order) {
           });
           showToast("ลบออเดอร์เรียบร้อยแล้ว", "success");
         } catch (err) {
-          console.error("handleCustomerDeleteOrder error:", err);
+          console.error("delete error:", err);
           showToast(getFriendlyErrorMessage(err), "error");
-          // ถ้าลบไม่สำเร็จ → re-fetch เพื่อ restore ข้อมูล
+          // ถ้าลบไม่สำเร็จ → re-fetch เพื่อ restore
+          if (window.__refreshTrackOrderBadge) window.__refreshTrackOrderBadge();
           fetchTrackOrderAllOnce();
         }
       })();
@@ -2175,21 +2199,40 @@ function openTrackOrderAllDetail(order) {
   const deleteBtn = document.getElementById("trackOrderAllDeleteBtn");
   if (deleteBtn) {
     deleteBtn.onclick = () => {
-      // 🔧 (2026-09-22 fix v2): Optimistic UI — ลบจากหน้าจอทันทีก่อนส่ง request
-      //   ปัญหาเดิม: รอ deleteDoc เสร็จ → callback → UI update → ลูกค้าเห็น delay
-      //   วิธีแก้: ลบจาก local state + re-render ทันที → ส่ง request ใน background
-      //   ถ้า request fail → re-fetch เพื่อ restore
+      // 🔧 (2026-09-22 fix v3): อัปเดต UI ทุกส่วนทันที — list + badge + banner
       const confirmed = window.confirm(`ต้องการลบ Order ${order.receipt_number || ""} ใช่หรือไม่? เมื่อลบแล้วจะไม่สามารถกู้คืนได้`);
       if (!confirmed) return;
-      // 1. ลบจาก local array ทันที (ก่อน API call)
+      // 1. ลบจาก local array ทันที
       trackOrderAllOrders = trackOrderAllOrders.filter(o => o._docId !== order._docId);
-      // 2. ปิด detail view กลับไปลิสต์
+      // 2. ปิด detail กลับไปลิสต์
       closeTrackOrderAllDetail();
-      // 3. re-render ลิสต์ทันที — ลูกค้าเห็นออเดอร์หายทันที
+      // 3. re-render ลิสต์ทันที
       renderTrackOrderAllList(trackOrderAllOrders);
-      // 4. อัปเดต badge
-      if (window.__refreshTrackOrderBadge) window.__refreshTrackOrderBadge();
-      // 5. ส่ง request ลบจริงใน background (ไม่ block UI)
+      // 4. ลด badge ทันที (ไม่รอ fetch)
+      const badgeEl = document.getElementById("trackOrderBadge");
+      if (badgeEl && !badgeEl.hidden) {
+        const currentCount = Number(badgeEl.textContent || "0");
+        const newCount = Math.max(0, currentCount - 1);
+        if (newCount > 0) {
+          badgeEl.textContent = String(newCount);
+        } else {
+          badgeEl.hidden = true;
+        }
+      }
+      // 5. ล้าง pending order banner ถ้าเป็นออเดอร์ที่ลบ
+      try {
+        const raw = localStorage.getItem("music_store_last_order_v1");
+        if (raw) {
+          const lastOrder = JSON.parse(raw);
+          if (lastOrder && lastOrder.order && lastOrder.order._docId === order._docId) {
+            localStorage.removeItem("music_store_last_order_v1");
+          }
+        }
+      } catch (_) {}
+      // 6. ซ่อน banner ทันที (ถ้าแสดงอยู่)
+      const bannerEl = document.getElementById("pendingOrderBanner");
+      if (bannerEl) bannerEl.hidden = true;
+      // 7. ส่ง request ลบจริงใน background
       (async () => {
         try {
           await deleteDoc(doc(db, "orders", order._docId), {
@@ -2200,9 +2243,10 @@ function openTrackOrderAllDetail(order) {
           });
           showToast("ลบออเดอร์เรียบร้อยแล้ว", "success");
         } catch (err) {
-          console.error("handleCustomerDeleteOrder error:", err);
+          console.error("delete error:", err);
           showToast(getFriendlyErrorMessage(err), "error");
-          // ถ้าลบไม่สำเร็จ → re-fetch เพื่อ restore ข้อมูลที่หายไป
+          // ถ้าลบไม่สำเร็จ → re-fetch + restore badge
+          if (window.__refreshTrackOrderBadge) window.__refreshTrackOrderBadge();
           fetchTrackOrderAllOnce();
         }
       })();
