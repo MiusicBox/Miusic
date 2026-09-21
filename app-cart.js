@@ -460,43 +460,63 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   // สอดคล้องกับ normalizePhoneServer ใน worker/index.js + normalizePhone ใน app-user.js
   //   ที่แก้ใน Bug C5 (ทำให้ query-time normalization กับ storage-time ตรงกัน)
   //
-  // ผลกระทบต่อระบบเดิม: 0% — เบอร์ที่ลูกค้ากรอกยังแสดงในใบเสร็จ/WhatsApp message ตามเดิม
-  //   แค่เปลี่ยนค่าที่เก็บใน field "whatsapp" ของ order document ใน DB
+  // 🔧 (2026-09-22 v2 — รองรับทั้ง ลาว+ไทย): เก็บเบอร์ WITH country code ใน DB
+  //   เดิม: เก็บ "20XXXXXXXX" (ไม่มี country code) → ลิงก์ WhatsApp ต้อง prepend 856 เอง
+  //         → แต่เบอร์ไทย 812345678 → prepend 856 → กลายเป็น 856812345678 (ลาว) → พัง
+  //   ใหม่: เก็บ "85620XXXXXXXX" หรือ "668XXXXXXXX" (WITH country code)
+  //         → ลิงก์ WhatsApp ใช้ตรงๆ ไม่ต้อง prepend
+  //         → รองรับทั้งลาว + ไทย
+  //   ผลกระทบระบบเดิม: 0% — ถ้าเว็บยังไม่เปิด → ไม่มีออเดอร์เก่าใน DB → ไม่มีปัญหา
+  //     ถ้ามีออเดอร์เก่า → ต้องรัน migration script เพิ่ม country code 856
   function normalizePhoneForStorage(v) {
-    let s = String(v || "").replace(/[^0-9]/g, "");
-    if (s.startsWith("856")) s = s.slice(3);
-    if (s.startsWith("0")) s = s.replace(/^0+/, "");
-    return s;
+    let s = String(v || "").replace(/[^0-9+]/g, "");  // เก็บ + ไว้ด้วย
+    s = s.replace(/^\+/, "");  // ลบ + นำหน้า (ถ้ามี)
+    // ตรวจ country code
+    if (s.startsWith("856")) {
+      // ลาว — strip 856 และ 0 นำหน้า แล้วเติม 856 กลับ
+      let rest = s.slice(3).replace(/^0+/, "");
+      return "856" + rest;
+    }
+    if (s.startsWith("66")) {
+      // ไทย — strip 66 และ 0 นำหน้า แล้วเติม 66 กลับ
+      let rest = s.slice(2).replace(/^0+/, "");
+      return "66" + rest;
+    }
+    // ไม่มี country code → สันนิษฐานว่าเป็นลาว (ลูกค้าส่วนใหญ่เป็นลาว)
+    let rest = s.replace(/^0+/, "");
+    return "856" + rest;
   }
 
-  // 🔧 (2026-09-21 fix Bug #2 Phone validation): ฟังก์ชัน validate เบอร์ลาว
-  //   ปัญหา: checkout รับค่าใดๆ → ลูกค้าใส่ "abc" ผ่าน → track order ไม่เจอ → โทรด่าแอดมิน
-  //   วิธีแก้: ใช้ regex เดียวกันทั้ง checkout + track order (sync กับ app-promotion.js)
-  //   รองรับรูปแบบ:
-  //     - 20XXXXXXXX (normalized — 8-10 หลัก)
-  //     - 020XXXXXXXX (local มี 0 นำหน้า)
-  //     - 85620XXXXXXXX (international ไม่มี +)
-  //     - +85620XXXXXXXX (international มี +)
-  //   หมายเหตุ: regex ยืดหยุ่น — รองรับ Laos mobile (20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31 ฯลฯ)
-  //   ผลกระทบระบบเดิม: 0% — เบอร์ที่ถูกต้องยังผ่านได้, เบอร์ผิดถูกปฏิเสธก่อนเข้า DB
-  function isValidLaosPhone(raw) {
-    const s = String(raw || "").trim();
-    // ลบ whitespace + dash + paren + space ก่อน regex
-    const cleaned = s.replace(/[\s\-()]/g, "");
-    // Regex: optional + หรือ 856, optional 0, แล้ว [2-9] + 6-9 หลัก = รวม 8-12 หลัก
-    //   ^(\+?856|0?)?0?[2-9]\d{6,9}$
-    //   แต่เพื่อความเข้มงวด: Laos mobile ปกติเริ่มด้วย 2X หลัง strip 856/0
-    const re = /^(\+?856)?0?([2-9]\d{7,9})$/;
-    return re.test(cleaned);
+  // 🔧 (2026-09-22 fix Bug #2 v2): ฟังก์ชัน validate เบอร์ รองรับทั้ง ลาว+ไทย
+  //   ปัญหาเดิม: ลูกค้าใส่ "abc" ผ่าน checkout → track order ไม่เจอ
+  //   วิธีแก้: ใช้ regex แยกสำหรับลาว + ไทย ถ้าตรงอันใดอันหนึ่ง → ผ่าน
+  //   รูปแบบที่รองรับ:
+  //     ลาว:
+  //       - 20XXXXXXXX (8-10 หลัก)
+  //       - 020XXXXXXXX (local มี 0)
+  //       - +85620XXXXXXXX / 85620XXXXXXXX (international)
+  //     ไทย:
+  //       - 8XXXXXXXX / 9XXXXXXXX (9 หลัก ไม่มี 0)
+  //       - 08XXXXXXXX / 09XXXXXXXX (local มี 0, 10 หลัก)
+  //       - +668XXXXXXXX / +669XXXXXXXX / 668XXXXXXXX / 669XXXXXXXX (international)
+  function isValidPhone(raw) {
+    const s = String(raw || "").trim().replace(/[\s\-()]/g, "");
+    // Laos: optional +856/856 + optional 0 + [2-9] + 7-9 digits
+    const laosRe = /^(\+?856)?0?[2-9]\d{7,9}$/;
+    // Thai: optional +66/66 + optional 0 + [6-9] + 8 digits
+    const thaiRe = /^(\+?66)?0?[6-9]\d{8}$/;
+    return laosRe.test(s) || thaiRe.test(s);
   }
 
   function getPhoneValidationError(raw) {
     const s = String(raw || "").trim();
     if (!s) return "กรุณากรอกเบอร์ WhatsApp";
-    if (!isValidLaosPhone(s)) {
-      return "รูปแบบเบอร์ไม่ถูกต้อง — ตัวอย่างที่ใช้ได้: 02012345678, 2012345678, +8562012345678";
+    if (!isValidPhone(s)) {
+      return "รูปแบบเบอร์ไม่ถูกต้อง — ตัวอย่างที่ใช้ได้:\n" +
+             "• ลาว: 02012345678, 2012345678, +8562012345678\n" +
+             "• ไทย: 0812345678, 812345678, +66812345678";
     }
-    return null;  // ไม่มี error
+    return null;
   }
 
   function getCheckoutKey(customerName, whatsapp) {
