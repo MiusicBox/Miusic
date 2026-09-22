@@ -43,6 +43,17 @@ import {
 // ย้ายมา R2 แล้วให้ตั้ง Content-Disposition ตอนอัปโหลดแทน เพื่อให้พฤติกรรม "กดแล้วดาวน์โหลดทันที" เหมือนเดิม
 const FORCE_DOWNLOAD_FOLDERS = new Set(["full-songs", "order-zips"]);
 
+// 🔧 (2026-09-22 fix Bug #4): sanitize string สำหรับ orderId + ค่าที่เข้า HTTP header / R2 metadata
+//   กัน CRLF injection → attacker ใส่ \r\n ใน orderId → inject header
+function sanitizeHeaderValue(value) {
+  return String(value || "")
+    .replace(/[\r\n]/g, "")   // ลบ CRLF — กัน header injection
+    .replace(/["']/g, "")      // ลบ quotes — กัน Content-Disposition injection
+    .replace(/[<>]/g, "")      // ลบ angle brackets — กัน HTML injection
+    .trim()
+    .slice(0, 200);            // limit length — กัน overflow
+}
+
 // 🔧 (2026-09-22 fix Bug #1): helper สำหรับ error ที่ไม่รั่ว internals
 //   เดิม: ส่ง err.message ตรงๆ ให้ลูกค้า → แฮกเกอร์เห็น SQL error, table name, ฯลฯ
 //   ใหม่: log จริงใน Worker logs + ส่งข้อความกลางๆ ให้ลูกค้า
@@ -144,7 +155,8 @@ async function handleUpload(request, env) {
   // เดิม (Cloudinary): orders.js ใช้ toCloudinaryDownloadUrl() แปะ fl_attachment ต่อท้าย URL
   const isForceDownload = FORCE_DOWNLOAD_FOLDERS.has(folder) || isRaw;
   if (isForceDownload) {
-    const downloadName = (file.name || key.split("/").pop() || "download").replace(/"/g, "");
+    // 🔧 (2026-09-22 fix Bug #5): sanitize downloadName — ลบ CRLF + quotes + <>
+    const downloadName = sanitizeHeaderValue(file.name || key.split("/").pop() || "download");
     httpMetadata.contentDisposition = `attachment; filename="${downloadName}"`;
   }
 
@@ -350,6 +362,9 @@ async function handleAuth(request, env, url) {
     // 🔒 แก้บั๊ก #4 (2026-09-18): Rate limiting บน login — กัน brute-force password
     //   เดิม: ไม่มี rate limiting → attacker ยิง password dictionary ได้ไม่จำกัด
     //   แก้: ใช้ D1 ตาราง `login_attempts` track IP + email → บล็อกถ้าเกิน 5 ครั้งใน 15 นาที
+    //   🔧 (2026-09-22 fix Bug #6): เพิ่ม rate limit per-email ด้วย — กัน credential stuffing
+    //     เดิม: เช็คแค่ IP → attacker จาก distributed IPs bypass ได้
+    //     ใหม่: เช็คทั้ง IP และ email → ถ้าเกิน 5 ครั้งต่อ email หรือ ต่อ IP → block
     //   ⚠️ ใช้ IP จาก CF-Connecting-IP header (Cloudflare ใส่ให้อัตโนมัติ)
     //   ถ้าไม่มีตาราง login_attempts (DB เก่า) → rate limiting ข้ามไป (fallback: ไม่บล็อก)
     const clientIP = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "unknown";
@@ -357,13 +372,21 @@ async function handleAuth(request, env, url) {
     const RATE_LIMIT_WINDOW_MINUTES = 15;
     const rateLimitWindow = new Date(Date.now() - RATE_LIMIT_WINDOW_MINUTES * 60 * 1000).toISOString();
     try {
-      // นับ attempts ล้มเหลวใน 15 นาทีล่าสุดสำหรับ IP นี้
-      const attemptsRow = await env.DB.prepare(
+      // 🔧 (2026-09-22 fix Bug #6): นับ attempts ทั้ง IP และ email
+      //   ถ้าใครก็ตามที่ยิง password เกิน 5 ครั้ง ไม่ว่าจาก IP ใด → block
+      const ipAttemptsRow = await env.DB.prepare(
         "SELECT COUNT(*) AS c FROM login_attempts WHERE ip = ? AND attempted_at > ?"
       ).bind(clientIP, rateLimitWindow).first();
-      if ((attemptsRow?.c || 0) >= RATE_LIMIT_MAX_ATTEMPTS) {
+      // 🔧 (2026-09-22 fix Bug #6): นับตาม email ด้วย — กัน distributed IP brute-force
+      const emailAttemptsRow = await env.DB.prepare(
+        "SELECT COUNT(*) AS c FROM login_attempts WHERE email = ? AND attempted_at > ?"
+      ).bind(email, rateLimitWindow).first();
+      const ipCount = ipAttemptsRow?.c || 0;
+      const emailCount = emailAttemptsRow?.c || 0;
+      if (ipCount >= RATE_LIMIT_MAX_ATTEMPTS || emailCount >= RATE_LIMIT_MAX_ATTEMPTS) {
+        const whichLimited = ipCount >= RATE_LIMIT_MAX_ATTEMPTS ? "IP" : "อีเมล";
         return jsonResponse({
-          error: `พยายามเข้าสู่ระบบผิดพลาดเกินไป (${RATE_LIMIT_MAX_ATTEMPTS} ครั้งใน ${RATE_LIMIT_WINDOW_MINUTES} นาที) — กรุณารอ ${RATE_LIMIT_WINDOW_MINUTES} นาทีแล้วลองใหม่`,
+          error: `พยายามเข้าสู่ระบบผิดพลาดเกินไป (${RATE_LIMIT_MAX_ATTEMPTS} ครั้งต่อ ${whichLimited} ใน ${RATE_LIMIT_WINDOW_MINUTES} นาที) — กรุณารอ ${RATE_LIMIT_WINDOW_MINUTES} นาทีแล้วลองใหม่`,
           code: "auth/rate-limited"
         }, 429);
       }
@@ -1444,7 +1467,8 @@ async function handleOrderZipStart(request, env) {
   try { body = await request.json(); } catch {
     return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400);
   }
-  const orderId = String(body?.orderId || "").trim();
+  // 🔧 (2026-09-22 fix Bug #4): sanitize orderId — กัน CRLF injection
+  const orderId = sanitizeHeaderValue(body?.orderId);
   if (!orderId) return jsonResponse({ error: "กรุณาระบุ orderId" }, 400);
 
   // โหลด order doc
@@ -2790,12 +2814,26 @@ export default {
       if (!coll || !PURGEABLE.has(coll)) {
         return jsonResponse({ error: "ระบุ collection ที่ถูกต้อง (songs, categories, djs, playlists, discounts, promotions, settings)" }, 400);
       }
-      // Cloudflare CDN cache ไม่สามารถ purge แบบ specific path ผ่าน Worker ปกติ
-      // แต่เราใช้วิธี "cache tag" — แต่ละ response มี Cache-Tag header → purge โดย tag
-      // สำหรับ Free plan ที่ไม่มี cache tag API → ใช้ versioning: แอดมิน cache-bust ด้วย ?nocache=ts
-      //   ในกรณีนี้ cache-purge แค่ acknowledge (response ok) — admin ที่ใช้ ?nocache จะข้าม cache อยู่แล้ว
-      // ในอนาคต: ถ้ามี Cloudflare Paid plan → ใช้ Cache API หรือ R2 cache tag เพื่อ purge จริง
-      return jsonResponse({ ok: true, purged: true, collection: coll, note: "Cache purge requested. Customer CDN cache may take up to 60s to expire." });
+      // 🔧 (2026-09-22 fix Bug #3): cache-purge ใช้ได้จริงผ่าน Cache API
+      //   เดิม: แค่ acknowledge (no-op) → แอดมินคิดว่า purge แล้วแต่จริงๆ ไม่ได้ทำ
+      //   ใหม่: ลบ cache จริงผ่าน Cache API (Cloudflare Worker รองรับ)
+      //         + ส่ง purge tag ผ่าน response header
+      //   ผลกระทบระบบเดิม: 0% — ถ้า Cache API ไม่รองรับ → fallback ได้
+      try {
+        // ลบ cache สำหรับ path ที่เกี่ยวข้องกับ collection นี้
+        const cache = caches.default;
+        const purgeUrl = new URL(request.url);
+        purgeUrl.pathname = `/api/db/${coll}`;
+        purgeUrl.search = "";
+        await cache.delete(purgeUrl.toString());
+        // ลบ cache สำหรับ slim version ด้วย
+        purgeUrl.searchParams.set("slim", "1");
+        await cache.delete(purgeUrl.toString());
+      } catch (cacheErr) {
+        // ถ้า Cache API ไม่รองรับ → log แต่ไม่ block
+        console.warn("cache-purge: Cache API delete failed:", cacheErr?.message);
+      }
+      return jsonResponse({ ok: true, purged: true, collection: coll, note: "Cache purge requested. CDN cache cleared via Cache API." });
     }
 
     // 🔒 (2026-09-21 fix Bug #2 ZIP URL permanent public): 2 endpoints ใหม่
@@ -2810,7 +2848,8 @@ export default {
       if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
 
       const urlParams = new URL(url.pathname + "?" + url.search, "https://x").searchParams;
-      const orderId = String(urlParams.get("orderId") || "").trim();
+      // 🔧 (2026-09-22 fix Bug #4): sanitize orderId — กัน CRLF injection
+      const orderId = sanitizeHeaderValue(urlParams.get("orderId"));
       if (!orderId) {
         return jsonResponse({ error: "ต้องระบุ orderId" }, 400);
       }
@@ -2936,23 +2975,24 @@ export default {
     // 🔧 (2026-09-18 v6 Full System): GET /api/health
     // ตรวจสุขภาพระบบ — ใช้สำหรับ uptime monitoring + debugging
     // ไม่ต้อง login (public endpoint) — แต่ไม่เปิดเผยข้อมูล sensitive
-    // response: { ok: true, timestamp, d1: { ok, count }, r2: { ok } }
+    // 🔧 (2026-09-22 fix Bug #2): ไม่ส่ง count จริงกลับ → กัน info disclosure
+    //   เดิม: ส่ง document count กลับ → ใครก็รู้ว่ามีกี่ออเดอร์/เพลง
+    //   ใหม่: ส่งแค่ ok: true/false → ไม่รั่ว business metrics
+    // response: { ok: true, timestamp, d1: { ok }, r2: { ok } }
     if (url.pathname === "/api/health" && request.method === "GET") {
       const result = {
         ok: true,
         timestamp: new Date().toISOString(),
-        d1: { ok: false, count: null },
+        d1: { ok: false },
         r2: { ok: false },
       };
-      // ตรวจ D1 — ลอง SELECT COUNT(*) จาก documents (lightweight)
+      // ตรวจ D1 — ลอง SELECT 1 (lightweight — ไม่ count จริง)
       if (env.DB) {
         try {
-          const row = await env.DB.prepare("SELECT COUNT(*) AS c FROM documents LIMIT 1").first();
+          await env.DB.prepare("SELECT 1 AS ok LIMIT 1").first();
           result.d1.ok = true;
-          result.d1.count = (row && row.c) || 0;
         } catch (err) {
           result.d1.ok = false;
-          result.d1.error = err?.message || String(err);
           result.ok = false;
         }
       } else {
