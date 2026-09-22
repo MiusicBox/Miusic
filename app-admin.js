@@ -893,16 +893,59 @@ function computeDiff(before, after) {
   return changes;
 }
 
-// จัดรูปแบบ change 1 รายการเป็นประโยคไทย
-//   - changed: "เปลี่ยนชื่อเพลงจาก A เป็น B"
-//   - added:   "เพิ่มราคา: 200"
+// จัดรูปแบบ change 1 รายการเป็นประโยคไทย — ซ่อน URL/path/timestamp ที่คนทั่วไปอ่านไม่รู้เรื่อง
+//   - changed: "เปลี่ยนชื่อเพลงจาก A เป็น B" หรือ "เปลี่ยนรูปปก" (ถ้าค่าเป็น URL)
+//   - added:   "เพิ่มราคา: 200" หรือ "อัปโหลดรูปปกใหม่" (ถ้าค่าเป็น URL)
 //   - removed: "ลบหมายเหตุ (เดิม: xxx)"
 function formatChange(change) {
   const label = change.label;
   const beforeStr = change.before == null ? "" : String(change.before);
   const afterStr = change.after == null ? "" : String(change.after);
 
-  // ตัดค่าที่ยาวเกิน 50 ตัวอักษร (เช่น URL รูปปก) เพื่อกันประโยคยาวเกิน
+  // 🔧 (2026-09-22 fix Bug #2 UI v3): ซ่อนค่าที่คนทั่วไปอ่านไม่รู้เรื่อง
+  //   - URL ยาว (https://...) → แสดงแค่ "เปลี่ยน[label]" ไม่โชว์ URL
+  //   - file path (.svg, .png, .mp3, ...) → แสดงแค่ "เปลี่ยน[label]"
+  //   - ISO timestamp → แสดงแค่ "เปลี่ยน[label]" ไม่โชว์ raw date
+  //   ทั้งนี้เพื่อให้ประโยคสั้น และคนอ่านได้เข้าใจความหมายโดยไม่ต้องดู code
+  const isUrlOrPath = (val) => {
+    if (val == null) return false;
+    const s = String(val).toLowerCase();
+    // URL เต็ม (http/https)
+    if (s.startsWith("http://") || s.startsWith("https://")) return true;
+    // absolute path
+    if (s.startsWith("/api/") || s.startsWith("/uploads/")) return true;
+    // มี file extension (.svg, .png, .jpg, .mp3, .wav, .zip, ...)
+    if (/\.[a-z0-9]{2,4}($|\?)/.test(s)) return true;
+    // เป็น UUID หรือ hash ยาว ๆ (เช่น r2 object key)
+    if (s.length > 40 && /^[a-z0-9\-_]+$/i.test(s)) return true;
+    return false;
+  };
+  const isTimestamp = (val) => {
+    if (val == null) return false;
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(String(val));
+  };
+
+  const beforeIsTechnical = isUrlOrPath(beforeStr) || isTimestamp(beforeStr);
+  const afterIsTechnical  = isUrlOrPath(afterStr)  || isTimestamp(afterStr);
+
+  // กรณีค่าเป็น URL/path/timestamp → ซ่อนค่าทิ้ง แสดงแค่คำอธิบายสั้น ๆ
+  if (beforeIsTechnical || afterIsTechnical) {
+    if (change.type === "changed") {
+      // ใช้คำว่า "อัปโหลดใหม่" สำหรับ field ที่เป็นไฟล์ (cover_url, preview_url, ...)
+      if (afterIsTechnical && !beforeIsTechnical) {
+        return `อัปโหลด<em style="color:var(--text-dim);font-style:normal;">${escapeHtml(label)}</em>ใหม่`;
+      }
+      return `เปลี่ยน<em style="color:var(--text-dim);font-style:normal;">${escapeHtml(label)}</em>`;
+    }
+    if (change.type === "added") {
+      return `อัปโหลด<em style="color:var(--text-dim);font-style:normal;">${escapeHtml(label)}</em>ใหม่`;
+    }
+    if (change.type === "removed") {
+      return `ลบ<em style="color:var(--text-dim);font-style:normal;">${escapeHtml(label)}</em>ออก`;
+    }
+  }
+
+  // กรณีทั่วไป — แสดงค่าจริง แต่ตัดถ้ายาวเกิน 50 ตัวอักษร (กันประโยคยาวเกิน)
   const trimVal = (v) => v.length > 50 ? v.slice(0, 50) + "..." : v;
 
   if (change.type === "changed") {
