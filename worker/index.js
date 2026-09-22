@@ -43,6 +43,37 @@ import {
 // ย้ายมา R2 แล้วให้ตั้ง Content-Disposition ตอนอัปโหลดแทน เพื่อให้พฤติกรรม "กดแล้วดาวน์โหลดทันที" เหมือนเดิม
 const FORCE_DOWNLOAD_FOLDERS = new Set(["full-songs", "order-zips"]);
 
+// 🔧 (2026-09-22 fix Bug #2): audit log helper — บันทึกทุก action ที่แอดมินทำ
+//   เก็บ: ใคร (admin_id + email) ทำอะไร (action) กับอะไร (collection + target_id) เมื่อไหร่ (timestamp)
+//   ใช้ใน: PUT/PATCH/DELETE ของ songs/playlists/orders/categories/djs/settings/promotions/discounts
+//   ความปลอดภัย: insert-only — ไม่มี UPDATE/DELETE ผ่าน API → กันแอดมินลบประวัติตัวเอง
+//   ผลกระทบระบบเดิม: 0% — ถ้าตาราง audit_log ไม่มี → log ข้ามไป (ไม่ block action)
+async function writeAuditLog(env, request, admin, action, collection, targetId, targetName, beforeData, afterData) {
+  if (!admin || !env.DB) return;
+  try {
+    const clientIP = request.headers.get("CF-Connecting-IP") || "unknown";
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      "INSERT INTO audit_log (admin_id, admin_email, action, collection, target_id, target_name, before_data, after_data, ip_address, created_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(
+      admin.id || "",
+      admin.email || "",
+      action,
+      collection,
+      targetId || "",
+      targetName || "",
+      beforeData ? JSON.stringify(beforeData) : null,
+      afterData ? JSON.stringify(afterData) : null,
+      clientIP,
+      now
+    ).run();
+  } catch (auditErr) {
+    // ถ้าตาราง audit_log ไม่มี → log ใน Worker logs แต่ไม่ block action
+    console.warn("audit_log insert failed (table may not exist — run schema.sql):", auditErr?.message);
+  }
+}
+
 // 🔧 (2026-09-22 fix Bug #4): sanitize string สำหรับ orderId + ค่าที่เข้า HTTP header / R2 metadata
 //   กัน CRLF injection → attacker ใส่ \r\n ใน orderId → inject header
 function sanitizeHeaderValue(value) {
@@ -1242,6 +1273,8 @@ async function handleDb(request, env, url) {
           body.data = filteredData;
         }
         const result = await setDocument(env, collection, id, body.data || {}, !!body.merge, admin?.email);
+        // 🔧 (2026-09-22 fix): audit log — บันทึกการสร้าง/อัปเดต
+        await writeAuditLog(env, request, admin, !!body.merge ? "update" : "create", collection, id, body.data?.song_name || body.data?.playlist_name || body.data?.customer_name || id, null, body.data);
         return jsonResponse(result);
       }
       if (request.method === "PATCH") {
@@ -1253,6 +1286,8 @@ async function handleDb(request, env, url) {
         const body = await request.json();
         const result = await updateDocument(env, collection, id, body.data || {});
         if (result.notFound) return jsonResponse({ error: "ไม่พบเอกสารที่จะอัปเดต" }, 404);
+        // 🔧 (2026-09-22 fix): audit log — บันทึกการแก้ไข
+        await writeAuditLog(env, request, admin, "update", collection, id, body.data?.song_name || body.data?.playlist_name || body.data?.customer_name || id, null, body.data);
         return jsonResponse(result);
       }
       if (request.method === "DELETE") {
@@ -1318,7 +1353,10 @@ async function handleDb(request, env, url) {
           }
           return jsonResponse({ ok: true });
         }
+        // 🔧 (2026-09-22 fix): audit log — บันทึกการลบ (เก็บ snapshot ของข้อมูลก่อนลบ)
+        const beforeDelete = await getDocument(env, collection, id);
         await deleteDocument(env, collection, id);
+        await writeAuditLog(env, request, admin, "delete", collection, id, beforeDelete?.data?.song_name || beforeDelete?.data?.playlist_name || beforeDelete?.data?.customer_name || id, beforeDelete?.data, null);
         return jsonResponse({ ok: true });
       }
     }
