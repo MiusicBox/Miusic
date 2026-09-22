@@ -6,7 +6,7 @@
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): noindex meta — กัน Google index หน้า admin -->
 <meta name="robots" content="noindex, nofollow">
 <title>Admin - Music Store</title>
-<link rel="stylesheet" href="style.css?v=20260922-admin-lock-v1">
+<link rel="stylesheet" href="style.css?v=20260922-batch10">
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): html2canvas regular script (เหมือน index.html)
      เดิม: orders.js ใช้ dynamic import ทุกครั้ง → ช้า + พังถ้า CDN ล่ม
@@ -57,6 +57,7 @@
         <button id="qaPromotions">🎁<br>โปรโมชั่น</button>
         <button id="qaSettings">🔧<br>ตั้งค่าเว็บไซต์</button>
         <button id="qaManageAdmins" style="display:none;">👤<br>จัดการแอดมิน</button>
+        <button id="qaAuditLog">📜<br>ประวัติร้าน</button>
       </div>
     </div>
 
@@ -343,6 +344,60 @@
       </div>
       <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">โปรโมชั่นคำนวณอัตโนมัติในตะกร้า — ไม่ต้องกรอกรหัส ตัวอย่าง: ซื้อครบ 3 เพลง ลด 10% / ครบ 5 ลด 20% / ครบ 10 ลด 30%</p>
       <div id="promotionList" class="container" style="padding:10px 16px 24px;"></div>
+    </div>
+
+    <!-- ===================== ประวัติร้าน (Audit Log) =====================
+         🔧 (2026-09-22 fix Bug #2 UI): หน้าแสดง audit_log
+           - แสดงรายการ: ใคร (email) ทำอะไร (action) กับอะไร (target) เมื่อไหร่ (timestamp) + IP
+           - filter: action, collection, admin_email, date range
+           - pagination: 50/หน้า (max 200)
+           - click row → expand เห็น before/after data
+           - ทุกแอดมินที่ login แล้วเข้าดูได้ (ตาม model "เพื่อนๆ ช่วยกันดูแล" ที่ผู้ใช้ระบุ)
+    ================================================================== -->
+    <div id="view-auditlog" class="view" style="display:none;">
+      <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
+        <button class="icon-btn back-btn">←</button>
+        <div style="flex:1;font-weight:800;">ประวัติร้าน</div>
+        <button class="icon-btn" id="auditLogRefreshBtn" title="โหลดใหม่">🔄</button>
+      </div>
+      <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">
+        บันทึกทุกการสร้าง/แก้ไข/ลบ ของแอดมิน — ใคร ทำอะไร กับอะไร เมื่อไหร่ IP อะไร (เก็บ 90 วัน)
+      </p>
+
+      <!-- ===== Filter bar ===== -->
+      <div class="audit-log-filters" style="padding:0 16px;margin:14px 0 10px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
+        <select id="auditFilterAction" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;">
+          <option value="">ทุก action</option>
+          <option value="create">สร้าง</option>
+          <option value="update">แก้ไข</option>
+          <option value="delete">ลบ</option>
+        </select>
+        <select id="auditFilterCollection" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;">
+          <option value="">ทุกประเภท</option>
+          <option value="songs">เพลง</option>
+          <option value="playlists">เพลย์ลิสต์</option>
+          <option value="orders">ออเดอร์</option>
+          <option value="categories">หมวดหมู่</option>
+          <option value="djs">DJ</option>
+          <option value="settings">ตั้งค่าเว็บ</option>
+          <option value="promotions">โปรโมชั่น</option>
+          <option value="discounts">ลดราคา</option>
+          <option value="admins">แอดมิน</option>
+        </select>
+        <input id="auditFilterEmail" type="search" placeholder="ค้นอีเมลแอดมิน..." style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;grid-column:1 / -1;">
+        <input id="auditFilterFromDate" type="date" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;">
+        <input id="auditFilterToDate" type="date" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;">
+        <button id="auditFilterApplyBtn" class="btn secondary" style="grid-column:1 / -1;padding:8px 12px;font-size:13px;">🔍 ใช้ตัวกรอง</button>
+      </div>
+
+      <!-- ===== Stats summary ===== -->
+      <div id="auditLogStats" style="padding:0 16px;margin:0 0 10px;font-size:12px;color:var(--text-dim);"></div>
+
+      <!-- ===== Log list ===== -->
+      <div id="auditLogList" class="container" style="padding:0 16px 24px;"></div>
+
+      <!-- ===== Pagination ===== -->
+      <div id="auditLogPager" style="padding:0 16px 24px;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;"></div>
     </div>
   </div>
 
@@ -992,6 +1047,6 @@
 
   <div class="toast" id="toast"></div>
 
-  <script type="module" src="app-admin.js?v=20260920-default-cover"></script>
+  <script type="module" src="app-admin.js?v=20260922-batch10"></script>
 </body>
 </html>
