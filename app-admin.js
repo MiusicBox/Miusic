@@ -552,34 +552,46 @@ function renderAuditLog(logs) {
 
     const actionLabel = AUDIT_ACTION_LABELS[log.action] || log.action;
     const actionClass = `audit-action-${log.action || "other"}`;
-    const collectionLabel = AUDIT_COLLECTION_LABELS[log.collection] || log.collection;
     const time = formatAuditTime(log.created_at);
 
+    // 🔧 (2026-09-22 fix Bug #2 UI v2): สร้างคำอธิบายแบบภาษาคน ๆ แทน target_name + JSON ดิบ
+    //   - ลบ: "ลบเพลง: เพลง A"
+    //   - แก้ไข: "แก้ไขเพลง: เพลง A — เปลี่ยนชื่อเพลงจาก A เป็น B"
+    //   - สร้าง: "สร้างเพลงใหม่: เพลง A"
+    const summaryHtml = generateHumanReadableSummary(log);
+
     row.innerHTML = `
-      <div class="audit-row-main" style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;">
-        <span class="audit-action-pill ${actionClass}">${escapeHtml(actionLabel)}</span>
+      <div class="audit-row-main" style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;cursor:pointer;">
+        <span class="audit-action-pill ${actionClass}" style="margin-top:1px;">${escapeHtml(actionLabel)}</span>
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:700;font-size:14px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            ${escapeHtml(collectionLabel)}${log.target_name ? `: ` + escapeHtml(String(log.target_name).slice(0, 80)) : ""}
+          <div style="font-size:14px;line-height:1.5;color:var(--text);">
+            ${summaryHtml}
           </div>
-          <div style="font-size:12px;color:var(--text-dim);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          <div style="font-size:12px;color:var(--text-dim);margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
             ${escapeHtml(log.admin_email || "unknown")} · ${escapeHtml(log.ip_address || "—")} · ${escapeHtml(time)}
           </div>
         </div>
         <span class="audit-expand-icon" style="color:var(--text-dim);font-size:18px;flex-shrink:0;">▸</span>
       </div>
-      <div class="audit-row-detail" style="display:none;padding:0 14px 14px;border-top:1px dashed rgba(255,255,255,.08);">
-        <div style="margin-top:10px;">
-          <div style="font-size:12px;font-weight:700;color:var(--text-dim);margin-bottom:4px;">📋 ข้อมูลก่อนเปลี่ยน (before)</div>
-          <pre style="background:rgba(0,0,0,.3);border-radius:6px;padding:10px;font-size:11px;overflow-x:auto;max-height:240px;color:#f1f1f1;">${escapeHtml(formatJsonForDisplay(log.before_data))}</pre>
+      <div class="audit-row-detail" style="display:none;padding:12px 14px 14px;border-top:1px dashed rgba(255,255,255,.08);">
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+          <span style="display:inline-block;margin-right:12px;">📌 ID: <code style="background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px;">${escapeHtml(String(log.target_id || "—").slice(0, 50))}</code></span>
+          <span style="display:inline-block;margin-right:12px;">👤 admin_id: <code style="background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px;">${escapeHtml(log.admin_id || "—")}</code></span>
+          <span style="display:inline-block;">🔢 log_id: <code style="background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px;">${escapeHtml(String(log.id))}</code></span>
         </div>
-        <div style="margin-top:10px;">
-          <div style="font-size:12px;font-weight:700;color:var(--text-dim);margin-bottom:4px;">📋 ข้อมูลหลังเปลี่ยน (after)</div>
-          <pre style="background:rgba(0,0,0,.3);border-radius:6px;padding:10px;font-size:11px;overflow-x:auto;max-height:240px;color:#f1f1f1;">${escapeHtml(formatJsonForDisplay(log.after_data))}</pre>
-        </div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:10px;">
-          target_id: ${escapeHtml(log.target_id || "—")} | admin_id: ${escapeHtml(log.admin_id || "—")} | log_id: ${escapeHtml(String(log.id))}
-        </div>
+        <details style="margin-top:8px;">
+          <summary style="font-size:12px;font-weight:700;color:var(--text-dim);cursor:pointer;user-select:none;padding:4px 0;">📋 ดูข้อมูลดิบ (JSON)</summary>
+          <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:240px;">
+              <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">ก่อนเปลี่ยน (before)</div>
+              <pre style="background:rgba(0,0,0,.3);border-radius:6px;padding:10px;font-size:11px;overflow-x:auto;max-height:240px;color:#f1f1f1;margin:0;">${escapeHtml(formatJsonForDisplay(log.before_data))}</pre>
+            </div>
+            <div style="flex:1;min-width:240px;">
+              <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">หลังเปลี่ยน (after)</div>
+              <pre style="background:rgba(0,0,0,.3);border-radius:6px;padding:10px;font-size:11px;overflow-x:auto;max-height:240px;color:#f1f1f1;margin:0;">${escapeHtml(formatJsonForDisplay(log.after_data))}</pre>
+            </div>
+          </div>
+        </details>
       </div>
     `;
 
@@ -696,6 +708,215 @@ const AUDIT_COLLECTION_LABELS = {
   discounts:   "ลดราคา",
   admins:      "แอดมิน",
 };
+
+// 🔧 (2026-09-22 fix Bug #2 UI v2): map field name → ป้ายภาษาไทย
+//   ใช้ใน generateHumanReadableSummary เพื่อแสดง diff ของการแก้ไขเป็นภาษาคนอ่านได้
+//   ฟิลด์ที่ไม่อยู่ใน map → แสดงชื่อเดิม (ภาษาอังกฤษ) ได้เลย
+const AUDIT_FIELD_LABELS = {
+  // common fields
+  song_name:         "ชื่อเพลง",
+  playlist_name:     "ชื่อเพลย์ลิสต์",
+  customer_name:     "ชื่อลูกค้า",
+  dj_name:           "ชื่อ DJ",
+  dj_id:             "DJ",
+  category_id:       "หมวดหมู่",
+  category_name:     "หมวดหมู่",
+  name:              "ชื่อ",
+  title:             "ชื่อเรื่อง",
+  description:       "คำอธิบาย",
+  price:             "ราคา",
+  total_price:       "ยอดรวม",
+  unit_price:        "ราคา/หน่วย",
+  quantity:          "จำนวน",
+  whatsapp:          "เบอร์ WhatsApp",
+  phone:             "เบอร์โทร",
+  email:             "อีเมล",
+  role:              "บทบาท",
+  status:            "สถานะ",
+  receipt_number:    "เลขใบเสร็จ",
+  cover_url:         "รูปปก",
+  preview_url:       "ไฟล์พรีวิว",
+  preview_start:     "จุดเริ่มพรีวิว",
+  preview_end:       "จุดจบพรีวิว",
+  full_file_url:     "ไฟล์เต็ม (WAV)",
+  file_url:          "ไฟล์",
+  notes:             "หมายเหตุ",
+  payment_method:    "วิธีชำระเงิน",
+  payment_slip_url:  "หลักฐานการโอน",
+  transferred_at:    "วันที่โอน",
+  confirmed_at:      "วันที่ยืนยัน",
+  rejected_at:       "วันที่ปฏิเสธ",
+  completed_at:      "วันที่เสร็จสิ้น",
+  cancelled_at:      "วันที่ยกเลิก",
+  created_at:        "วันที่สร้าง",
+  updated_at:        "วันที่อัปเดต",
+  zip_status:        "สถานะ ZIP",
+  zip_download_url:  "URL ดาวน์โหลด ZIP",
+  zip_created_at:    "วันที่สร้าง ZIP",
+  zip_expired_at:    "วันที่ ZIP หมดอายุ",
+  zip_file_name:     "ชื่อไฟล์ ZIP",
+  zip_public_id:     "ID ไฟล์ ZIP",
+  website_name:      "ชื่อเว็บไซต์",
+  website_logo:      "โลโก้เว็บ",
+  meta_description:  "คำอธิบายเว็บ (SEO)",
+  whatsapp_number:   "เบอร์ WhatsApp ร้าน",
+  bank_name:         "ชื่อธนาคาร",
+  bank_account:      "เลขบัญชี",
+  bank_account_name: "ชื่อบัญชี",
+  active:            "เปิดใช้งาน",
+  is_active:         "เปิดใช้งาน",
+  start_date:        "วันเริ่มต้น",
+  end_date:          "วันสิ้นสุด",
+  discount_percent:  "เปอร์เซ็นต์ลด",
+  discount_amount:   "ยอดลด",
+  min_songs:        "ขั้นต่ำจำนวนเพลง",
+  priority:          "ลำดับความสำคัญ",
+  display_name:      "ชื่อที่แสดง",
+  password_changed_at: "วันที่เปลี่ยนรหัสผ่าน",
+};
+
+// map ค่า status ของออเดอร์ → ภาษาไทย (ใช้ใน diff summary)
+const AUDIT_STATUS_LABELS = {
+  pending_verify: "รอตรวจสอบการโอน",
+  confirmed:      "ยืนยันแล้ว",
+  rejected:       "ปฏิเสธ",
+  completed:      "เสร็จสิ้น",
+  cancelled:      "ยกเลิก",
+  ready:          "พร้อมดาวน์โหลด",
+  expired:        "หมดอายุ",
+  failed:         "ล้มเหลว",
+};
+
+// ตัดสินใจว่าฟิลด์นี้ควรข้ามใน diff หรือไม่ (ฟิลด์ที่เปลี่ยนเองโดยระบบ/ไม่สำคัญต่อ audit)
+const AUDIT_IGNORED_FIELDS = new Set([
+  "updated_at",      // อัปเดตอัตโนมัติทุกครั้ง → ไม่สำคัญ
+  "zip_created_at",  // ตั้งโดย cron/ZIP flow → ไม่ใช่ action ของแอดมิน
+  "zip_expired_at",
+  "zip_public_id",
+  "zip_status",      // จะแสดงเป็น "สถานะ ZIP" อยู่แล้ว ถ้าเปลี่ยนจริงๆ
+]);
+
+// สร้างคำอธิบายแบบภาษาคน ๆ สำหรับ log 1 รายการ
+//   - สร้าง: "สร้างเพลงใหม่: เพลง A"
+//   - ลบ:    "ลบเพลง: เพลง A"
+//   - แก้ไข: "แก้ไขเพลง: เพลง A — เปลี่ยนชื่อเพลงจาก A เป็น B, เปลี่ยนราคาจาก 100 เป็น 200"
+//   - เปลี่ยนสถานะ: "เปลี่ยนสถานะออเดอร์: RCPT-xxx — จากรอตรวจสอบการโอน เป็น ยืนยันแล้ว"
+// ส่งกลับ HTML string (มี <strong> ครอบชื่อ target)
+function generateHumanReadableSummary(log) {
+  const collectionLabel = AUDIT_COLLECTION_LABELS[log.collection] || log.collection;
+  const targetName = log.target_name || log.target_id || "—";
+  const targetHtml = `<strong style="color:var(--text);">${escapeHtml(String(targetName).slice(0, 100))}</strong>`;
+
+  // กระทำ "สร้าง"
+  if (log.action === "create") {
+    return `สร้าง${collectionLabel}ใหม่: ${targetHtml}`;
+  }
+
+  // กระทำ "ลบ"
+  if (log.action === "delete") {
+    return `ลบ${collectionLabel}: ${targetHtml}`;
+  }
+
+  // กระทำ "แก้ไข" — แสดง diff ของฟิลด์ที่เปลี่ยน (ไม่ใช้ JSON ดิบ)
+  if (log.action === "update") {
+    const changes = computeDiff(log.before_data, log.after_data);
+    if (changes.length === 0) {
+      return `แก้ไข${collectionLabel}: ${targetHtml} <span style="color:var(--text-dim);">(ไม่มีการเปลี่ยนแปลงที่สำคัญ)</span>`;
+    }
+    // limit 5 changes แรก — กัน case ที่แก้ทุกฟิลด์จนประโยคยาวเกิน
+    const visible = changes.slice(0, 5);
+    const extra = changes.length > 5 ? ` และอีก ${changes.length - 5} รายการ` : "";
+    const changeSummary = visible.map(formatChange).join(" · ") + extra;
+    return `แก้ไข${collectionLabel}: ${targetHtml} — ${changeSummary}`;
+  }
+
+  // กระทำ "เปลี่ยนสถานะ" — ใช้ status labels
+  if (log.action === "status_change") {
+    const beforeStatus = log.before_data?.status;
+    const afterStatus = log.after_data?.status;
+    const beforeLabel = AUDIT_STATUS_LABELS[beforeStatus] || beforeStatus || "—";
+    const afterLabel = AUDIT_STATUS_LABELS[afterStatus] || afterStatus || "—";
+    return `เปลี่ยนสถานะ${collectionLabel}: ${targetHtml} — จาก <strong>${escapeHtml(beforeLabel)}</strong> เป็น <strong>${escapeHtml(afterLabel)}</strong>`;
+  }
+
+  // กระทำอื่นๆ (zip_create, zip_delete, upload)
+  const actionLabel = AUDIT_ACTION_LABELS[log.action] || log.action;
+  return `${actionLabel} ${collectionLabel}: ${targetHtml}`;
+}
+
+// คำนวณ diff ระหว่าง before กับ after — return array ของ { type, field, label, before, after }
+//   type: "changed" | "added" | "removed"
+//   ข้ามฟิลด์ที่อยู่ใน AUDIT_IGNORED_FIELDS + ฟิลด์ที่เป็น object/array ซ้อน (ยกเว้น items ที่จะแสดงสรุป)
+function computeDiff(before, after) {
+  if (!before || typeof before !== "object") return [];
+  if (!after || typeof after !== "object") return [];
+
+  const changes = [];
+  const allKeys = new Set([...Object.keys(before), ...Object.keys(after)]);
+
+  for (const key of allKeys) {
+    // ข้ามฟิลด์ที่ระบบอัปเดตเอง
+    if (AUDIT_IGNORED_FIELDS.has(key)) continue;
+
+    const beforeVal = before[key];
+    const afterVal = after[key];
+    const label = AUDIT_FIELD_LABELS[key] || key;
+
+    // กรณีเป็น array หรือ object ซ้อน → ข้าม (ยกเว้น items ของ order)
+    //   จริง ๆ ควรแสดง "จำนวนเพลงในออเดอร์เปลี่ยนจาก X เป็น Y"
+    if (key === "items" && Array.isArray(beforeVal) && Array.isArray(afterVal)) {
+      const beforeCount = beforeVal.length;
+      const afterCount = afterVal.length;
+      if (beforeCount !== afterCount) {
+        changes.push({ type: "changed", field: key, label: "จำนวนเพลงในออเดอร์", before: `${beforeCount} เพลง`, after: `${afterCount} เพลง` });
+      }
+      continue;
+    }
+
+    // ข้ามฟิลด์ที่เป็น object/array ซ้อน (ยากต่อการแสดงใน 1 บรรทัด)
+    if ((beforeVal && typeof beforeVal === "object") || (afterVal && typeof afterVal === "object")) {
+      continue;
+    }
+
+    if (beforeVal === undefined && afterVal !== undefined) {
+      changes.push({ type: "added", field: key, label, before: null, after: afterVal });
+    } else if (beforeVal !== undefined && afterVal === undefined) {
+      changes.push({ type: "removed", field: key, label, before: beforeVal, after: null });
+    } else if (String(beforeVal) !== String(afterVal)) {
+      // กรณีเป็น status → แปลเป็นภาษาไทย
+      const beforeDisplay = (key === "status" && AUDIT_STATUS_LABELS[beforeVal]) ? AUDIT_STATUS_LABELS[beforeVal] : beforeVal;
+      const afterDisplay = (key === "status" && AUDIT_STATUS_LABELS[afterVal]) ? AUDIT_STATUS_LABELS[afterVal] : afterVal;
+      changes.push({ type: "changed", field: key, label, before: beforeDisplay, after: afterDisplay });
+    }
+  }
+
+  return changes;
+}
+
+// จัดรูปแบบ change 1 รายการเป็นประโยคไทย
+//   - changed: "เปลี่ยนชื่อเพลงจาก A เป็น B"
+//   - added:   "เพิ่มราคา: 200"
+//   - removed: "ลบหมายเหตุ (เดิม: xxx)"
+function formatChange(change) {
+  const label = change.label;
+  const beforeStr = change.before == null ? "" : String(change.before);
+  const afterStr = change.after == null ? "" : String(change.after);
+
+  // ตัดค่าที่ยาวเกิน 50 ตัวอักษร (เช่น URL รูปปก) เพื่อกันประโยคยาวเกิน
+  const trimVal = (v) => v.length > 50 ? v.slice(0, 50) + "..." : v;
+
+  if (change.type === "changed") {
+    return `เปลี่ยน<em style="color:var(--text-dim);font-style:normal;">${escapeHtml(label)}</em>จาก "${escapeHtml(trimVal(beforeStr))}" เป็น "${escapeHtml(trimVal(afterStr))}"`;
+  }
+  if (change.type === "added") {
+    return `เพิ่ม<em style="color:var(--text-dim);font-style:normal;">${escapeHtml(label)}</em>: "${escapeHtml(trimVal(afterStr))}"`;
+  }
+  if (change.type === "removed") {
+    return `ลบ<em style="color:var(--text-dim);font-style:normal;">${escapeHtml(label)}</em> (เดิม: "${escapeHtml(trimVal(beforeStr))}")`;
+  }
+  return "";
+}
+
 
 // 🔧 (2026-09-17 Phase 1): loadDashboard ใช้ TTL cache ลด D1 reads
 //   - ถ้า CACHE ของ collection ยัง fresh (60 วิ) → skip fetch ใช้ cache
