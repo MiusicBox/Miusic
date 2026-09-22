@@ -574,13 +574,13 @@ function renderAuditLog(logs) {
         <span class="audit-expand-icon" style="color:var(--text-dim);font-size:18px;flex-shrink:0;">▸</span>
       </div>
       <div class="audit-row-detail" style="display:none;padding:12px 14px 14px;border-top:1px dashed rgba(255,255,255,.08);">
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
-          <span style="display:inline-block;margin-right:12px;">📌 ID: <code style="background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px;">${escapeHtml(String(log.target_id || "—").slice(0, 50))}</code></span>
-          <span style="display:inline-block;margin-right:12px;">👤 admin_id: <code style="background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px;">${escapeHtml(log.admin_id || "—")}</code></span>
-          <span style="display:inline-block;">🔢 log_id: <code style="background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px;">${escapeHtml(String(log.id))}</code></span>
-        </div>
         <details style="margin-top:8px;">
           <summary style="font-size:12px;font-weight:700;color:var(--text-dim);cursor:pointer;user-select:none;padding:4px 0;">📋 ดูข้อมูลดิบ (JSON)</summary>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:8px;margin-bottom:8px;">
+            <div>📌 ID: <code style="background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px;">${escapeHtml(String(log.target_id || "—").slice(0, 50))}</code></div>
+            <div style="margin-top:4px;">👤 admin_id: <code style="background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px;">${escapeHtml(log.admin_id || "—")}</code></div>
+            <div style="margin-top:4px;">🔢 log_id: <code style="background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px;">${escapeHtml(String(log.id))}</code></div>
+          </div>
           <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
             <div style="flex:1;min-width:240px;">
               <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">ก่อนเปลี่ยน (before)</div>
