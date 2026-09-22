@@ -4370,3 +4370,77 @@ html.admin-page body {
   }
 }
 
+/* ============================================================
+   🔧 (2026-09-22 fix Bug #2 UI): Audit Log — styling สำหรับหน้า "ประวัติร้าน"
+   ------------------------------------------------------------
+   - .audit-log-row      : การ์ดรายการ log แต่ละ row (border + hover + radius)
+   - .audit-action-pill  : ป้ายสีเขียว/เหลือง/แดง สำหรับ create/update/delete
+   - .audit-row-main     : ส่วนที่คลิกได้ (toggle expand)
+   - .audit-row-detail   : ส่วน expand เมื่อกด (เก็บ before/after JSON)
+   - ใช้ border-radius/border สีอ่อน เพื่อกลมกลืนกับ dark theme เดิม
+   ขอบเขต: ใช้เฉพาะใน #view-auditlog (admin.html เท่านั้น)
+   ============================================================ */
+#view-auditlog .audit-log-row {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  margin-bottom: 8px;
+  overflow: hidden;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+#view-auditlog .audit-log-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+#view-auditlog .audit-action-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 60px;
+  text-align: center;
+}
+#view-auditlog .audit-action-create {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+#view-auditlog .audit-action-update {
+  background: rgba(234, 179, 8, 0.15);
+  color: #facc15;
+  border: 1px solid rgba(234, 179, 8, 0.35);
+}
+#view-auditlog .audit-action-delete {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+#view-auditlog .audit-action-status_change,
+#view-auditlog .audit-action-zip_create,
+#view-auditlog .audit-action-zip_delete,
+#view-auditlog .audit-action-upload,
+#view-auditlog .audit-action-other {
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+}
+/* responsive: บนมือถือ (<= 480px) filter bar ใช้ 1 คอลัมน์ + ป้าย action เล็กลง */
+@media (max-width: 480px) {
+  #view-auditlog .audit-log-filters {
+    grid-template-columns: 1fr !important;
+  }
+  #view-auditlog .audit-action-pill {
+    font-size: 11px;
+    padding: 3px 8px;
+    min-width: 50px;
+  }
+  #view-auditlog .audit-row-main {
+    padding: 10px 12px !important;
+  }
+}
+
