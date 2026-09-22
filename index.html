@@ -1,738 +1,1052 @@
 <!DOCTYPE html>
-<html lang="th" class="store-page">
+<html lang="th" class="admin-page">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
-<title>Music Store</title>
+<!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): noindex meta — กัน Google index หน้า admin -->
+<meta name="robots" content="noindex, nofollow">
+<title>Admin - Music Store</title>
+<link rel="stylesheet" href="style.css?v=20260922-batch10">
 
-<!-- 🔧 (2026-09-22 Batch 7 fix Bug #15): Open Graph tags สำหรับแชร์ Facebook/Line -->
-<!--   ปัญหา: แชร์ URL ใน Line/Facebook → แสดงแค่ URL ไม่มีรูป preview
-     วิธีแก้: เพิ่ม meta tags og:title, og:description, og:image, og:url
-     ผลกระทบ: แชร์เว็บใน social → แสดง title + รูป + description สวยงาม → คนคลิกเยอะขึ้น -->
-<!-- Open Graph tags จะถูกอัปเดตจาก settings.website_name + settings.meta_description + settings.website_logo ตอน init() รันใน app-user.js -->
-<meta property="og:type" content="website">
-<meta property="og:title" content="Music Store — ร้านเพลงออนไลน์">
-<meta property="og:description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
-<meta property="og:url" content="">
-<meta property="og:image" content="default-song-cover.svg">
-<meta property="og:site_name" content="Music Store">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Music Store — ร้านเพลงออนไลน์">
-<meta name="twitter:description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
-<meta name="twitter:image" content="default-song-cover.svg">
-
-<!-- 🔧 (2026-09-22 fix): Favicon — แสดง icon ในแท็บ browser -->
-<link rel="icon" type="image/svg+xml" href="default-song-cover.svg">
-<link rel="apple-touch-icon" href="default-song-cover.svg">
-
-<!-- 🔧 (2026-09-22 fix): Canonical URL — กัน Google index ซ้ำ (เช่น http vs https) -->
-<link rel="canonical" href="https://miusic-store.dj-remix.workers.dev/">
-
-<!-- 🔧 (2026-09-22 fix): JSON-LD Structured Data — บอก Google ว่าเว็บนี้คือร้านค้า -->
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "Store",
-  "name": "Music Store",
-  "description": "ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp",
-  "url": "https://miusic-store.dj-remix.workers.dev/",
-  "image": "default-song-cover.svg",
-  "priceRange": "LAK",
-  "paymentAccepted": "Cash, Bank Transfer",
-  "currenciesAccepted": "LAK"
-}
-</script>
-
-<!-- 🎨 (2026-09-20) Google Fonts: Mali (ตัวทำมะดา สำหรับชื่อเพลง) + Bai Jamjuree (ตัวหนา สำหรับหัวเพลย์ลิสต์) -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Mali:wght@400;700&family=Bai+Jamjuree:wght@400;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260922-reduced-motion">
-
-<!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): เพิ่ม .visually-hidden class สำหรับ h1 SEO -->
-<style>
-  .visually-hidden {
-    position: absolute !important;
-    width: 1px !important;
-    height: 1px !important;
-    padding: 0 !important;
-    margin: -1px !important;
-    overflow: hidden !important;
-    clip: rect(0,0,0,0) !important;
-    white-space: nowrap !important;
-    border: 0 !important;
-  }
-</style>
-
-<style>
-  /* โครงสร้าง Cart เดิมที่ app-cart.js ใช้งาน — คงไว้ในหน้า User */
-  .cart-toggle-wrap { position:relative; margin-left:auto; display:flex; align-items:center; gap:8px; flex-shrink:0; flex-wrap:nowrap; }
-  .cart-toggle-btn { position:relative; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
-  .cart-icon-svg { width:26px; height:26px; flex-shrink:0; }
-  .cart-badge {
-    position:absolute; top:-3px; right:-3px;
-    min-width:19px; height:19px; padding:0 4px;
-    border-radius:999px;
-    background:linear-gradient(135deg, var(--danger,#ff6b6b), #ff3b30);
-    color:#fff; font-size:10.5px; line-height:19px; font-weight:800;
-    text-align:center; border:2px solid var(--surface,#131722);
-    box-shadow:0 2px 6px rgba(0,0,0,.35);
-    pointer-events:none;
-  }
-  .cart-modal { max-width:560px; }
-  .cart-items { display:flex; flex-direction:column; gap:8px; max-height:48vh; overflow:auto; }
-  .cart-item { display:grid; grid-template-columns:48px minmax(0,1fr) auto auto; gap:10px; align-items:center; padding:9px; border:1px solid rgba(255,255,255,.1); border-radius:10px; }
-  .cart-item-cover { width:48px; height:48px; border-radius:8px; object-fit:cover; background:rgba(255,255,255,.06); }
-  .cart-item-info { min-width:0; }
-  .cart-item-name { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .cart-item-meta { color:var(--text-dim); font-size:12px; margin-top:3px; }
-  .cart-item-total { font-weight:800; white-space:nowrap; }
-  .cart-remove { border:0; background:transparent; color:var(--danger); cursor:pointer; padding:6px; }
-  .cart-empty { text-align:center; padding:24px 8px; color:var(--text-dim); }
-  .cart-summary { margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,.1); }
-  .cart-summary-row { display:flex; justify-content:space-between; gap:12px; margin:5px 0; }
-  .cart-actions { display:flex; gap:8px; margin-top:14px; }
-  .cart-actions > * { flex:1; }
-  .cart-feedback { min-height:20px; margin-top:8px; font-size:13px; }
-  /* รายการเพลงภายใน Playlist ที่แสดงในตะกร้า (ดูอย่างเดียว ไม่คิดราคาแยก) */
-  .cart-item-viewsongs { grid-column:1 / -1; border:0; background:transparent; color:var(--accent-2); font-size:12px; text-align:left; padding:2px 0 0; cursor:pointer; }
-  .cart-item-songs { grid-column:1 / -1; display:none; flex-direction:column; gap:3px; margin-top:4px; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,.05); }
-  .cart-item-songs.is-open { display:flex; }
-  .cart-item-songs-row { font-size:12px; color:var(--text-dim); }
-  @media (max-width:480px) {
-    .cart-item { grid-template-columns:42px minmax(0,1fr) auto; }
-    .cart-item-cover { width:42px; height:42px; }
-    .cart-item-total { grid-column:2; }
-    .cart-remove { grid-column:3; grid-row:1 / span 2; }
-  }
-
-  /* ---- popup รายละเอียดเพลง (ฝั่ง user) — ปรับใหม่ให้เหมือนฝั่ง admin ---- */
-  /* เพิ่มใหม่: ไม่แตะ CSS เดิม ใช้คลาส scope ภายใน #songModalBackdrop เท่านั้น */
-  #songModalBackdrop .modal { max-width: 440px; }
-  #songModalBackdrop .modal-header { padding-bottom: 10px; }
-  #modalHead { display:flex; gap:12px; align-items:flex-start; margin-bottom:12px; }
-  #modalCoverWrap {
-    width:80px; height:80px; flex-shrink:0; position:relative;
-    overflow:hidden; border-radius:10px; background:rgba(255,255,255,.04);
-  }
-  #modalCover { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; }
-  #modalInfo { flex:1; min-width:0; }
-  #modalName {
-    margin:0 0 2px; font-size:16px; font-weight:800; line-height:1.3;
-    overflow:hidden; text-overflow:ellipsis; display:-webkit-box;
-    -webkit-line-clamp:2; -webkit-box-orient:vertical;
-  }
-  #modalArtist {
-    color:var(--text-dim); font-size:13px; margin-bottom:6px;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-  }
-  #modalBadges { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px; }
-  #modalBadges .badge {
-    display:inline-flex; align-items:center; gap:3px;
-    padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600;
-    background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); color:var(--text);
-  }
-  #modalBadges .badge.dj { color:var(--accent-2, #61dafb); }
-  #modalPrice { font-size:16px; font-weight:800; color:var(--success, #28c76f); margin-top:2px; }
-  #modalDesc {
-    font-size:12px; color:var(--text-dim); margin-bottom:12px; line-height:1.5;
-    max-height:60px; overflow-y:auto; padding:8px 10px;
-    background:rgba(255,255,255,.03); border-radius:8px;
-  }
-  #modalDesc:empty { display:none; }
-
-  /* Player ภายใน popup — เหมือนฝั่ง admin */
-  #modalPlayer {
-    display:flex; flex-direction:column; gap:10px;
-    padding-top:10px; border-top:1px solid rgba(255,255,255,.08);
-  }
-  #modalSeekWrap { display:flex; align-items:center; gap:8px; }
-  #modalSeek {
-    flex:1; -webkit-appearance:none; appearance:none; height:4px;
-    background:rgba(255,255,255,.12); border-radius:999px; outline:none; cursor:pointer;
-  }
-  #modalSeek::-webkit-slider-thumb {
-    -webkit-appearance:none; appearance:none; width:14px; height:14px;
-    border-radius:50%; background:var(--accent, #7a5cff); cursor:pointer; border:0;
-  }
-  #modalSeek::-moz-range-thumb {
-    width:14px; height:14px; border-radius:50%; background:var(--accent, #7a5cff);
-    cursor:pointer; border:0;
-  }
-  #modalCurrTime, #modalDurTime {
-    font-size:11px; color:var(--text-dim); font-variant-numeric:tabular-nums;
-    min-width:32px; text-align:center;
-  }
-
-  /* ปุ่มกระโดดช่วงเพลง — เหมือนฝั่ง admin (3 ปุ่ม) */
-  #modalJumpRow {
-    display:flex; gap:6px; align-items:center; justify-content:center;
-  }
-  .modal-jump-btn {
-    flex:1; display:flex; flex-direction:column; align-items:center; gap:2px;
-    padding:7px 4px; font-size:10px; font-weight:600;
-    background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12);
-    border-radius:9px; color:var(--text-dim); cursor:pointer;
-    transition:background .15s, color .15s, border-color .15s;
-  }
-  .modal-jump-btn:hover { background:rgba(255,255,255,.08); color:var(--text); }
-  .modal-jump-btn.active {
-    background:rgba(122,92,255,.16); border-color:var(--accent, #7a5cff); color:#fff;
-  }
-  .modal-jump-btn .modal-jump-ico { font-size:14px; line-height:1; }
-  .modal-jump-btn:disabled { opacity:.4; cursor:not-allowed; }
-
-  /* ปุ่มเล่นหลัก (เด่น) — เหมือนฝั่ง admin */
-  #songModalBackdrop #modalPlayBtn {
-    width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
-    padding:11px; font-size:14px; font-weight:700; border-radius:10px;
-    background:var(--accent, #7a5cff); color:#fff; border:0; cursor:pointer;
-  }
-  #modalPlayBtn:disabled { opacity:.5; cursor:not-allowed; }
-  #modalPlayBtn .spinner { display:none; width:16px; height:16px; border-width:2px; }
-  #modalPlayBtn.loading .spinner { display:inline-block; }
-  #modalPlayBtn.loading #modalPlayIconWrap,
-  #modalPlayBtn.loading #modalPlayLabel { display:none; }
-
-  /* ปุ่มเพิ่มเข้าตะกร้า — สีเขียว (ต่างจากปุ่มเล่นที่เป็นสีม่วง) */
-  #songModalBackdrop #modalBuyBtn {
-    width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
-    padding:11px; font-size:14px; font-weight:700; border-radius:10px;
-    background:var(--success, #28c76f); color:#fff; border:0; cursor:pointer;
-    margin-top:8px;
-  }
-
-  /* 🔧 (2026-09-20 popup buttons): แต่งปุ่มใน popup รายละเอียดเพลงให้สวยเหมือนปุ่มด้านนอก — เปลี่ยนเฉพาะสีตัวอักษร/สีพื้นหลัง/ขอบ/เงา
-     ข้อความ ไอคอน ขนาด และการทำงาน (onclick, หยุดเพลง/กำลังโหลด) เหมือนเดิมทุกอย่าง
-     - ปุ่มฟังเพลง       = สไตล์ชมพู เหมือนปุ่ม "ซื้อทั้งเพลย์ลิสต์"
-     - ปุ่มเพิ่มเข้าตะกร้า = สไตล์เขียว เหมือนปุ่ม "เพิ่มลงตะกร้า" ด้านนอก */
-  #songModalBackdrop #modalPlayBtn {
-    background:linear-gradient(135deg, rgba(236,72,153,.25), rgba(236,72,153,.15));
-    border:1px solid rgba(236,72,153,.4);
-    color:#ec4899;
-    box-shadow:0 4px 14px rgba(236,72,153,.3);
-    transition:all .2s ease;
-  }
-  #songModalBackdrop #modalPlayBtn:hover:not(:disabled) {
-    transform:translateY(-1px);
-    background:linear-gradient(135deg, rgba(236,72,153,.35), rgba(236,72,153,.25));
-    box-shadow:0 6px 18px rgba(236,72,153,.45);
-  }
-  #modalPlayBtn .spinner { border-color:rgba(236,72,153,.25); border-top-color:#ec4899; }
-  #songModalBackdrop #modalBuyBtn {
-    background:linear-gradient(135deg, rgba(74,222,128,.25), rgba(34,197,94,.15));
-    border:1px solid rgba(74,222,128,.4);
-    color:#4ade80;
-    box-shadow:0 4px 14px rgba(74,222,128,.3);
-    transition:all .2s ease;
-  }
-  #songModalBackdrop #modalBuyBtn:hover {
-    transform:translateY(-1px);
-    background:linear-gradient(135deg, rgba(74,222,128,.35), rgba(34,197,94,.25));
-    box-shadow:0 6px 18px rgba(74,222,128,.45);
-  }
-  #modalMetaLine {
-    font-size:11px; color:var(--text-dim); text-align:center; line-height:1.5;
-  }
-
-  /* ---- เพิ่มใหม่: ปุ่ม + popup ติดตามออเดอร์ (ฝั่งลูกค้า) — ไม่แตะระบบเดิม ใช้คลาส .modal/.field เดิม ---- */
-  .track-order-btn { position:relative; margin-right:6px; font-size:26px; line-height:1; }
-  .track-order-modal .track-order-intro { color:var(--text-dim); font-size:13px; margin-top:0; margin-bottom:16px; }
-  .track-order-result { margin-top:6px; padding-top:14px; border-top:1px solid rgba(255,255,255,.1); }
-  .track-order-status {
-    display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:999px;
-    font-size:12.5px; font-weight:700; margin-bottom:14px;
-  }
-  .track-order-row { display:flex; justify-content:space-between; gap:12px; margin:6px 0; font-size:13.5px; }
-  .track-order-row span:first-child { color:var(--text-dim); }
-  .track-order-items { display:flex; flex-direction:column; gap:6px; margin:10px 0; max-height:38vh; overflow:auto; }
-  .track-order-item { display:flex; justify-content:space-between; gap:10px; font-size:13px; padding:8px 10px; border:1px solid rgba(255,255,255,.08); border-radius:9px; }
-  .track-order-item-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .track-order-item-price { white-space:nowrap; color:var(--text-dim); }
-  .track-order-total { margin-top:8px; padding-top:10px; border-top:1px solid rgba(255,255,255,.1); display:flex; justify-content:space-between; font-weight:800; font-size:15px; }
-  .track-order-actions { display:flex; gap:8px; margin-top:16px; }
-  .track-order-actions > * { flex:1; }
-
-  /* ---- เพิ่มใหม่: สลับโหมด + ลิสต์ออเดอร์ทั้งหมดของลูกค้า (เรียลไทม์) — ต่อยอดโมดัลติดตามออเดอร์เดิม ---- */
-  .track-order-mode-switch { display:flex; gap:6px; margin-bottom:16px; background:rgba(255,255,255,.05); border-radius:11px; padding:4px; }
-  .track-order-mode-btn {
-    flex:1; border:0; background:transparent; color:var(--text-dim); font-size:12.5px; font-weight:700;
-    padding:8px 6px; border-radius:8px; cursor:pointer; transition:background .15s,color .15s;
-  }
-  .track-order-mode-btn.active { background:var(--accent); color:#fff; }
-  .track-order-all-list { display:flex; flex-direction:column; gap:8px; margin-top:14px; max-height:50vh; overflow:auto; }
-  .track-order-all-card {
-    display:flex; flex-direction:column; gap:6px; padding:12px; border:1px solid var(--border);
-    border-radius:11px; background:rgba(255,255,255,.03); cursor:pointer; text-align:left;
-  }
-  .track-order-all-card-top { display:flex; justify-content:space-between; align-items:center; gap:10px; }
-  .track-order-all-card-id { font-size:12.5px; font-weight:700; color:var(--text-dim); }
-  .track-order-all-card-status { font-size:11.5px; font-weight:700; padding:3px 10px; border-radius:999px; white-space:nowrap; }
-  .track-order-all-card-bottom { display:flex; justify-content:space-between; gap:10px; font-size:13px; color:var(--text-dim); }
-  .track-order-all-empty { text-align:center; color:var(--text-dim); font-size:13px; padding:20px 0; }
-
-  /* ---- เพิ่มใหม่: ใบเสร็จหลังสั่งซื้อ (ฝั่งลูกค้า) — คัดลอกสไตล์ .receipt-* จาก admin.html ให้เหมือนกันทุกประการ ---- */
-  #receiptBackdrop .receipt-paper {
-    background:#fff; color:#171717; border-radius:12px; padding:22px; max-width:460px; margin:auto;
-  }
-  #receiptBackdrop .receipt-head { text-align:center; border-bottom:1px dashed #bbb; padding-bottom:14px; }
-  #receiptBackdrop .receipt-head h2 { margin:0 0 4px; font-size:21px; }
-  #receiptBackdrop .receipt-head small { display:block; color:#666; margin-top:3px; }
-  #receiptBackdrop .receipt-customer { padding:14px 0; border-bottom:1px solid #e5e5e5; }
-  #receiptBackdrop .receipt-customer div { display:flex; justify-content:space-between; gap:12px; margin:4px 0; }
-  #receiptBackdrop .receipt-customer span { color:#666; }
-  #receiptBackdrop .receipt-items { padding:10px 0; }
-  #receiptBackdrop .receipt-line { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid #eee; }
-  #receiptBackdrop .receipt-line small { display:block; color:#666; margin-top:3px; }
-  #receiptBackdrop .receipt-total { display:flex; justify-content:space-between; padding-top:14px; font-size:18px; }
-  #receiptBackdrop .receipt-thanks { text-align:center; color:#666; margin-top:20px; font-size:12px; }
-  #receiptBackdrop .receipt-empty { color:#666; text-align:center; padding:12px; }
-
-  /* ---- เพิ่มใหม่: แถบเตือน "ยังไม่ได้แจ้งแอดมิน" ค้างไว้จนกว่าจะกดแจ้งสำเร็จ ---- */
-  .pending-order-banner {
-    position:fixed; left:12px; right:12px; bottom:calc(64px + var(--safe-bottom) + 8px);
-    z-index:60; display:flex; align-items:center; gap:10px;
-    background:rgba(245,180,0,.16); border:1px solid #F5B400; backdrop-filter:blur(10px);
-    border-radius:12px; padding:10px 12px; box-shadow:0 4px 16px rgba(0,0,0,.3);
-  }
-  .pending-order-banner[hidden] { display:none; }
-  .pending-order-banner-text { flex:1; font-size:12.5px; line-height:1.4; color:var(--text); }
-  .pending-order-banner-actions { display:flex; align-items:center; gap:6px; }
-  .pending-order-banner-btn {
-    background:#F5B400; color:#171717; border:0; border-radius:8px; padding:8px 12px;
-    font-size:12.5px; font-weight:800; white-space:nowrap; cursor:pointer;
-  }
-  .pending-order-banner-dismiss {
-    background:transparent; border:0; color:var(--text-dim); font-size:16px; padding:4px 6px; cursor:pointer;
-  }
-</style>
-
-<!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): html2canvas เป็น regular script (ไม่ใช่ dynamic import)
-     เดิม: app-cart.js ใช้ `await import("https://esm.sh/html2canvas@1.4.1")` ทุกครั้งที่สร้างใบเสร็จ
-            → ถ้า esm.sh ล่ม → ลูกค้าไม่มีใบเสร็จ
-            → ถ้าเน็ตช้า → โหลดช้าทุกครั้งที่สร้าง
-     ใหม่: โหลดครั้งเดียวตอน page load → cache ไว้ใน window.html2canvas
-            → เร็วขึ้น + ถ้า CDN ล่ม → page load error ตั้งแต่แรก (รู้ชัดเจน)
-            → ใช้ jsdelivr CDN (UMD version) แทน esm.sh (ESM version)
-     ผลกระทบระบบเดิม: 0% — app-cart.js จะใช้ window.html2canvas ถ้ามี, fallback ไป dynamic import ถ้าไม่มี
-     fallback: ถ้า window.html2canvas undefined (CDN ไม่โหลด) → ใช้ dynamic import เดิม -->
+<!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): html2canvas regular script (เหมือน index.html)
+     เดิม: orders.js ใช้ dynamic import ทุกครั้ง → ช้า + พังถ้า CDN ล่ม
+     ใหม่: โหลดครั้งเดียวตอน page load → cache ใน window.html2canvas -->
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer
   onerror="console.warn('html2canvas CDN failed to load — will fallback to dynamic import');"></script>
 </head>
 <body>
-<!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): h1 สำหรับ SEO (hidden visually, visible to crawlers) -->
-<h1 class="visually-hidden" id="seoH1">Music Store — ร้านเพลงออนไลน์ ฟังเพลง ซื้อเพลง ส่งทาง WhatsApp</h1>
 
-  <div class="topbar">
-    <div class="topbar-inner">
-      <div class="logo">
-        <img id="siteLogo" src="" alt="logo" style="display:none;">
-        <span id="siteName">Music Store</span>
-      </div>
-      <div class="cart-toggle-wrap">
-        <button class="icon-btn track-order-btn" id="trackOrderBtn" type="button" aria-label="ติดตามออเดอร์">
-          📦
-          <span id="trackOrderBadge" class="cart-badge" hidden>0</span>
-        </button>
-        <button class="icon-btn cart-toggle-btn" id="cartToggleBtn" type="button" aria-label="เปิดตะกร้าสินค้า">
-          <svg class="cart-icon-svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
-          <span id="cartBadge" class="cart-badge" hidden>0</span>
-        </button>
-      </div>
+  <div class="login-screen" id="loginScreen">
+    <div class="login-card">
+      <h2 id="loginTitle">เข้าสู่ระบบ Admin</h2>
+      <p id="loginSubtitle">สำหรับผู้ดูแลระบบเท่านั้น</p>
+      <!-- เพิ่มใหม่ (2026-09-11): แสดงเฉพาะตอนยังไม่มีแอดมินในระบบเลย (แทนขั้นตอนสร้างบัญชีผ่าน Firebase Console เดิม) -->
+      <div class="field" id="loginDisplayNameField" style="display:none;"><label>ชื่อที่แสดง</label><input id="loginDisplayName" type="text" autocomplete="name"></div>
+      <div class="field"><label>อีเมล</label><input id="loginEmail" type="email" autocomplete="username"></div>
+      <div class="field"><label>รหัสผ่าน</label><input id="loginPassword" type="password" autocomplete="current-password"></div>
+      <button class="btn" id="loginBtn">เข้าสู่ระบบ</button>
+      <div id="loginError" style="color:var(--danger);font-size:13px;margin-top:10px;"></div>
     </div>
-    <div class="container" style="padding-bottom:10px;">
-      <div class="search-box">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
-        <input id="searchInput" placeholder="ค้นหาเพลง...">
-      </div>
-    </div>
-    <div class="chip-row" id="categoryChips"></div>
   </div>
 
-  <!-- 🎁 (2026-09-20) แบนเนอร์โปรโมชั่นเด่น บนหน้าแรก — สไตล์ J: CYBERPUNK
-       ซ่อน/แสดงผ่าน app-user.js: renderPromotionBanner() → แสดงเฉพาะตอนที่มีโปร active
-       กดที่แบนเนอร์ → สลับไปหน้าโปรโมชั่นเต็ม (#promotionsView) -->
-  <div class="promo-home-banner" id="promoHomeBanner" hidden>
-    <div class="promo-home-banner-inner">
-      <div class="promo-home-banner-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+  <div class="admin-shell" id="adminShell" style="display:none;">
+    <div class="topbar">
+      <div class="topbar-inner">
+        <div class="logo"><span>⚙️ Admin — <span id="adminSiteName">Music Store</span></span></div>
+        <button class="icon-btn" id="changePasswordBtn" style="margin-left:auto;" title="เปลี่ยนรหัสผ่านของฉัน">🔑</button>
+        <button class="icon-btn" id="logoutBtn">⎋</button>
       </div>
-      <div class="promo-home-banner-text">
-        <div class="promo-home-banner-label">⚡ โปรโมชั่นพิเศษ</div>
-        <div class="promo-home-banner-title" id="promoHomeBannerTitle">—</div>
-        <div class="promo-home-banner-meta">
-          <span class="promo-home-banner-discount" id="promoHomeBannerDiscount">—</span>
-          <span class="promo-home-banner-countdown" id="promoHomeBannerCountdown">—</span>
+    </div>
+
+    <div id="view-dashboard" class="view">
+      <div class="stat-grid">
+        <div class="stat-card"><div class="num" id="statSongs">0</div><div class="label">เพลงทั้งหมด</div></div>
+        <div class="stat-card"><div class="num" id="statCats">0</div><div class="label">หมวดหมู่</div></div>
+        <div class="stat-card"><div class="num" id="statDjs">0</div><div class="label">DJ</div></div>
+        <div class="stat-card"><div class="num" id="statPlaylists">0</div><div class="label">เพลย์ลิสต์</div></div>
+      </div>
+      <div class="quick-actions">
+        <button id="qaAddSong">➕<br>เพิ่มเพลง</button>
+        <button id="qaManageSongs">🎵<br>จัดการเพลง</button>
+        <button id="qaManagePlaylists">🎶<br>จัดการเพลย์ลิสต์</button>
+        <button id="qaBulkUpload">📦<br>เพิ่มเพลงหลายไฟล์</button>
+        <button id="qaManageCats">🗂️<br>จัดการหมวดหมู่</button>
+        <button id="qaManageDjs">🎧<br>จัดการ DJ</button>
+        <button id="qaOrders">🧾<br>จัดการออเดอร์<span class="badge" id="ordersBadge">0</span></button>
+        <button id="qaDiscounts">🏷️<br>ลดราคา</button>
+        <button id="qaPromotions">🎁<br>โปรโมชั่น</button>
+        <button id="qaSettings">🔧<br>ตั้งค่าเว็บไซต์</button>
+        <button id="qaManageAdmins" style="display:none;">👤<br>จัดการแอดมิน</button>
+        <button id="qaAuditLog">📜<br>ประวัติร้าน</button>
+      </div>
+    </div>
+
+    <div id="view-songs" class="view" style="display:none;">
+      <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
+        <button class="icon-btn back-btn">←</button>
+        <div class="search-box" style="flex:1;"><input id="songSearch" placeholder="ค้นหาเพลง..."></div>
+        <button class="icon-btn" id="songSelectModeBtn" title="เลือกหลายเพลง">☑️</button>
+        <button class="icon-btn" id="addSongBtn" style="background:var(--accent);color:#fff;">＋</button>
+      </div>
+      <div id="songBulkBar" style="display:none;padding:0 16px 10px;align-items:center;justify-content:space-between;gap:10px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim);">
+          <input type="checkbox" id="songSelectAllChk"> เลือกทั้งหมด
+        </label>
+        <span id="songSelectedCount" style="font-size:13px;color:var(--text-dim);">เลือกแล้ว 0 เพลง</span>
+        <button class="btn danger" id="songBulkDeleteBtn" style="padding:8px 14px;font-size:13px;" disabled>ลบที่เลือก</button>
+      </div>
+      <div id="songList"></div>
+    </div>
+
+    <div id="view-categories" class="view" style="display:none;">
+      <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
+        <button class="icon-btn back-btn">←</button>
+        <div style="flex:1;font-weight:800;">จัดการหมวดหมู่</div>
+        <button class="icon-btn" id="addCatBtn" style="background:var(--accent);color:#fff;">＋</button>
+      </div>
+      <div id="catList"></div>
+    </div>
+
+    <div id="view-djs" class="view" style="display:none;">
+      <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
+        <button class="icon-btn back-btn">←</button>
+        <div style="flex:1;font-weight:800;">จัดการ DJ</div>
+        <button class="icon-btn" id="addDjBtn" style="background:var(--accent);color:#fff;">＋</button>
+      </div>
+      <div id="djList"></div>
+    </div>
+
+    <div id="view-playlists" class="view" style="display:none;">
+      <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
+        <button class="icon-btn back-btn">←</button>
+        <div style="flex:1;font-weight:800;">จัดการเพลย์ลิสต์</div>
+        <button class="icon-btn" id="addPlaylistBtn" style="background:var(--accent);color:#fff;">＋</button>
+      </div>
+      <div id="playlistList"></div>
+    </div>
+
+    <!-- ===================== ORDERS VIEW (ใหม่) ===================== -->
+    <style>
+      /* 🔧 (2026-09-20 orders stats width fix): ให้การ์ดสถิติหน้า "จัดการออเดอร์" ยืดเต็มความกว้างเท่าปุ่ม "สร้างออเดอร์ใหม่" */
+      /*   สาเหตุ: .stat-grid ใน style.css กำหนด 3 คอลัมน์ แต่หน้านี้ใช้แค่ 2 คอลัมน์ (การ์ดคู่ + การ์ด span 2) → คอลัมน์ที่ 3 ว่าง */
+      /*   วิธีแก้: ใช้ selector #view-orders (เฉพาะหน้านี้) บังคับ 2 คอลัมน์ + ตัด padding ซ้อน ให้ขอบซ้าย-ขวาตรงกับปุ่ม */
+      /*   ผลกระทบต่อระบบเดิม: 0% — ไม่แตะ .stat-grid ใน style.css (หน้าแดชบอร์ดยังเหมือนเดิม), ไม่แตะ id/JS/HTML การ์ดใด ๆ */
+      #view-orders .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0; }
+      /* คงระยะห่างด้านบนของการ์ดชุดแรก (ใต้แถบหัว "จัดการออเดอร์") ไว้เท่าเดิม ~22px */
+      #view-orders .stat-grid:first-child { padding-top: 16px; }
+      #view-orders .status-filter { display:flex; flex-wrap:wrap; gap:8px; padding:0 16px; margin:14px 0; }
+      #view-orders .status-filter button {
+        border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); color:var(--text-dim);
+        border-radius:999px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;
+      }
+      #view-orders .status-filter button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+      /* ---- เพิ่มใหม่: ช่องค้นหาในประวัติออเดอร์ (ค้นจากข้อมูลออเดอร์จริง) ---- */
+      #view-orders .history-search {
+        display:flex; align-items:center; gap:8px; padding:0 16px; margin:14px 0 0;
+      }
+      #view-orders .history-search .search-box { flex:1; }
+      #view-orders .history-search .search-box input {
+        width:100%;
+      }
+      #view-orders .history-search .search-clear {
+        border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); color:var(--text-dim);
+        border-radius:8px; padding:8px 12px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;
+      }
+      #view-orders .history-search .search-clear:hover { background:rgba(255,255,255,.10); color:var(--text); }
+      #view-orders .status-badge {
+        display:inline-flex; align-items:center; gap:4px; border-radius:999px; padding:3px 10px;
+        font-size:12px; font-weight:700; width:fit-content;
+      }
+      #view-orders .status-select {
+        width:100%; background:var(--surface-2, rgba(255,255,255,.06)); color:var(--text);
+        border:1px solid rgba(255,255,255,.14); border-radius:8px; padding:8px 10px; font-size:13px;
+      }
+      /* ---- เพิ่มใหม่: สลับประเภทออเดอร์ เพลงเดี่ยว / ยกเพลย์ลิสต์ ---- */
+      #view-orders .type-toggle { display:flex; gap:8px; margin-bottom:14px; }
+      #view-orders .type-toggle button {
+        flex:1; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.04); color:var(--text-dim);
+        border-radius:10px; padding:10px 8px; font-size:13px; font-weight:700; cursor:pointer;
+      }
+      #view-orders .type-toggle button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+      #view-orders .playlist-result-card {
+        border:1px solid rgba(255,255,255,.12); border-radius:10px; padding:10px; margin-bottom:8px;
+        display:flex; gap:10px; align-items:center; cursor:pointer;
+      }
+      #view-orders .playlist-result-card:hover { background:rgba(255,255,255,.04); }
+      #view-orders .playlist-result-card img { width:44px; height:44px; border-radius:8px; object-fit:cover; background:rgba(255,255,255,.06); }
+      /* 🔧 (2026-09-19 bugfix): หลังย้ายฟอร์มไป modal #ordCreateBackdrop ต้องเพิ่ม CSS เดียวกัน */
+      /*   มิฉะนั้นรูปจะขยายเต็มจอเพราะ selector #view-orders ไม่ match อีกต่อไป */
+      /*   ผลกระทบต่อระบบเดิม: 0% — เพิ่ม CSS rule ใหม่ ไม่ลบของเดิม */
+      #ordCreateBackdrop .playlist-result-card {
+        border:1px solid rgba(255,255,255,.12); border-radius:10px; padding:10px; margin-bottom:8px;
+        display:flex; gap:10px; align-items:center; cursor:pointer;
+      }
+      #ordCreateBackdrop .playlist-result-card:hover { background:rgba(255,255,255,.04); }
+      #ordCreateBackdrop .playlist-result-card img { width:44px; height:44px; border-radius:8px; object-fit:cover; background:rgba(255,255,255,.06); flex-shrink:0; }
+      #ordCreateBackdrop .playlist-result-card .info { min-width:0; flex:1; }
+      #ordCreateBackdrop .playlist-result-card .info .n1 { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      #ordCreateBackdrop .playlist-result-card .info .n2 { font-size:12px; color:var(--text-dim); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      #ordCreateBackdrop .playlist-selected-card {
+        border:1px solid var(--accent); background:rgba(122,92,255,.08); border-radius:10px; padding:12px;
+        display:flex; flex-direction:column; gap:4px; margin-bottom:10px;
+      }
+      #view-orders .order-type-badge {
+        display:inline-flex; align-items:center; gap:4px; border-radius:999px; padding:2px 9px;
+        font-size:11px; font-weight:700; width:fit-content; margin-bottom:4px;
+      }
+      #receiptBackdrop .receipt-paper {
+        background:#fff; color:#171717; border-radius:12px; padding:22px; max-width:460px; margin:auto;
+      }
+      #receiptBackdrop .receipt-head { text-align:center; border-bottom:1px dashed #bbb; padding-bottom:14px; }
+      #receiptBackdrop .receipt-head h2 { margin:0 0 4px; font-size:21px; }
+      #receiptBackdrop .receipt-head small { display:block; color:#666; margin-top:3px; }
+      #receiptBackdrop .receipt-customer { padding:14px 0; border-bottom:1px solid #e5e5e5; }
+      #receiptBackdrop .receipt-customer div { display:flex; justify-content:space-between; gap:12px; margin:4px 0; }
+      #receiptBackdrop .receipt-customer span { color:#666; }
+      #receiptBackdrop .receipt-items { padding:10px 0; }
+      #receiptBackdrop .receipt-line { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid #eee; }
+      #receiptBackdrop .receipt-line small { display:block; color:#666; margin-top:3px; }
+      #receiptBackdrop .receipt-total { display:flex; justify-content:space-between; padding-top:14px; font-size:18px; }
+      #receiptBackdrop .receipt-thanks { text-align:center; color:#666; margin-top:20px; font-size:12px; }
+      #receiptBackdrop .receipt-empty { color:#666; text-align:center; padding:12px; }
+    </style>
+    <div id="view-orders" class="view" style="display:none;">
+      <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
+        <button class="icon-btn back-btn">←</button>
+        <div style="flex:1;font-weight:800;">จัดการออเดอร์</div>
+        <!-- 🔧 แก้บั๊ก I11 (2026-09-18): ปุ่ม "รีเฟรช" — โหลดออเดอร์ล่าสุดจาก DB โดยไม่ต้อง F5 -->
+        <!-- ใช้เมื่อ: สงสัยว่าข้อมูลไม่ใช่ล่าสุด / อยากเช็คว่ามีออเดอร์ใหม่ไหม / ก่อน action สำคัญ -->
+        <button id="ordersRefreshBtn" type="button" class="icon-btn" style="font-size:18px;padding:6px 10px;" title="รีเฟรชออเดอร์">🔄</button>
+      </div>
+
+      <div class="container" style="padding:0 16px;">
+
+        <div class="stat-grid" style="margin-bottom:10px;">
+          <div class="stat-card"><div class="num" id="ordStatCount">0</div><div class="label">ออเดอร์ทั้งหมด</div></div>
+          <div class="stat-card"><div class="num" id="ordStatSongs">0</div><div class="label">เพลงที่ขายได้ (สำเร็จ)</div></div>
+          <div class="stat-card" style="grid-column:span 2;"><div class="num" id="ordStatRevenue">0</div><div class="label">ยอดขายรวม (LAK) — เฉพาะสำเร็จ</div></div>
+        </div>
+        <!-- 🔧 (2026-09-19 stats v2): เปลี่ยนการ์ดสถิติตามที่ user ต้องการ -->
+        <!--   เดิม: ordStatSingleCount (ออเดอร์เพลงเดี่ยว) + ordStatPlaylistCount (ออเดอร์ยกเพลย์ลิสต์) — นับแยกตามประเภท -->
+        <!--   ใหม่: ordStatCompletedOrders (ออเดอร์ที่สำเร็จทั้งหมด รวมทุกประเภท) -->
+        <!--        + ordStatPlaylistsSold (เพลย์ลิสต์ที่ขาย นับตัว ไม่นับเพลงข้างใน) -->
+        <!--   ผลกระทบต่อระบบเดิม: 0% — calculateStats ยังคง return singleCount/playlistCount/mixedCount (เก็บไว้ back-compatible) -->
+        <!--   แค่ไม่ render ค่าเดิมใน HTML ใหม่ -->
+        <div class="stat-grid" style="margin-bottom:16px;">
+          <div class="stat-card"><div class="num" id="ordStatCompletedOrders" style="color:var(--success,#29cc71);">0</div><div class="label">✓ ออเดอร์ที่สำเร็จ</div></div>
+          <div class="stat-card"><div class="num" id="ordStatPlaylistsSold" style="color:var(--accent);">0</div><div class="label">🎶 เพลย์ลิสต์ที่ขายได้</div></div>
+        </div>
+        <!-- 🔧 (2026-09-19 stats fix): แยกการ์ดสถิติเพลงเดี่ยว vs เพลงในเพลย์ลิสต์ -->
+        <!--   นับเป็นจำนวนเพลงเดี่ยวที่ขายได้ vs จำนวนเพลงในเพลย์ลิสต์ที่ขายได้ -->
+        <div class="stat-grid" style="margin-bottom:16px;">
+          <div class="stat-card"><div class="num" id="ordStatSingleSongs" style="color:var(--accent-2,#ec4899);">0</div><div class="label">🎵 เพลงเดี่ยวที่ขายได้</div></div>
+          <div class="stat-card"><div class="num" id="ordStatPlaylistSongs" style="color:var(--accent-2,#ec4899);">0</div><div class="label">🎶 เพลงในเพลย์ลิสต์ที่ขายได้</div></div>
+        </div>
+        <div class="stat-grid" style="margin-bottom:16px;">
+          <div class="stat-card" style="grid-column:span 2;"><div class="num" id="ordStatDiscount" style="color:var(--accent-2,#ec4899);">0</div><div class="label">ส่วนลด/โปรโมชั่นรวม (LAK) — เฉพาะสำเร็จ</div></div>
+        </div>
+
+        <!-- 🔧 (2026-09-19 layout fix): ย้ายฟอร์ม "สร้างออเดอร์ใหม่" ไปเป็น collapsible -->
+        <!--   เหตุผล: เดิมฟอร์มอยู่ในหน้าหลัก → หน้ายาวเกิน → ปุ่ม "บันทึกออเดอร์" โดนตัดขอบล่าง -->
+        <!--   วิธีใหม่: แสดงปุ่ม "➕ สร้างออเดอร์ใหม่" เฉพาะเวลาต้องการ → กดแล้วเปิดเป็น modal -->
+        <!--   ผลกระทบต่อระบบเดิม: 0% — element IDs ทั้งหมดยังอยู่ (ordCustomerName, ordCartItems, ฯลฯ) -->
+        <!--   เพียงแต่ย้ายจาก inline → modal -->
+        <button type="button" id="ordCreateBtn" class="btn" style="display:flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-bottom:10px;">
+          ➕ สร้างออเดอร์ใหม่
+        </button>
+      </div>
+
+      <div class="section-title" style="margin-top:14px;">ประวัติออเดอร์</div>
+      <!-- เพิ่มใหม่: ช่องค้นหาในประวัติออเดอร์ — ค้นจากข้อมูลออเดอร์จริง (ชื่อลูกค้า/เบอร์/เพลง/เพลย์ลิสต์/เลขออเดอร์/ชื่อ ZIP) -->
+      <div class="history-search">
+        <div class="search-box">
+          <input id="ordHistorySearch" type="text" placeholder="🔍 ค้นหาออเดอร์: ชื่อลูกค้า, เบอร์ WhatsApp, ชื่อเพลง, เพลย์ลิสต์, เลขออเดอร์..." autocomplete="off">
+        </div>
+        <button type="button" class="search-clear" id="ordHistorySearchClear" title="ล้างการค้นหา">✕ ล้าง</button>
+      </div>
+      <div class="status-filter" id="ordStatusFilter"></div>
+      <div id="ordHistoryList" class="container" style="padding:0 16px 24px;"></div>
+    </div>
+
+    <!-- 🔧 (2026-09-19 layout fix): Modal สร้างออเดอร์ใหม่ (ย้ายจาก inline → modal) -->
+    <!--   คง element IDs ทั้งหมดไว้ — เพียงแต่ย้ายไปอยู่ใน modal-backdrop -->
+    <div class="modal-backdrop" id="ordCreateBackdrop" style="display:none;">
+      <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto;">
+        <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-weight:800;">สร้างออเดอร์ใหม่</div>
+          <button type="button" id="ordCreateCloseBtn" class="icon-btn" style="font-size:18px;padding:4px 8px;">✕</button>
+        </div>
+        <div style="padding:14px 16px;">
+          <div class="field"><label>ชื่อลูกค้า *</label><input id="ordCustomerName" placeholder="ชื่อลูกค้า"></div>
+          <div class="field"><label>เบอร์ WhatsApp *</label><input id="ordCustomerWhatsapp" placeholder="20XXXXXXXX"></div>
+
+          <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px;">เลือกได้ทั้งเพลงเดี่ยว (หลายเพลง) และเพลย์ลิสต์ (หลายรายการ) ผสมกันในออเดอร์เดียวได้</p>
+
+          <div id="ordSingleSection">
+            <div class="field">
+              <label>🎵 ค้นหาและเลือกเพลง</label>
+              <div class="search-box"><input id="ordSongSearch" placeholder="ค้นหาเพลง ศิลปิน หรือ DJ..."></div>
+            </div>
+            <p id="ordSongsLoading" class="empty-state" style="padding:10px 0;">กำลังโหลดรายชื่อเพลง...</p>
+            <div id="ordSearchResults"></div>
+          </div>
+
+          <div id="ordPlaylistSection" style="margin-top:14px;">
+            <div class="field">
+              <label>🎶 ค้นหาและเลือกเพลย์ลิสต์ (เลือกได้หลายรายการ)</label>
+              <div class="search-box"><input id="ordPlaylistSearch" placeholder="ค้นหาชื่อเพลย์ลิสต์ เช่น Sdk zzbee..."></div>
+            </div>
+            <div id="ordPlaylistSelected"></div>
+            <div id="ordPlaylistResults"></div>
+          </div>
+
+          <div style="margin:16px 0;">
+            <div style="font-weight:700;font-size:13px;color:var(--text-dim);margin-bottom:6px;">ออเดอร์ปัจจุบัน</div>
+            <div id="ordCartItems"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-top:1px solid rgba(255,255,255,.08);padding-top:10px;margin-top:6px;">
+              <span style="color:var(--text-dim);font-size:13px;">ยอดรวม (LAK) — คำนวณอัตโนมัติ</span>
+              <input id="ordCartTotal" type="number" min="0" inputmode="numeric"
+                readonly aria-readonly="true"
+                style="width:140px;text-align:right;font-size:18px;font-weight:800;color:var(--success);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px 10px;">
+            </div>
+            <div id="ordTotalHint" style="font-size:11px;color:var(--text-dim);text-align:right;margin-top:4px;"></div>
+          </div>
+
+          <button class="btn" id="ordSubmitBtn">บันทึกออเดอร์</button>
+          <div id="ordFormFeedback" style="font-size:13px;margin-top:8px;min-height:18px;"></div>
         </div>
       </div>
-      <div class="promo-home-banner-arrow" aria-hidden="true">&gt;</div>
     </div>
-  </div>
+    <!-- ===================== /ORDERS VIEW ===================== -->
 
-  <div id="djSection">
-    <div class="section-title">DJ</div>
-    <div class="dj-row" id="djRow"></div>
-  </div>
-
-  <!-- ส่วน Playlist แบบ Dropdown -->
-  <div class="playlist-wrapper">
-    <button class="playlist-header-btn" id="playlistToggleBtn">
-      <span class="playlist-header-title">เพลย์ลิสต์</span>
-      <svg class="dropdown-icon" id="dropdownIcon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7l5 5l5 -5"/><path d="M7 13l5 5l5 -5"/></svg>
-    </button>
-    <div id="playlistsContainer" class="playlist-content-box"></div>
-  </div>
-
-  <div class="section-title" id="gridTitle">เพลงทั้งหมด</div>
-  <div class="song-grid" id="songGrid"></div>
-  <div class="empty-state" id="emptyState" style="display:none;">ไม่พบเพลงที่ค้นหา</div>
-
-  <div class="player-bar" id="playerBar">
-    <div class="player-top">
-      <img id="playerCover" src="" alt="">
-      <div class="player-meta">
-        <div class="t1" id="playerTitle">-</div>
-        <div class="t2" id="playerSub">-</div>
-      </div>
-      <button class="ctrl" id="playerToggle">
-        <svg id="playerIcon" width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
-        <div class="spinner" id="playerSpinner" style="display:none;"></div>
-      </button>
-      <!-- 🔧 เพิ่มใหม่ (2026-09-12): ปุ่มปิดเครื่องเล่นเพลง (X) — ให้ลูกค้ากดปิด popup player ได้ -->
-      <button class="ctrl player-close-btn" id="playerClose" type="button" aria-label="ปิดเครื่องเล่น" title="ปิดเครื่องเล่น">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-      </button>
-    </div>
-    <div class="player-seek-row">
-      <span class="time" id="playerCurrentTime">0:00</span>
-      <input type="range" id="playerSeek" min="0" max="100" step="0.1" value="0">
-      <span class="time" id="playerDuration">0:00</span>
-    </div>
-  </div>
-
-  <!-- เพิ่มใหม่: แถบเตือนออเดอร์ที่ยังไม่ได้แจ้งแอดมิน -->
-  <div class="pending-order-banner" id="pendingOrderBanner" hidden>
-    <div class="pending-order-banner-text">คุณมีออเดอร์ที่ยังไม่ได้แจ้งแอดมินเพื่อชำระเงิน</div>
-    <div class="pending-order-banner-actions">
-      <button class="pending-order-banner-btn" id="pendingOrderBannerBtn" type="button">แจ้งแอดมินตอนนี้</button>
-      <button class="pending-order-banner-dismiss" id="pendingOrderBannerDismiss" type="button" aria-label="ซ่อนคำเตือนนี้ชั่วคราว">✕</button>
-    </div>
-  </div>
-
-  <!-- ===== เพิ่มใหม่: view สำหรับ tab "ออเดอร์ของฉัน" (ลูกค้าติดตามออเดอร์) ===== -->
-  <div id="myOrdersView" class="container" style="display:none;padding:14px 16px 100px;"></div>
-
-  <!-- ===== 🎁 (2026-09-20) เพิ่มใหม่: view สำหรับ tab "โปรโมชั่น" — สไตล์ J: CYBERPUNK =====
-       - ข้อมูลมาจาก fetchActivePromotions() ใน app-promotion.js (collection เดียวกับที่ admin จัดการใน #view-promotions)
-       - มี countdown นับถอยหลังเป็นเรียลไทม์ (อัปเดตทุก 1 วินาที)
-       - ซ่อน/แสดงผ่าน showPromotionsView()/hidePromotionsView() — ไม่แตะ setView() เดิม -->
-  <div id="promotionsView" class="container" style="display:none;padding:14px 14px 100px;">
-    <div class="promo-view-header">
-      <div class="promo-view-header-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-      </div>
-      <div>
-        <h2 class="promo-view-title">โปรโมชั่น</h2>
-        <p class="promo-view-subtitle">ลดราคาอัตโนมัติในตะกร้า — ไม่ต้องกรอกรหัส</p>
+    <div id="view-settings" class="view" style="display:none;">
+      <div class="container" style="padding:14px 16px;">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;">
+          <button class="icon-btn back-btn">←</button>
+          <div style="font-weight:800;">ตั้งค่าเว็บไซต์</div>
+        </div>
+        <div class="field"><label>ชื่อเว็บไซต์</label><input id="setWebsiteName"></div>
+        <div class="field"><label>คำอธิบายเว็บไซต์ (สำหรับ Google ค้นหา)</label><textarea id="setMetaDesc" placeholder="สำหรับค้นหา Google"></textarea></div>
+        <div class="field"><label>ชื่อ Admin</label><input id="setAdminName" placeholder="ชื่อแอดมิน"></div>
+        <div class="field"><label>เบอร์ WhatsApp (20XXXXXXXX)</label><input id="setWhatsapp"></div>
+        <div class="field"><label>URL โลโก้เว็บไซต์</label><input id="setLogo"></div>
+        <button class="btn" id="saveSettingsBtn">บันทึกการตั้งค่า</button>
       </div>
     </div>
-    <div id="promoViewList" class="promo-view-list"></div>
+
+    <div id="view-admins" class="view" style="display:none;">
+      <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
+        <button class="icon-btn back-btn">←</button>
+        <div style="flex:1;font-weight:800;">จัดการแอดมิน</div>
+        <button class="icon-btn" id="addAdminBtn" style="background:var(--accent);color:#fff;">＋</button>
+      </div>
+      <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">แอดมินหลักเพิ่ม/ลบ/แก้ไขแอดมินคนอื่นได้ทั้งหมด ส่วนแอดมินย่อยจะเข้าหน้านี้ไม่ได้และไม่เห็นเมนูนี้</p>
+      <div id="adminList" class="container" style="padding:10px 16px 24px;"></div>
+    </div>
+
+    <!-- ===================== ลดราคา (Discounts) ===================== -->
+    <div id="view-discounts" class="view" style="display:none;">
+      <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
+        <button class="icon-btn back-btn">←</button>
+        <div style="flex:1;font-weight:800;">ลดราคา</div>
+        <button class="icon-btn" id="addDiscountBtn" style="background:var(--accent);color:#fff;">＋</button>
+      </div>
+      <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">ลดราคาเฉพาะเพลง/เพลย์ลิสต์ — ตั้งวันเริ่ม/สิ้นสุดและเปิด/ปิดได้ เมื่อหมดเวลาระบบกลับไปใช้ราคาปกติอัตโนมัติ</p>
+      <div id="discountList" class="container" style="padding:10px 16px 24px;"></div>
+    </div>
+
+    <!-- ===================== โปรโมชั่น (Promotions) ===================== -->
+    <div id="view-promotions" class="view" style="display:none;">
+      <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
+        <button class="icon-btn back-btn">←</button>
+        <div style="flex:1;font-weight:800;">โปรโมชั่น</div>
+        <button class="icon-btn" id="addPromotionBtn" style="background:var(--accent);color:#fff;">＋</button>
+      </div>
+      <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">โปรโมชั่นคำนวณอัตโนมัติในตะกร้า — ไม่ต้องกรอกรหัส ตัวอย่าง: ซื้อครบ 3 เพลง ลด 10% / ครบ 5 ลด 20% / ครบ 10 ลด 30%</p>
+      <div id="promotionList" class="container" style="padding:10px 16px 24px;"></div>
+    </div>
+
+    <!-- ===================== ประวัติร้าน (Audit Log) =====================
+         🔧 (2026-09-22 fix Bug #2 UI): หน้าแสดง audit_log
+           - แสดงรายการ: ใคร (email) ทำอะไร (action) กับอะไร (target) เมื่อไหร่ (timestamp) + IP
+           - filter: action, collection, admin_email, date range
+           - pagination: 50/หน้า (max 200)
+           - click row → expand เห็น before/after data
+           - ทุกแอดมินที่ login แล้วเข้าดูได้ (ตาม model "เพื่อนๆ ช่วยกันดูแล" ที่ผู้ใช้ระบุ)
+    ================================================================== -->
+    <div id="view-auditlog" class="view" style="display:none;">
+      <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
+        <button class="icon-btn back-btn">←</button>
+        <div style="flex:1;font-weight:800;">ประวัติร้าน</div>
+        <button class="icon-btn" id="auditLogRefreshBtn" title="โหลดใหม่">🔄</button>
+      </div>
+      <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">
+        บันทึกทุกการสร้าง/แก้ไข/ลบ ของแอดมิน — ใคร ทำอะไร กับอะไร เมื่อไหร่ IP อะไร (เก็บ 90 วัน)
+      </p>
+
+      <!-- ===== Filter bar ===== -->
+      <div class="audit-log-filters" style="padding:0 16px;margin:14px 0 10px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
+        <select id="auditFilterAction" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;">
+          <option value="">ทุก action</option>
+          <option value="create">สร้าง</option>
+          <option value="update">แก้ไข</option>
+          <option value="delete">ลบ</option>
+        </select>
+        <select id="auditFilterCollection" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;">
+          <option value="">ทุกประเภท</option>
+          <option value="songs">เพลง</option>
+          <option value="playlists">เพลย์ลิสต์</option>
+          <option value="orders">ออเดอร์</option>
+          <option value="categories">หมวดหมู่</option>
+          <option value="djs">DJ</option>
+          <option value="settings">ตั้งค่าเว็บ</option>
+          <option value="promotions">โปรโมชั่น</option>
+          <option value="discounts">ลดราคา</option>
+          <option value="admins">แอดมิน</option>
+        </select>
+        <input id="auditFilterEmail" type="search" placeholder="ค้นอีเมลแอดมิน..." style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;grid-column:1 / -1;">
+        <input id="auditFilterFromDate" type="date" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;">
+        <input id="auditFilterToDate" type="date" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;">
+        <button id="auditFilterApplyBtn" class="btn secondary" style="grid-column:1 / -1;padding:8px 12px;font-size:13px;">🔍 ใช้ตัวกรอง</button>
+      </div>
+
+      <!-- ===== Stats summary ===== -->
+      <div id="auditLogStats" style="padding:0 16px;margin:0 0 10px;font-size:12px;color:var(--text-dim);"></div>
+
+      <!-- ===== Log list ===== -->
+      <div id="auditLogList" class="container" style="padding:0 16px 24px;"></div>
+
+      <!-- ===== Pagination ===== -->
+      <div id="auditLogPager" style="padding:0 16px 24px;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;"></div>
+    </div>
   </div>
 
-  <div class="bottom-nav">
-    <button class="active" data-tab="home">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a1 1 0 01-1 1H4a1 1 0 01-1-1z"/></svg>
-      หน้าแรก
-    </button>
-    <button data-tab="playlist">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>
-      เพลย์ลิสต์
-    </button>
-    <button data-tab="category">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-      หมวดหมู่
-    </button>
-    <button data-tab="dj">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
-      DJ
-    </button>
-    <!-- 🎁 (2026-09-20) เพิ่มแท็บใหม่ "โปรโมชั่น" — สไตล์ J: CYBERPUNK -->
-    <button data-tab="promotions" type="button" aria-label="โปรโมชั่น">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-      โปรโมชั่น
-    </button>
-    <button data-tab="contact">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-      ติดต่อ
-    </button>
+  <div class="modal-backdrop" id="songFormBackdrop">
+    <div class="modal">
+      <div class="modal-header"><h3 id="songFormTitle">เพิ่มเพลง</h3><button class="modal-close" id="songFormClose">✕</button></div>
+      <div class="field">
+        <label>ไฟล์เพลง (MP3 / WAV)</label>
+        <label class="file-picker" id="songFilePicker" for="songFileInput">📁 แตะเพื่อเลือกไฟล์เพลงจาก iPhone/iPad</label>
+        <input type="file" id="songFileInput" accept="audio/*,.wav,.mp3" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
+        <div class="progress-outer" id="songUploadProgressWrap" style="display:none;"><div class="progress-inner" id="songUploadProgress"></div></div>
+      </div>
+
+      <!-- ===== Auto Preview: สถานะวิเคราะห์ + แก้ไข Dance Start Bar เอง ===== -->
+      <div class="field" id="previewAnalysisBox" style="display:none;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px;background:rgba(255,255,255,.03);">
+        <label style="display:flex;align-items:center;justify-content:space-between;">
+          <span>🎯 Auto Preview (Dance Section)</span>
+          <span id="previewStatusBadge" style="font-size:12px;font-weight:700;padding:2px 10px;border-radius:999px;"></span>
+        </label>
+        <div id="previewInfoText" style="font-size:12px;color:var(--text-dim);margin:6px 0 10px;"></div>
+        <label style="font-size:13px;">Dance Start Bar (ห้องที่เริ่ม Dance — แก้เองได้ถ้าระบบเดาไม่ตรง)</label>
+        <input id="fDanceStartBar" type="number" min="0" step="1" placeholder="เช่น 100">
+        <button type="button" class="btn secondary" id="recalcPreviewBtn" style="margin-top:8px;width:100%;">✎ แก้ไข / คำนวณ Preview ใหม่ (เริ่มห้อง 6 → หยุด Dance+8)</button>
+        <button type="button" class="btn secondary" id="reanalyzePreviewBtn" style="margin-top:8px;width:100%;">🔄 วิเคราะห์เสียงใหม่ทั้งหมด (AI)</button>
+
+        <!-- ===== กำหนดช่วง Preview เอง — ไม่อิงสูตร Dance เลย ระบุห้องเริ่ม/ห้องหยุดได้อิสระ ===== -->
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08);">
+          <label style="font-size:13px;">กำหนดช่วง Preview เอง (ไม่ผูกกับสูตร Dance) — ระบุห้องเริ่มเล่นและห้องหยุดเล่นตามต้องการ</label>
+          <div style="display:flex;gap:8px;margin-top:6px;">
+            <input id="fPreviewStartBarManual" type="number" min="0" step="1" placeholder="ห้องเริ่ม เช่น 0" style="flex:1;">
+            <input id="fPreviewEndBarManual" type="number" min="0" step="1" placeholder="ห้องหยุด เช่น 40" style="flex:1;">
+          </div>
+          <button type="button" class="btn secondary" id="recalcManualRangeBtn" style="margin-top:8px;width:100%;">🎛 ใช้ช่วงที่กำหนดเอง</button>
+        </div>
+      </div>
+      <!-- ===== /Auto Preview ===== -->
+
+      <div class="field">
+        <label>รูปปกเพลง</label>
+        <label class="file-picker" id="coverFilePicker" for="coverFileInput">🖼️ แตะเพื่อเลือกรูปปก</label>
+        <input type="file" id="coverFileInput" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
+      </div>
+      <div class="field">
+        <label>ไฟล์เพลงเต็ม WAV (ส่งลูกค้าหลังชำระเงิน — ไม่แสดงบนเว็บ user)</label>
+        <label class="file-picker" id="fullSongFilePicker" for="fullSongFileInput">🔒 แตะเพื่อเลือกไฟล์ WAV เต็ม</label>
+        <input type="file" id="fullSongFileInput" accept="audio/*,.wav,.mp3,.wave,audio/wav,audio/x-wav,audio/wave,audio/vnd.wave,audio/x-pn-wav,audio/mpeg,audio/mp3" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
+        <div id="fullSongFileMeta" style="font-size:12px;color:var(--text-dim);margin-top:4px;display:none;"></div>
+        <div class="progress-outer" id="fullSongUploadProgressWrap" style="display:none;"><div class="progress-inner" id="fullSongUploadProgress"></div></div>
+      </div>
+      <div class="field"><label>ชื่อเพลง *</label><input id="fSongName"></div>
+      <div class="field"><label>ศิลปิน</label><input id="fArtist"></div>
+      <div class="field"><label>DJ</label><select id="fDj"><option value="">— ไม่ระบุ —</option></select></div>
+      <div class="field"><label>หมวดหมู่</label><select id="fCategory"><option value="">— ไม่ระบุ —</option></select></div>
+      <div class="field"><label>เพลย์ลิสต์</label><select id="fPlaylist"><option value="">— ไม่ระบุ —</option></select></div>
+      <div class="field"><label>ราคา (LAK)</label><input id="fPrice" type="number" min="0"></div>
+      <div class="field"><label>รายละเอียด</label><textarea id="fDesc"></textarea></div>
+      <div class="field"><label>สถานะ</label><select id="fStatus"><option value="active">เผยแพร่ (active)</option><option value="hidden">ซ่อน (hidden)</option></select></div>
+      <button class="btn" id="songSaveBtn">บันทึกเพลง</button>
+    </div>
   </div>
 
-  <div class="modal-backdrop" id="songModalBackdrop">
+  <div class="modal-backdrop" id="catFormBackdrop">
+    <div class="modal">
+      <div class="modal-header"><h3 id="catFormTitle">เพิ่มหมวดหมู่</h3><button class="modal-close" id="catFormClose">✕</button></div>
+      <div class="field"><label>ชื่อหมวดหมู่ *</label><input id="fCatName"></div>
+      <div class="field"><label>คำอธิบาย</label><textarea id="fCatDesc"></textarea></div>
+      <button class="btn" id="catSaveBtn">บันทึก</button>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="djFormBackdrop">
+    <div class="modal">
+      <div class="modal-header"><h3 id="djFormTitle">เพิ่ม DJ</h3><button class="modal-close" id="djFormClose">✕</button></div>
+      <div class="field"><label>ชื่อ DJ *</label><input id="fDjName"></div>
+      <div class="field"><label>คำอธิบาย</label><textarea id="fDjDesc"></textarea></div>
+      <div class="field">
+        <label>รูปโปรไฟล์ DJ</label>
+        <label class="file-picker" id="djImagePicker" for="djImageInput">🖼️ แตะเพื่อเลือกรูปจาก iPhone/iPad</label>
+        <input type="file" id="djImageInput" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
+      </div>
+      <button class="btn" id="djSaveBtn">บันทึก</button>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="changePasswordBackdrop">
+    <div class="modal">
+      <div class="modal-header"><h3>เปลี่ยนรหัสผ่านของฉัน</h3><button class="modal-close" id="changePasswordClose">✕</button></div>
+      <div class="field"><label>รหัสผ่านปัจจุบัน *</label><input id="cpCurrentPassword" type="password" autocomplete="current-password"></div>
+      <div class="field"><label>รหัสผ่านใหม่ * (อย่างน้อย 6 ตัวอักษร)</label><input id="cpNewPassword" type="password" autocomplete="new-password"></div>
+      <div class="field"><label>ยืนยันรหัสผ่านใหม่ *</label><input id="cpConfirmPassword" type="password" autocomplete="new-password"></div>
+      <div id="cpFeedback" style="font-size:13px;margin-bottom:10px;min-height:18px;"></div>
+      <button class="btn" id="changePasswordSaveBtn">บันทึกรหัสผ่านใหม่</button>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="adminFormBackdrop">
+    <div class="modal">
+      <div class="modal-header"><h3 id="adminFormTitle">เพิ่มแอดมิน</h3><button class="modal-close" id="adminFormClose">✕</button></div>
+      <div class="field"><label>อีเมล *</label><input id="fAdminEmail" type="email" autocomplete="off"></div>
+      <div class="field" id="adminPasswordField"><label>รหัสผ่าน * (อย่างน้อย 6 ตัวอักษร)</label><input id="fAdminPassword" type="password" autocomplete="new-password"></div>
+      <div class="field"><label>ชื่อที่แสดง</label><input id="fAdminDisplayName" placeholder="ชื่อแอดมิน"></div>
+      <div class="field">
+        <label>ระดับสิทธิ์</label>
+        <select id="fAdminRole">
+          <option value="sub">แอดมินย่อย (จัดการเพลง/หมวดหมู่/DJ/เพลย์ลิสต์/ออเดอร์ได้ปกติ แต่จัดการแอดมินคนอื่นไม่ได้)</option>
+          <option value="main">แอดมินหลัก (จัดการได้ทุกอย่าง รวมถึงเพิ่ม/ลบ/แก้ไขแอดมินคนอื่น)</option>
+        </select>
+      </div>
+      <div id="adminFormNote" style="font-size:12px;color:var(--text-dim);margin-top:-6px;margin-bottom:14px;"></div>
+      <button class="btn" id="adminSaveBtn">บันทึก</button>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="playlistFormBackdrop">
+    <div class="modal">
+      <div class="modal-header"><h3 id="playlistFormTitle">เพิ่มเพลย์ลิสต์</h3><button class="modal-close" id="playlistFormClose">✕</button></div>
+      <div class="field"><label>ชื่อเพลย์ลิสต์ *</label><input id="fPlaylistName"></div>
+      <div class="field"><label>คำอธิบาย</label><textarea id="fPlaylistDesc"></textarea></div>
+      <div class="field"><label>ราคาเพลย์ลิสต์ (LAK — ราคาขายทั้งชุด, ปล่อยว่างหรือ 0 ถ้าไม่ขายทั้งชุด)</label><input id="fPlaylistPrice" type="number" min="0"></div>
+      <div class="field">
+        <label>รูปปกเพลย์ลิสต์</label>
+        <label class="file-picker" id="playlistCoverPicker" for="playlistCoverInput">🖼️ แตะเพื่อเลือกรูปปก</label>
+        <input type="file" id="playlistCoverInput" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
+      </div>
+      <button class="btn" id="playlistSaveBtn">บันทึก</button>
+    </div>
+  </div>
+
+  <!-- ===================== Modal: ลดราคา ===================== -->
+  <div class="modal-backdrop" id="discountFormBackdrop">
+    <div class="modal">
+      <div class="modal-header"><h3 id="discountFormTitle">เพิ่มลดราคา</h3><button class="modal-close" id="discountFormClose">✕</button></div>
+      <div class="field">
+        <label>เป้าหมาย (เลือกเพลงหรือเพลย์ลิสต์) *</label>
+        <!-- เพิ่มใหม่ (แก้บั๊ก 2026-09-10): ช่องค้นหาชื่อเพลง/เพลย์ลิสต์ กรอง option ใน select ด้านล่าง ไม่กระทบ select เดิม -->
+        <input type="text" id="fDiscTargetSearch" placeholder="🔍 พิมพ์ค้นหาชื่อเพลง/เพลย์ลิสต์..." style="margin-bottom:8px;" autocomplete="off">
+        <select id="fDiscTarget"></select>
+      </div>
+      <div class="field">
+        <label>ประเภทส่วนลด *</label>
+        <select id="fDiscType">
+          <option value="percent">ลดเป็นเปอร์เซ็นต์ (%)</option>
+          <option value="fixed">ลดเป็นจำนวนเงิน (LAK)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>ค่าส่วนลด *</label>
+        <input id="fDiscValue" type="number" min="0" step="1" placeholder="เช่น 10 (สำหรับ %) หรือ 5000 (สำหรับ LAK)">
+      </div>
+      <div id="discountPriceHint" style="font-size:12px;color:var(--text-dim);margin-top:-4px;margin-bottom:10px;"></div>
+      <div class="field">
+        <label>วันเริ่มต้น *</label>
+        <input id="fDiscStartAt" type="datetime-local">
+      </div>
+      <div class="field">
+        <label>วันสิ้นสุด *</label>
+        <input id="fDiscEndAt" type="datetime-local">
+      </div>
+      <!-- 🔧 (2026-09-19 v2): ปรับ layout checkbox "เปิดใช้งานทันที" ในฟอร์มลดราคา
+           - เพิ่ม icon cloud ☁️ ข้าง checkbox
+           - ใช้ label.disc-active-label (class ใหม่) แทน style inline เพื่อให้ CSS คุมได้
+           - ไม่เปลี่ยน id หรือ logic เดิม (fDiscActive ยังเหมือนเดิม) -->
+      <div class="field">
+        <label class="disc-active-label" for="fDiscActive">
+          <input type="checkbox" id="fDiscActive" checked>
+          <span class="disc-active-icon" aria-hidden="true">☁️</span>
+          <span class="disc-active-text">เปิดใช้งานทันที (ถ้าไม่เลือก จะถูกปิดไว้ชั่วคราว)</span>
+        </label>
+      </div>
+      <div id="discountFormNote" style="font-size:12px;color:var(--text-dim);margin-top:-6px;margin-bottom:14px;"></div>
+      <button class="btn" id="discountSaveBtn">บันทึก</button>
+    </div>
+  </div>
+
+  <!-- ===================== Modal: โปรโมชั่น ===================== -->
+  <div class="modal-backdrop" id="promotionFormBackdrop">
+    <div class="modal">
+      <div class="modal-header"><h3 id="promotionFormTitle">สร้างโปรโมชั่น</h3><button class="modal-close" id="promotionFormClose">✕</button></div>
+      <div class="field">
+        <label>ชื่อโปรโมชั่น * (เช่น "ซื้อ 3 ลด 10%")</label>
+        <input id="fPromoName" placeholder="ซื้อ 3 ลด 10%">
+      </div>
+      <div class="field">
+        <label>คำอธิบาย (ไม่บังคับ)</label>
+        <textarea id="fPromoDesc" placeholder="รายละเอียดเพิ่มเติม"></textarea>
+      </div>
+      <div class="field">
+        <label>ประเภทโปรโมชั่น *</label>
+        <select id="fPromoType">
+          <option value="cart_percent">ลด % ของยอดที่เข้าโปร</option>
+          <option value="cart_fixed">ลดจำนวนเงินตายตัว (LAK)</option>
+          <option value="buy_x_get_y_percent">ซื้อ X ครบ → ลด %</option>
+        </select>
+        <div id="fPromoTypeHint" style="font-size:11px;color:var(--text-dim);margin-top:4px;"></div>
+      </div>
+      <div class="field">
+        <label>จำนวนเพลงขั้นต่ำ (ถ้าไม่มีใส่ 0)</label>
+        <input id="fPromoMinQty" type="number" min="0" step="1" placeholder="เช่น 3 = ต้องมีอย่างน้อย 3 เพลงในตะกร้า">
+      </div>
+      <div class="field">
+        <label>ยอดรวมขั้นต่ำ LAK (ถ้าไม่มีใส่ 0)</label>
+        <input id="fPromoMinSubtotal" type="number" min="0" step="100" placeholder="เช่น 30000 = ต้องมียอดอย่างน้อย 30,000 LAK">
+      </div>
+      <div class="field">
+        <label>ค่าส่วนลด * (เปอร์เซ็นต์ หรือ LAK — ตามประเภท)</label>
+        <input id="fPromoValue" type="number" min="0" step="1" placeholder="เช่น 10 (สำหรับ %) หรือ 5000 (สำหรับ LAK)">
+      </div>
+      <div class="field">
+        <label>ใช้กับ *</label>
+        <select id="fPromoAppliesTo">
+          <option value="all">เพลงทุกเพลง</option>
+          <option value="category">เฉพาะหมวดหมู่ (เช่น DJ)</option>
+        </select>
+      </div>
+      <div class="field" id="fPromoCategoryRow" style="display:none;">
+        <label>หมวดหมู่ที่เข้าโปร *</label>
+        <select id="fPromoCategory"></select>
+      </div>
+      <div class="field">
+        <label>วันเริ่มต้น *</label>
+        <input id="fPromoStartAt" type="datetime-local">
+      </div>
+      <div class="field">
+        <label>วันสิ้นสุด *</label>
+        <input id="fPromoEndAt" type="datetime-local">
+      </div>
+      <!-- 🔧 (2026-09-19 v2): ปรับ layout checkbox "เปิดใช้งานทันที" ในฟอร์มโปรโมชั่น
+           - เพิ่ม icon cloud ☁️ ข้าง checkbox
+           - ใช้ label.promo-active-label (class ใหม่) แทน style inline
+           - ไม่เปลี่ยน id หรือ logic เดิม (fPromoActive ยังเหมือนเดิม) -->
+      <div class="field">
+        <label class="promo-active-label" for="fPromoActive">
+          <input type="checkbox" id="fPromoActive" checked>
+          <span class="disc-active-icon" aria-hidden="true">☁️</span>
+          <span class="disc-active-text">เปิดใช้งานทันที</span>
+        </label>
+      </div>
+      <div class="field">
+        <label>ลำดับความสำคัญ (น้อย = เช็คก่อน — แต่ระบบใช้ "best discount wins" อยู่แล้ว)</label>
+        <input id="fPromoPriority" type="number" min="0" step="1" value="100">
+      </div>
+      <div id="promotionFormNote" style="font-size:12px;color:var(--text-dim);margin-top:-6px;margin-bottom:14px;"></div>
+      <button class="btn" id="promotionSaveBtn">บันทึก</button>
+    </div>
+  </div>
+
+  <!-- ===== ดูเพลงที่อยู่จริงในหมวดหมู่ / DJ / เพลย์ลิสต์ ที่กดเข้าไปดู (กดจากรายการในหน้าจัดการ) ===== -->
+  <div class="modal-backdrop" id="listSongsBackdrop">
+    <div class="modal">
+      <div class="modal-header"><h3 id="listSongsTitle">เพลงในรายการนี้</h3><button class="modal-close" id="listSongsClose">✕</button></div>
+      <div id="listSongsMeta" style="font-size:12px;color:var(--text-dim);margin:-8px 0 12px;"></div>
+      <div id="listSongsContainer"></div>
+    </div>
+  </div>
+
+  <!-- ===== Popup รายละเอียดเพลง (เด้งขึ้นเมื่อแตะที่ตัวแถวเพลง — เหมือนฝั่ง user) ===== -->
+  <!-- เพิ่มใหม่: ไม่แตะ modal อื่น ใช้ id ไม่ซ้ำกับของเดิม ไม่กระทบระบบเดิม -->
+  <!-- ออกแบบกระทัดรัด: รูปปกเล็ก + ข้อมูลขวา ไม่รกหน้า admin -->
+  <style>
+    #songDetailBackdrop .modal { max-width: 440px; }
+    #songDetailBackdrop .modal-header { padding-bottom: 10px; }
+
+    /* --- แถวหัว: รูปปกเล็ก (80x80) ซ้าย + ข้อมูลขวา — กระทัดรัด ไม่รก --- */
+    #songDetailHead {
+      display: flex; gap: 12px; align-items: flex-start; margin-bottom: 12px;
+    }
+    #songDetailCoverWrap {
+      width: 80px; height: 80px; flex-shrink: 0; position: relative;
+      overflow: hidden; border-radius: 10px; background: rgba(255,255,255,.04);
+    }
+    #songDetailCover {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;
+    }
+    #songDetailInfo { flex: 1; min-width: 0; }
+    #songDetailName {
+      margin: 0 0 2px; font-size: 16px; font-weight: 800; line-height: 1.3;
+      overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+      -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    }
+    #songDetailArtist {
+      color: var(--text-dim); font-size: 13px; margin-bottom: 6px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    #songDetailBadges {
+      display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px;
+    }
+    #songDetailBadges .badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+      background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.10); color: var(--text);
+    }
+    #songDetailBadges .badge.dj { color: var(--accent-2, #61dafb); }
+    #songDetailBadges .badge.cat { color: #f7b955; }
+    #songDetailBadges .badge.pl { color: #b388ff; }
+    #songDetailPrice {
+      font-size: 16px; font-weight: 800; color: var(--success, #28c76f); margin-top: 2px;
+    }
+    #songDetailDesc {
+      font-size: 12px; color: var(--text-dim); margin-bottom: 12px; line-height: 1.5;
+      max-height: 60px; overflow-y: auto; padding: 8px 10px;
+      background: rgba(255,255,255,.03); border-radius: 8px;
+    }
+    #songDetailDesc:empty { display: none; }
+
+    /* --- Player ภายใน popup: กะทัดรัด ไม่กวนหน้า admin --- */
+    #songDetailPlayer {
+      display: flex; flex-direction: column; gap: 10px;
+      padding-top: 10px; border-top: 1px solid rgba(255,255,255,.08);
+    }
+    #songDetailSeekWrap { display: flex; align-items: center; gap: 8px; }
+    #songDetailSeek {
+      flex: 1; -webkit-appearance: none; appearance: none; height: 4px;
+      background: rgba(255,255,255,.12); border-radius: 999px; outline: none; cursor: pointer;
+    }
+    #songDetailSeek::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none; width: 14px; height: 14px;
+      border-radius: 50%; background: var(--accent, #7a5cff); cursor: pointer; border: 0;
+    }
+    #songDetailSeek::-moz-range-thumb {
+      width: 14px; height: 14px; border-radius: 50%; background: var(--accent, #7a5cff);
+      cursor: pointer; border: 0;
+    }
+    #songDetailCurrTime, #songDetailDurTime {
+      font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; min-width: 32px; text-align: center;
+    }
+
+    /* --- ปุ่มเล่น + ปุ่มกระโดดช่วงเพลง (compact, ไม่กวนหน้า) --- */
+    #songDetailJumpRow {
+      display: flex; gap: 6px; align-items: center; justify-content: center;
+    }
+    .jump-btn {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+      padding: 7px 4px; font-size: 10px; font-weight: 600;
+      background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.12);
+      border-radius: 9px; color: var(--text-dim); cursor: pointer;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .jump-btn:hover { background: rgba(255,255,255,.08); color: var(--text); }
+    .jump-btn.active {
+      background: rgba(122,92,255,.16); border-color: var(--accent, #7a5cff); color: #fff;
+    }
+    .jump-btn .jump-ico { font-size: 14px; line-height: 1; }
+    .jump-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    #songDetailPlayBtn {
+      width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 11px; font-size: 14px; font-weight: 700; border-radius: 10px;
+      background: var(--accent, #7a5cff); color: #fff; border: 0; cursor: pointer;
+    }
+    #songDetailPlayBtn:disabled { opacity: .5; cursor: not-allowed; }
+    #songDetailPlayBtn .spinner {
+      display: none; width: 16px; height: 16px; border-width: 2px;
+    }
+    #songDetailPlayBtn.loading .spinner { display: inline-block; }
+    #songDetailPlayBtn.loading .play-ico, #songDetailPlayBtn.loading .play-label { display: none; }
+
+    /* --- แถว meta ล่าง: แสดงห้อง preview ถ้ามี --- */
+    #songDetailMetaLine {
+      font-size: 11px; color: var(--text-dim); text-align: center; line-height: 1.5;
+    }
+  </style>
+  <div class="modal-backdrop" id="songDetailBackdrop">
     <div class="modal">
       <div class="modal-header">
         <h3>รายละเอียดเพลง</h3>
-        <button class="modal-close" id="songModalClose">✕</button>
+        <button class="modal-close" id="songDetailClose">✕</button>
       </div>
 
-      <!-- แถวหัว: รูปปก 80x80 ซ้าย + ข้อมูลขวา — กระทัดรัด เหมือนฝั่ง admin -->
-      <div id="modalHead">
-        <div id="modalCoverWrap">
-          <img id="modalCover" src="" alt="">
+      <!-- แถวหัว: รูปปกเล็ก (80x80) + ข้อมูลขวา — กระทัดรัด ไม่รก -->
+      <div id="songDetailHead">
+        <div id="songDetailCoverWrap">
+          <img id="songDetailCover" src="" alt="">
         </div>
-        <div id="modalInfo">
-          <h3 id="modalName"></h3>
-          <div id="modalArtist"></div>
-          <div id="modalBadges"></div>
-          <div id="modalPrice"></div>
+        <div id="songDetailInfo">
+          <h3 id="songDetailName"></h3>
+          <div id="songDetailArtist"></div>
+          <div id="songDetailBadges"></div>
+          <div id="songDetailPrice"></div>
         </div>
       </div>
 
-      <!-- DJ + คำอธิบาย -->
-      <div id="modalDj"></div>
-      <div id="modalDesc"></div>
+      <div id="songDetailDesc"></div>
 
-      <!-- Player ภายใน popup — เหมือนฝั่ง admin -->
-      <div id="modalPlayer">
+      <div id="songDetailPlayer">
         <!-- Seek bar -->
-        <div id="modalSeekWrap">
-          <span id="modalCurrTime">0:00</span>
-          <input id="modalSeek" type="range" min="0" max="0" step="0.1" value="0" aria-label="ตำแหน่งเพลง">
-          <span id="modalDurTime">0:00</span>
+        <div id="songDetailSeekWrap">
+          <span id="songDetailCurrTime">0:00</span>
+          <input id="songDetailSeek" type="range" min="0" max="0" step="0.1" value="0" aria-label="ตำแหน่งเพลง">
+          <span id="songDetailDurTime">0:00</span>
         </div>
 
-        <!-- ปุ่มกระโดดช่วงเพลง (3 ปุ่ม) -->
-        <div id="modalJumpRow">
-          <button type="button" class="modal-jump-btn" id="modalJumpToIntro" title="ข้ามไปช่วงต้นเพลง">
-            <span class="modal-jump-ico">⏮</span><span>ต้นเพลง</span>
+        <!-- ปุ่มกระโดดช่วงเพลง (compact, 3 ปุ่ม) -->
+        <div id="songDetailJumpRow">
+          <button type="button" class="jump-btn" id="jumpToIntro" title="ข้ามไปช่วงต้นเพลง">
+            <span class="jump-ico">⏮</span><span>ต้นเพลง</span>
           </button>
-          <button type="button" class="modal-jump-btn" id="modalJumpToPreview" title="ข้ามไปช่วง Dance / Preview ที่ AI ตัดไว้">
-            <span class="modal-jump-ico">🎯</span><span>Dance / Preview</span>
+          <button type="button" class="jump-btn" id="jumpToPreview" title="ข้ามไปช่วง Dance / Preview ที่ AI ตัดไว้">
+            <span class="jump-ico">🎯</span><span>Dance / Preview</span>
           </button>
-          <button type="button" class="modal-jump-btn" id="modalJumpToOutro" title="ข้ามไปช่วงท้ายเพลง">
-            <span class="modal-jump-ico">⏭</span><span>ท้ายเพลง</span>
+          <button type="button" class="jump-btn" id="jumpToOutro" title="ข้ามไปช่วงท้ายเพลง">
+            <span class="jump-ico">⏭</span><span>ท้ายเพลง</span>
           </button>
         </div>
 
-        <!-- ปุ่มเล่นหลัก (เด่น) — สีเดียวกับฝั่ง admin -->
-        <button class="btn" id="modalPlayBtn" data-play="">
-          <span id="modalPlayIconWrap" style="display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center;position:relative;flex-shrink:0;">
-            <svg id="modalPlayIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
-            <div class="spinner" id="modalPlaySpinner" style="display:none;width:24px;height:24px;border-width:4px;"></div>
+        <!-- ปุ่มเล่นหลัก (เด่น) -->
+        <button type="button" id="songDetailPlayBtn">
+          <span class="play-ico">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
           </span>
-          <span id="modalPlayLabel">ฟังเพลง</span>
+          <span class="spinner"></span>
+          <span class="play-label">ฟังเพลง</span>
         </button>
 
-        <div id="modalMetaLine"></div>
+        <div id="songDetailMetaLine"></div>
       </div>
 
-      <!-- ปุ่มเพิ่มเข้าตะกร้า — สีเดียวกับปุ่มเล่น (สีม่วง accent) -->
-      <button class="btn" id="modalBuyBtn">
-        <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
-        <span id="modalBuyLabel">เพิ่มเข้าตะกร้า</span>
-      </button>
+      <!-- ===== Auto Preview Editor (collapsible) — แก้ห้อง Preview ได้โดยไม่ต้องเปิดฟอร์มแก้ไขเพลงเต็ม ===== -->
+      <div id="songDetailPreviewEditor" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
+        <button type="button" id="songDetailPreviewToggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;background:transparent;border:0;color:var(--text);font-size:13px;font-weight:700;padding:4px 0;cursor:pointer;">
+          <span>🎯 แก้ไข Auto Preview (Dance Section)</span>
+          <span id="songDetailPreviewChevron" style="transition:transform .2s;">▼</span>
+        </button>
+
+        <div id="songDetailPreviewBody" style="display:none;margin-top:10px;">
+          <!-- สถานะปัจจุบัน -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <span style="font-size:12px;color:var(--text-dim);">สถานะ:</span>
+            <span id="songDetailPreviewBadge" style="font-size:12px;font-weight:700;padding:2px 10px;border-radius:999px;"></span>
+          </div>
+          <div id="songDetailPreviewInfo" style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;"></div>
+
+          <!-- วิเคราะห์ใหม่ด้วย AI -->
+          <button type="button" id="songDetailReanalyzeBtn" class="btn secondary" style="width:100%;font-size:12px;padding:8px;margin-bottom:10px;">🔄 วิเคราะห์เสียงใหม่ทั้งหมด (AI)</button>
+
+          <!-- แก้ Dance Start Bar -->
+          <div style="border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;margin-bottom:8px;">
+            <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Dance Start Bar (ห้องที่เริ่ม Dance)</div>
+            <div style="display:flex;gap:6px;">
+              <input id="songDetailDanceStartBar" type="number" min="0" step="1" placeholder="เช่น 100" style="flex:1;padding:6px 8px;font-size:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);border-radius:6px;color:var(--text);">
+              <button type="button" id="songDetailRecalcBtn" class="btn secondary" style="font-size:12px;padding:6px 10px;">คำนวณ</button>
+            </div>
+          </div>
+
+          <!-- กำหนดช่วงเอง -->
+          <div style="border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;margin-bottom:10px;">
+            <div style="font-size:12px;font-weight:700;margin-bottom:6px;">กำหนดช่วง Preview เอง (ไม่ผูกกับสูตร Dance)</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input id="songDetailManualStart" type="number" min="0" step="1" placeholder="ห้องเริ่ม" style="flex:1;padding:6px 8px;font-size:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);border-radius:6px;color:var(--text);">
+              <span style="color:var(--text-dim);">→</span>
+              <input id="songDetailManualEnd" type="number" min="0" step="1" placeholder="ห้องหยุด" style="flex:1;padding:6px 8px;font-size:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);border-radius:6px;color:var(--text);">
+            </div>
+            <button type="button" id="songDetailManualBtn" class="btn secondary" style="width:100%;font-size:12px;padding:6px;margin-top:6px;">🎛 ใช้ช่วงที่กำหนดเอง</button>
+          </div>
+
+          <!-- ปุ่มบันทึก Preview ลงเดียว -->
+          <button type="button" id="songDetailSavePreviewBtn" class="btn" style="width:100%;font-size:13px;padding:10px;">💾 บันทึก Preview ลงเพลงนี้</button>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Cart เดิม: เพิ่มเฉพาะ markup ที่ app-cart.js อ้างถึง ไม่สร้างระบบ Cart ใหม่ -->
-  <div class="modal-backdrop" id="cartBackdrop" aria-hidden="true">
-    <div class="modal cart-modal">
-      <div class="modal-header">
-        <h3>ตะกร้าสินค้า</h3>
-        <button class="modal-close" id="cartCloseBtn" type="button">✕</button>
-      </div>
-      <div id="cartItems" class="cart-items"></div>
-      <div id="cartSummary" class="cart-summary" hidden>
-        <div class="cart-summary-row">
-          <span style="color:var(--text-dim);">จำนวน</span>
-          <strong id="cartTotalQuantity">0 เพลง</strong>
-        </div>
-        <!-- เพิ่มใหม่ (แก้บั๊ก 2026-09-10): ที่ว่างสำหรับแสดงแถวส่วนลด/โปรโมชั่น เติมโดย renderCart() ใน app-cart.js -->
-        <div id="cartDiscountRows"></div>
-        <div class="cart-summary-row">
-          <span style="color:var(--text-dim);">ยอดรวม</span>
-          <strong id="cartTotalPrice" style="color:var(--success);">0 LAK</strong>
-        </div>
-        <div class="cart-actions">
-          <button class="btn secondary" id="clearCartBtn" type="button">ล้างตะกร้า</button>
-          <button class="btn" id="checkoutCartBtn" type="button">สั่งซื้อ</button>
-        </div>
-      </div>
+  <!-- ===== จัดเพลงเข้าเพลย์ลิสต์ / หมวดหมู่ / DJ แบบเร็ว (จากปุ่ม 📌 ในหน้าจัดการเพลง) ===== -->
+  <div class="modal-backdrop" id="quickAssignBackdrop">
+    <div class="modal">
+      <div class="modal-header"><h3>จัดเพลงเข้าเพลย์ลิสต์ / หมวดหมู่ / DJ</h3><button class="modal-close" id="quickAssignClose">✕</button></div>
+      <div id="quickAssignSongName" style="font-weight:700;margin-bottom:12px;"></div>
+      <div class="field"><label>DJ</label><select id="qaDj"><option value="">— ไม่ระบุ —</option></select></div>
+      <div class="field"><label>หมวดหมู่</label><select id="qaCategory"><option value="">— ไม่ระบุ —</option></select></div>
+      <div class="field"><label>เพลย์ลิสต์</label><select id="qaPlaylist"><option value="">— ไม่ระบุ —</option></select></div>
+      <button class="btn" id="quickAssignSaveBtn">บันทึก</button>
     </div>
   </div>
 
-  <div class="modal-backdrop" id="checkoutBackdrop" aria-hidden="true">
-    <div class="modal cart-modal">
-      <div class="modal-header">
-        <h3>ข้อมูลสำหรับสั่งซื้อ</h3>
-        <button class="modal-close" id="checkoutCloseBtn" type="button">✕</button>
-      </div>
-      <p style="color:var(--text-dim);font-size:13px;margin-top:0;">
-        กรอกข้อมูลเพื่อบันทึก Order และแจ้งรายละเอียดให้ร้านทาง WhatsApp
-      </p>
+  <div class="modal-backdrop" id="bulkUploadBackdrop">
+    <div class="modal">
+      <div class="modal-header"><h3>เพิ่มเพลงหลายไฟล์พร้อมกัน</h3><button class="modal-close" id="bulkUploadClose">✕</button></div>
+      <p style="color:var(--text-dim);font-size:13px;margin-top:-8px;">เลือกไฟล์เพลงหลายไฟล์พร้อมกันจากแอป Files แล้วระบบจะอัปโหลดทีละไฟล์ให้อัตโนมัติ — จะเลือกจัดเข้าเพลย์ลิสต์เดียวกันทั้งหมด หรือเว้นว่างไว้เพื่อเพิ่มเป็นเพลงเดี่ยวๆ หลายเพลงพร้อมกันก็ได้</p>
+
       <div class="field">
-        <label for="checkoutCustomerName">ชื่อลูกค้า *</label>
-        <input id="checkoutCustomerName" autocomplete="name" placeholder="ชื่อลูกค้า">
+        <label>เพลย์ลิสต์ปลายทาง (ไม่บังคับ — เว้นว่างได้ถ้าแค่ต้องการเพิ่มเพลงเดี่ยวๆ หลายเพลงพร้อมกัน)</label>
+        <select id="bulkPlaylist"><option value="">— ไม่ระบุ —</option></select>
       </div>
+      <div class="field"><label>หรือสร้างเพลย์ลิสต์ใหม่ (ไม่บังคับ)</label><input id="bulkNewPlaylistName" placeholder="ชื่อเพลย์ลิสต์ใหม่"></div>
+
       <div class="field">
-        <label for="checkoutCustomerWhatsapp">เบอร์ WhatsApp *</label>
-        <input id="checkoutCustomerWhatsapp" autocomplete="tel" placeholder="20XXXXXXXX">
+        <label>ไฟล์เพลงทั้งหมด (เลือกได้หลายไฟล์)</label>
+        <label class="file-picker" id="bulkFilesPicker" for="bulkFilesInput">📁 แตะเพื่อเลือกไฟล์เพลงหลายไฟล์</label>
+        <input type="file" id="bulkFilesInput" accept="audio/*,.wav,.mp3" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
       </div>
-      <div id="checkoutSummary" class="cart-summary"></div>
-      <button class="btn" id="submitCartOrderBtn" type="button">ยืนยันสั่งซื้อ</button>
-      <div id="checkoutFeedback" class="cart-feedback"></div>
+
+      <div class="field">
+        <label>ไฟล์เพลงเต็ม WAV (ไม่บังคับ — เลือกได้หลายไฟล์ ระบบจะจับคู่กับไฟล์ตัวอย่างด้านบนตามชื่อไฟล์ให้อัตโนมัติ)</label>
+        <label class="file-picker" id="bulkFullFilesPicker" for="bulkFullFilesInput">🔒 แตะเพื่อเลือกไฟล์ WAV เต็มหลายไฟล์</label>
+        <input type="file" id="bulkFullFilesInput" accept="audio/*,.wav,.mp3,.wave,audio/wav,audio/x-wav,audio/wave,audio/vnd.wave,audio/x-pn-wav,audio/mpeg,audio/mp3" multiple style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
+        <div id="bulkFullFilesMeta" style="font-size:12px;color:var(--text-dim);margin-top:4px;display:none;"></div>
+      </div>
+
+      <div class="field"><label>DJ (ใช้กับทุกเพลงในชุดนี้ — ไม่ระบุก็ได้)</label><select id="bulkDj"><option value="">— ไม่ระบุ —</option></select></div>
+      <div class="field"><label>หมวดหมู่ (ใช้กับทุกเพลงในชุดนี้ — ไม่ระบุก็ได้)</label><select id="bulkCategory"><option value="">— ไม่ระบุ —</option></select></div>
+      <div class="field"><label>ราคาต่อเพลง (LAK — ใช้กับทุกเพลงในชุดนี้)</label><input id="bulkPrice" type="number" min="0"></div>
+      <div class="field">
+        <label>รูปปก (ใช้กับทุกเพลงในชุดนี้ — ไม่บังคับ)</label>
+        <label class="file-picker" id="bulkCoverPicker" for="bulkCoverInput">🖼️ แตะเพื่อเลือกรูปปก (ใช้ร่วมกันทั้งชุด)</label>
+        <input type="file" id="bulkCoverInput" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
+      </div>
+
+      <!-- 🔒 Auto Preview อัตโนมัติใน Bulk Upload (2026-09-12) — default เลือกไว้ -->
+      <div class="field" style="display:flex;align-items:flex-start;gap:8px;">
+        <input type="checkbox" id="bulkAutoPreviewChk" checked style="width:18px;height:18px;margin-top:3px;flex-shrink:0;">
+        <label for="bulkAutoPreviewChk" style="cursor:pointer;font-size:13px;line-height:1.5;">
+          <strong>วิเคราะห์ Auto Preview อัตโนมัติ (แนะนำ)</strong><br>
+          <span style="color:var(--text-dim);">วิเคราะห์เสียงหาช่วง Dance ของทุกเพลงอัตโนมัติ — ถ้าไม่เลือกไฟล์เต็ม จะใช้ไฟล์ตัวอย่างเป็นเพลงเต็มด้วยเพื่อประหยัดพื้นที่ R2 และลูกค้าจะเห็นแค่ช่วง Preview ก่อนชำระเงิน</span>
+        </label>
+      </div>
+
+      <div class="progress-outer" id="bulkProgressWrap" style="display:none;"><div class="progress-inner" id="bulkProgress"></div></div>
+      <div id="bulkStatusText" style="font-size:12px;color:var(--text-dim);margin-top:6px;"></div>
+
+      <button class="btn" id="bulkUploadBtn" style="margin-top:14px;">เริ่มอัปโหลดทั้งหมด</button>
     </div>
   </div>
 
-  <!-- เพิ่มใหม่: popup ติดตามออเดอร์ (ฝั่งลูกค้า ไม่ต้อง Login) -->
-  <div class="modal-backdrop" id="trackOrderBackdrop" aria-hidden="true">
-    <div class="modal track-order-modal">
-      <div class="modal-header">
-        <h3>ติดตามออเดอร์</h3>
-        <button class="modal-close" id="trackOrderClose" type="button">✕</button>
-      </div>
-      <p class="track-order-intro">กรอกเลข Order พร้อมชื่อและเบอร์โทร/WhatsApp ที่ใช้ตอนสั่งซื้อ เพื่อตรวจสอบสถานะ</p>
+  <div class="modal-backdrop" id="orderFormBackdrop">
+    <div class="modal">
+      <div class="modal-header"><h3 id="orderFormTitle">แก้ไขออเดอร์</h3><button class="modal-close" id="orderFormClose">✕</button></div>
 
-      <!-- เพิ่มใหม่: สลับโหมด ค้นหาออเดอร์เดียว / ดูออเดอร์ทั้งหมดของฉัน — ไม่แตะ field/ปุ่มเดิมด้านล่าง -->
-      <div class="track-order-mode-switch" role="tablist">
-        <button class="track-order-mode-btn active" id="trackOrderModeSingleBtn" type="button" role="tab" aria-selected="true">ค้นหาออเดอร์เดียว</button>
-        <button class="track-order-mode-btn" id="trackOrderModeAllBtn" type="button" role="tab" aria-selected="false">ออเดอร์ทั้งหมดของฉัน</button>
-      </div>
+      <div class="field"><label>ชื่อลูกค้า *</label><input id="eOrderCustomerName" placeholder="ชื่อลูกค้า"></div>
+      <div class="field"><label>เบอร์ WhatsApp *</label><input id="eOrderCustomerWhatsapp" placeholder="20XXXXXXXX"></div>
 
-      <div id="trackOrderSingleView">
-        <div id="trackOrderQuick" class="track-order-result" style="margin-top:0;padding-top:0;border-top:0;margin-bottom:16px;" hidden>
-          <button class="btn secondary" id="trackOrderQuickBtn" type="button" style="width:100%;">📄 ดูใบเสร็จออเดอร์ล่าสุดของคุณ (เครื่องนี้)</button>
-        </div>
+      <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px;">เลือกได้ทั้งเพลงเดี่ยว (หลายเพลง) และเพลย์ลิสต์ (หลายรายการ) ผสมกันในออเดอร์เดียวได้</p>
 
+      <div id="eOrdSingleSection">
         <div class="field">
-          <label for="trackOrderId">เลข Order *</label>
-          <input id="trackOrderId" placeholder="เช่น RCPT-20260909-ABC123">
+          <label>🎵 ค้นหาและเลือกเพลง</label>
+          <div class="search-box"><input id="eOrderSongSearch" placeholder="ค้นหาเพลง..."></div>
         </div>
-        <div class="field">
-          <label for="trackOrderName">ชื่อลูกค้า *</label>
-          <input id="trackOrderName" autocomplete="name" placeholder="ชื่อที่ใช้ตอนสั่งซื้อ">
-        </div>
-        <div class="field">
-          <label for="trackOrderPhone">เบอร์โทร/WhatsApp *</label>
-          <input id="trackOrderPhone" autocomplete="tel" placeholder="20XXXXXXXX">
-        </div>
-        <button class="btn" id="trackOrderSubmitBtn" type="button">ค้นหาออเดอร์</button>
-        <div id="trackOrderFeedback" class="cart-feedback"></div>
-
-        <div id="trackOrderResult" class="track-order-result" hidden></div>
+        <div id="eOrderSearchResults"></div>
       </div>
 
-      <!-- เพิ่มใหม่: มุมมองออเดอร์ทั้งหมดของลูกค้า (ตามเบอร์โทร) แบบเรียลไทม์ -->
-      <div id="trackOrderAllView" hidden>
+      <div id="eOrdPlaylistSection" style="margin-top:14px;">
         <div class="field">
-          <label for="trackOrderAllName">ชื่อลูกค้า *</label>
-          <input id="trackOrderAllName" autocomplete="name" placeholder="ชื่อที่ใช้ตอนสั่งซื้อ">
+          <label>🎶 ค้นหาและเลือกเพลย์ลิสต์ (เลือกได้หลายรายการ)</label>
+          <div class="search-box"><input id="eOrdPlaylistSearch" placeholder="ค้นหาชื่อเพลย์ลิสต์..."></div>
         </div>
-        <div class="field">
-          <label for="trackOrderAllPhone">เบอร์โทร/WhatsApp *</label>
-          <input id="trackOrderAllPhone" autocomplete="tel" placeholder="20XXXXXXXX">
-        </div>
-        <button class="btn" id="trackOrderAllSubmitBtn" type="button">ดูออเดอร์ทั้งหมด</button>
-        <div id="trackOrderAllFeedback" class="cart-feedback"></div>
-
-        <div id="trackOrderAllList" class="track-order-all-list" hidden></div>
-
-        <div id="trackOrderAllDetail" class="track-order-result" hidden>
-          <button class="btn secondary" id="trackOrderAllBackBtn" type="button" style="width:100%;margin-bottom:12px;">← กลับไปที่ลิสต์ออเดอร์</button>
-          <div id="trackOrderAllDetailContent"></div>
-        </div>
+        <div id="eOrdPlaylistSelected"></div>
+        <div id="eOrdPlaylistResults"></div>
       </div>
+
+      <div style="margin:16px 0;">
+        <div style="font-weight:700;font-size:13px;color:var(--text-dim);margin-bottom:6px;">เพลงในออเดอร์นี้</div>
+        <div id="eOrderCartItems"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-top:1px solid rgba(255,255,255,.08);padding-top:10px;margin-top:6px;">
+            <span style="color:var(--text-dim);font-size:13px;">ยอดรวม (LAK) — คำนวณอัตโนมัติ</span>
+          <input id="eOrderCartTotal" type="number" min="0" inputmode="numeric"
+            readonly aria-readonly="true"
+            style="width:140px;text-align:right;font-size:18px;font-weight:800;color:var(--success);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px 10px;">
+        </div>
+        <div id="eOrderTotalHint" style="font-size:11px;color:var(--text-dim);text-align:right;margin-top:4px;"></div>
+      </div>
+
+      <button class="btn" id="eOrderSaveBtn">บันทึกการแก้ไข</button>
+      <div id="eOrderFeedback" style="font-size:13px;margin-top:8px;min-height:18px;"></div>
     </div>
   </div>
 
-  <!-- เพิ่มใหม่: ใบเสร็จหลังสั่งซื้อ (ฝั่งลูกค้า) — โครงสร้างเดียวกับ #receiptBackdrop ในหน้าแอดมิน -->
-  <div class="modal-backdrop" id="receiptBackdrop" aria-hidden="true">
+  <div class="modal-backdrop" id="receiptBackdrop">
     <div class="modal">
       <div class="modal-header">
         <h3>ใบเสร็จ</h3>
-        <button class="modal-close" id="receiptClose" type="button">✕</button>
+        <button class="modal-close" id="receiptClose">✕</button>
       </div>
       <div id="receiptContent"></div>
       <div style="display:flex;gap:8px;margin-top:14px;">
-        <button class="btn secondary" id="receiptWhatsAppBtn" type="button" style="flex:1;">ติดต่อแอดมินผ่าน WhatsApp เพื่อชำระเงิน</button>
-        <button class="btn" id="receiptDownloadImgBtn" type="button" style="flex:1;">ดาวน์โหลดใบเสร็จเป็นรูป</button>
+        <button class="btn secondary" id="receiptWhatsAppBtn" style="flex:1;">ส่งใบเสร็จทาง WhatsApp</button>
+        <button class="btn" id="receiptDownloadImgBtn" style="flex:1;">ดาวน์โหลดใบเสร็จเป็นรูป</button>
       </div>
     </div>
+  </div>
+
+  <div class="modal-backdrop" id="fullFilesBackdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>ไฟล์เพลงเต็มสำหรับส่งลูกค้า</h3>
+        <button class="modal-close" id="fullFilesClose">✕</button>
+      </div>
+      <p style="color:var(--text-dim);font-size:13px;margin-top:0;">คัดลอกลิงก์ดาวน์โหลดส่งให้ลูกค้า หรือกดปุ่ม WhatsApp เพื่อส่งตรง — ลูกค้าสามารถดาวน์โหลดได้จากลิงก์นี้</p>
+      <div id="fullFilesContent"></div>
+      <div id="fullFilesZipLinkWrap" style="display:none;margin-top:14px;padding:10px;background:rgba(16,185,129,.08);border-radius:10px;">
+        <div style="font-size:12px;color:var(--success);font-weight:600;margin-bottom:6px;">🔗 ลิงก์ดาวน์โหลดสำหรับลูกค้า</div>
+        <div id="fullFilesZipLinkText" style="font-size:11px;color:var(--text-dim);word-break:break-all;margin-bottom:8px;"></div>
+        <button class="btn" type="button" id="fullFilesCopyLinkBtn" style="width:100%;margin-bottom:8px;">📋 คัดลอกลิงก์ดาวน์โหลด</button>
+      </div>
+      <button class="btn secondary" id="fullFilesWhatsAppBtn" style="margin-top:14px;width:100%;">💬 ส่ง WhatsApp พร้อมลิงก์ดาวน์โหลด</button>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="bulkMatchConfirmBackdrop">
+    <div class="modal">
+      <div class="modal-header"><h3>ตรวจสอบคู่ไฟล์ก่อนอัปโหลด</h3></div>
+      <div id="bulkMatchConfirmContent"></div>
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button class="btn secondary" id="bulkMatchConfirmCancel" style="flex:1;">ย้อนกลับไปแก้ไข</button>
+        <button class="btn" id="bulkMatchConfirmOk" style="flex:1;">ยืนยันและเริ่มอัปโหลด</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="confirmBackdrop">
+    <div class="modal">
+      <div class="modal-header"><h3>ยืนยันการลบ</h3></div>
+      <p id="confirmText" style="color:var(--text-dim);">คุณต้องการลบรายการนี้หรือไม่?</p>
+      <div style="display:flex;gap:10px;">
+        <button class="btn secondary" id="confirmCancel" style="flex:1;">ยกเลิก</button>
+        <button class="btn danger" id="confirmOk" style="flex:1;">ลบ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== เมนูดรอปดาวน์แบบใช้ร่วมกันสำหรับปุ่ม ⋮ ในแถวเพลง (แทนปุ่ม 📌✎🗑 ที่เรียงกันจนบังชื่อเพลงบนจอแคบ) ===== -->
+  <div id="songRowMenu" style="display:none;position:fixed;z-index:200;background:#1c1c22;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:6px;min-width:200px;box-shadow:0 10px 30px rgba(0,0,0,.45);">
+    <button type="button" id="songRowMenuAssign" style="display:flex;align-items:center;gap:9px;width:100%;padding:10px 12px;background:transparent;border:0;color:#fff;font-size:14px;text-align:left;border-radius:8px;cursor:pointer;">📌 จัดเข้าเพลย์ลิสต์ / หมวดหมู่ / DJ</button>
+    <button type="button" id="songRowMenuEdit" style="display:flex;align-items:center;gap:9px;width:100%;padding:10px 12px;background:transparent;border:0;color:#fff;font-size:14px;text-align:left;border-radius:8px;cursor:pointer;">✎ แก้ไขเพลง</button>
+    <button type="button" id="songRowMenuDelete" style="display:flex;align-items:center;gap:9px;width:100%;padding:10px 12px;background:transparent;border:0;color:var(--danger,#ff6b6b);font-size:14px;text-align:left;border-radius:8px;cursor:pointer;">🗑 ลบเพลง</button>
+  </div>
+
+  <!-- ===== เมนูดรอปดาวน์แบบใช้ร่วมกันสำหรับปุ่ม ⋮ ในแถวเพลงของหน้ารายละเอียด หมวดหมู่ / DJ / เพลย์ลิสต์ (แทนปุ่ม ✎➖🗑 ที่เรียงกันจนบังชื่อเพลงบนจอแคบ) ===== -->
+  <div id="detailSongRowMenu" style="display:none;position:fixed;z-index:200;background:#1c1c22;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:6px;min-width:200px;box-shadow:0 10px 30px rgba(0,0,0,.45);">
+    <button type="button" id="detailRowMenuEdit" style="display:flex;align-items:center;gap:9px;width:100%;padding:10px 12px;background:transparent;border:0;color:#fff;font-size:14px;text-align:left;border-radius:8px;cursor:pointer;">✎ แก้ไขเพลง</button>
+    <button type="button" id="detailRowMenuRemove" style="display:flex;align-items:center;gap:9px;width:100%;padding:10px 12px;background:transparent;border:0;color:var(--danger,#ff6b6b);font-size:14px;text-align:left;border-radius:8px;cursor:pointer;">➖ นำออกจากรายการนี้</button>
+    <button type="button" id="detailRowMenuDelete" style="display:flex;align-items:center;gap:9px;width:100%;padding:10px 12px;background:transparent;border:0;color:var(--danger,#ff6b6b);font-size:14px;text-align:left;border-radius:8px;cursor:pointer;">🗑 ลบเพลงนี้ออกจากระบบจริง</button>
+  </div>
+
+  <!-- ===== เพิ่มใหม่ (แก้บั๊ก 2026-09-10): เมนูดรอปดาวน์แบบใช้ร่วมกันสำหรับปุ่ม ⋮ ในแถวลดราคา
+       (แทนปุ่ม ✎🔒🗑 ที่เรียงกันจนล้นขอบจอบนมือถือ) — โครงเดียวกับ songRowMenu ด้านบนทุกประการ ===== -->
+  <div id="discountRowMenu" style="display:none;position:fixed;z-index:200;background:#1c1c22;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:6px;min-width:200px;box-shadow:0 10px 30px rgba(0,0,0,.45);">
+    <button type="button" id="discountRowMenuEdit" style="display:flex;align-items:center;gap:9px;width:100%;padding:10px 12px;background:transparent;border:0;color:#fff;font-size:14px;text-align:left;border-radius:8px;cursor:pointer;">✎ แก้ไข</button>
+    <button type="button" id="discountRowMenuToggle" style="display:flex;align-items:center;gap:9px;width:100%;padding:10px 12px;background:transparent;border:0;color:#fff;font-size:14px;text-align:left;border-radius:8px;cursor:pointer;">🔒 ปิดใช้งาน</button>
+    <button type="button" id="discountRowMenuDelete" style="display:flex;align-items:center;gap:9px;width:100%;padding:10px 12px;background:transparent;border:0;color:var(--danger,#ff6b6b);font-size:14px;text-align:left;border-radius:8px;cursor:pointer;">🗑 ลบ</button>
+  </div>
+
+  <!-- ===== เพิ่มใหม่ (แก้บั๊ก 2026-09-10): เมนูดรอปดาวน์แบบใช้ร่วมกันสำหรับปุ่ม ⋮ ในแถวโปรโมชั่น — โครงเดียวกับ discountRowMenu ===== -->
+  <div id="promotionRowMenu" style="display:none;position:fixed;z-index:200;background:#1c1c22;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:6px;min-width:200px;box-shadow:0 10px 30px rgba(0,0,0,.45);">
+    <button type="button" id="promotionRowMenuEdit" style="display:flex;align-items:center;gap:9px;width:100%;padding:10px 12px;background:transparent;border:0;color:#fff;font-size:14px;text-align:left;border-radius:8px;cursor:pointer;">✎ แก้ไข</button>
+    <button type="button" id="promotionRowMenuToggle" style="display:flex;align-items:center;gap:9px;width:100%;padding:10px 12px;background:transparent;border:0;color:#fff;font-size:14px;text-align:left;border-radius:8px;cursor:pointer;">🔒 ปิดใช้งาน</button>
+    <button type="button" id="promotionRowMenuDelete" style="display:flex;align-items:center;gap:9px;width:100%;padding:10px 12px;background:transparent;border:0;color:var(--danger,#ff6b6b);font-size:14px;text-align:left;border-radius:8px;cursor:pointer;">🗑 ลบ</button>
   </div>
 
   <div class="toast" id="toast"></div>
 
-  <!-- 🔧 (2026-09-20 player bar): วัดความสูงจริงของเมนูล่าง (.bottom-nav) แล้วเก็บไว้ใน --bottom-nav-h
-       เพื่อให้เครื่องเล่นเพลงลอย (.player-bar) วางติดขอบบนของเมนูพอดี ไม่ทับเมนู — ไม่แตะ/ไม่ลบสคริปต์เดิม -->
-  <!-- 🔧 (2026-09-22 fix topbar): วัดความสูงจริงของแถบบน (.topbar) แล้วเก็บไว้ใน --topbar-h
-       เพื่อให้ body มี padding-top พอดี → เนื้อหาไม่ทับแถบบน (position: fixed ไม่ดันเนื้อหาอัตโนมัติ) -->
-  <script>
-    (function () {
-      function syncBottomNavHeight() {
-        var nav = document.querySelector('.bottom-nav');
-        if (!nav) return;
-        document.documentElement.style.setProperty('--bottom-nav-h', nav.offsetHeight + 'px');
-      }
-      // 🔧 (2026-09-22 fix topbar): วัดความสูงแถบบน + ตั้ง padding-top ให้ body
-      function syncTopbarHeight() {
-        var topbar = document.querySelector('.topbar');
-        if (!topbar) return;
-        var h = topbar.offsetHeight;
-        document.documentElement.style.setProperty('--topbar-h', h + 'px');
-        document.body.style.paddingTop = h + 'px';
-      }
-      syncBottomNavHeight();
-      syncTopbarHeight();
-      document.addEventListener('DOMContentLoaded', function() {
-        syncBottomNavHeight();
-        syncTopbarHeight();
-      });
-      window.addEventListener('load', function() {
-        syncBottomNavHeight();
-        syncTopbarHeight();
-      });
-      window.addEventListener('resize', function() {
-        syncBottomNavHeight();
-        syncTopbarHeight();
-      });
-      window.addEventListener('orientationchange', function() {
-        syncBottomNavHeight();
-        syncTopbarHeight();
-      });
-      if (document.fonts && document.fonts.ready) document.fonts.ready.then(function() {
-        syncBottomNavHeight();
-        syncTopbarHeight();
-      });
-      if (window.ResizeObserver) {
-        document.addEventListener('DOMContentLoaded', function () {
-          var nav = document.querySelector('.bottom-nav');
-          if (nav) new ResizeObserver(syncBottomNavHeight).observe(nav, { box: 'border-box' });
-          var topbar = document.querySelector('.topbar');
-          if (topbar) new ResizeObserver(syncTopbarHeight).observe(topbar, { box: 'border-box' });
-        });
-      }
-    })();
-  </script>
-
-  <!-- สคริปต์สลับการ เปิด-ปิด Dropdown -->
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      const toggleBtn = document.getElementById('playlistToggleBtn');
-      const container = document.getElementById('playlistsContainer');
-      const icon = document.getElementById('dropdownIcon');
-
-      if (toggleBtn && container) {
-        toggleBtn.addEventListener('click', () => {
-          container.classList.toggle('is-closed');
-          icon.classList.toggle('is-closed');
-        });
-      }
-    });
-  </script>
-
-  <!-- เปลี่ยนเลข v ทุกครั้งที่อัปโหลดไฟล์ใหม่ เพื่อไม่ให้มือถือใช้ไฟล์ JS จาก cache -->
-  <!-- 🔧 v=20260917-p0: P0 แก้ Bug 1 (ลูกค้าตั้ง status เองไม่ได้) + Sec 1 (change-password ต้อง verify เดิม) -->
-  <!-- 🔧 v=20260917-polling-fix: Phase 0 ยกเลิก polling ทุก 4 วิ + Phase 1 จุด 5 (admin view cache) + Phase 2 จุด 1 (state ฝั่ง client) -->
-  <script type="module" src="app-user.js?v=20260922-lock-browserbar-v1"></script>
+  <script type="module" src="app-admin.js?v=20260922-batch10"></script>
 </body>
 </html>
