@@ -741,6 +741,15 @@ async function handleDb(request, env, url) {
   const isAuditLogQueryEndpoint =
     parts.length === 2 && request.method === "POST" && parts[1] === "_audit-log-query" && collection === "_meta";
 
+  // 🔧 (2026-09-23 fix): POST /api/db/_meta/_migrate-rate-limit
+  //   รัน migration SQL สำหรับสร้างตาราง order_creation_attempts + index ผ่านเว็บ
+  //   ทำให้แอดมินสามารถรัน migration จาก iPad/มือถือ ได้โดยไม่ต้องใช้ wrangler CLI
+  //   - ต้อง login เป็น main admin (กัน sub-admin รัน migration โดยไม่ได้รับอนุญาต)
+  //   - idempotent: CREATE TABLE IF NOT EXISTS + CREATE INDEX IF NOT EXISTS → รันซี่้น ๆ ปลอดภัย
+  //   - รันเฉพาะ SQL ของตารางใหม่นี้เท่านั้น ไม่แตะตารางอื่นที่มีอยู่แล้ว
+  const isMigrateRateLimitEndpoint =
+    parts.length === 2 && request.method === "POST" && parts[1] === "_migrate-rate-limit" && collection === "_meta";
+
   // 🔧 (2026-09-18 v6 Full System): endpoint นับ documents ทั้งหมดใน collection
   //   ใช้สำหรับ dashboard stats → 1 D1 read แทน N reads
   //   request: POST /api/db/:collection/_count-all
@@ -759,7 +768,7 @@ async function handleDb(request, env, url) {
 
   // 🔒 Security (2026-09-11): ดึง admin status เสมอเมื่อเป็น collection "songs" เพื่อตัดสินใจว่าจะ sanitize
   // ฟิลด์ sensitive ออกหรือไม่ — ไม่ใช่แค่ตอน isWrite หรือ non-public collection
-  const needsAdminCheck = isWrite || !PUBLIC_READ_COLLECTIONS.has(collection) || collection === "songs" || isOrdersCountPendingEndpoint || isBatchGetEndpoint || isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint || isCountAllEndpoint || isCheckDuplicateEndpoint || isAuditLogQueryEndpoint;
+  const needsAdminCheck = isWrite || !PUBLIC_READ_COLLECTIONS.has(collection) || collection === "songs" || isOrdersCountPendingEndpoint || isBatchGetEndpoint || isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint || isCountAllEndpoint || isCheckDuplicateEndpoint || isAuditLogQueryEndpoint || isMigrateRateLimitEndpoint;
 
   let admin = null;
   if (needsAdminCheck || isOrdersCustomerEndpoint) {
@@ -804,7 +813,7 @@ async function handleDb(request, env, url) {
   //   แต่ต้องข้ามบล็อก 401 ก่อนเข้า handler — เลยยกเว้นในเงื่อนไขบล็อกด้านล่าง
   // 🔧 (2026-09-18 v6): เพิ่ม isCountAllEndpoint + isCheckDuplicateEndpoint (admin-only ด้วย)
   // 🔧 (2026-09-22 fix Bug #2 UI): เพิ่ม isAuditLogQueryEndpoint (admin-only ด้วย)
-  const isAdminOnlyMetaEndpoint = isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint || isCountAllEndpoint || isCheckDuplicateEndpoint || isAuditLogQueryEndpoint;
+  const isAdminOnlyMetaEndpoint = isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint || isCountAllEndpoint || isCheckDuplicateEndpoint || isAuditLogQueryEndpoint || isMigrateRateLimitEndpoint;
   if (!admin && !isOrdersPublicWriteCandidate && !isOrdersCustomerEndpoint && !isSongsPublicGet && !isSongsPublicQuery && !isAdminOnlyMetaEndpoint) {
     if (isWrite || !PUBLIC_READ_COLLECTIONS.has(collection)) {
       return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
@@ -1064,6 +1073,45 @@ async function handleDb(request, env, url) {
     }
   }
 
+  // 🔧 (2026-09-23 fix): POST /api/db/_meta/_migrate-rate-limit
+  //   รัน migration สร้างตาราง order_creation_attempts ผ่านเว็บ — สำหรับ iPad/มือถือ
+  //   ต้อง login เป็น main admin เท่านั้น (sub-admin รันไม่ได้ — กัน migration โดยไม่ได้รับอนุญาต)
+  //   รันเฉพาะ SQL ของตารางใหม่นี้ ไม่แตะตารางอื่น — idempotent (CREATE ... IF NOT EXISTS)
+  if (isMigrateRateLimitEndpoint) {
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    if (admin.role !== "main") {
+      return jsonResponse({ error: "เฉพาะแอดมินหลักเท่านั้นที่รัน migration ได้" }, 403);
+    }
+    try {
+      // รัน SQL เดียวกับใน schema.sql (บล็อก order_creation_attempts) — ใช้ IF NOT EXISTS กันซ้ำ
+      await env.DB.prepare(
+        `CREATE TABLE IF NOT EXISTS order_creation_attempts (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          ip            TEXT NOT NULL,
+          attempted_at  TEXT NOT NULL
+        )`
+      ).run();
+      await env.DB.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_order_creation_attempts_ip ON order_creation_attempts(ip, attempted_at)`
+      ).run();
+      // ตรวจยืนยันว่าตาราง + index สร้างจริง
+      const verifyTable = await env.DB.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='order_creation_attempts'"
+      ).first();
+      const verifyIndex = await env.DB.prepare(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_order_creation_attempts_ip'"
+      ).first();
+      return jsonResponse({
+        ok: true,
+        message: "สร้างตาราง order_creation_attempts และ index เรียบร้อยแล้ว — ระบบ rate limit บนการสร้างออเดอร์พร้อมใช้งาน",
+        table_created: !!verifyTable,
+        index_created: !!verifyIndex,
+      });
+    } catch (err) {
+      return jsonResponse({ error: safeError("รัน migration ไม่สำเร็จ กรุณาลองใหม่ หรือรัน SQL ใน D1 Console ด้วยตนเอง", err) }, 500);
+    }
+  }
+
   try {
     // 🔒 /api/db/orders/_customer-query — ลูกค้าค้นหาออเดอร์เดียวด้วย receipt_number + ชื่อ + เบอร์
     // Server ตรวจทั้ง 3 ฟิลด์ คืนออเดอร์เดียวถ้าตรงทั้งหมด ไม่คืนข้อมูลคนอื่นให้ browser
@@ -1258,6 +1306,39 @@ async function handleDb(request, env, url) {
         }
         const body = await request.json();
         if (!admin && collection === "orders") {
+          // 🔒 (2026-09-23 fix): Rate limiting บนการสร้างออเดอร์สำหรับลูกค้าที่ยังไม่ login
+          //   ปัญหา: endpoint นี้ (PUT /api/db/orders/:id แบบไม่ login) ไม่มี rate limit
+          //          → attacker ยิงสแปมสร้างออเดอร์ปลอมจำนวนมาก รบกวนแอดมิน + กิน D1 write quota
+          //   วิธีแก้: เลียนแบบรูปแบบ login rate limit (บรรทัด ~414) แต่ใช้ตาราง order_creation_attempts
+          //          และ insert ทุกครั้ง (ไม่ใช่เฉพาะ fail) เพราะการโจมตีคือ "สร้างปลอมล้น quota" ไม่ใช่ brute-force
+          //   ค่า threshold: 10 ครั้ง / 15 นาที ต่อ IP (ลูกค้าปกติไม่สั่งเกิน 2-3 ออเดอร์/ชม.)
+          //   ผลกระทบระบบเดิม: 0% — ถ้าตาราง order_creation_attempts ไม่มี → ข้าม rate limiting (fallback: ไม่บล็อก)
+          //          logic ทำงานก่อน existing-check / validation เดิม ทั้งหมดไม่ถูกแตะ
+          const ORDER_RATE_LIMIT_MAX = 10;
+          const ORDER_RATE_LIMIT_WINDOW_MINUTES = 15;
+          const orderClientIP = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "unknown";
+          const orderRateWindow = new Date(Date.now() - ORDER_RATE_LIMIT_WINDOW_MINUTES * 60 * 1000).toISOString();
+          try {
+            const orderAttemptRow = await env.DB.prepare(
+              "SELECT COUNT(*) AS c FROM order_creation_attempts WHERE ip = ? AND attempted_at > ?"
+            ).bind(orderClientIP, orderRateWindow).first();
+            const orderAttemptCount = orderAttemptRow?.c || 0;
+            if (orderAttemptCount >= ORDER_RATE_LIMIT_MAX) {
+              return jsonResponse({
+                error: `สร้างออเดอร์เกินไป (${ORDER_RATE_LIMIT_MAX} ครั้งใน ${ORDER_RATE_LIMIT_WINDOW_MINUTES} นาที) — กรุณารอ ${ORDER_RATE_LIMIT_WINDOW_MINUTES} นาทีแล้วลองใหม่`,
+                code: "order/rate-limited"
+              }, 429);
+            }
+            // บันทึก attempt ทุกครั้ง (ไม่ใช่เฉพาะ fail) — กัน spam quota-exhaustion
+            await env.DB.prepare(
+              "INSERT INTO order_creation_attempts (ip, attempted_at) VALUES (?, ?)"
+            ).bind(orderClientIP, new Date().toISOString()).run();
+          } catch (orderRateErr) {
+            // ถ้าตาราง order_creation_attempts ไม่มี → ข้าม rate limiting (fallback: ไม่บล็อก)
+            // ผู้ใช้ต้องสร้างตารางนี้เอง (ดู schema.sql)
+            console.warn("order rate limiting skipped (table order_creation_attempts not found):", orderRateErr?.message);
+          }
+
           // ลูกค้าไม่ได้ login — อนุญาตเฉพาะ "สร้างออเดอร์ใหม่" (id ยังไม่มีอยู่ในระบบ) เท่านั้น
           // กันไม่ให้เขียนทับออเดอร์ที่มีอยู่แล้วของคนอื่นโดยไม่ login
           const existing = await getDocument(env, collection, id);
@@ -1380,11 +1461,210 @@ async function handleDb(request, env, url) {
                   }
                 }
               }
-              // คำนวณ discount และ final_total
-              const discountAmount = Number(filteredData.discount_amount || 0);
-              const serverTotal = Math.max(0, serverSubtotal - discountAmount);
-              // Override ราคาที่ลูกค้าส่งมาด้วยราคาที่ server คำนวณ
+              // 🔒 (2026-09-23 fix): Server-side discount/promotion validation
+              //   ปัญหาเดิม: บรรทัดนี้เคยใช้ `Number(filteredData.discount_amount || 0)` ตรง ๆ
+              //             → ลูกค้าส่ง discount_amount = subtotal ทั้งหมด → total = 0 โดยไม่มีโค้ดจริง
+              //   วิธีแก้: Server fetch discounts + promotions จาก D1 → re-calc ทั้ง item discount
+              //          และ cart promotion → ตรวจ promotion_applied.id ว่ามีจริง + active + ไม่หมดอายุ
+              //          → override filteredData.discount_amount + promotion_applied + total + final_total
+              //   ผลกระทบระบบเดิม: 0% — ถ้าลูกค้าส่งค่าถูกต้อง → override ค่าเดียวกัน (ไม่เปลี่ยน)
+              //          ถ้าลูกค้าส่งค่าผิด → server ใช้ค่าจริงจาก DB (admin ยังตรวจอีกที)
+              //   สอดคล้องกับ computeCartPricing / computeBestPromotion ฝั่ง client (app-promotion.js PART 1)
+
+              // 1. Fetch all discounts + promotions จาก D1
+              const [discountsRows, promotionsRows] = await Promise.all([
+                listDocuments(env, "discounts"),
+                listDocuments(env, "promotions"),
+              ]);
+              const nowMs = Date.now();
+              // กรองเฉพาะที่ active + อยู่ในช่วง start_at/end_at (เหมือน fetchActiveDiscounts/Promotions ฝั่ง client)
+              const isPricingActive = (d) => {
+                if (!d) return false;
+                if (d.active === false) return false;
+                if (d.start_at) {
+                  const t = new Date(d.start_at).getTime();
+                  if (!isNaN(t) && nowMs < t) return false;
+                }
+                if (d.end_at) {
+                  const t = new Date(d.end_at).getTime();
+                  if (!isNaN(t) && nowMs > t) return false;
+                }
+                return true;
+              };
+              const activeDiscounts = discountsRows
+                .map(r => ({ id: r.id, ...(r.data || {}) }))
+                .filter(isPricingActive);
+              const activePromotions = promotionsRows
+                .map(r => ({ id: r.id, ...(r.data || {}) }))
+                .filter(isPricingActive);
+
+              // 2. Build DB price + category maps (กันลูกค้าส่ง price หรือ category_id ปลอม)
+              //    ใช้ชื่อ dbSongPriceMap / dbPlPriceMap / dbSongCategoryMap เพื่อหลีกเลี่ยงการชนกับ
+              //    songPriceMap / plPriceMap ที่ประกาศใน block ด้านล่าง (lines ~1424)
+              const dbSongPriceMap = new Map();
+              const dbSongCategoryMap = new Map();
+              if (songIds.length > 0) {
+                const songDocsForDiscount = await getDocumentsByIds(env, "songs", songIds);
+                for (const sd of songDocsForDiscount) {
+                  if (sd && sd.data) {
+                    dbSongPriceMap.set(sd.id, Number(sd.data.price) || 0);
+                    dbSongCategoryMap.set(sd.id, sd.data.category_id || sd.data.categoryId || null);
+                  }
+                }
+              }
+              const dbPlPriceMap = new Map();
+              if (playlistIds.length > 0) {
+                const plDocsForDiscount = await getDocumentsByIds(env, "playlists", playlistIds);
+                for (const pd of plDocsForDiscount) {
+                  if (pd && pd.data) {
+                    dbPlPriceMap.set(pd.id, Number(pd.data.price) || 0);
+                  }
+                }
+              }
+
+              // 3. Resolve DB price ของแต่ละ item (กันลูกค้าส่ง price=0)
+              const resolveItemDbPrice = (it) => {
+                if (it.kind === "playlist" && it.playlist_id) {
+                  return dbPlPriceMap.get(it.playlist_id) ?? Number(it.price) ?? 0;
+                }
+                if (it.song_id) {
+                  return dbSongPriceMap.get(it.song_id) ?? Number(it.price) ?? 0;
+                }
+                if (it.playlist_id) {
+                  return dbPlPriceMap.get(it.playlist_id) ?? Number(it.price) ?? 0;
+                }
+                return Number(it.price) || 0;
+              };
+
+              // 4. Compute item-level discounts (mirror applyDiscountToPrice + findActiveDiscountFor ฝั่ง client)
+              const findActiveDiscountFor = (targetType, targetId) => {
+                if (!targetType || !targetId) return null;
+                return activeDiscounts.find(d => d.target_type === targetType && d.target_id === targetId) || null;
+              };
+              const applyDiscountToPrice = (originalPrice, discount) => {
+                if (!discount || typeof originalPrice !== "number" || isNaN(originalPrice)) {
+                  return { finalPrice: originalPrice, discountAmount: 0, hasDiscount: false };
+                }
+                const value = Number(discount.discount_value) || 0;
+                let finalPrice = originalPrice;
+                if (discount.discount_type === "percent") {
+                  const pct = Math.max(0, Math.min(100, value));
+                  finalPrice = Math.round(originalPrice * (100 - pct) / 100);
+                } else if (discount.discount_type === "fixed") {
+                  finalPrice = Math.max(0, originalPrice - value);
+                }
+                finalPrice = Math.round(finalPrice);
+                const discountAmount = Math.max(0, originalPrice - finalPrice);
+                return { finalPrice, discountAmount, hasDiscount: discountAmount > 0 };
+              };
+
+              const itemsWithDiscount = filteredData.items.map(it => {
+                const originalPrice = resolveItemDbPrice(it);
+                let discount = null;
+                if (it.kind === "playlist") {
+                  discount = findActiveDiscountFor("playlist", it.playlist_id || it.id);
+                } else {
+                  discount = findActiveDiscountFor("song", it.song_id || it.id);
+                }
+                const { finalPrice, discountAmount: itemDisc, hasDiscount } = applyDiscountToPrice(originalPrice, discount);
+                return {
+                  ...it,
+                  original_price: originalPrice,
+                  discount_price: finalPrice,
+                  item_discount: itemDisc,
+                  _hadDiscount: hasDiscount,
+                };
+              });
+
+              // 5. Compute best cart-wide promotion (mirror computeBestPromotion + isItemInPromotionScope)
+              const isItemInPromotionScope = (item, promotion) => {
+                if (!promotion) return false;
+                const appliesTo = promotion.applies_to || "all";
+                if (appliesTo === "all") return true;
+                if (appliesTo === "category") {
+                  if (item.kind && item.kind !== "song") return false;
+                  // ใช้ category_id จาก DB (dbSongCategoryMap) ไม่ใช่จากลูกค้า — กัน spoof
+                  const songId = item.song_id || item.id;
+                  const catId = dbSongCategoryMap.get(songId) || item.category_id || item.categoryId || null;
+                  if (!catId || !promotion.category_id) return false;
+                  return catId === promotion.category_id;
+                }
+                return false;
+              };
+
+              let bestPromoObj = null;
+              let bestEligibleCount = 0;
+              let bestPromoDiscount = 0;
+              for (const promo of activePromotions) {
+                const eligibleItems = itemsWithDiscount.filter(it => {
+                  if (it._hadDiscount) return false;
+                  if (it.kind === "playlist") return false;
+                  return isItemInPromotionScope(it, promo);
+                });
+                const eligibleCount = eligibleItems.length;
+                if (eligibleCount === 0) continue;
+                if (promo.min_quantity && eligibleCount < promo.min_quantity) continue;
+                const eligibleSubtotal = eligibleItems.reduce((s, it) => s + (Number(it.discount_price) || 0), 0);
+                if (promo.min_subtotal && eligibleSubtotal < promo.min_subtotal) continue;
+                let promoDiscount = 0;
+                if (promo.type === "cart_percent") {
+                  const pct = Math.max(0, Math.min(100, Number(promo.discount_value) || 0));
+                  promoDiscount = Math.round(eligibleSubtotal * pct / 100);
+                } else if (promo.type === "cart_fixed") {
+                  promoDiscount = Math.min(eligibleSubtotal, Math.round(Number(promo.discount_value) || 0));
+                } else if (promo.type === "buy_x_get_y_percent") {
+                  const pct = Math.max(0, Math.min(100, Number(promo.discount_value) || 0));
+                  promoDiscount = Math.round(eligibleSubtotal * pct / 100);
+                } else {
+                  continue;
+                }
+                if (promoDiscount > bestPromoDiscount) {
+                  bestPromoDiscount = promoDiscount;
+                  bestEligibleCount = eligibleCount;
+                  bestPromoObj = promo;
+                }
+              }
+
+              // 6. Validate promotion_applied ของลูกค้า (ถ้ามี) — ต้องเป็น promotion ที่ active จริงใน DB
+              //    ถ้าลูกค้าส่ง promotion_applied.id ปลอม หรือ promotion หมดอายุ → ใช้ค่าที่ server คำนวณ
+              //    ไม่ reject ออเดอร์ (admin ตรวจอีกที) แต่ discount field ปลอดภัยจากการ tampering
+              const customerPromoId = filteredData.promotion_applied
+                && typeof filteredData.promotion_applied === "object"
+                && filteredData.promotion_applied.id ? filteredData.promotion_applied.id : null;
+              // ถ้าลูกค้าส่ง promotion_applied.id แต่ไม่ตรงกับที่ server คำนวณว่าดีที่สุด
+              //   → ใช้ค่า server เสมอ (defense-in-depth — ไม่เชื่อลูกค้า)
+              let validatedPromotionApplied = null;
+              if (bestPromoObj) {
+                validatedPromotionApplied = {
+                  id: bestPromoObj.id,
+                  name: bestPromoObj.name || "",
+                  type: bestPromoObj.type || "",
+                  discount_value: Number(bestPromoObj.discount_value) || 0,
+                  applies_to: bestPromoObj.applies_to || "all",
+                  category_id: bestPromoObj.category_id || null,
+                  eligible_count: bestEligibleCount,
+                  discount_amount: bestPromoDiscount,
+                  snapshot_at: new Date().toISOString()
+                };
+              }
+              // log เตือนถ้าลูกค้าส่ง promotion_applied ที่ไม่ตรงกับ DB (เพื่อ audit)
+              if (customerPromoId && customerPromoId !== (bestPromoObj && bestPromoObj.id)) {
+                console.warn(`[discount-validate] customer promotion_applied.id=${customerPromoId} mismatch with server-computed best=${bestPromoObj && bestPromoObj.id} — using server value`);
+              }
+
+              // 7. Compute final totals และ override ค่าที่ลูกค้าส่งมา
+              const itemDiscountAmount = itemsWithDiscount.reduce(
+                (s, it) => s + (Number(it.item_discount) || 0), 0
+              );
+              const discountSubtotal = itemsWithDiscount.reduce(
+                (s, it) => s + (Number(it.discount_price) || 0), 0
+              );
+              const serverDiscountAmount = itemDiscountAmount + bestPromoDiscount;
+              const serverTotal = Math.max(0, discountSubtotal - bestPromoDiscount);
+              // Override ราคาที่ลูกค้าส่งมาด้วยราคาที่ server คำนวณเอง
               filteredData.subtotal = serverSubtotal;
+              filteredData.discount_amount = serverDiscountAmount;
+              filteredData.promotion_applied = validatedPromotionApplied;
               filteredData.total = serverTotal;
               filteredData.final_total = serverTotal;
               // อัปเดต price ของแต่ละ item ด้วย (กันลูกค้าส่ง price=0)
