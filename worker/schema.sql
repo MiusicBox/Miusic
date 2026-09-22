@@ -189,3 +189,37 @@ CREATE TABLE IF NOT EXISTS download_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_download_tokens_order ON download_tokens(order_id);
 CREATE INDEX IF NOT EXISTS idx_download_tokens_expires ON download_tokens(expires_at);
+
+-- ===================================================
+-- 🔒 (2026-09-22 fix): audit_log table — บันทึกทุก action ที่แอดมินทำ
+--   เก็บประวัติ: ใคร (admin_id) ทำอะไร (action) กับอะไร (target) เมื่อไหร่ (timestamp)
+--   ใช้สำหรับ: สืบสวน insider threat, ตรวจสอบการลบเพลง/แก้ราคา/เปลี่ยนสถานะออเดอร์
+--
+--   Flow:
+--     1) แอดมินลบเพลง/แก้ราคา/เปลี่ยนสถานะออเดอร์ → Worker insert row ใหม่
+--     2) แอดมินหลักดูหน้า "ประวัติการกระทำ" → SELECT * FROM audit_log ORDER BY created_at DESC
+--     3) ถ้ามีเรื่องผิดปกติ → สืบได้ว่าใครทำตอนไหน
+--
+--   ความปลอดภัย:
+--     - ตารางนี้ insert-only (ไม่มี UPDATE/DELETE ผ่าน API — กันแอดมินลบประวัติตัวเอง)
+--     - ถ้าต้องล้าง → รัน SQL โดยตรงใน D1 Console (main admin เท่านั้น)
+--     - auto-cleanup: ล้าง rows ที่เกิน 90 วัน อัตโนมัติ (ผ่าน cron หรือ manual SQL)
+-- ===================================================
+CREATE TABLE IF NOT EXISTS audit_log (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_id      TEXT NOT NULL,           -- UID ของแอดมินที่ทำ action
+  admin_email   TEXT NOT NULL,           -- email ของแอดมิน (snapshot — กันกรณี admin ถูกลบ)
+  action        TEXT NOT NULL,            -- 'create' | 'update' | 'delete' | 'status_change' | 'zip_create' | 'zip_delete' | 'upload'
+  collection    TEXT NOT NULL,            -- 'songs' | 'playlists' | 'orders' | 'categories' | 'djs' | 'settings' | 'promotions' | 'discounts' | 'admins'
+  target_id     TEXT,                     -- ID ของ document ที่ถูกกระทำ
+  target_name   TEXT,                     -- ชื่อ/label ของ target (snapshot — กันกรณี target ถูกลบ)
+  before_data   TEXT,                     -- JSON snapshot ของข้อมูลก่อนเปลี่ยน (ถ้ามี — สำหรับ update/delete)
+  after_data    TEXT,                     -- JSON snapshot ของข้อมูลหลังเปลี่ยน (ถ้ามี — สำหรับ create/update)
+  ip_address    TEXT,                     -- IP ของผู้ทำ action (จาก CF-Connecting-IP)
+  created_at    TEXT NOT NULL             -- ISO 8601 timestamp
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_admin ON audit_log(admin_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_log_collection ON audit_log(collection, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at);
