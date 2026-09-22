@@ -10,7 +10,7 @@ import {
   reauthenticateWithCredential, EmailAuthProvider, updatePassword,
   checkHasAdmin, bootstrapFirstAdmin
 } from "./auth-client.js";
-import { initOrdersView } from "./orders.js?v=20260905-fix1";
+import { initOrdersView } from "./orders.js?v=20260922-batch10";
 import { resolveCurrentAdminRole, initAdminsView } from "./admin-roles.js";
 import {
   analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS
@@ -434,6 +434,268 @@ document.getElementById("qaDiscounts").addEventListener("click", () => {
 document.getElementById("qaPromotions").addEventListener("click", () => {
   showView("view-promotions"); initPromotionsView();
 });
+
+// ===== ประวัติร้าน (Audit Log) — Bug #2 UI =====
+//   หน้านี้ใช้ดู audit_log table ที่ worker บันทึกไว้
+//   ทุกแอดมินที่ login แล้วเข้าดูได้ (ตาม model "เพื่อนๆ ช่วยกันดูแล" ที่ผู้ใช้ระบุ)
+const AUDIT_LOG_PAGE_SIZE = 50;
+let auditLogState = { offset: 0, total: 0, loading: false };
+
+document.getElementById("qaAuditLog").addEventListener("click", () => {
+  showView("view-auditlog");
+  // reset filter + โหลดหน้า 1
+  auditLogState.offset = 0;
+  ["auditFilterAction", "auditFilterCollection", "auditFilterEmail", "auditFilterFromDate", "auditFilterToDate"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+  loadAuditLog();
+});
+
+document.getElementById("auditLogRefreshBtn")?.addEventListener("click", () => loadAuditLog());
+document.getElementById("auditFilterApplyBtn")?.addEventListener("click", () => {
+  auditLogState.offset = 0;
+  loadAuditLog();
+});
+
+// Enter ในช่อง email หรือ date ก็ trigger filter
+["auditFilterEmail", "auditFilterFromDate", "auditFilterToDate"].forEach(id => {
+  document.getElementById(id)?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      auditLogState.offset = 0;
+      loadAuditLog();
+    }
+  });
+});
+
+// ส่ง query ไป worker — รับ filter จาก input + paginate ผ่าน offset
+async function loadAuditLog() {
+  if (auditLogState.loading) return;
+  auditLogState.loading = true;
+
+  const listEl = document.getElementById("auditLogList");
+  const statsEl = document.getElementById("auditLogStats");
+  const pagerEl = document.getElementById("auditLogPager");
+
+  // Loading state
+  listEl.innerHTML = `<div style="text-align:center;padding:30px 0;color:var(--text-dim);font-size:13px;">⏳ กำลังโหลด...</div>`;
+  statsEl.textContent = "";
+  pagerEl.innerHTML = "";
+
+  // รวบรวม filter
+  const body = {
+    limit: AUDIT_LOG_PAGE_SIZE,
+    offset: auditLogState.offset,
+    action:     document.getElementById("auditFilterAction")?.value || "",
+    collection: document.getElementById("auditFilterCollection")?.value || "",
+    admin_email:document.getElementById("auditFilterEmail")?.value.trim() || "",
+    from_date: document.getElementById("auditFilterFromDate")?.value || "",
+    to_date:   document.getElementById("auditFilterToDate")?.value || "",
+  };
+
+  try {
+    const res = await fetch("/api/db/_meta/_audit-log-query", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 401) {
+      listEl.innerHTML = `<div style="text-align:center;padding:30px 16px;color:var(--text-dim);font-size:13px;">กรุณาเข้าสู่ระบบใหม่</div>`;
+      return;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    // กรณี table ยังไม่ถูกสร้าง → แสดง hint
+    if (data.needs_schema) {
+      listEl.innerHTML = `<div style="text-align:center;padding:30px 16px;color:var(--text-dim);font-size:13px;">
+        ⚠️ ตาราง audit_log ยังไม่ถูกสร้าง<br>
+        <span style="font-size:12px;">รัน schema.sql ล่าสุดใน D1 Console → แล้วกด 🔄 โหลดใหม่</span>
+      </div>`;
+      return;
+    }
+
+    auditLogState.total = Number(data.total) || 0;
+    renderAuditLog(data.logs || []);
+    renderAuditPager();
+  } catch (err) {
+    console.error("[auditLog] load failed:", err);
+    listEl.innerHTML = `<div style="text-align:center;padding:30px 16px;color:#ff6b6b;font-size:13px;">โหลดประวัติไม่สำเร็จ — ลองอีกครั้ง</div>`;
+    showToast("โหลดประวัติร้านไม่สำเร็จ", "error");
+  } finally {
+    auditLogState.loading = false;
+  }
+}
+
+function renderAuditLog(logs) {
+  const listEl = document.getElementById("auditLogList");
+  const statsEl = document.getElementById("auditLogStats");
+
+  if (!logs.length) {
+    listEl.innerHTML = `<div style="text-align:center;padding:40px 16px;color:var(--text-dim);font-size:13px;">ไม่มีรายการตามตัวกรองที่เลือก</div>`;
+    statsEl.textContent = "";
+    return;
+  }
+
+  // Stats summary
+  const fromIdx = auditLogState.offset + 1;
+  const toIdx = Math.min(auditLogState.offset + logs.length, auditLogState.total);
+  statsEl.textContent = `แสดง ${fromIdx}-${toIdx} จาก ${auditLogState.total} รายการ`;
+
+  // Render rows — ใช้ DocumentFragment + event delegation เพื่อ performance (เหมือน Bug #7 pattern)
+  const frag = document.createDocumentFragment();
+  for (const log of logs) {
+    const row = document.createElement("div");
+    row.className = "audit-log-row";
+    row.dataset.id = String(log.id);
+
+    const actionLabel = AUDIT_ACTION_LABELS[log.action] || log.action;
+    const actionClass = `audit-action-${log.action || "other"}`;
+    const collectionLabel = AUDIT_COLLECTION_LABELS[log.collection] || log.collection;
+    const time = formatAuditTime(log.created_at);
+
+    row.innerHTML = `
+      <div class="audit-row-main" style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;">
+        <span class="audit-action-pill ${actionClass}">${escapeHtml(actionLabel)}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:14px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${escapeHtml(collectionLabel)}${log.target_name ? `: ` + escapeHtml(String(log.target_name).slice(0, 80)) : ""}
+          </div>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${escapeHtml(log.admin_email || "unknown")} · ${escapeHtml(log.ip_address || "—")} · ${escapeHtml(time)}
+          </div>
+        </div>
+        <span class="audit-expand-icon" style="color:var(--text-dim);font-size:18px;flex-shrink:0;">▸</span>
+      </div>
+      <div class="audit-row-detail" style="display:none;padding:0 14px 14px;border-top:1px dashed rgba(255,255,255,.08);">
+        <div style="margin-top:10px;">
+          <div style="font-size:12px;font-weight:700;color:var(--text-dim);margin-bottom:4px;">📋 ข้อมูลก่อนเปลี่ยน (before)</div>
+          <pre style="background:rgba(0,0,0,.3);border-radius:6px;padding:10px;font-size:11px;overflow-x:auto;max-height:240px;color:#f1f1f1;">${escapeHtml(formatJsonForDisplay(log.before_data))}</pre>
+        </div>
+        <div style="margin-top:10px;">
+          <div style="font-size:12px;font-weight:700;color:var(--text-dim);margin-bottom:4px;">📋 ข้อมูลหลังเปลี่ยน (after)</div>
+          <pre style="background:rgba(0,0,0,.3);border-radius:6px;padding:10px;font-size:11px;overflow-x:auto;max-height:240px;color:#f1f1f1;">${escapeHtml(formatJsonForDisplay(log.after_data))}</pre>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:10px;">
+          target_id: ${escapeHtml(log.target_id || "—")} | admin_id: ${escapeHtml(log.admin_id || "—")} | log_id: ${escapeHtml(String(log.id))}
+        </div>
+      </div>
+    `;
+
+    // toggle expand on click
+    row.querySelector(".audit-row-main").addEventListener("click", () => {
+      const detail = row.querySelector(".audit-row-detail");
+      const icon = row.querySelector(".audit-expand-icon");
+      const isOpen = detail.style.display !== "none";
+      detail.style.display = isOpen ? "none" : "block";
+      icon.textContent = isOpen ? "▸" : "▾";
+    });
+
+    frag.appendChild(row);
+  }
+  listEl.innerHTML = "";
+  listEl.appendChild(frag);
+}
+
+// pagination controls — prev/next + page indicator
+function renderAuditPager() {
+  const pagerEl = document.getElementById("auditLogPager");
+  const total = auditLogState.total;
+  const offset = auditLogState.offset;
+  const pageSize = AUDIT_LOG_PAGE_SIZE;
+
+  pagerEl.innerHTML = "";
+
+  if (total === 0) return;
+
+  const hasPrev = offset > 0;
+  const hasNext = offset + pageSize < total;
+
+  const prevBtn = document.createElement("button");
+  prevBtn.className = "btn secondary";
+  prevBtn.style.cssText = "padding:8px 14px;font-size:13px;";
+  prevBtn.textContent = "← ก่อนหน้า";
+  prevBtn.disabled = !hasPrev;
+  if (!hasPrev) prevBtn.style.opacity = "0.4";
+  prevBtn.addEventListener("click", () => {
+    if (hasPrev && !auditLogState.loading) {
+      auditLogState.offset = Math.max(0, offset - pageSize);
+      loadAuditLog();
+      //  scroll to top of list
+      document.getElementById("view-auditlog")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+
+  const pageInfo = document.createElement("span");
+  pageInfo.style.cssText = "font-size:12px;color:var(--text-dim);";
+  const curPage = Math.floor(offset / pageSize) + 1;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  pageInfo.textContent = `หน้า ${curPage} / ${totalPages}`;
+
+  const nextBtn = document.createElement("button");
+  nextBtn.className = "btn secondary";
+  nextBtn.style.cssText = "padding:8px 14px;font-size:13px;";
+  nextBtn.textContent = "ถัดไป →";
+  nextBtn.disabled = !hasNext;
+  if (!hasNext) nextBtn.style.opacity = "0.4";
+  nextBtn.addEventListener("click", () => {
+    if (hasNext && !auditLogState.loading) {
+      auditLogState.offset = offset + pageSize;
+      loadAuditLog();
+      document.getElementById("view-auditlog")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+
+  pagerEl.appendChild(prevBtn);
+  pagerEl.appendChild(pageInfo);
+  pagerEl.appendChild(nextBtn);
+}
+
+function formatAuditTime(isoStr) {
+  if (!isoStr) return "—";
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return isoStr;
+    // ใช้ locale th-TH + เวลาท้องถิ่น (Asia/Vientiane)
+    //   format: 22 ก.ย. 2026, 14:30
+    const datePart = d.toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" });
+    const timePart = d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false });
+    return `${datePart} ${timePart}`;
+  } catch { return isoStr; }
+}
+
+function formatJsonForDisplay(obj) {
+  if (obj == null) return "(ไม่มีข้อมูล)";
+  if (typeof obj === "string") return obj;
+  try {
+    return JSON.stringify(obj, null, 2);
+  } catch {
+    return String(obj);
+  }
+}
+
+const AUDIT_ACTION_LABELS = {
+  create:        "➕ สร้าง",
+  update:        "✎ แก้ไข",
+  delete:        "🗑 ลบ",
+  status_change: "🔄 เปลี่ยนสถานะ",
+  zip_create:    "📦 สร้าง ZIP",
+  zip_delete:    "📦 ลบ ZIP",
+  upload:        "📤 อัปโหลด",
+};
+
+const AUDIT_COLLECTION_LABELS = {
+  songs:       "เพลง",
+  playlists:   "เพลย์ลิสต์",
+  orders:      "ออเดอร์",
+  categories:  "หมวดหมู่",
+  djs:         "DJ",
+  settings:    "ตั้งค่าเว็บ",
+  promotions:  "โปรโมชั่น",
+  discounts:   "ลดราคา",
+  admins:      "แอดมิน",
+};
 
 // 🔧 (2026-09-17 Phase 1): loadDashboard ใช้ TTL cache ลด D1 reads
 //   - ถ้า CACHE ของ collection ยัง fresh (60 วิ) → skip fetch ใช้ cache
