@@ -1421,8 +1421,12 @@ async function handleDb(request, env, url) {
           try { beforeDoc = await getDocument(env, collection, id); } catch { beforeDoc = null; }
         }
         const result = await setDocument(env, collection, id, body.data || {}, !!body.merge, admin?.email);
+        // 🔧 (2026-09-22 fix Bug #2 UI v3): ตรวจหา target_name จากหลาย field ที่เป็นไปได้
+        //   ไม่ใช่แค่ song_name/playlist_name/customer_name แต่รวม dj_name, category_name, name, display_name, title
+        //   ทำให้ target_name แสดงชื่อจริง ๆ แทน UUID ตอนแก้ไข DJ/หมวดหมู่/ผู้ใช้ ฯลฯ
+        const targetNameForLog = body.data?.song_name || body.data?.playlist_name || body.data?.customer_name || body.data?.dj_name || body.data?.category_name || body.data?.name || body.data?.display_name || body.data?.title || body.data?.email || id;
         // 🔧 (2026-09-22 fix): audit log — บันทึกการสร้าง/อัปเดต (มี before ด้วย)
-        await writeAuditLog(env, request, admin, !!body.merge ? "update" : "create", collection, id, body.data?.song_name || body.data?.playlist_name || body.data?.customer_name || id, beforeDoc?.data, body.data);
+        await writeAuditLog(env, request, admin, !!body.merge ? "update" : "create", collection, id, targetNameForLog, beforeDoc?.data, body.data);
         return jsonResponse(result);
       }
       if (request.method === "PATCH") {
@@ -1438,8 +1442,13 @@ async function handleDb(request, env, url) {
         try { beforeDoc = await getDocument(env, collection, id); } catch { beforeDoc = null; }
         const result = await updateDocument(env, collection, id, body.data || {});
         if (result.notFound) return jsonResponse({ error: "ไม่พบเอกสารที่จะอัปเดต" }, 404);
+        // 🔧 (2026-09-22 fix Bug #2 UI v3): ตรวจหา target_name จากหลาย field (เหมือน PUT)
+        //   ถ้า body.data มี dj_name → ใช้ dj_name (DJ ใหม่)
+        //   ถ้าไม่มี → ลองใช้ beforeDoc?.data?.dj_name (ชื่อเดิม) เป็น fallback
+        //   ถ้าไม่มีอีก → ใช้ id
+        const targetNameForLog = body.data?.song_name || body.data?.playlist_name || body.data?.customer_name || body.data?.dj_name || body.data?.category_name || body.data?.name || body.data?.display_name || body.data?.title || body.data?.email || beforeDoc?.data?.song_name || beforeDoc?.data?.playlist_name || beforeDoc?.data?.customer_name || beforeDoc?.data?.dj_name || beforeDoc?.data?.category_name || beforeDoc?.data?.name || beforeDoc?.data?.display_name || beforeDoc?.data?.title || beforeDoc?.data?.email || id;
         // 🔧 (2026-09-22 fix): audit log — บันทึกการแก้ไข (มี before ด้วย)
-        await writeAuditLog(env, request, admin, "update", collection, id, body.data?.song_name || body.data?.playlist_name || body.data?.customer_name || id, beforeDoc?.data, body.data);
+        await writeAuditLog(env, request, admin, "update", collection, id, targetNameForLog, beforeDoc?.data, body.data);
         return jsonResponse(result);
       }
       if (request.method === "DELETE") {
@@ -1508,7 +1517,10 @@ async function handleDb(request, env, url) {
         // 🔧 (2026-09-22 fix): audit log — บันทึกการลบ (เก็บ snapshot ของข้อมูลก่อนลบ)
         const beforeDelete = await getDocument(env, collection, id);
         await deleteDocument(env, collection, id);
-        await writeAuditLog(env, request, admin, "delete", collection, id, beforeDelete?.data?.song_name || beforeDelete?.data?.playlist_name || beforeDelete?.data?.customer_name || id, beforeDelete?.data, null);
+        // 🔧 (2026-09-22 fix Bug #2 UI v3): ตรวจหา target_name จากหลาย field (เหมือน PUT/PATCH)
+        //   ทำให้ target_name แสดงชื่อจริง ๆ แทน UUID ตอนลบ DJ/หมวดหมู่/ผู้ใช้ ฯลฯ
+        const targetNameForDelete = beforeDelete?.data?.song_name || beforeDelete?.data?.playlist_name || beforeDelete?.data?.customer_name || beforeDelete?.data?.dj_name || beforeDelete?.data?.category_name || beforeDelete?.data?.name || beforeDelete?.data?.display_name || beforeDelete?.data?.title || beforeDelete?.data?.email || id;
+        await writeAuditLog(env, request, admin, "delete", collection, id, targetNameForDelete, beforeDelete?.data, null);
         return jsonResponse({ ok: true });
       }
     }
@@ -3303,6 +3315,25 @@ export default {
       }
 
       console.log(`[cleanup] Done: ${successCount} expired, ${errorCount} failed`);
+
+      // 🔧 (2026-09-22 fix Bug #2 UI v3): ลบ audit_log เก่าเกิน 10 วัน อัตโนมัติ
+      //   - รันทุก 6 ชม. (เหมือน ZIP cleanup)
+      //   - ลบ rows ที่ created_at < (now - 10 วัน)
+      //   - กันตาราง audit_log ใหญ่เกิน → กิน D1 storage + reads
+      //   - ผู้ใช้ระบุให้เก็บแค่ 10 วัน (ตอนแรกเก็บ 90 วัน — เกินไปสำหรับร้านเล็ก)
+      try {
+        const auditCutoff = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+        const auditResult = await env.DB.prepare(
+          "DELETE FROM audit_log WHERE created_at < ?"
+        ).bind(auditCutoff).run();
+        const deletedCount = auditResult?.meta?.changes || 0;
+        if (deletedCount > 0) {
+          console.log(`[cleanup] Deleted ${deletedCount} old audit_log rows (older than 10 days)`);
+        }
+      } catch (auditErr) {
+        // ถ้าตาราง audit_log ไม่มี → log แล้วข้ามไป (ไม่ block cron)
+        console.warn("[cleanup] audit_log cleanup failed:", auditErr?.message || auditErr);
+      }
     } catch (err) {
       // cron error ไม่ควรทำให้ Cloudflare ลบ trigger → log แล้วจบ
       console.error("[cleanup] Cron error:", err?.message || err);
