@@ -1777,8 +1777,6 @@ function hideMyOrdersView() {
 // ===== เพิ่มใหม่: ติดตามออเดอร์ (ฝั่งลูกค้า ไม่ต้อง Login) — ไม่แตะระบบเดิม =====
 // ลูกค้ากรอกเลข Order + ชื่อ + เบอร์โทร เพื่อค้นหาและตรวจสอบสถานะออเดอร์ของตัวเอง
 function normalizePhone(v) {
-  // 🔧 (2026-09-22 v2 — รองรับทััง ลาว+ไทย): sync กับ app-cart.js + app-promotion.js + worker/index.js
-  //   เก็บเบอร์ WITH country code (856 หรือ 66) ใน DB
   let s = String(v || "").replace(/[^0-9+]/g, "");
   s = s.replace(/^\+/, "");
   if (s.startsWith("856")) {
@@ -1789,7 +1787,11 @@ function normalizePhone(v) {
     let rest = s.slice(2).replace(/^0+/, "");
     return "66" + rest;
   }
+  // 🔧 (2026-09-22 fix Bug #1): ตรวจ Thai local (8/9 + 8 หลัก = 9 หลัก) → เติม 66
   let rest = s.replace(/^0+/, "");
+  if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9"))) {
+    return "66" + rest;
+  }
   return "856" + rest;
 }
 function normalizeName(v) { return String(v || "").trim().toLowerCase(); }
