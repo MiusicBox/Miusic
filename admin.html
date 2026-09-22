@@ -36,10 +36,8 @@
     <div class="topbar">
       <div class="topbar-inner">
         <div class="logo"><span>⚙️ Admin — <span id="adminSiteName">Music Store</span></span></div>
-        <a href="/" id="viewStoreBtn" title="เปิดหน้าร้าน (เปิดแท็บใหม่)" target="_blank" rel="noopener"
-           style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:7px 14px;color:var(--text);text-decoration:none;font-size:13px;font-weight:700;">
-          🏪 <span>ดูหน้าร้าน</span>
-        </a>
+        <a href="/" id="viewStoreBtn" class="icon-btn" title="เปิดหน้าร้าน (เปิดแท็บใหม่)" target="_blank" rel="noopener"
+           style="margin-left:auto;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">🏪</a>
         <button class="icon-btn" id="changePasswordBtn" title="เปลี่ยนรหัสผ่านของฉัน">🔑</button>
         <button class="icon-btn" id="logoutBtn" title="ออกจากระบบ">⎋</button>
       </div>
@@ -1015,6 +1013,37 @@
       <div style="display:flex;gap:10px;margin-top:14px;">
         <button class="btn secondary" id="bulkMatchConfirmCancel" style="flex:1;">ย้อนกลับไปแก้ไข</button>
         <button class="btn" id="bulkMatchConfirmOk" style="flex:1;">ยืนยันและเริ่มอัปโหลด</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 🔧 (2026-09-22 fix Bug #2 UI v4): Modal ยืนยันการออกจากระบบ =====
+       ก่อน logout จริง → แสดง modal ให้เลือก:
+         - ปุ่ม "🏪 ดูหน้าร้าน" → ไปที่ / (เปิดแท็บเดียวกัน ไม่ logout session)
+         - ปุ่ม "⎋ ออกจากระบบ" → logout จริง (signOut)
+         - ปุ่ม "✕ ยกเลิก" → ปิด modal ไม่ทำอะไร
+       ป้องกันการ logout โดยไม่ตั้งใจจากการกดผิด -->
+  <div class="modal-backdrop" id="logoutConfirmBackdrop" style="display:none;">
+    <div class="modal" style="max-width:360px;">
+      <div class="modal-header"><h3>ตัวเลือกก่อนออก</h3><button class="modal-close" id="logoutConfirmClose">✕</button></div>
+      <p style="color:var(--text-dim);font-size:13px;margin-top:0;">คุณต้องการจะ...</p>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:14px;">
+        <a href="/" id="logoutConfirmViewStore"
+           style="display:flex;align-items:center;gap:12px;padding:14px;background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.3);border-radius:10px;color:#4ade80;text-decoration:none;font-size:14px;font-weight:700;">
+          <span style="font-size:22px;">🏪</span>
+          <div style="flex:1;">
+            <div>ดูหน้าร้าน</div>
+            <div style="font-size:11px;font-weight:400;color:var(--text-dim);margin-top:2px;">เปิดหน้าร้าน — ยังคงล็อกอินอยู่</div>
+          </div>
+        </a>
+        <button type="button" id="logoutConfirmLogout"
+                style="display:flex;align-items:center;gap:12px;padding:14px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);border-radius:10px;color:#f87171;font-size:14px;font-weight:700;cursor:pointer;text-align:left;">
+          <span style="font-size:22px;">⎋</span>
+          <div style="flex:1;">
+            <div>ออกจากระบบ</div>
+            <div style="font-size:11px;font-weight:400;color:var(--text-dim);margin-top:2px;">logout ออกจากระบบแอดมิน</div>
+          </div>
+        </button>
       </div>
     </div>
   </div>
