@@ -2079,6 +2079,43 @@ function closeFullFilesModal() {
 /* ---------------- เปลี่ยนสถานะออเดอร์ ---------------- */
 async function handleStatusChange(orderId, newStatus) {
   const order = state.allOrders.find((item) => item.id === orderId);
+
+  // 🔒 (2026-09-22 fix): validate status transitions — กันเปลี่ยนสถานะผิด logic
+  //   เดิม: รับทุก transition → cancelled→completed ได้ → ผิดธุรกิจ logic
+  //   ใหม่: ตรวจ transition ถูกต้องก่อน → ถ้าผิด → แจ้ง error + ไม่เปลี่ยน
+  //   Valid transitions:
+  //     pending_verify → processing (ยืนยันโอน)
+  //     pending_verify → cancelled (ยกเลิก)
+  //     processing → completed (ส่งเพลงเสร็จ)
+  //     processing → cancelled (ยกเลิก)
+  //     cancelled → pending_verify (เปิดใหม่ — แอดมินเปลี่ยนใจ)
+  //   Invalid: completed→อะไรก็ตาม, cancelled→completed, completed→cancelled
+  const VALID_TRANSITIONS = {
+    "pending_verify": ["processing", "cancelled"],
+    "processing":     ["completed", "cancelled"],
+    "completed":      [],  // สำเร็จแล้ว → ไม่เปลี่ยนได้
+    "cancelled":      ["pending_verify"],  // ยกเลิก → เปิดใหม่ได้
+  };
+  const currentStatus = order?.status || "";
+  const allowedNext = VALID_TRANSITIONS[currentStatus] || [];
+  if (!allowedNext.includes(newStatus)) {
+    // ถ้าเป็น transition เดียวกัน (เช่น pending_verify→pending_verify) → ไม่ error แต่ไม่ทำอะไร
+    if (currentStatus === newStatus) {
+      orderToast(`ออเดอร์นี้อยู่ในสถานะ "${newStatus}" อยู่แล้ว`, "info");
+      return;
+    }
+    const cfg = STATUS_CONFIG[newStatus] || {};
+    const currentCfg = STATUS_CONFIG[currentStatus] || {};
+    orderToast(
+      `❌ ไม่สามารถเปลี่ยนจาก "${currentCfg.label || currentStatus}" เป็น "${cfg.label || newStatus}" ได้โดยตรง — ` +
+      `สถานะที่เปลี่ยนได้: ${allowedNext.map(s => STATUS_CONFIG[s]?.label || s).join(", ") || "(ไม่มี)"}`,
+      "error"
+    );
+    // re-render เพื่อคืนค่า select กลับเดิม
+    renderFromState();
+    return;
+  }
+
   // "ยืนยันโอนแล้ว" จะยังไม่เปลี่ยนเป็น processing จนกว่า ZIP และลิงก์จะพร้อม
   if (newStatus === "processing" && order?.status !== "processing") {
     await confirmPaymentAndCreateZip(orderId);
