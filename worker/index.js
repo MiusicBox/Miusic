@@ -1411,9 +1411,18 @@ async function handleDb(request, env, url) {
 
           body.data = filteredData;
         }
+        // 🔧 (2026-09-22 fix Bug #2 UI v2): ดึงข้อมูลก่อนเปลี่ยนเก็บไว้สำหรับ audit log diff
+        //   ถ้า body.merge=true (อัปเดต) → ดึงเอกสารเดิมก่อน set
+        //   ถ้า body.merge=false (สร้างใหม่) → ก่อนหน้านี้ไม่มี → beforeDoc อาจเป็น null (create จริงๆ)
+        //   กรณี PUT โดยไม่ merge ที่มีเอกสารเดิมอยู่ → ถือเป็น "replace" (delete + create)
+        //   แต่ audit log จะบันทึกเป็น "create" เพราะ action คือ !!body.merge ? "update" : "create"
+        let beforeDoc = null;
+        if (body.merge) {
+          try { beforeDoc = await getDocument(env, collection, id); } catch { beforeDoc = null; }
+        }
         const result = await setDocument(env, collection, id, body.data || {}, !!body.merge, admin?.email);
-        // 🔧 (2026-09-22 fix): audit log — บันทึกการสร้าง/อัปเดต
-        await writeAuditLog(env, request, admin, !!body.merge ? "update" : "create", collection, id, body.data?.song_name || body.data?.playlist_name || body.data?.customer_name || id, null, body.data);
+        // 🔧 (2026-09-22 fix): audit log — บันทึกการสร้าง/อัปเดต (มี before ด้วย)
+        await writeAuditLog(env, request, admin, !!body.merge ? "update" : "create", collection, id, body.data?.song_name || body.data?.playlist_name || body.data?.customer_name || id, beforeDoc?.data, body.data);
         return jsonResponse(result);
       }
       if (request.method === "PATCH") {
@@ -1423,10 +1432,14 @@ async function handleDb(request, env, url) {
           return jsonResponse({ error: "เฉพาะแอดมินหลักเท่านั้นที่จัดการแอดมินได้" }, 403);
         }
         const body = await request.json();
+        // 🔧 (2026-09-22 fix Bug #2 UI v2): ดึงข้อมูลก่อนเปลี่ยนเก็บไว้สำหรับ audit log diff
+        //   PATCH ทุกครั้งคือการแก้ไข (update) → ต้องดึง before เสมอ
+        let beforeDoc = null;
+        try { beforeDoc = await getDocument(env, collection, id); } catch { beforeDoc = null; }
         const result = await updateDocument(env, collection, id, body.data || {});
         if (result.notFound) return jsonResponse({ error: "ไม่พบเอกสารที่จะอัปเดต" }, 404);
-        // 🔧 (2026-09-22 fix): audit log — บันทึกการแก้ไข
-        await writeAuditLog(env, request, admin, "update", collection, id, body.data?.song_name || body.data?.playlist_name || body.data?.customer_name || id, null, body.data);
+        // 🔧 (2026-09-22 fix): audit log — บันทึกการแก้ไข (มี before ด้วย)
+        await writeAuditLog(env, request, admin, "update", collection, id, body.data?.song_name || body.data?.playlist_name || body.data?.customer_name || id, beforeDoc?.data, body.data);
         return jsonResponse(result);
       }
       if (request.method === "DELETE") {
