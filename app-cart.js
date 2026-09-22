@@ -469,21 +469,29 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   //   ผลกระทบระบบเดิม: 0% — ถ้าเว็บยังไม่เปิด → ไม่มีออเดอร์เก่าใน DB → ไม่มีปัญหา
   //     ถ้ามีออเดอร์เก่า → ต้องรัน migration script เพิ่ม country code 856
   function normalizePhoneForStorage(v) {
-    let s = String(v || "").replace(/[^0-9+]/g, "");  // เก็บ + ไว้ด้วย
-    s = s.replace(/^\+/, "");  // ลบ + นำหน้า (ถ้ามี)
-    // ตรวจ country code
+    let s = String(v || "").replace(/[^0-9+]/g, "");
+    s = s.replace(/^\+/, "");
+    // ตรวจ country code ก่อน
     if (s.startsWith("856")) {
-      // ลาว — strip 856 และ 0 นำหน้า แล้วเติม 856 กลับ
       let rest = s.slice(3).replace(/^0+/, "");
       return "856" + rest;
     }
     if (s.startsWith("66")) {
-      // ไทย — strip 66 และ 0 นำหน้า แล้วเติม 66 กลับ
       let rest = s.slice(2).replace(/^0+/, "");
       return "66" + rest;
     }
-    // ไม่มี country code → สันนิษฐานว่าเป็นลาว (ลูกค้าส่วนใหญ่เป็นลาว)
+    // ไม่มี country code → ตรวจรูปแบบเบอร์เพื่อแยกลาว vs ไทย
+    // 🔧 (2026-09-22 fix Bug #1): เดิมสันนิษฐานลาวเสมอ → เบอร์ไทย 0812345678 → 856812345678 (ผิด!)
+    //   วิธีแก้: ตรวจเบอร์หลัง strip 0 นำหน้า:
+    //     - ขึ้นต้นด้วย 2 → ลาว (20XXXXXXXX) → เติม 856
+    //     - ขึ้นต้นด้วย 8 หรือ 9 และมี 9 หลัก → ไทย (8XXXXXXXX) → เติม 66
+    //     - อื่นๆ → สันนิษฐานลาว (default)
     let rest = s.replace(/^0+/, "");
+    if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9"))) {
+      // ไทย: 8XXXXXXXX หรือ 9XXXXXXXX (9 หลัก) → เติม 66
+      return "66" + rest;
+    }
+    // ลาวหรือไม่แน่ใจ → เติม 856 (default)
     return "856" + rest;
   }
 
