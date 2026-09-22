@@ -4355,3 +4355,18 @@ html.admin-page body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
+
+/* ============================================================
+   🔧 (2026-09-22 fix): prefers-reduced-motion — ปิดแอนิเมชันสำหรับผู้ใช้ที่ตั้งค่าลดการเคลื่อนไหว
+   ------------------------------------------------------------   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
