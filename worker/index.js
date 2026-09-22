@@ -708,6 +708,26 @@ async function handleDb(request, env, url) {
   const isCheckCoverUsedEndpoint =
     parts.length === 2 && request.method === "POST" && parts[1] === "_check-cover-used" && collection === "_meta";
 
+  // 🔧 (2026-09-22 fix Bug #2 UI): POST /api/db/_meta/_audit-log-query
+  //   อ่านรายการ audit_log พร้อม filter + paginate — ใช้สำหรับหน้า "ประวัติร้าน" ในแอดมินแพแนล
+  //   ทำให้แอดมินดูประวัติได้จาก UI โดยตรง ไม่ต้องเข้า Cloudflare Dashboard
+  //
+  //   request body (ทุกฟิลด์ optional):
+  //     { limit?: 50 (max 200), offset?: 0,
+  //       action?: "create"|"update"|"delete"|...,
+  //       collection?: "songs"|"orders"|...,
+  //       admin_email?: "substring match (case-insensitive)",
+  //       target_id?: "exact match",
+  //       from_date?: "2026-09-01" (inclusive, by created_at >= start-of-day),
+  //       to_date?:   "2026-09-30" (inclusive, by created_at < end-of-day + 1 day)
+  //     }
+  //   response: { logs: [{...}], total: <number>, limit, offset }
+  //
+  //   Security: admin-only (ทุกแอดมินที่ login แล้ว — สอดคล้องกับ "เพื่อนๆ ช่วยกันดูแล" model
+  //   ที่ผู้ใช้ระบุไว้ — sub-admin อ่าน audit log ได้ เพราะทุกคนที่เป็น admin คือคนรู้จัก)
+  const isAuditLogQueryEndpoint =
+    parts.length === 2 && request.method === "POST" && parts[1] === "_audit-log-query" && collection === "_meta";
+
   // 🔧 (2026-09-18 v6 Full System): endpoint นับ documents ทั้งหมดใน collection
   //   ใช้สำหรับ dashboard stats → 1 D1 read แทน N reads
   //   request: POST /api/db/:collection/_count-all
@@ -726,7 +746,7 @@ async function handleDb(request, env, url) {
 
   // 🔒 Security (2026-09-11): ดึง admin status เสมอเมื่อเป็น collection "songs" เพื่อตัดสินใจว่าจะ sanitize
   // ฟิลด์ sensitive ออกหรือไม่ — ไม่ใช่แค่ตอน isWrite หรือ non-public collection
-  const needsAdminCheck = isWrite || !PUBLIC_READ_COLLECTIONS.has(collection) || collection === "songs" || isOrdersCountPendingEndpoint || isBatchGetEndpoint || isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint || isCountAllEndpoint || isCheckDuplicateEndpoint;
+  const needsAdminCheck = isWrite || !PUBLIC_READ_COLLECTIONS.has(collection) || collection === "songs" || isOrdersCountPendingEndpoint || isBatchGetEndpoint || isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint || isCountAllEndpoint || isCheckDuplicateEndpoint || isAuditLogQueryEndpoint;
 
   let admin = null;
   if (needsAdminCheck || isOrdersCustomerEndpoint) {
@@ -770,7 +790,8 @@ async function handleDb(request, env, url) {
   //   ทั้งสองอย่างเป็น admin-only (เช็ค !admin ภายใน handler อีกที)
   //   แต่ต้องข้ามบล็อก 401 ก่อนเข้า handler — เลยยกเว้นในเงื่อนไขบล็อกด้านล่าง
   // 🔧 (2026-09-18 v6): เพิ่ม isCountAllEndpoint + isCheckDuplicateEndpoint (admin-only ด้วย)
-  const isAdminOnlyMetaEndpoint = isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint || isCountAllEndpoint || isCheckDuplicateEndpoint;
+  // 🔧 (2026-09-22 fix Bug #2 UI): เพิ่ม isAuditLogQueryEndpoint (admin-only ด้วย)
+  const isAdminOnlyMetaEndpoint = isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint || isCountAllEndpoint || isCheckDuplicateEndpoint || isAuditLogQueryEndpoint;
   if (!admin && !isOrdersPublicWriteCandidate && !isOrdersCustomerEndpoint && !isSongsPublicGet && !isSongsPublicQuery && !isAdminOnlyMetaEndpoint) {
     if (isWrite || !PUBLIC_READ_COLLECTIONS.has(collection)) {
       return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
@@ -875,6 +896,124 @@ async function handleDb(request, env, url) {
       return jsonResponse({ used: !!(playlistMatches && playlistMatches.length > 0) });
     } catch (err) {
       return jsonResponse({ error: safeError("ตรวจสอบรูปปกไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+    }
+  }
+
+  // 🔧 (2026-09-22 fix Bug #2 UI): POST /api/db/_meta/_audit-log-query
+  //   อ่านรายการ audit_log พร้อม filter + paginate — สำหรับหน้า "ประวัติร้าน" ในแอดมินแพแนล
+  //   ทำให้แอดมินดูประวัติได้จาก UI โดยตรง ไม่ต้องเข้า Cloudflare Dashboard ทุกครั้ง
+  //
+  //   build WHERE clause + bindings แบบ dynamic — เฉพาะฟิลด์ที่ส่งมาเท่านั้นที่ filter
+  //   ใช้ `created_at >= ? AND created_at < ?` สำหรับ date range (BETTEE ไม่ใช้เพราะ
+  //   มันมี edge case ตอน timezone + ไม่รวม upper bound ใน SQLite)
+  //   ใช้ LIKE สำหรับ admin_email (substring match case-insensitive) — กัน SQL injection ด้วย
+  //   การ bind value (ไม่ใช้ string interpolation)
+  //
+  //   สำหรับ total: ใช้ SELECT COUNT(*) แบบเดียวกัน — เพื่อให้ frontend คำนวณ pagination ได้
+  //   limit/offset ใช้ bind (SQLite ไม่รองรับ expression ใน LIMIT แบบ prepared statement ในบาง version)
+  //   เลยใช้ Math.min/max ฝั่ง JS ก่อน แล้วค่อย bind เป็น number
+  if (isAuditLogQueryEndpoint) {
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    let body;
+    try { body = await request.json(); } catch { body = {}; }
+
+    // parse + clamp limit/offset (default 50 / max 200 — กัน DoS ดึง log 10,000 รายการ)
+    let limit = Number(body?.limit);
+    if (!Number.isFinite(limit) || limit < 1) limit = 50;
+    if (limit > 200) limit = 200;
+    let offset = Number(body?.offset);
+    if (!Number.isFinite(offset) || offset < 0) offset = 0;
+
+    // รับ filter ทั้งหมด (optional) — sanitize ฝั่ง server เท่านั้น
+    const actionFilter      = String(body?.action || "").trim().slice(0, 50) || null;
+    const collectionFilter  = String(body?.collection || "").trim().slice(0, 50) || null;
+    const adminEmailFilter  = String(body?.admin_email || "").trim().slice(0, 200) || null;
+    const targetIdFilter    = String(body?.target_id || "").trim().slice(0, 200) || null;
+    // รับ date string แบบ "YYYY-MM-DD" หรือ ISO 8601 — แปลงเป็น range ที่ใช้กับ created_at
+    //   from_date: รวม (inclusive) → เริ่มต้นวัน (00:00:00 UTC)
+    //   to_date: รวม (inclusive) → วันถัดไป 00:00:00 UTC (เลือกทั้งวันนั้น)
+    let fromDate = null, toDate = null;
+    try {
+      if (body?.from_date) {
+        const d = new Date(body.from_date);
+        if (!isNaN(d.getTime())) fromDate = d.toISOString();
+      }
+      if (body?.to_date) {
+        const d = new Date(body.to_date);
+        if (!isNaN(d.getTime())) {
+          // +1 วัน → ใช้เป็น upper bound (exclusive)
+          d.setDate(d.getDate() + 1);
+          toDate = d.toISOString();
+        }
+      }
+    } catch { /* ignore invalid date */ }
+
+    // สร้าง WHERE clause + bindings (prepared statement — กัน SQL injection)
+    const wheres = ["1=1"];
+    const binds = [];
+    if (actionFilter)          { wheres.push("action = ?");      binds.push(actionFilter); }
+    if (collectionFilter)      { wheres.push("collection = ?"); binds.push(collectionFilter); }
+    if (targetIdFilter)        { wheres.push("target_id = ?");  binds.push(targetIdFilter); }
+    if (adminEmailFilter)      { wheres.push("admin_email LIKE ? COLLATE NOCASE"); binds.push(`%${adminEmailFilter}%`); }
+    if (fromDate)              { wheres.push("created_at >= ?"); binds.push(fromDate); }
+    if (toDate)                { wheres.push("created_at < ?");  binds.push(toDate); }
+
+    const whereClause = wheres.join(" AND ");
+
+    try {
+      // query หลัก: logs (เรียงใหม่สุดก่อน)
+      const logsSql =
+        `SELECT id, admin_id, admin_email, action, collection, target_id, target_name,
+                before_data, after_data, ip_address, created_at
+         FROM audit_log
+         WHERE ${whereClause}
+         ORDER BY created_at DESC, id DESC
+         LIMIT ? OFFSET ?`;
+      const logBinds = [...binds, limit, offset];
+      const { results: logs } = await env.DB.prepare(logsSql).bind(...logBinds).all();
+
+      // query total: count (สำหรับ pagination)
+      const totalSql = `SELECT COUNT(*) as cnt FROM audit_log WHERE ${whereClause}`;
+      const totalBinds = [...binds];
+      const totalRow = await env.DB.prepare(totalSql).bind(...totalBinds).first();
+      const total = Number(totalRow?.cnt) || 0;
+
+      // parse before_data/after_data เป็น object (ฝั่ง client จะได้ไม่ต้อง JSON.parse ซ้ำ)
+      const parsedLogs = (logs || []).map(row => {
+        let beforeParsed = null, afterParsed = null;
+        try { if (row.before_data) beforeParsed = JSON.parse(row.before_data); } catch { beforeParsed = row.before_data; }
+        try { if (row.after_data)  afterParsed  = JSON.parse(row.after_data);  } catch { afterParsed  = row.after_data;  }
+        return {
+          id: row.id,
+          admin_id: row.admin_id,
+          admin_email: row.admin_email,
+          action: row.action,
+          collection: row.collection,
+          target_id: row.target_id,
+          target_name: row.target_name,
+          before_data: beforeParsed,
+          after_data: afterParsed,
+          ip_address: row.ip_address,
+          created_at: row.created_at,
+        };
+      });
+
+      return jsonResponse({ logs: parsedLogs, total, limit, offset });
+    } catch (err) {
+      // กรณีตาราง audit_log ยังไม่ถูกสร้าง → ส่ง empty list + total: 0 แทน (ไม่ crash UI)
+      //   กรณีนี้คือ main admin ยังไม่รัน schema.sql ครบ — return empty ให้ UI แสดงว่างๆ
+      //   แล้วแสดง toast แนะนำให้รัน schema.sql
+      if (String(err?.message || "").toLowerCase().includes("no such table")) {
+        return jsonResponse({
+          logs: [],
+          total: 0,
+          limit,
+          offset,
+          needs_schema: true,
+          hint: "ตาราง audit_log ยังไม่ถูกสร้าง — รัน schema.sql ล่าสุดใน D1 Console เพื่อสร้างตารางนี้",
+        });
+      }
+      return jsonResponse({ error: safeError("อ่านประวัติร้านไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }
   }
 
