@@ -1176,13 +1176,6 @@ function myOrders_escapeHtml(str) {
 }
 function myOrders_formatPrice(v) { return Number(v || 0).toLocaleString("en-US") + " LAK"; }
 function myOrders_normalizePhone(v) {
-  // 🔧 (2026-09-22 v2 — รองรับทั้ัง ลาว+ไทย): เก็บเบอร์ WITH country code ใน DB
-  //   สอดคล้องกับ normalizePhoneForStorage ใน app-cart.js (ที่แก้พร้อมกัน)
-  //   + normalizePhoneServer ใน worker/index.js + normalizePhone ใน app-user.js
-  //   รูปแบบที่เก็บ:
-  //     ลาว: "85620XXXXXXXX" (มี country code 856)
-  //     ไทย: "668XXXXXXXX" (มี country code 66)
-  //   ทำให้ลูกค้าค้นหาออเดอร์ได้โดยใส่เบอร์รูปแบบใดก็ได้ (local/international/with or without +)
   let s = String(v || "").replace(/[^0-9+]/g, "");
   s = s.replace(/^\+/, "");
   if (s.startsWith("856")) {
@@ -1193,8 +1186,11 @@ function myOrders_normalizePhone(v) {
     let rest = s.slice(2).replace(/^0+/, "");
     return "66" + rest;
   }
-  // ไม่มี country code → สันนิษฐานว่าเป็นลาว
+  // 🔧 (2026-09-22 fix Bug #1): ตรวจ Thai local (8/9 + 8 หลัก = 9 หลัก) → เติม 66
   let rest = s.replace(/^0+/, "");
+  if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9"))) {
+    return "66" + rest;
+  }
   return "856" + rest;
 }
 function myOrders_normalizeName(v) { return String(v || "").trim().toLowerCase(); }
