@@ -125,6 +125,26 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts(ip, attempted_at);
 
 -- ===================================================
+-- 🔒 (2026-09-23 fix): ตาราง order_creation_attempts สำหรับ rate limiting บนการสร้างออเดอร์
+--   ใช้ track IP ของทุกคำขอสร้างออเดอร์จากลูกค้าที่ยังไม่ login → บล็อกถ้าเกิน 10 ครั้งใน 15 นาที
+--   ปัญหา: endpoint PUT /api/db/orders/:id แบบไม่ login ไม่มี rate limit → attacker ยิงสแปมสร้าง
+--          ออเดอร์ปลอมจำนวนมาก รบกวนแอดมิน + กิน D1 write quota
+--   ความแตกต่างจาก login_attempts:
+--     - login_attempts: insert เฉพาะตอน login FAIL (กัน brute-force)
+--     - order_creation_attempts: insert ทุกครั้งที่เข้า endpoint (ทั้ง success + fail)
+--       เพราะการโจมตีคือ "ยิงสร้างออเดอร์ปลอมล้น quota" ไม่ใช่ brute-force
+--   ผลกระทบระบบเดิม: 0% — ตารางใหม่ ไม่แตะ documents/admin_users/sessions/login_attempts
+--   ถ้าตารางนี้ไม่มี (DB เก่าที่ยังไม่ run schema.sql ล่าสุด) → Worker ข้าม rate limiting (fallback: ไม่บล็อก)
+-- ===================================================
+CREATE TABLE IF NOT EXISTS order_creation_attempts (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  ip            TEXT NOT NULL,
+  attempted_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_creation_attempts_ip ON order_creation_attempts(ip, attempted_at);
+
+-- ===================================================
 -- 🔧 (2026-09-18): ตาราง order_zip_jobs
 -- เก็บสถานะ R2 Multipart Upload ระหว่างสร้าง ZIP ออเดอร์ฝั่ง Worker
 -- (ปัญหา: Worker มี request body limit 100MB → สร้าง ZIP ผ่าน multipart upload ทีละเพลง)
