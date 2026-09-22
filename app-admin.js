@@ -788,12 +788,20 @@ const AUDIT_STATUS_LABELS = {
 };
 
 // ตัดสินใจว่าฟิลด์นี้ควรข้ามใน diff หรือไม่ (ฟิลด์ที่เปลี่ยนเองโดยระบบ/ไม่สำคัญต่อ audit)
+// 🔧 (2026-09-22 fix Bug #2 UI v3): เพิ่ม created_at, id และ field ระบบอื่น ๆ กัน diff แสดง "ลบวันที่สร้างออก"
+//   หรือ "เพิ่ม id: xxx" ที่คนทั่วไปไม่สนใจ
 const AUDIT_IGNORED_FIELDS = new Set([
   "updated_at",      // อัปเดตอัตโนมัติทุกครั้ง → ไม่สำคัญ
+  "created_at",      // ตั้งตอนสร้าง → ไม่ควรเปลี่ยน → ถ้าเปลี่ยนแปลว่าระบบ auto-set ไม่ใช่ action ของแอดมิน
+  "id",              // primary key → ไม่ใช่ field ที่ user แก้เอง
+  "password",        // รหัสผ่าน (sensitive — ไม่ควรโชว์ใน diff แม้จะ hash แล้ว)
+  "password_hash",   // hash รหัสผ่าน (เหมือนกัน)
+  "session_token",   // session token (sensitive)
   "zip_created_at",  // ตั้งโดย cron/ZIP flow → ไม่ใช่ action ของแอดมิน
   "zip_expired_at",
   "zip_public_id",
   "zip_status",      // จะแสดงเป็น "สถานะ ZIP" อยู่แล้ว ถ้าเปลี่ยนจริงๆ
+  "uid",             // Firebase legacy UID (ย้ายไป D1 แล้ว แต่ field ยังอยู่)
 ]);
 
 // สร้างคำอธิบายแบบภาษาคน ๆ สำหรับ log 1 รายการ
