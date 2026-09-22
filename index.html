@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
 <title>Music Store</title>
+
+<!-- 🔧 (2026-09-22 Batch 7 fix Bug #15): Open Graph tags สำหรับแชร์ Facebook/Line -->
+<!--   ปัญหา: แชร์ URL ใน Line/Facebook → แสดงแค่ URL ไม่มีรูป preview
+     วิธีแก้: เพิ่ม meta tags og:title, og:description, og:image, og:url
+     ผลกระทบ: แชร์เว็บใน social → แสดง title + รูป + description สวยงาม → คนคลิกเยอะขึ้น -->
+<!-- Open Graph tags จะถูกอัปเดตจาก settings.website_name + settings.meta_description + settings.website_logo ตอน init() รันใน app-user.js -->
 <meta property="og:type" content="website">
 <meta property="og:title" content="Music Store — ร้านเพลงออนไลน์">
 <meta property="og:description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
@@ -15,452 +21,742 @@
 <meta name="twitter:title" content="Music Store — ร้านเพลงออนไลน์">
 <meta name="twitter:description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
 <meta name="twitter:image" content="default-song-cover.svg">
+
+<!-- 🔧 (2026-09-22 fix): Favicon — แสดง icon ในแท็บ browser -->
 <link rel="icon" type="image/svg+xml" href="default-song-cover.svg">
 <link rel="apple-touch-icon" href="default-song-cover.svg">
+
+<!-- 🔧 (2026-09-22 fix): Canonical URL — กัน Google index ซ้ำ (เช่น http vs https) -->
 <link rel="canonical" href="https://miusic-store.dj-remix.workers.dev/">
+
+<!-- 🔧 (2026-09-22 fix): JSON-LD Structured Data — บอก Google ว่าเว็บนี้คือร้านค้า -->
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"Store","name":"Music Store","description":"ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp","url":"https://miusic-store.dj-remix.workers.dev/","image":"default-song-cover.svg","priceRange":"LAK","paymentAccepted":"Cash, Bank Transfer","currenciesAccepted":"LAK"}
+{
+  "@context": "https://schema.org",
+  "@type": "Store",
+  "name": "Music Store",
+  "description": "ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp",
+  "url": "https://miusic-store.dj-remix.workers.dev/",
+  "image": "default-song-cover.svg",
+  "priceRange": "LAK",
+  "paymentAccepted": "Cash, Bank Transfer",
+  "currenciesAccepted": "LAK"
+}
 </script>
+
+<!-- 🎨 (2026-09-20) Google Fonts: Mali (ตัวทำมะดา สำหรับชื่อเพลง) + Bai Jamjuree (ตัวหนา สำหรับหัวเพลย์ลิสต์) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Mali:wght@400;700&family=Bai+Jamjuree:wght@400;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css?v=20260922-reduced-motion">
+
+<!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): เพิ่ม .visually-hidden class สำหรับ h1 SEO -->
 <style>
-  .visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+  .visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0,0,0,0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
 </style>
+
 <style>
-  .cart-toggle-wrap{position:relative;margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:nowrap}
-  .cart-toggle-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
-  .cart-icon-svg{width:26px;height:26px;flex-shrink:0}
-  .cart-badge{position:absolute;top:-3px;right:-3px;min-width:19px;height:19px;padding:0 4px;border-radius:999px;background:linear-gradient(135deg,var(--danger,#ff6b6b),#ff3b30);color:#fff;font-size:10.5px;line-height:19px;font-weight:800;text-align:center;border:2px solid var(--surface,#131722);box-shadow:0 2px 6px rgba(0,0,0,.35);pointer-events:none}
-  .cart-modal{max-width:560px}
-  .cart-items{display:flex;flex-direction:column;gap:8px;max-height:48vh;overflow:auto}
-  .cart-item{display:grid;grid-template-columns:48px minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:9px;border:1px solid rgba(255,255,255,.1);border-radius:10px}
-  .cart-item-cover{width:48px;height:48px;border-radius:8px;object-fit:cover;background:rgba(255,255,255,.06)}
-  .cart-item-info{min-width:0}
-  .cart-item-name{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .cart-item-meta{color:var(--text-dim);font-size:12px;margin-top:3px}
-  .cart-item-total{font-weight:800;white-space:nowrap}
-  .cart-remove{border:0;background:transparent;color:var(--danger);cursor:pointer;padding:6px}
-  .cart-empty{text-align:center;padding:24px 8px;color:var(--text-dim)}
-  .cart-summary{margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.1)}
-  .cart-summary-row{display:flex;justify-content:space-between;gap:12px;margin:5px 0}
-  .cart-actions{display:flex;gap:8px;margin-top:14px}
-  .cart-actions>*{flex:1}
-  .cart-feedback{min-height:20px;margin-top:8px;font-size:13px}
-  .cart-item-viewsongs{grid-column:1 / -1;border:0;background:transparent;color:var(--accent-2);font-size:12px;text-align:left;padding:2px 0 0;cursor:pointer}
-  .cart-item-songs{grid-column:1 / -1;display:none;flex-direction:column;gap:3px;margin-top:4px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.05)}
-  .cart-item-songs.is-open{display:flex}
-  .cart-item-songs-row{font-size:12px;color:var(--text-dim)}
-  @media(max-width:480px){.cart-item{grid-template-columns:42px minmax(0,1fr) auto}.cart-item-cover{width:42px;height:42px}.cart-item-total{grid-column:2}.cart-remove{grid-column:3;grid-row:1 / span 2}}
-  #songModalBackdrop .modal{max-width:440px}
-  #songModalBackdrop .modal-header{padding-bottom:10px}
-  #modalHead{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px}
-  #modalCoverWrap{width:80px;height:80px;flex-shrink:0;position:relative;overflow:hidden;border-radius:10px;background:rgba(255,255,255,.04)}
-  #modalCover{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover}
-  #modalInfo{flex:1;min-width:0}
-  #modalName{margin:0 0 2px;font-size:16px;font-weight:800;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-  #modalArtist{color:var(--text-dim);font-size:13px;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  #modalBadges{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
-  #modalBadges .badge{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);color:var(--text)}
-  #modalBadges .badge.dj{color:var(--accent-2,#61dafb)}
-  #modalPrice{font-size:16px;font-weight:800;color:var(--success,#28c76f);margin-top:2px}
-  #modalDesc{font-size:12px;color:var(--text-dim);margin-bottom:12px;line-height:1.5;max-height:60px;overflow-y:auto;padding:8px 10px;background:rgba(255,255,255,.03);border-radius:8px}
-  #modalDesc:empty{display:none}
-  #modalPlayer{display:flex;flex-direction:column;gap:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)}
-  #modalSeekWrap{display:flex;align-items:center;gap:8px}
-  #modalSeek{flex:1;-webkit-appearance:none;appearance:none;height:4px;background:rgba(255,255,255,.12);border-radius:999px;outline:none;cursor:pointer}
-  #modalSeek::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent,#7a5cff);cursor:pointer;border:0}
-  #modalSeek::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--accent,#7a5cff);cursor:pointer;border:0}
-  #modalCurrTime,#modalDurTime{font-size:11px;color:var(--text-dim);font-variant-numeric:tabular-nums;min-width:32px;text-align:center}
-  #modalJumpRow{display:flex;gap:6px;align-items:center;justify-content:center}
-  .modal-jump-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 4px;font-size:10px;font-weight:600;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:9px;color:var(--text-dim);cursor:pointer;transition:background .15s,color .15s,border-color .15s}
-  .modal-jump-btn:hover{background:rgba(255,255,255,.08);color:var(--text)}
-  .modal-jump-btn.active{background:rgba(122,92,255,.16);border-color:var(--accent,#7a5cff);color:#fff}
-  .modal-jump-btn .modal-jump-ico{font-size:14px;line-height:1}
-  .modal-jump-btn:disabled{opacity:.4;cursor:not-allowed}
-  #songModalBackdrop #modalPlayBtn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;font-size:14px;font-weight:700;border-radius:10px;background:var(--accent,#7a5cff);color:#fff;border:0;cursor:pointer}
-  #modalPlayBtn:disabled{opacity:.5;cursor:not-allowed}
-  #modalPlayBtn .spinner{display:none;width:16px;height:16px;border-width:2px}
-  #modalPlayBtn.loading .spinner{display:inline-block}
-  #modalPlayBtn.loading #modalPlayIconWrap,#modalPlayBtn.loading #modalPlayLabel{display:none}
-  #songModalBackdrop #modalBuyBtn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;font-size:14px;font-weight:700;border-radius:10px;background:var(--success,#28c76f);color:#fff;border:0;cursor:pointer;margin-top:8px}
-  #songModalBackdrop #modalPlayBtn{background:linear-gradient(135deg,rgba(236,72,153,.25),rgba(236,72,153,.15));border:1px solid rgba(236,72,153,.4);color:#ec4899;box-shadow:0 4px 14px rgba(236,72,153,.3);transition:all .2s ease}
-  #songModalBackdrop #modalPlayBtn:hover:not(:disabled){transform:translateY(-1px);background:linear-gradient(135deg,rgba(236,72,153,.35),rgba(236,72,153,.25));box-shadow:0 6px 18px rgba(236,72,153,.45)}
-  #modalPlayBtn .spinner{border-color:rgba(236,72,153,.25);border-top-color:#ec4899}
-  #songModalBackdrop #modalBuyBtn{background:linear-gradient(135deg,rgba(74,222,128,.25),rgba(34,197,94,.15));border:1px solid rgba(74,222,128,.4);color:#4ade80;box-shadow:0 4px 14px rgba(74,222,128,.3);transition:all .2s ease}
-  #songModalBackdrop #modalBuyBtn:hover{transform:translateY(-1px);background:linear-gradient(135deg,rgba(74,222,128,.35),rgba(34,197,94,.25));box-shadow:0 6px 18px rgba(74,222,128,.45)}
-  #modalMetaLine{font-size:11px;color:var(--text-dim);text-align:center;line-height:1.5}
-  .track-order-btn{position:relative;margin-right:6px;font-size:26px;line-height:1}
-  .track-order-modal .track-order-intro{color:var(--text-dim);font-size:13px;margin-top:0;margin-bottom:16px}
-  .track-order-result{margin-top:6px;padding-top:14px;border-top:1px solid rgba(255,255,255,.1)}
-  .track-order-status{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;font-size:12.5px;font-weight:700;margin-bottom:14px}
-  .track-order-row{display:flex;justify-content:space-between;gap:12px;margin:6px 0;font-size:13.5px}
-  .track-order-row span:first-child{color:var(--text-dim)}
-  .track-order-items{display:flex;flex-direction:column;gap:6px;margin:10px 0;max-height:38vh;overflow:auto}
-  .track-order-item{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:8px 10px;border:1px solid rgba(255,255,255,.08);border-radius:9px}
-  .track-order-item-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .track-order-item-price{white-space:nowrap;color:var(--text-dim)}
-  .track-order-total{margin-top:8px;padding-top:10px;border-top:1px solid rgba(255,255,255,.1);display:flex;justify-content:space-between;font-weight:800;font-size:15px}
-  .track-order-actions{display:flex;gap:8px;margin-top:16px}
-  .track-order-actions>*{flex:1}
-  .track-order-mode-switch{display:flex;gap:6px;margin-bottom:16px;background:rgba(255,255,255,.05);border-radius:11px;padding:4px}
-  .track-order-mode-btn{flex:1;border:0;background:transparent;color:var(--text-dim);font-size:12.5px;font-weight:700;padding:8px 6px;border-radius:8px;cursor:pointer;transition:background .15s,color .15s}
-  .track-order-mode-btn.active{background:var(--accent);color:#fff}
-  .track-order-all-list{display:flex;flex-direction:column;gap:8px;margin-top:14px;max-height:50vh;overflow:auto}
-  .track-order-all-card{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid var(--border);border-radius:11px;background:rgba(255,255,255,.03);cursor:pointer;text-align:left}
-  .track-order-all-card-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
-  .track-order-all-card-id{font-size:12.5px;font-weight:700;color:var(--text-dim)}
-  .track-order-all-card-status{font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
-  .track-order-all-card-bottom{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--text-dim)}
-  .track-order-all-empty{text-align:center;color:var(--text-dim);font-size:13px;padding:20px 0}
-  #receiptBackdrop .receipt-paper{background:#fff;color:#171717;border-radius:12px;padding:22px;max-width:460px;margin:auto}
-  #receiptBackdrop .receipt-head{text-align:center;border-bottom:1px dashed #bbb;padding-bottom:14px}
-  #receiptBackdrop .receipt-head h2{margin:0 0 4px;font-size:21px}
-  #receiptBackdrop .receipt-head small{display:block;color:#666;margin-top:3px}
-  #receiptBackdrop .receipt-customer{padding:14px 0;border-bottom:1px solid #e5e5e5}
-  #receiptBackdrop .receipt-customer div{display:flex;justify-content:space-between;gap:12px;margin:4px 0}
-  #receiptBackdrop .receipt-customer span{color:#666}
-  #receiptBackdrop .receipt-items{padding:10px 0}
-  #receiptBackdrop .receipt-line{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #eee}
-  #receiptBackdrop .receipt-line small{display:block;color:#666;margin-top:3px}
-  #receiptBackdrop .receipt-total{display:flex;justify-content:space-between;padding-top:14px;font-size:18px}
-  #receiptBackdrop .receipt-thanks{text-align:center;color:#666;margin-top:20px;font-size:12px}
-  #receiptBackdrop .receipt-empty{color:#666;text-align:center;padding:12px}
-  .pending-order-banner{position:fixed;left:12px;right:12px;bottom:calc(64px + var(--safe-bottom) + 8px);z-index:60;display:flex;align-items:center;gap:10px;background:rgba(245,180,0,.16);border:1px solid #F5B400;backdrop-filter:blur(10px);border-radius:12px;padding:10px 12px;box-shadow:0 4px 16px rgba(0,0,0,.3)}
-  .pending-order-banner[hidden]{display:none}
-  .pending-order-banner-text{flex:1;font-size:12.5px;line-height:1.4;color:var(--text)}
-  .pending-order-banner-actions{display:flex;align-items:center;gap:6px}
-  .pending-order-banner-btn{background:#F5B400;color:#171717;border:0;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:800;white-space:nowrap;cursor:pointer}
-  .pending-order-banner-dismiss{background:transparent;border:0;color:var(--text-dim);font-size:16px;padding:4px 6px;cursor:pointer}
+  /* โครงสร้าง Cart เดิมที่ app-cart.js ใช้งาน — คงไว้ในหน้า User */
+  .cart-toggle-wrap { position:relative; margin-left:auto; display:flex; align-items:center; gap:8px; flex-shrink:0; flex-wrap:nowrap; }
+  .cart-toggle-btn { position:relative; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .cart-icon-svg { width:26px; height:26px; flex-shrink:0; }
+  .cart-badge {
+    position:absolute; top:-3px; right:-3px;
+    min-width:19px; height:19px; padding:0 4px;
+    border-radius:999px;
+    background:linear-gradient(135deg, var(--danger,#ff6b6b), #ff3b30);
+    color:#fff; font-size:10.5px; line-height:19px; font-weight:800;
+    text-align:center; border:2px solid var(--surface,#131722);
+    box-shadow:0 2px 6px rgba(0,0,0,.35);
+    pointer-events:none;
+  }
+  .cart-modal { max-width:560px; }
+  .cart-items { display:flex; flex-direction:column; gap:8px; max-height:48vh; overflow:auto; }
+  .cart-item { display:grid; grid-template-columns:48px minmax(0,1fr) auto auto; gap:10px; align-items:center; padding:9px; border:1px solid rgba(255,255,255,.1); border-radius:10px; }
+  .cart-item-cover { width:48px; height:48px; border-radius:8px; object-fit:cover; background:rgba(255,255,255,.06); }
+  .cart-item-info { min-width:0; }
+  .cart-item-name { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cart-item-meta { color:var(--text-dim); font-size:12px; margin-top:3px; }
+  .cart-item-total { font-weight:800; white-space:nowrap; }
+  .cart-remove { border:0; background:transparent; color:var(--danger); cursor:pointer; padding:6px; }
+  .cart-empty { text-align:center; padding:24px 8px; color:var(--text-dim); }
+  .cart-summary { margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,.1); }
+  .cart-summary-row { display:flex; justify-content:space-between; gap:12px; margin:5px 0; }
+  .cart-actions { display:flex; gap:8px; margin-top:14px; }
+  .cart-actions > * { flex:1; }
+  .cart-feedback { min-height:20px; margin-top:8px; font-size:13px; }
+  /* รายการเพลงภายใน Playlist ที่แสดงในตะกร้า (ดูอย่างเดียว ไม่คิดราคาแยก) */
+  .cart-item-viewsongs { grid-column:1 / -1; border:0; background:transparent; color:var(--accent-2); font-size:12px; text-align:left; padding:2px 0 0; cursor:pointer; }
+  .cart-item-songs { grid-column:1 / -1; display:none; flex-direction:column; gap:3px; margin-top:4px; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,.05); }
+  .cart-item-songs.is-open { display:flex; }
+  .cart-item-songs-row { font-size:12px; color:var(--text-dim); }
+  @media (max-width:480px) {
+    .cart-item { grid-template-columns:42px minmax(0,1fr) auto; }
+    .cart-item-cover { width:42px; height:42px; }
+    .cart-item-total { grid-column:2; }
+    .cart-remove { grid-column:3; grid-row:1 / span 2; }
+  }
+
+  /* ---- popup รายละเอียดเพลง (ฝั่ง user) — ปรับใหม่ให้เหมือนฝั่ง admin ---- */
+  /* เพิ่มใหม่: ไม่แตะ CSS เดิม ใช้คลาส scope ภายใน #songModalBackdrop เท่านั้น */
+  #songModalBackdrop .modal { max-width: 440px; }
+  #songModalBackdrop .modal-header { padding-bottom: 10px; }
+  #modalHead { display:flex; gap:12px; align-items:flex-start; margin-bottom:12px; }
+  #modalCoverWrap {
+    width:80px; height:80px; flex-shrink:0; position:relative;
+    overflow:hidden; border-radius:10px; background:rgba(255,255,255,.04);
+  }
+  #modalCover { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; }
+  #modalInfo { flex:1; min-width:0; }
+  #modalName {
+    margin:0 0 2px; font-size:16px; font-weight:800; line-height:1.3;
+    overflow:hidden; text-overflow:ellipsis; display:-webkit-box;
+    -webkit-line-clamp:2; -webkit-box-orient:vertical;
+  }
+  #modalArtist {
+    color:var(--text-dim); font-size:13px; margin-bottom:6px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  #modalBadges { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px; }
+  #modalBadges .badge {
+    display:inline-flex; align-items:center; gap:3px;
+    padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600;
+    background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); color:var(--text);
+  }
+  #modalBadges .badge.dj { color:var(--accent-2, #61dafb); }
+  #modalPrice { font-size:16px; font-weight:800; color:var(--success, #28c76f); margin-top:2px; }
+  #modalDesc {
+    font-size:12px; color:var(--text-dim); margin-bottom:12px; line-height:1.5;
+    max-height:60px; overflow-y:auto; padding:8px 10px;
+    background:rgba(255,255,255,.03); border-radius:8px;
+  }
+  #modalDesc:empty { display:none; }
+
+  /* Player ภายใน popup — เหมือนฝั่ง admin */
+  #modalPlayer {
+    display:flex; flex-direction:column; gap:10px;
+    padding-top:10px; border-top:1px solid rgba(255,255,255,.08);
+  }
+  #modalSeekWrap { display:flex; align-items:center; gap:8px; }
+  #modalSeek {
+    flex:1; -webkit-appearance:none; appearance:none; height:4px;
+    background:rgba(255,255,255,.12); border-radius:999px; outline:none; cursor:pointer;
+  }
+  #modalSeek::-webkit-slider-thumb {
+    -webkit-appearance:none; appearance:none; width:14px; height:14px;
+    border-radius:50%; background:var(--accent, #7a5cff); cursor:pointer; border:0;
+  }
+  #modalSeek::-moz-range-thumb {
+    width:14px; height:14px; border-radius:50%; background:var(--accent, #7a5cff);
+    cursor:pointer; border:0;
+  }
+  #modalCurrTime, #modalDurTime {
+    font-size:11px; color:var(--text-dim); font-variant-numeric:tabular-nums;
+    min-width:32px; text-align:center;
+  }
+
+  /* ปุ่มกระโดดช่วงเพลง — เหมือนฝั่ง admin (3 ปุ่ม) */
+  #modalJumpRow {
+    display:flex; gap:6px; align-items:center; justify-content:center;
+  }
+  .modal-jump-btn {
+    flex:1; display:flex; flex-direction:column; align-items:center; gap:2px;
+    padding:7px 4px; font-size:10px; font-weight:600;
+    background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12);
+    border-radius:9px; color:var(--text-dim); cursor:pointer;
+    transition:background .15s, color .15s, border-color .15s;
+  }
+  .modal-jump-btn:hover { background:rgba(255,255,255,.08); color:var(--text); }
+  .modal-jump-btn.active {
+    background:rgba(122,92,255,.16); border-color:var(--accent, #7a5cff); color:#fff;
+  }
+  .modal-jump-btn .modal-jump-ico { font-size:14px; line-height:1; }
+  .modal-jump-btn:disabled { opacity:.4; cursor:not-allowed; }
+
+  /* ปุ่มเล่นหลัก (เด่น) — เหมือนฝั่ง admin */
+  #songModalBackdrop #modalPlayBtn {
+    width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
+    padding:11px; font-size:14px; font-weight:700; border-radius:10px;
+    background:var(--accent, #7a5cff); color:#fff; border:0; cursor:pointer;
+  }
+  #modalPlayBtn:disabled { opacity:.5; cursor:not-allowed; }
+  #modalPlayBtn .spinner { display:none; width:16px; height:16px; border-width:2px; }
+  #modalPlayBtn.loading .spinner { display:inline-block; }
+  #modalPlayBtn.loading #modalPlayIconWrap,
+  #modalPlayBtn.loading #modalPlayLabel { display:none; }
+
+  /* 🔧 (2026-09-22 fix Bug #2 UI v5): Forest-style buttons — สไตล์ Forest Green Deep
+     ใช้ทั้งปุ่ม modal + ปุ่ม song card + ปุ่ม playlist
+     - ปุ่มฟังเพลง/สั่งซื้อทั้งเพลง = ฟ้าไฟ (เดียวกับป้ายโปรโมชั่น cyan #06b6d4)
+     - ปุ่มเพิ่มเข้าตะกร้า/ซื้อทั้งเพลย์ลิสต์ = เขียวเข้ม Forest Green Deep (#16a34a)
+     Style: 145deg gradient 3 stops + drop shadow 2 ชั้น + border ขาว + text shadow + press effect
+  */
+  #songModalBackdrop #modalPlayBtn {
+    width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
+    padding:16px 14px; font-size:14px; font-weight:800; border-radius:14px;
+    border:0; cursor:pointer; color:#fff; position:relative; overflow:hidden;
+    background:linear-gradient(145deg,#22d3ee 0%,#06b6d4 50%,#0891b2 100%);
+    box-shadow:0 8px 22px rgba(6,182,212,0.50), 0 2px 6px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.22);
+    text-shadow:0 1px 2px rgba(0,0,0,0.30);
+    transition:transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  #songModalBackdrop #modalPlayBtn::before {
+    content:''; position:absolute; top:0; left:0; right:0; height:50%;
+    background:linear-gradient(180deg, rgba(255,255,255,0.22) 0%, transparent 100%);
+    border-radius:14px 14px 0 0; pointer-events:none;
+  }
+  #songModalBackdrop #modalPlayBtn::after {
+    content:''; position:absolute; inset:0; border-radius:14px;
+    border:1px solid rgba(255,255,255,0.18); pointer-events:none;
+  }
+  #songModalBackdrop #modalPlayBtn:hover:not(:disabled) {
+    transform:translateY(-1px);
+    box-shadow:0 10px 26px rgba(6,182,212,0.60), 0 2px 6px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.22);
+  }
+  #songModalBackdrop #modalPlayBtn:active:not(:disabled) {
+    transform:translateY(1px) scale(0.99);
+  }
+  #songModalBackdrop #modalPlayBtn:disabled { opacity:.5; cursor:not-allowed; }
+  #modalPlayBtn .spinner { display:none; width:16px; height:16px; border-width:2px; border-color:rgba(255,255,255,0.30); border-top-color:#fff; }
+  #modalPlayBtn.loading .spinner { display:inline-block; }
+  #modalPlayBtn.loading #modalPlayIconWrap, #modalPlayBtn.loading #modalPlayLabel { display:none; }
+
+  #songModalBackdrop #modalBuyBtn {
+    width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
+    padding:16px 14px; font-size:14px; font-weight:800; border-radius:14px;
+    border:0; cursor:pointer; color:#fff; position:relative; overflow:hidden; margin-top:8px;
+    background:linear-gradient(145deg,#4ade80 0%,#16a34a 50%,#14532d 100%);
+    box-shadow:0 8px 22px rgba(22,163,74,0.50), 0 2px 6px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.22);
+    text-shadow:0 1px 2px rgba(0,0,0,0.30);
+    transition:transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  #songModalBackdrop #modalBuyBtn::before {
+    content:''; position:absolute; top:0; left:0; right:0; height:50%;
+    background:linear-gradient(180deg, rgba(255,255,255,0.22) 0%, transparent 100%);
+    border-radius:14px 14px 0 0; pointer-events:none;
+  }
+  #songModalBackdrop #modalBuyBtn::after {
+    content:''; position:absolute; inset:0; border-radius:14px;
+    border:1px solid rgba(255,255,255,0.18); pointer-events:none;
+  }
+  #songModalBackdrop #modalBuyBtn:hover {
+    transform:translateY(-1px);
+    box-shadow:0 10px 26px rgba(22,163,74,0.60), 0 2px 6px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.22);
+  }
+  #songModalBackdrop #modalBuyBtn:active {
+    transform:translateY(1px) scale(0.99);
+  }
+  #modalMetaLine {
+    font-size:11px; color:var(--text-dim); text-align:center; line-height:1.5;
+  }
+
+  /* ---- เพิ่มใหม่: ปุ่ม + popup ติดตามออเดอร์ (ฝั่งลูกค้า) — ไม่แตะระบบเดิม ใช้คลาส .modal/.field เดิม ---- */
+  .track-order-btn { position:relative; margin-right:6px; font-size:26px; line-height:1; }
+  .track-order-modal .track-order-intro { color:var(--text-dim); font-size:13px; margin-top:0; margin-bottom:16px; }
+  .track-order-result { margin-top:6px; padding-top:14px; border-top:1px solid rgba(255,255,255,.1); }
+  .track-order-status {
+    display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:999px;
+    font-size:12.5px; font-weight:700; margin-bottom:14px;
+  }
+  .track-order-row { display:flex; justify-content:space-between; gap:12px; margin:6px 0; font-size:13.5px; }
+  .track-order-row span:first-child { color:var(--text-dim); }
+  .track-order-items { display:flex; flex-direction:column; gap:6px; margin:10px 0; max-height:38vh; overflow:auto; }
+  .track-order-item { display:flex; justify-content:space-between; gap:10px; font-size:13px; padding:8px 10px; border:1px solid rgba(255,255,255,.08); border-radius:9px; }
+  .track-order-item-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .track-order-item-price { white-space:nowrap; color:var(--text-dim); }
+  .track-order-total { margin-top:8px; padding-top:10px; border-top:1px solid rgba(255,255,255,.1); display:flex; justify-content:space-between; font-weight:800; font-size:15px; }
+  .track-order-actions { display:flex; gap:8px; margin-top:16px; }
+  .track-order-actions > * { flex:1; }
+
+  /* ---- เพิ่มใหม่: สลับโหมด + ลิสต์ออเดอร์ทั้งหมดของลูกค้า (เรียลไทม์) — ต่อยอดโมดัลติดตามออเดอร์เดิม ---- */
+  .track-order-mode-switch { display:flex; gap:6px; margin-bottom:16px; background:rgba(255,255,255,.05); border-radius:11px; padding:4px; }
+  .track-order-mode-btn {
+    flex:1; border:0; background:transparent; color:var(--text-dim); font-size:12.5px; font-weight:700;
+    padding:8px 6px; border-radius:8px; cursor:pointer; transition:background .15s,color .15s;
+  }
+  .track-order-mode-btn.active { background:var(--accent); color:#fff; }
+  .track-order-all-list { display:flex; flex-direction:column; gap:8px; margin-top:14px; max-height:50vh; overflow:auto; }
+  .track-order-all-card {
+    display:flex; flex-direction:column; gap:6px; padding:12px; border:1px solid var(--border);
+    border-radius:11px; background:rgba(255,255,255,.03); cursor:pointer; text-align:left;
+  }
+  .track-order-all-card-top { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .track-order-all-card-id { font-size:12.5px; font-weight:700; color:var(--text-dim); }
+  .track-order-all-card-status { font-size:11.5px; font-weight:700; padding:3px 10px; border-radius:999px; white-space:nowrap; }
+  .track-order-all-card-bottom { display:flex; justify-content:space-between; gap:10px; font-size:13px; color:var(--text-dim); }
+  .track-order-all-empty { text-align:center; color:var(--text-dim); font-size:13px; padding:20px 0; }
+
+  /* ---- เพิ่มใหม่: ใบเสร็จหลังสั่งซื้อ (ฝั่งลูกค้า) — คัดลอกสไตล์ .receipt-* จาก admin.html ให้เหมือนกันทุกประการ ---- */
+  #receiptBackdrop .receipt-paper {
+    background:#fff; color:#171717; border-radius:12px; padding:22px; max-width:460px; margin:auto;
+  }
+  #receiptBackdrop .receipt-head { text-align:center; border-bottom:1px dashed #bbb; padding-bottom:14px; }
+  #receiptBackdrop .receipt-head h2 { margin:0 0 4px; font-size:21px; }
+  #receiptBackdrop .receipt-head small { display:block; color:#666; margin-top:3px; }
+  #receiptBackdrop .receipt-customer { padding:14px 0; border-bottom:1px solid #e5e5e5; }
+  #receiptBackdrop .receipt-customer div { display:flex; justify-content:space-between; gap:12px; margin:4px 0; }
+  #receiptBackdrop .receipt-customer span { color:#666; }
+  #receiptBackdrop .receipt-items { padding:10px 0; }
+  #receiptBackdrop .receipt-line { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid #eee; }
+  #receiptBackdrop .receipt-line small { display:block; color:#666; margin-top:3px; }
+  #receiptBackdrop .receipt-total { display:flex; justify-content:space-between; padding-top:14px; font-size:18px; }
+  #receiptBackdrop .receipt-thanks { text-align:center; color:#666; margin-top:20px; font-size:12px; }
+  #receiptBackdrop .receipt-empty { color:#666; text-align:center; padding:12px; }
+
+  /* ---- เพิ่มใหม่: แถบเตือน "ยังไม่ได้แจ้งแอดมิน" ค้างไว้จนกว่าจะกดแจ้งสำเร็จ ---- */
+  .pending-order-banner {
+    position:fixed; left:12px; right:12px; bottom:calc(64px + var(--safe-bottom) + 8px);
+    z-index:60; display:flex; align-items:center; gap:10px;
+    background:rgba(245,180,0,.16); border:1px solid #F5B400; backdrop-filter:blur(10px);
+    border-radius:12px; padding:10px 12px; box-shadow:0 4px 16px rgba(0,0,0,.3);
+  }
+  .pending-order-banner[hidden] { display:none; }
+  .pending-order-banner-text { flex:1; font-size:12.5px; line-height:1.4; color:var(--text); }
+  .pending-order-banner-actions { display:flex; align-items:center; gap:6px; }
+  .pending-order-banner-btn {
+    background:#F5B400; color:#171717; border:0; border-radius:8px; padding:8px 12px;
+    font-size:12.5px; font-weight:800; white-space:nowrap; cursor:pointer;
+  }
+  .pending-order-banner-dismiss {
+    background:transparent; border:0; color:var(--text-dim); font-size:16px; padding:4px 6px; cursor:pointer;
+  }
 </style>
-<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer onerror="console.warn('html2canvas CDN failed to load — will fallback to dynamic import');"></script>
+
+<!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): html2canvas เป็น regular script (ไม่ใช่ dynamic import)
+     เดิม: app-cart.js ใช้ `await import("https://esm.sh/html2canvas@1.4.1")` ทุกครั้งที่สร้างใบเสร็จ
+            → ถ้า esm.sh ล่ม → ลูกค้าไม่มีใบเสร็จ
+            → ถ้าเน็ตช้า → โหลดช้าทุกครั้งที่สร้าง
+     ใหม่: โหลดครั้งเดียวตอน page load → cache ไว้ใน window.html2canvas
+            → เร็วขึ้น + ถ้า CDN ล่ม → page load error ตั้งแต่แรก (รู้ชัดเจน)
+            → ใช้ jsdelivr CDN (UMD version) แทน esm.sh (ESM version)
+     ผลกระทบระบบเดิม: 0% — app-cart.js จะใช้ window.html2canvas ถ้ามี, fallback ไป dynamic import ถ้าไม่มี
+     fallback: ถ้า window.html2canvas undefined (CDN ไม่โหลด) → ใช้ dynamic import เดิม -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer
+  onerror="console.warn('html2canvas CDN failed to load — will fallback to dynamic import');"></script>
 </head>
 <body>
+<!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): h1 สำหรับ SEO (hidden visually, visible to crawlers) -->
 <h1 class="visually-hidden" id="seoH1">Music Store — ร้านเพลงออนไลน์ ฟังเพลง ซื้อเพลง ส่งทาง WhatsApp</h1>
-<div class="topbar">
-  <div class="topbar-inner">
-    <div class="logo">
-      <img id="siteLogo" src="" alt="logo" style="display:none;">
-      <span id="siteName">Music Store</span>
-    </div>
-    <div class="cart-toggle-wrap">
-      <button class="icon-btn track-order-btn" id="trackOrderBtn" type="button" aria-label="ติดตามออเดอร์">
-        📦
-        <span id="trackOrderBadge" class="cart-badge" hidden>0</span>
-      </button>
-      <button class="icon-btn cart-toggle-btn" id="cartToggleBtn" type="button" aria-label="เปิดตะกร้าสินค้า">
-        <svg class="cart-icon-svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
-        <span id="cartBadge" class="cart-badge" hidden>0</span>
-      </button>
-    </div>
-  </div>
-  <div class="container" style="padding-bottom:10px;">
-    <div class="search-box">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
-      <input id="searchInput" placeholder="ค้นหาเพลง...">
-    </div>
-  </div>
-  <div class="chip-row" id="categoryChips"></div>
-</div>
-<div class="promo-home-banner" id="promoHomeBanner" hidden>
-  <div class="promo-home-banner-inner">
-    <div class="promo-home-banner-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-    </div>
-    <div class="promo-home-banner-text">
-      <div class="promo-home-banner-label">⚡ โปรโมชั่นพิเศษ</div>
-      <div class="promo-home-banner-title" id="promoHomeBannerTitle">—</div>
-      <div class="promo-home-banner-meta">
-        <span class="promo-home-banner-discount" id="promoHomeBannerDiscount">—</span>
-        <span class="promo-home-banner-countdown" id="promoHomeBannerCountdown">—</span>
+
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="logo">
+        <img id="siteLogo" src="" alt="logo" style="display:none;">
+        <span id="siteName">Music Store</span>
       </div>
-    </div>
-    <div class="promo-home-banner-arrow" aria-hidden="true">&gt;</div>
-  </div>
-</div>
-<div id="djSection">
-  <div class="section-title">DJ</div>
-  <div class="dj-row" id="djRow"></div>
-</div>
-<div class="playlist-wrapper">
-  <button class="playlist-header-btn" id="playlistToggleBtn">
-    <span class="playlist-header-title">เพลย์ลิสต์</span>
-    <svg class="dropdown-icon" id="dropdownIcon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7l5 5l5 -5"/><path d="M7 13l5 5l5 -5"/></svg>
-  </button>
-  <div id="playlistsContainer" class="playlist-content-box"></div>
-</div>
-<div class="section-title" id="gridTitle">เพลงทั้งหมด</div>
-<div class="song-grid" id="songGrid"></div>
-<div class="empty-state" id="emptyState" style="display:none;">ไม่พบเพลงที่ค้นหา</div>
-<div class="player-bar" id="playerBar">
-  <div class="player-top">
-    <img id="playerCover" src="" alt="">
-    <div class="player-meta">
-      <div class="t1" id="playerTitle">-</div>
-      <div class="t2" id="playerSub">-</div>
-    </div>
-    <button class="ctrl" id="playerToggle">
-      <svg id="playerIcon" width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
-      <div class="spinner" id="playerSpinner" style="display:none;"></div>
-    </button>
-    <button class="ctrl player-close-btn" id="playerClose" type="button" aria-label="ปิดเครื่องเล่น" title="ปิดเครื่องเล่น">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-    </button>
-  </div>
-  <div class="player-seek-row">
-    <span class="time" id="playerCurrentTime">0:00</span>
-    <input type="range" id="playerSeek" min="0" max="100" step="0.1" value="0">
-    <span class="time" id="playerDuration">0:00</span>
-  </div>
-</div>
-<div class="pending-order-banner" id="pendingOrderBanner" hidden>
-  <div class="pending-order-banner-text">คุณมีออเดอร์ที่ยังไม่ได้แจ้งแอดมินเพื่อชำระเงิน</div>
-  <div class="pending-order-banner-actions">
-    <button class="pending-order-banner-btn" id="pendingOrderBannerBtn" type="button">แจ้งแอดมินตอนนี้</button>
-    <button class="pending-order-banner-dismiss" id="pendingOrderBannerDismiss" type="button" aria-label="ซ่อนคำเตือนนี้ชั่วคราว">✕</button>
-  </div>
-</div>
-<div id="myOrdersView" class="container" style="display:none;padding:14px 16px 100px;"></div>
-<div id="promotionsView" class="container" style="display:none;padding:14px 14px 100px;">
-  <div class="promo-view-header">
-    <div class="promo-view-header-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-    </div>
-    <div>
-      <h2 class="promo-view-title">โปรโมชั่น</h2>
-      <p class="promo-view-subtitle">ลดราคาอัตโนมัติในตะกร้า — ไม่ต้องกรอกรหัส</p>
-    </div>
-  </div>
-  <div id="promoViewList" class="promo-view-list"></div>
-</div>
-<div class="bottom-nav">
-  <button class="active" data-tab="home">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a1 1 0 01-1 1H4a1 1 0 01-1-1z"/></svg>
-    หน้าแรก
-  </button>
-  <button data-tab="playlist">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>
-    เพลย์ลิสต์
-  </button>
-  <button data-tab="category">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-    หมวดหมู่
-  </button>
-  <button data-tab="dj">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
-    DJ
-  </button>
-  <button data-tab="promotions" type="button" aria-label="โปรโมชั่น">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-    โปรโมชั่น
-  </button>
-  <button data-tab="contact">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-    ติดต่อ
-  </button>
-</div>
-<div class="modal-backdrop" id="songModalBackdrop">
-  <div class="modal">
-    <div class="modal-header">
-      <h3>รายละเอียดเพลง</h3>
-      <button class="modal-close" id="songModalClose">✕</button>
-    </div>
-    <div id="modalHead">
-      <div id="modalCoverWrap"><img id="modalCover" src="" alt=""></div>
-      <div id="modalInfo">
-        <h3 id="modalName"></h3>
-        <div id="modalArtist"></div>
-        <div id="modalBadges"></div>
-        <div id="modalPrice"></div>
-      </div>
-    </div>
-    <div id="modalDj"></div>
-    <div id="modalDesc"></div>
-    <div id="modalPlayer">
-      <div id="modalSeekWrap">
-        <span id="modalCurrTime">0:00</span>
-        <input id="modalSeek" type="range" min="0" max="0" step="0.1" value="0" aria-label="ตำแหน่งเพลง">
-        <span id="modalDurTime">0:00</span>
-      </div>
-      <div id="modalJumpRow">
-        <button type="button" class="modal-jump-btn" id="modalJumpToIntro" title="ข้ามไปช่วงต้นเพลง">
-          <span class="modal-jump-ico">⏮</span><span>ต้นเพลง</span>
+      <div class="cart-toggle-wrap">
+        <button class="icon-btn track-order-btn" id="trackOrderBtn" type="button" aria-label="ติดตามออเดอร์">
+          📦
+          <span id="trackOrderBadge" class="cart-badge" hidden>0</span>
         </button>
-        <button type="button" class="modal-jump-btn" id="modalJumpToPreview" title="ข้ามไปช่วง Dance / Preview ที่ AI ตัดไว้">
-          <span class="modal-jump-ico">🎯</span><span>Dance / Preview</span>
-        </button>
-        <button type="button" class="modal-jump-btn" id="modalJumpToOutro" title="ข้ามไปช่วงท้ายเพลง">
-          <span class="modal-jump-ico">⏭</span><span>ท้ายเพลง</span>
+        <button class="icon-btn cart-toggle-btn" id="cartToggleBtn" type="button" aria-label="เปิดตะกร้าสินค้า">
+          <svg class="cart-icon-svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
+          <span id="cartBadge" class="cart-badge" hidden>0</span>
         </button>
       </div>
-      <button class="btn" id="modalPlayBtn" data-play="">
-        <span id="modalPlayIconWrap" style="display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center;position:relative;flex-shrink:0;">
-          <svg id="modalPlayIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
-          <div class="spinner" id="modalPlaySpinner" style="display:none;width:24px;height:24px;border-width:4px;"></div>
-        </span>
-        <span id="modalPlayLabel">ฟังเพลง</span>
-      </button>
-      <div id="modalMetaLine"></div>
     </div>
-    <button class="btn" id="modalBuyBtn">
-      <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
-      <span id="modalBuyLabel">เพิ่มเข้าตะกร้า</span>
+    <div class="container" style="padding-bottom:10px;">
+      <div class="search-box">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="searchInput" placeholder="ค้นหาเพลง...">
+      </div>
+    </div>
+    <div class="chip-row" id="categoryChips"></div>
+  </div>
+
+  <!-- 🎁 (2026-09-20) แบนเนอร์โปรโมชั่นเด่น บนหน้าแรก — สไตล์ J: CYBERPUNK
+       ซ่อน/แสดงผ่าน app-user.js: renderPromotionBanner() → แสดงเฉพาะตอนที่มีโปร active
+       กดที่แบนเนอร์ → สลับไปหน้าโปรโมชั่นเต็ม (#promotionsView) -->
+  <div class="promo-home-banner" id="promoHomeBanner" hidden>
+    <div class="promo-home-banner-inner">
+      <div class="promo-home-banner-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+      </div>
+      <div class="promo-home-banner-text">
+        <div class="promo-home-banner-label">⚡ โปรโมชั่นพิเศษ</div>
+        <div class="promo-home-banner-title" id="promoHomeBannerTitle">—</div>
+        <div class="promo-home-banner-meta">
+          <span class="promo-home-banner-discount" id="promoHomeBannerDiscount">—</span>
+          <span class="promo-home-banner-countdown" id="promoHomeBannerCountdown">—</span>
+        </div>
+      </div>
+      <div class="promo-home-banner-arrow" aria-hidden="true">&gt;</div>
+    </div>
+  </div>
+
+  <div id="djSection">
+    <div class="section-title">DJ</div>
+    <div class="dj-row" id="djRow"></div>
+  </div>
+
+  <!-- ส่วน Playlist แบบ Dropdown -->
+  <div class="playlist-wrapper">
+    <button class="playlist-header-btn" id="playlistToggleBtn">
+      <span class="playlist-header-title">เพลย์ลิสต์</span>
+      <svg class="dropdown-icon" id="dropdownIcon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7l5 5l5 -5"/><path d="M7 13l5 5l5 -5"/></svg>
+    </button>
+    <div id="playlistsContainer" class="playlist-content-box"></div>
+  </div>
+
+  <div class="section-title" id="gridTitle">เพลงทั้งหมด</div>
+  <div class="song-grid" id="songGrid"></div>
+  <div class="empty-state" id="emptyState" style="display:none;">ไม่พบเพลงที่ค้นหา</div>
+
+  <div class="player-bar" id="playerBar">
+    <div class="player-top">
+      <img id="playerCover" src="" alt="">
+      <div class="player-meta">
+        <div class="t1" id="playerTitle">-</div>
+        <div class="t2" id="playerSub">-</div>
+      </div>
+      <button class="ctrl" id="playerToggle">
+        <svg id="playerIcon" width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
+        <div class="spinner" id="playerSpinner" style="display:none;"></div>
+      </button>
+      <!-- 🔧 เพิ่มใหม่ (2026-09-12): ปุ่มปิดเครื่องเล่นเพลง (X) — ให้ลูกค้ากดปิด popup player ได้ -->
+      <button class="ctrl player-close-btn" id="playerClose" type="button" aria-label="ปิดเครื่องเล่น" title="ปิดเครื่องเล่น">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+    <div class="player-seek-row">
+      <span class="time" id="playerCurrentTime">0:00</span>
+      <input type="range" id="playerSeek" min="0" max="100" step="0.1" value="0">
+      <span class="time" id="playerDuration">0:00</span>
+    </div>
+  </div>
+
+  <!-- เพิ่มใหม่: แถบเตือนออเดอร์ที่ยังไม่ได้แจ้งแอดมิน -->
+  <div class="pending-order-banner" id="pendingOrderBanner" hidden>
+    <div class="pending-order-banner-text">คุณมีออเดอร์ที่ยังไม่ได้แจ้งแอดมินเพื่อชำระเงิน</div>
+    <div class="pending-order-banner-actions">
+      <button class="pending-order-banner-btn" id="pendingOrderBannerBtn" type="button">แจ้งแอดมินตอนนี้</button>
+      <button class="pending-order-banner-dismiss" id="pendingOrderBannerDismiss" type="button" aria-label="ซ่อนคำเตือนนี้ชั่วคราว">✕</button>
+    </div>
+  </div>
+
+  <!-- ===== เพิ่มใหม่: view สำหรับ tab "ออเดอร์ของฉัน" (ลูกค้าติดตามออเดอร์) ===== -->
+  <div id="myOrdersView" class="container" style="display:none;padding:14px 16px 100px;"></div>
+
+  <!-- ===== 🎁 (2026-09-20) เพิ่มใหม่: view สำหรับ tab "โปรโมชั่น" — สไตล์ J: CYBERPUNK =====
+       - ข้อมูลมาจาก fetchActivePromotions() ใน app-promotion.js (collection เดียวกับที่ admin จัดการใน #view-promotions)
+       - มี countdown นับถอยหลังเป็นเรียลไทม์ (อัปเดตทุก 1 วินาที)
+       - ซ่อน/แสดงผ่าน showPromotionsView()/hidePromotionsView() — ไม่แตะ setView() เดิม -->
+  <div id="promotionsView" class="container" style="display:none;padding:14px 14px 100px;">
+    <div class="promo-view-header">
+      <div class="promo-view-header-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+      </div>
+      <div>
+        <h2 class="promo-view-title">โปรโมชั่น</h2>
+        <p class="promo-view-subtitle">ลดราคาอัตโนมัติในตะกร้า — ไม่ต้องกรอกรหัส</p>
+      </div>
+    </div>
+    <div id="promoViewList" class="promo-view-list"></div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="active" data-tab="home">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a1 1 0 01-1 1H4a1 1 0 01-1-1z"/></svg>
+      หน้าแรก
+    </button>
+    <button data-tab="playlist">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>
+      เพลย์ลิสต์
+    </button>
+    <button data-tab="category">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      หมวดหมู่
+    </button>
+    <button data-tab="dj">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
+      DJ
+    </button>
+    <!-- 🎁 (2026-09-20) เพิ่มแท็บใหม่ "โปรโมชั่น" — สไตล์ J: CYBERPUNK -->
+    <button data-tab="promotions" type="button" aria-label="โปรโมชั่น">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+      โปรโมชั่น
+    </button>
+    <button data-tab="contact">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      ติดต่อ
     </button>
   </div>
-</div>
-<div class="modal-backdrop" id="cartBackdrop" aria-hidden="true">
-  <div class="modal cart-modal">
-    <div class="modal-header">
-      <h3>ตะกร้าสินค้า</h3>
-      <button class="modal-close" id="cartCloseBtn" type="button">✕</button>
+
+  <div class="modal-backdrop" id="songModalBackdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>รายละเอียดเพลง</h3>
+        <button class="modal-close" id="songModalClose">✕</button>
+      </div>
+
+      <!-- แถวหัว: รูปปก 80x80 ซ้าย + ข้อมูลขวา — กระทัดรัด เหมือนฝั่ง admin -->
+      <div id="modalHead">
+        <div id="modalCoverWrap">
+          <img id="modalCover" src="" alt="">
+        </div>
+        <div id="modalInfo">
+          <h3 id="modalName"></h3>
+          <div id="modalArtist"></div>
+          <div id="modalBadges"></div>
+          <div id="modalPrice"></div>
+        </div>
+      </div>
+
+      <!-- DJ + คำอธิบาย -->
+      <div id="modalDj"></div>
+      <div id="modalDesc"></div>
+
+      <!-- Player ภายใน popup — เหมือนฝั่ง admin -->
+      <div id="modalPlayer">
+        <!-- Seek bar -->
+        <div id="modalSeekWrap">
+          <span id="modalCurrTime">0:00</span>
+          <input id="modalSeek" type="range" min="0" max="0" step="0.1" value="0" aria-label="ตำแหน่งเพลง">
+          <span id="modalDurTime">0:00</span>
+        </div>
+
+        <!-- ปุ่มกระโดดช่วงเพลง (3 ปุ่ม) -->
+        <div id="modalJumpRow">
+          <button type="button" class="modal-jump-btn" id="modalJumpToIntro" title="ข้ามไปช่วงต้นเพลง">
+            <span class="modal-jump-ico">⏮</span><span>ต้นเพลง</span>
+          </button>
+          <button type="button" class="modal-jump-btn" id="modalJumpToPreview" title="ข้ามไปช่วง Dance / Preview ที่ AI ตัดไว้">
+            <span class="modal-jump-ico">🎯</span><span>Dance / Preview</span>
+          </button>
+          <button type="button" class="modal-jump-btn" id="modalJumpToOutro" title="ข้ามไปช่วงท้ายเพลง">
+            <span class="modal-jump-ico">⏭</span><span>ท้ายเพลง</span>
+          </button>
+        </div>
+
+        <!-- ปุ่มเล่นหลัก (เด่น) — สีเดียวกับฝั่ง admin -->
+        <button class="btn" id="modalPlayBtn" data-play="">
+          <span id="modalPlayIconWrap" style="display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center;position:relative;flex-shrink:0;">
+            <svg id="modalPlayIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+            <div class="spinner" id="modalPlaySpinner" style="display:none;width:24px;height:24px;border-width:4px;"></div>
+          </span>
+          <span id="modalPlayLabel">ฟังเพลง</span>
+        </button>
+
+        <div id="modalMetaLine"></div>
+      </div>
+
+      <!-- ปุ่มเพิ่มเข้าตะกร้า — สีเดียวกับปุ่มเล่น (สีม่วง accent) -->
+      <button class="btn" id="modalBuyBtn">
+        <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
+        <span id="modalBuyLabel">เพิ่มเข้าตะกร้า</span>
+      </button>
     </div>
-    <div id="cartItems" class="cart-items"></div>
-    <div id="cartSummary" class="cart-summary" hidden>
-      <div class="cart-summary-row">
-        <span style="color:var(--text-dim);">จำนวน</span>
-        <strong id="cartTotalQuantity">0 เพลง</strong>
+  </div>
+
+  <!-- Cart เดิม: เพิ่มเฉพาะ markup ที่ app-cart.js อ้างถึง ไม่สร้างระบบ Cart ใหม่ -->
+  <div class="modal-backdrop" id="cartBackdrop" aria-hidden="true">
+    <div class="modal cart-modal">
+      <div class="modal-header">
+        <h3>ตะกร้าสินค้า</h3>
+        <button class="modal-close" id="cartCloseBtn" type="button">✕</button>
       </div>
-      <div id="cartDiscountRows"></div>
-      <div class="cart-summary-row">
-        <span style="color:var(--text-dim);">ยอดรวม</span>
-        <strong id="cartTotalPrice" style="color:var(--success);">0 LAK</strong>
-      </div>
-      <div class="cart-actions">
-        <button class="btn secondary" id="clearCartBtn" type="button">ล้างตะกร้า</button>
-        <button class="btn" id="checkoutCartBtn" type="button">สั่งซื้อ</button>
+      <div id="cartItems" class="cart-items"></div>
+      <div id="cartSummary" class="cart-summary" hidden>
+        <div class="cart-summary-row">
+          <span style="color:var(--text-dim);">จำนวน</span>
+          <strong id="cartTotalQuantity">0 เพลง</strong>
+        </div>
+        <!-- เพิ่มใหม่ (แก้บั๊ก 2026-09-10): ที่ว่างสำหรับแสดงแถวส่วนลด/โปรโมชั่น เติมโดย renderCart() ใน app-cart.js -->
+        <div id="cartDiscountRows"></div>
+        <div class="cart-summary-row">
+          <span style="color:var(--text-dim);">ยอดรวม</span>
+          <strong id="cartTotalPrice" style="color:var(--success);">0 LAK</strong>
+        </div>
+        <div class="cart-actions">
+          <button class="btn secondary" id="clearCartBtn" type="button">ล้างตะกร้า</button>
+          <button class="btn" id="checkoutCartBtn" type="button">สั่งซื้อ</button>
+        </div>
       </div>
     </div>
   </div>
-</div>
-<div class="modal-backdrop" id="checkoutBackdrop" aria-hidden="true">
-  <div class="modal cart-modal">
-    <div class="modal-header">
-      <h3>ข้อมูลสำหรับสั่งซื้อ</h3>
-      <button class="modal-close" id="checkoutCloseBtn" type="button">✕</button>
-    </div>
-    <p style="color:var(--text-dim);font-size:13px;margin-top:0;">กรอกข้อมูลเพื่อบันทึก Order และแจ้งรายละเอียดให้ร้านทาง WhatsApp</p>
-    <div class="field">
-      <label for="checkoutCustomerName">ชื่อลูกค้า *</label>
-      <input id="checkoutCustomerName" autocomplete="name" placeholder="ชื่อลูกค้า">
-    </div>
-    <div class="field">
-      <label for="checkoutCustomerWhatsapp">เบอร์ WhatsApp *</label>
-      <input id="checkoutCustomerWhatsapp" autocomplete="tel" placeholder="20XXXXXXXX">
-    </div>
-    <div id="checkoutSummary" class="cart-summary"></div>
-    <button class="btn" id="submitCartOrderBtn" type="button">ยืนยันสั่งซื้อ</button>
-    <div id="checkoutFeedback" class="cart-feedback"></div>
-  </div>
-</div>
-<div class="modal-backdrop" id="trackOrderBackdrop" aria-hidden="true">
-  <div class="modal track-order-modal">
-    <div class="modal-header">
-      <h3>ติดตามออเดอร์</h3>
-      <button class="modal-close" id="trackOrderClose" type="button">✕</button>
-    </div>
-    <p class="track-order-intro">กรอกเลข Order พร้อมชื่อและเบอร์โทร/WhatsApp ที่ใช้ตอนสั่งซื้อ เพื่อตรวจสอบสถานะ</p>
-    <div class="track-order-mode-switch" role="tablist">
-      <button class="track-order-mode-btn active" id="trackOrderModeSingleBtn" type="button" role="tab" aria-selected="true">ค้นหาออเดอร์เดียว</button>
-      <button class="track-order-mode-btn" id="trackOrderModeAllBtn" type="button" role="tab" aria-selected="false">ออเดอร์ทั้งหมดของฉัน</button>
-    </div>
-    <div id="trackOrderSingleView">
-      <div id="trackOrderQuick" class="track-order-result" style="margin-top:0;padding-top:0;border-top:0;margin-bottom:16px;" hidden>
-        <button class="btn secondary" id="trackOrderQuickBtn" type="button" style="width:100%;">📄 ดูใบเสร็จออเดอร์ล่าสุดของคุณ (เครื่องนี้)</button>
+
+  <div class="modal-backdrop" id="checkoutBackdrop" aria-hidden="true">
+    <div class="modal cart-modal">
+      <div class="modal-header">
+        <h3>ข้อมูลสำหรับสั่งซื้อ</h3>
+        <button class="modal-close" id="checkoutCloseBtn" type="button">✕</button>
+      </div>
+      <p style="color:var(--text-dim);font-size:13px;margin-top:0;">
+        กรอกข้อมูลเพื่อบันทึก Order และแจ้งรายละเอียดให้ร้านทาง WhatsApp
+      </p>
+      <div class="field">
+        <label for="checkoutCustomerName">ชื่อลูกค้า *</label>
+        <input id="checkoutCustomerName" autocomplete="name" placeholder="ชื่อลูกค้า">
       </div>
       <div class="field">
-        <label for="trackOrderId">เลข Order *</label>
-        <input id="trackOrderId" placeholder="เช่น RCPT-20260909-ABC123">
+        <label for="checkoutCustomerWhatsapp">เบอร์ WhatsApp *</label>
+        <input id="checkoutCustomerWhatsapp" autocomplete="tel" placeholder="20XXXXXXXX">
       </div>
-      <div class="field">
-        <label for="trackOrderName">ชื่อลูกค้า *</label>
-        <input id="trackOrderName" autocomplete="name" placeholder="ชื่อที่ใช้ตอนสั่งซื้อ">
-      </div>
-      <div class="field">
-        <label for="trackOrderPhone">เบอร์โทร/WhatsApp *</label>
-        <input id="trackOrderPhone" autocomplete="tel" placeholder="20XXXXXXXX">
-      </div>
-      <button class="btn" id="trackOrderSubmitBtn" type="button">ค้นหาออเดอร์</button>
-      <div id="trackOrderFeedback" class="cart-feedback"></div>
-      <div id="trackOrderResult" class="track-order-result" hidden></div>
-    </div>
-    <div id="trackOrderAllView" hidden>
-      <div class="field">
-        <label for="trackOrderAllName">ชื่อลูกค้า *</label>
-        <input id="trackOrderAllName" autocomplete="name" placeholder="ชื่อที่ใช้ตอนสั่งซื้อ">
-      </div>
-      <div class="field">
-        <label for="trackOrderAllPhone">เบอร์โทร/WhatsApp *</label>
-        <input id="trackOrderAllPhone" autocomplete="tel" placeholder="20XXXXXXXX">
-      </div>
-      <button class="btn" id="trackOrderAllSubmitBtn" type="button">ดูออเดอร์ทั้งหมด</button>
-      <div id="trackOrderAllFeedback" class="cart-feedback"></div>
-      <div id="trackOrderAllList" class="track-order-all-list" hidden></div>
-      <div id="trackOrderAllDetail" class="track-order-result" hidden>
-        <button class="btn secondary" id="trackOrderAllBackBtn" type="button" style="width:100%;margin-bottom:12px;">← กลับไปที่ลิสต์ออเดอร์</button>
-        <div id="trackOrderAllDetailContent"></div>
-      </div>
+      <div id="checkoutSummary" class="cart-summary"></div>
+      <button class="btn" id="submitCartOrderBtn" type="button">ยืนยันสั่งซื้อ</button>
+      <div id="checkoutFeedback" class="cart-feedback"></div>
     </div>
   </div>
-</div>
-<div class="modal-backdrop" id="receiptBackdrop" aria-hidden="true">
-  <div class="modal">
-    <div class="modal-header">
-      <h3>ใบเสร็จ</h3>
-      <button class="modal-close" id="receiptClose" type="button">✕</button>
-    </div>
-    <div id="receiptContent"></div>
-    <div style="display:flex;gap:8px;margin-top:14px;">
-      <button class="btn secondary" id="receiptWhatsAppBtn" type="button" style="flex:1;">ติดต่อแอดมินผ่าน WhatsApp เพื่อชำระเงิน</button>
-      <button class="btn" id="receiptDownloadImgBtn" type="button" style="flex:1;">ดาวน์โหลดใบเสร็จเป็นรูป</button>
+
+  <!-- เพิ่มใหม่: popup ติดตามออเดอร์ (ฝั่งลูกค้า ไม่ต้อง Login) -->
+  <div class="modal-backdrop" id="trackOrderBackdrop" aria-hidden="true">
+    <div class="modal track-order-modal">
+      <div class="modal-header">
+        <h3>ติดตามออเดอร์</h3>
+        <button class="modal-close" id="trackOrderClose" type="button">✕</button>
+      </div>
+      <p class="track-order-intro">กรอกเลข Order พร้อมชื่อและเบอร์โทร/WhatsApp ที่ใช้ตอนสั่งซื้อ เพื่อตรวจสอบสถานะ</p>
+
+      <!-- เพิ่มใหม่: สลับโหมด ค้นหาออเดอร์เดียว / ดูออเดอร์ทั้งหมดของฉัน — ไม่แตะ field/ปุ่มเดิมด้านล่าง -->
+      <div class="track-order-mode-switch" role="tablist">
+        <button class="track-order-mode-btn active" id="trackOrderModeSingleBtn" type="button" role="tab" aria-selected="true">ค้นหาออเดอร์เดียว</button>
+        <button class="track-order-mode-btn" id="trackOrderModeAllBtn" type="button" role="tab" aria-selected="false">ออเดอร์ทั้งหมดของฉัน</button>
+      </div>
+
+      <div id="trackOrderSingleView">
+        <div id="trackOrderQuick" class="track-order-result" style="margin-top:0;padding-top:0;border-top:0;margin-bottom:16px;" hidden>
+          <button class="btn secondary" id="trackOrderQuickBtn" type="button" style="width:100%;">📄 ดูใบเสร็จออเดอร์ล่าสุดของคุณ (เครื่องนี้)</button>
+        </div>
+
+        <div class="field">
+          <label for="trackOrderId">เลข Order *</label>
+          <input id="trackOrderId" placeholder="เช่น RCPT-20260909-ABC123">
+        </div>
+        <div class="field">
+          <label for="trackOrderName">ชื่อลูกค้า *</label>
+          <input id="trackOrderName" autocomplete="name" placeholder="ชื่อที่ใช้ตอนสั่งซื้อ">
+        </div>
+        <div class="field">
+          <label for="trackOrderPhone">เบอร์โทร/WhatsApp *</label>
+          <input id="trackOrderPhone" autocomplete="tel" placeholder="20XXXXXXXX">
+        </div>
+        <button class="btn" id="trackOrderSubmitBtn" type="button">ค้นหาออเดอร์</button>
+        <div id="trackOrderFeedback" class="cart-feedback"></div>
+
+        <div id="trackOrderResult" class="track-order-result" hidden></div>
+      </div>
+
+      <!-- เพิ่มใหม่: มุมมองออเดอร์ทั้งหมดของลูกค้า (ตามเบอร์โทร) แบบเรียลไทม์ -->
+      <div id="trackOrderAllView" hidden>
+        <div class="field">
+          <label for="trackOrderAllName">ชื่อลูกค้า *</label>
+          <input id="trackOrderAllName" autocomplete="name" placeholder="ชื่อที่ใช้ตอนสั่งซื้อ">
+        </div>
+        <div class="field">
+          <label for="trackOrderAllPhone">เบอร์โทร/WhatsApp *</label>
+          <input id="trackOrderAllPhone" autocomplete="tel" placeholder="20XXXXXXXX">
+        </div>
+        <button class="btn" id="trackOrderAllSubmitBtn" type="button">ดูออเดอร์ทั้งหมด</button>
+        <div id="trackOrderAllFeedback" class="cart-feedback"></div>
+
+        <div id="trackOrderAllList" class="track-order-all-list" hidden></div>
+
+        <div id="trackOrderAllDetail" class="track-order-result" hidden>
+          <button class="btn secondary" id="trackOrderAllBackBtn" type="button" style="width:100%;margin-bottom:12px;">← กลับไปที่ลิสต์ออเดอร์</button>
+          <div id="trackOrderAllDetailContent"></div>
+        </div>
+      </div>
     </div>
   </div>
-</div>
-<div class="toast" id="toast"></div>
-<script>
-  (function () {
-    function syncBottomNavHeight() {
-      var nav = document.querySelector('.bottom-nav');
-      if (!nav) return;
-      document.documentElement.style.setProperty('--bottom-nav-h', nav.offsetHeight + 'px');
-    }
-    function syncTopbarHeight() {
-      var topbar = document.querySelector('.topbar');
-      if (!topbar) return;
-      var h = topbar.offsetHeight;
-      document.documentElement.style.setProperty('--topbar-h', h + 'px');
-      document.body.style.paddingTop = h + 'px';
-    }
-    syncBottomNavHeight();
-    syncTopbarHeight();
-    document.addEventListener('DOMContentLoaded', function() { syncBottomNavHeight(); syncTopbarHeight(); });
-    window.addEventListener('load', function() { syncBottomNavHeight(); syncTopbarHeight(); });
-    window.addEventListener('resize', function() { syncBottomNavHeight(); syncTopbarHeight(); });
-    window.addEventListener('orientationchange', function() { syncBottomNavHeight(); syncTopbarHeight(); });
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function() { syncBottomNavHeight(); syncTopbarHeight(); });
-    if (window.ResizeObserver) {
-      document.addEventListener('DOMContentLoaded', function () {
+
+  <!-- เพิ่มใหม่: ใบเสร็จหลังสั่งซื้อ (ฝั่งลูกค้า) — โครงสร้างเดียวกับ #receiptBackdrop ในหน้าแอดมิน -->
+  <div class="modal-backdrop" id="receiptBackdrop" aria-hidden="true">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>ใบเสร็จ</h3>
+        <button class="modal-close" id="receiptClose" type="button">✕</button>
+      </div>
+      <div id="receiptContent"></div>
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button class="btn secondary" id="receiptWhatsAppBtn" type="button" style="flex:1;">ติดต่อแอดมินผ่าน WhatsApp เพื่อชำระเงิน</button>
+        <button class="btn" id="receiptDownloadImgBtn" type="button" style="flex:1;">ดาวน์โหลดใบเสร็จเป็นรูป</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- 🔧 (2026-09-20 player bar): วัดความสูงจริงของเมนูล่าง (.bottom-nav) แล้วเก็บไว้ใน --bottom-nav-h
+       เพื่อให้เครื่องเล่นเพลงลอย (.player-bar) วางติดขอบบนของเมนูพอดี ไม่ทับเมนู — ไม่แตะ/ไม่ลบสคริปต์เดิม -->
+  <!-- 🔧 (2026-09-22 fix topbar): วัดความสูงจริงของแถบบน (.topbar) แล้วเก็บไว้ใน --topbar-h
+       เพื่อให้ body มี padding-top พอดี → เนื้อหาไม่ทับแถบบน (position: fixed ไม่ดันเนื้อหาอัตโนมัติ) -->
+  <script>
+    (function () {
+      function syncBottomNavHeight() {
         var nav = document.querySelector('.bottom-nav');
-        if (nav) new ResizeObserver(syncBottomNavHeight).observe(nav, { box: 'border-box' });
+        if (!nav) return;
+        document.documentElement.style.setProperty('--bottom-nav-h', nav.offsetHeight + 'px');
+      }
+      // 🔧 (2026-09-22 fix topbar): วัดความสูงแถบบน + ตั้ง padding-top ให้ body
+      function syncTopbarHeight() {
         var topbar = document.querySelector('.topbar');
-        if (topbar) new ResizeObserver(syncTopbarHeight).observe(topbar, { box: 'border-box' });
+        if (!topbar) return;
+        var h = topbar.offsetHeight;
+        document.documentElement.style.setProperty('--topbar-h', h + 'px');
+        document.body.style.paddingTop = h + 'px';
+      }
+      syncBottomNavHeight();
+      syncTopbarHeight();
+      document.addEventListener('DOMContentLoaded', function() {
+        syncBottomNavHeight();
+        syncTopbarHeight();
       });
-    }
-  })();
-</script>
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    const toggleBtn = document.getElementById('playlistToggleBtn');
-    const container = document.getElementById('playlistsContainer');
-    const icon = document.getElementById('dropdownIcon');
-    if (toggleBtn && container) {
-      toggleBtn.addEventListener('click', () => {
-        container.classList.toggle('is-closed');
-        icon.classList.toggle('is-closed');
+      window.addEventListener('load', function() {
+        syncBottomNavHeight();
+        syncTopbarHeight();
       });
-    }
-  });
-</script>
-<script type="module" src="app-user.js?v=20260922-batch10"></script>
+      window.addEventListener('resize', function() {
+        syncBottomNavHeight();
+        syncTopbarHeight();
+      });
+      window.addEventListener('orientationchange', function() {
+        syncBottomNavHeight();
+        syncTopbarHeight();
+      });
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(function() {
+        syncBottomNavHeight();
+        syncTopbarHeight();
+      });
+      if (window.ResizeObserver) {
+        document.addEventListener('DOMContentLoaded', function () {
+          var nav = document.querySelector('.bottom-nav');
+          if (nav) new ResizeObserver(syncBottomNavHeight).observe(nav, { box: 'border-box' });
+          var topbar = document.querySelector('.topbar');
+          if (topbar) new ResizeObserver(syncTopbarHeight).observe(topbar, { box: 'border-box' });
+        });
+      }
+    })();
+  </script>
+
+  <!-- สคริปต์สลับการ เปิด-ปิด Dropdown -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const toggleBtn = document.getElementById('playlistToggleBtn');
+      const container = document.getElementById('playlistsContainer');
+      const icon = document.getElementById('dropdownIcon');
+
+      if (toggleBtn && container) {
+        toggleBtn.addEventListener('click', () => {
+          container.classList.toggle('is-closed');
+          icon.classList.toggle('is-closed');
+        });
+      }
+    });
+  </script>
+
+  <!-- เปลี่ยนเลข v ทุกครั้งที่อัปโหลดไฟล์ใหม่ เพื่อไม่ให้มือถือใช้ไฟล์ JS จาก cache -->
+  <!-- 🔧 v=20260917-p0: P0 แก้ Bug 1 (ลูกค้าตั้ง status เองไม่ได้) + Sec 1 (change-password ต้อง verify เดิม) -->
+  <!-- 🔧 v=20260917-polling-fix: Phase 0 ยกเลิก polling ทุก 4 วิ + Phase 1 จุด 5 (admin view cache) + Phase 2 จุด 1 (state ฝั่ง client) -->
+  <script type="module" src="app-user.js?v=20260922-batch10"></script>
 </body>
 </html>
