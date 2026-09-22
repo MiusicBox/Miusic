@@ -153,10 +153,26 @@ function formatLAK(v) { return Number(v || 0).toLocaleString("en-US") + " LAK"; 
 // ผลกระทบต่อระบบเดิม: 0% — เบอร์ที่แสดงในใบเสร็จ/WhatsApp message ยังเก็บรูปแบบเดิมใน UI
 //   แค่เปลี่ยนค่าที่เก็บใน field "whatsapp" ของ order document ใน DB
 function normalizePhoneForStorage(v) {
-  let s = String(v || "").replace(/[^0-9]/g, "");
-  if (s.startsWith("856")) s = s.slice(3);
-  if (s.startsWith("0")) s = s.replace(/^0+/, "");
-  return s;
+  // 🔧 (2026-09-22 fix Bug #2): sync กับ app-cart.js + worker/index.js — เก็บ WITH country code
+  //   เดิม: strip 856 + strip 0 → เก็บ "20XXXXXXXX" (ไม่มี country code)
+  //   ใหม่: เก็บ "85620XXXXXXXX" หรือ "668XXXXXXXX" (WITH country code)
+  //   ทำให้ออเดอร์ที่แอดมินสร้างเอง → โผล่ในหน้า "ออเดอร์ของฉัน" ของลูกค้าได้
+  let s = String(v || "").replace(/[^0-9+]/g, "");
+  s = s.replace(/^\+/, "");
+  if (s.startsWith("856")) {
+    let rest = s.slice(3).replace(/^0+/, "");
+    return "856" + rest;
+  }
+  if (s.startsWith("66")) {
+    let rest = s.slice(2).replace(/^0+/, "");
+    return "66" + rest;
+  }
+  // 🔧 (2026-09-22 fix Bug #1): ตรวจ Thai local (8/9 + 8 หลัก = 9 หลัก) → เติม 66
+  let rest = s.replace(/^0+/, "");
+  if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9"))) {
+    return "66" + rest;
+  }
+  return "856" + rest;
 }
 
 // เปิดแชท WhatsApp ไปหาเบอร์ที่ระบุ (รูปแบบเดียวกับ buildWhatsAppLink ใน app-user.js/app-cart.js)
