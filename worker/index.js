@@ -503,13 +503,6 @@ const SONG_SENSITIVE_FIELDS = ["full_file_url", "full_file_public_id", "full_fil
 // ผลกระทบ: ลูกค้า Laos ที่สั่งด้วยเบอร์ +85620... จะหาออเดอร์ได้ถ้ากรอก 020... หรือ 20...
 //   สอดคล้องกับ normalizePhone ฝั่ง client (app-user.js, app-promotion.js) ที่แก้พร้อมกัน
 function normalizePhoneServer(v) {
-  // 🔧 (2026-09-22 v2 — รองรับทััง ลาว+ไทย): เก็บเบอร์ WITH country code ใน DB
-  //   sync กับ normalizePhoneForStorage ใน app-cart.js + myOrders_normalizePhone ใน app-promotion.js
-  //   + normalizePhone ใน app-user.js
-  //   รูปแบบที่เก็บ:
-  //     ลาว: "85620XXXXXXXX" (มี country code 856)
-  //     ไทย: "668XXXXXXXX" (มี country code 66)
-  //   ทำให้ลูกค้าค้นหาออเดอร์ได้โดยใส่เบอร์รูปแบบใดก็ได้ (local/international/with or without +)
   let s = String(v || "").replace(/[^0-9+]/g, "");
   s = s.replace(/^\+/, "");
   if (s.startsWith("856")) {
@@ -520,8 +513,12 @@ function normalizePhoneServer(v) {
     let rest = s.slice(2).replace(/^0+/, "");
     return "66" + rest;
   }
-  // ไม่มี country code → สันนิษฐานว่าเป็นลาว (ลูกค้าส่วนใหญ่เป็นลาว)
+  // 🔧 (2026-09-22 fix Bug #1): ตรวจ Thai local (8XXXXXXXX / 9XXXXXXXX, 9 หลัก) → เติม 66
+  //   เดิม: สันนิษฐานลาวเสมอ → 0812345678 → 856812345678 (ผิด!)
   let rest = s.replace(/^0+/, "");
+  if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9"))) {
+    return "66" + rest;
+  }
   return "856" + rest;
 }
 function normalizeNameServer(v) { return String(v || "").trim().toLowerCase(); }
@@ -920,8 +917,10 @@ async function handleDb(request, env, url) {
         if (oPhone !== queryPhone) return false;
         const oName = normalizeNameServer(d.data?.customer_name || "");
         if (!oName || !queryName) return false;
-        // fuzzy match เหมือน app-promotion.js เดิม — กันลูกค้าพิมพ์ชื่อต่างจากตอนสั่งซื้อนิดหน่อยแล้วหาไม่เจอ
-        return oName === queryName || oName.includes(queryName) || queryName.includes(oName);
+        // 🔒 (2026-09-22 fix Bug #5): exact match แทน fuzzy — กัน enumerate ออเดอร์คนอื่น
+        //   เดิม: oName.includes(queryName) → พิมพ์ "a" ก็เจอทุกออเดอร์ที่มี "a" ในชื่อ
+        //   ใหม่: oName === queryName → ต้องตรงเป๊ะ (case-insensitive เพราะ normalizeNameServer lowercase แล้ว)
+        return oName === queryName;
       });
       return jsonResponse({ docs: matched });
     }
@@ -1103,6 +1102,92 @@ async function handleDb(request, env, url) {
           }
           // force status หลัง filter (กัน case ที่ status อยู่ใน whitelist โดยไม่ตั้งใจ — ปลอดภัยกว่า)
           filteredData.status = "pending_verify";
+
+          // 🔒 (2026-09-22 fix Bug #4): Server re-calculate ราคาจาก DB แทนเชื่อลูกค้า
+          //   ปัญหา: ลูกค้าส่ง total=0 หรือราคาเท่าไรก็ได้ → แอดมินเห็นราคาผิด
+          //   วิธีแก้: Server fetch song/playlist prices จาก D1 → re-calc total → override
+          //   ผลกระทบระบบเดิม: 0% — ถ้าลูกค้าส่งราคาถูกต้อง → override ค่าเดียวกัน (ไม่เปลี่ยน)
+          //           ถ้าลูกค้าส่งราคาผิด → server ใช้ราคาจริงจาก DB
+          if (Array.isArray(filteredData.items) && filteredData.items.length > 0) {
+            try {
+              // แยก song IDs + playlist IDs จาก items
+              const songIds = [];
+              const playlistIds = [];
+              for (const item of filteredData.items) {
+                if (item.kind === "playlist" && item.playlist_id) {
+                  playlistIds.push(item.playlist_id);
+                } else if (item.song_id) {
+                  songIds.push(item.song_id);
+                } else if (item.playlist_id) {
+                  playlistIds.push(item.playlist_id);
+                }
+              }
+              // Batch fetch song prices
+              let serverSubtotal = 0;
+              if (songIds.length > 0) {
+                const songDocs = await getDocumentsByIds(env, "songs", songIds);
+                for (const sd of songDocs) {
+                  if (sd && sd.data) {
+                    const price = Number(sd.data.price);
+                    if (Number.isFinite(price) && price >= 0) {
+                      serverSubtotal += price;
+                    }
+                  }
+                }
+              }
+              // Batch fetch playlist prices
+              if (playlistIds.length > 0) {
+                const plDocs = await getDocumentsByIds(env, "playlists", playlistIds);
+                for (const pd of plDocs) {
+                  if (pd && pd.data) {
+                    const price = Number(pd.data.price);
+                    if (Number.isFinite(price) && price >= 0) {
+                      serverSubtotal += price;
+                    }
+                  }
+                }
+              }
+              // คำนวณ discount และ final_total
+              const discountAmount = Number(filteredData.discount_amount || 0);
+              const serverTotal = Math.max(0, serverSubtotal - discountAmount);
+              // Override ราคาที่ลูกค้าส่งมาด้วยราคาที่ server คำนวณ
+              filteredData.subtotal = serverSubtotal;
+              filteredData.total = serverTotal;
+              filteredData.final_total = serverTotal;
+              // อัปเดต price ของแต่ละ item ด้วย (กันลูกค้าส่ง price=0)
+              const songPriceMap = new Map();
+              if (songIds.length > 0) {
+                const songDocs = await getDocumentsByIds(env, "songs", songIds);
+                for (const sd of songDocs) {
+                  if (sd && sd.data) {
+                    songPriceMap.set(sd.id, Number(sd.data.price) || 0);
+                  }
+                }
+              }
+              const plPriceMap = new Map();
+              if (playlistIds.length > 0) {
+                const plDocs = await getDocumentsByIds(env, "playlists", playlistIds);
+                for (const pd of plDocs) {
+                  if (pd && pd.data) {
+                    plPriceMap.set(pd.id, Number(pd.data.price) || 0);
+                  }
+                }
+              }
+              for (const item of filteredData.items) {
+                if (item.kind === "playlist" && item.playlist_id) {
+                  const realPrice = plPriceMap.get(item.playlist_id);
+                  if (realPrice !== undefined) item.price = realPrice;
+                } else if (item.song_id) {
+                  const realPrice = songPriceMap.get(item.song_id);
+                  if (realPrice !== undefined) item.price = realPrice;
+                }
+              }
+            } catch (priceErr) {
+              // ถ้า fetch ราคาไม่ได้ (เช่น DB error) → ใช้ราคาที่ลูกค้าส่งมา (fallback)
+              // ไม่ block การสั่งซื้อ เพราะแอดมินจะตรวจสอบอีกที
+              console.warn("Server price re-calc failed, using customer prices:", priceErr?.message || priceErr);
+            }
+          }
 
           body.data = filteredData;
         }
