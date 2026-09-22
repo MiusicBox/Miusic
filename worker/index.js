@@ -48,30 +48,43 @@ const FORCE_DOWNLOAD_FOLDERS = new Set(["full-songs", "order-zips"]);
 //   ใช้ใน: PUT/PATCH/DELETE ของ songs/playlists/orders/categories/djs/settings/promotions/discounts
 //   ความปลอดภัย: insert-only — ไม่มี UPDATE/DELETE ผ่าน API → กันแอดมินลบประวัติตัวเอง
 //   ผลกระทบระบบเดิม: 0% — ถ้าตาราง audit_log ไม่มี → log ข้ามไป (ไม่ block action)
+//   🔧 (2026-09-22 fix Bug #2 UI v6): ใช้ ctx.waitUntil() รัน INSERT เป็น background
+//     ปัญหาเดิม: await INSERT → ถ้า D1 ช้า/hang → บล็อก response → UI ค้าง "กำลังอัปโหลด..."
+//     วิธีแก้: ใช้ ctx.waitUntil(auditInsertPromise) → return ทันที ไม่รอ INSERT
+//     ถ้า ctx ไม่มี (เช่น cron หรือ env เดิม) → fallback ใช้ await ตามเดิม (ปลอดภัย)
 async function writeAuditLog(env, request, admin, action, collection, targetId, targetName, beforeData, afterData) {
   if (!admin || !env.DB) return;
-  try {
-    const clientIP = request.headers.get("CF-Connecting-IP") || "unknown";
-    const now = new Date().toISOString();
-    await env.DB.prepare(
-      "INSERT INTO audit_log (admin_id, admin_email, action, collection, target_id, target_name, before_data, after_data, ip_address, created_at) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    ).bind(
-      admin.id || "",
-      admin.email || "",
-      action,
-      collection,
-      targetId || "",
-      targetName || "",
-      beforeData ? JSON.stringify(beforeData) : null,
-      afterData ? JSON.stringify(afterData) : null,
-      clientIP,
-      now
-    ).run();
-  } catch (auditErr) {
+  const ctx = env.__ctx;
+  const clientIP = request.headers.get("CF-Connecting-IP") || "unknown";
+  const now = new Date().toISOString();
+
+  // สร้าง Promise สำหรับ INSERT audit_log
+  const auditInsertPromise = env.DB.prepare(
+    "INSERT INTO audit_log (admin_id, admin_email, action, collection, target_id, target_name, before_data, after_data, ip_address, created_at) " +
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).bind(
+    admin.id || "",
+    admin.email || "",
+    action,
+    collection,
+    targetId || "",
+    targetName || "",
+    beforeData ? JSON.stringify(beforeData) : null,
+    afterData ? JSON.stringify(afterData) : null,
+    clientIP,
+    now
+  ).run().catch((auditErr) => {
     // ถ้าตาราง audit_log ไม่มี → log ใน Worker logs แต่ไม่ block action
     console.warn("audit_log insert failed (table may not exist — run schema.sql):", auditErr?.message);
+  });
+
+  // ถ้ามี ctx → รันใน background (response ไม่รอ INSERT)
+  if (ctx && typeof ctx.waitUntil === "function") {
+    ctx.waitUntil(auditInsertPromise);
+    return; // ส่ง response ทันที ไม่รอ audit log INSERT
   }
+  // fallback: รอ INSERT (กรณี ctx ไม่มี)
+  await auditInsertPromise;
 }
 
 // 🔧 (2026-09-22 fix Bug #4): sanitize string สำหรับ orderId + ค่าที่เข้า HTTP header / R2 metadata
@@ -2949,7 +2962,12 @@ async function handleOrderZipAbort(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  // 🔧 (2026-09-22 fix Bug #2 UI v6): เพิ่ม ctx parameter → ใช้ ctx.waitUntil() รัน audit log
+  //   ใน background → ไม่บล็อก response (กัน UI ค้าง "กำลังอัปโหลด..." ถ้า audit_log INSERT ช้า/hang)
+  async fetch(request, env, ctx) {
+    // 🔧 (2026-09-22 fix Bug #2 UI v6): เก็บ ctx ไว้ใน env.__ctx เพื่อให้ writeAuditLog เรียก ctx.waitUntil() ได้
+    //   ปลอดภัยเพราะ env เป็น object ตัวเดียวกันตลอด lifecycle ของ request
+    env.__ctx = ctx;
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
