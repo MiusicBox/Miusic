@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- sitemap.xml — บอก Google ว่าเว็บมีหน้าอะไรบ้าง -->
+<!-- อัปเดต URL ให้ตรงกับโดเมนจริงของคุณ -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://miusic-store.dj-remix.workers.dev/</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

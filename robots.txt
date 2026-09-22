@@ -1,0 +1,10 @@
+# robots.txt — สั่งการ Google/bot ว่า index อะไรได้บ้าง
+# อนุญาต index หน้าหลัก
+User-agent: *
+Allow: /
+# ห้าม index หน้า admin
+Disallow: /admin.html
+# ห้าม index API endpoints
+Disallow: /api/
+# Sitemap location
+Sitemap: https://miusic-store.dj-remix.workers.dev/sitemap.xml
