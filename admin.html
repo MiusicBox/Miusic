@@ -36,10 +36,8 @@
     <div class="topbar">
       <div class="topbar-inner">
         <div class="logo"><span>⚙️ Admin — <span id="adminSiteName">Music Store</span></span></div>
-        <a href="/" id="viewStoreBtn" class="icon-btn" title="เปิดหน้าร้าน (เปิดแท็บใหม่)" target="_blank" rel="noopener"
-           style="margin-left:auto;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">🏪</a>
-        <button class="icon-btn" id="changePasswordBtn" title="เปลี่ยนรหัสผ่านของฉัน">🔑</button>
-        <button class="icon-btn" id="logoutBtn" title="ออกจากระบบ">⎋</button>
+        <button class="icon-btn" id="changePasswordBtn" style="margin-left:auto;" title="เปลี่ยนรหัสผ่านของฉัน">🔑</button>
+        <button class="icon-btn" id="logoutBtn" title="ตัวเลือก (ดูหน้าร้าน / ออกจากระบบ)">⎋</button>
       </div>
     </div>
 
@@ -1028,12 +1026,12 @@
       <div class="modal-header"><h3>ตัวเลือกก่อนออก</h3><button class="modal-close" id="logoutConfirmClose">✕</button></div>
       <p style="color:var(--text-dim);font-size:13px;margin-top:0;">คุณต้องการจะ...</p>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:14px;">
-        <a href="/" id="logoutConfirmViewStore"
+        <a href="/" id="logoutConfirmViewStore" target="_blank" rel="noopener"
            style="display:flex;align-items:center;gap:12px;padding:14px;background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.3);border-radius:10px;color:#4ade80;text-decoration:none;font-size:14px;font-weight:700;">
           <span style="font-size:22px;">🏪</span>
           <div style="flex:1;">
             <div>ดูหน้าร้าน</div>
-            <div style="font-size:11px;font-weight:400;color:var(--text-dim);margin-top:2px;">เปิดหน้าร้าน — ยังคงล็อกอินอยู่</div>
+            <div style="font-size:11px;font-weight:400;color:var(--text-dim);margin-top:2px;">เปิดแท็บใหม่ — ยังคงล็อกอินอยู่</div>
           </div>
         </a>
         <button type="button" id="logoutConfirmLogout"
