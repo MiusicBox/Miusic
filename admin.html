@@ -26,6 +26,9 @@
       <div class="field"><label>รหัสผ่าน</label><input id="loginPassword" type="password" autocomplete="current-password"></div>
       <button class="btn" id="loginBtn">เข้าสู่ระบบ</button>
       <div id="loginError" style="color:var(--danger);font-size:13px;margin-top:10px;"></div>
+      <a href="/" style="display:block;text-align:center;margin-top:16px;color:var(--text-dim);text-decoration:none;font-size:13px;">
+        ← กลับหน้าร้าน
+      </a>
     </div>
   </div>
 
@@ -33,8 +36,12 @@
     <div class="topbar">
       <div class="topbar-inner">
         <div class="logo"><span>⚙️ Admin — <span id="adminSiteName">Music Store</span></span></div>
-        <button class="icon-btn" id="changePasswordBtn" style="margin-left:auto;" title="เปลี่ยนรหัสผ่านของฉัน">🔑</button>
-        <button class="icon-btn" id="logoutBtn">⎋</button>
+        <a href="/" id="viewStoreBtn" title="เปิดหน้าร้าน (เปิดแท็บใหม่)" target="_blank" rel="noopener"
+           style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:7px 14px;color:var(--text);text-decoration:none;font-size:13px;font-weight:700;">
+          🏪 <span>ดูหน้าร้าน</span>
+        </a>
+        <button class="icon-btn" id="changePasswordBtn" title="เปลี่ยนรหัสผ่านของฉัน">🔑</button>
+        <button class="icon-btn" id="logoutBtn" title="ออกจากระบบ">⎋</button>
       </div>
     </div>
 
@@ -365,6 +372,7 @@
       </p>
 
       <!-- ===== Filter bar ===== -->
+      <!-- 🔧 (2026-09-22 fix Bug #2 UI v4): เก็บ 2 ช่องวันที่ไว้ตามเดิม + เพิ่มป้ายให้ชัด (ตั้งแต่ / ถึง) -->
       <div class="audit-log-filters" style="padding:0 16px;margin:14px 0 10px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
         <select id="auditFilterAction" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;">
           <option value="">ทุก action</option>
@@ -385,8 +393,14 @@
           <option value="admins">แอดมิน</option>
         </select>
         <input id="auditFilterEmail" type="search" placeholder="ค้นอีเมลแอดมิน..." style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;grid-column:1 / -1;">
-        <input id="auditFilterFromDate" type="date" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;">
-        <input id="auditFilterToDate" type="date" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;">
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-dim);">
+          ตั้งแต่วันที่
+          <input id="auditFilterFromDate" type="date" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-dim);">
+          ถึงวันที่
+          <input id="auditFilterToDate" type="date" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;">
+        </label>
         <button id="auditFilterApplyBtn" class="btn secondary" style="grid-column:1 / -1;padding:8px 12px;font-size:13px;">🔍 ใช้ตัวกรอง</button>
       </div>
 
