@@ -309,7 +309,29 @@ document.getElementById("loginBtn").addEventListener("click", async () => {
   }
   btn.disabled = false; btn.textContent = LOGIN_BOOTSTRAP_MODE ? "สร้างแอดมินคนแรก" : "เข้าสู่ระบบ";
 });
-document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth));
+document.getElementById("logoutBtn").addEventListener("click", () => {
+  // 🔧 (2026-09-22 fix Bug #2 UI v4): เปิด modal ให้เลือกก่อน logout จริง
+  //   เดิม: คลิก ⎋ → signOut ทันที → กดผิดง่าย
+  //   ใหม่: คลิก ⎋ → เปิด modal ให้เลือก "ดูหน้าร้าน" / "ออกจากระบบ" / "ยกเลิก"
+  const bd = document.getElementById("logoutConfirmBackdrop");
+  if (bd) bd.style.display = "flex";
+});
+
+// ปุ่มปิด modal ยืนยัน logout
+document.getElementById("logoutConfirmClose")?.addEventListener("click", () => {
+  document.getElementById("logoutConfirmBackdrop").style.display = "none";
+});
+// ปุ่ม "ออกจากระบบ" จริง ๆ ใน modal
+document.getElementById("logoutConfirmLogout")?.addEventListener("click", () => {
+  document.getElementById("logoutConfirmBackdrop").style.display = "none";
+  signOut(auth);
+});
+// ปิด modal เมื่อคลิกพื้นหลัง
+document.getElementById("logoutConfirmBackdrop")?.addEventListener("click", (e) => {
+  if (e.target.id === "logoutConfirmBackdrop") {
+    e.currentTarget.style.display = "none";
+  }
+});
 
 // ================= เปลี่ยนรหัสผ่านของฉัน (ทุกแอดมินทำได้ ไม่จำกัดเฉพาะแอดมินหลัก) =================
 function resetChangePasswordForm() {
