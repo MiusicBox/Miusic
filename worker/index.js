@@ -43,12 +43,20 @@ import {
 // ย้ายมา R2 แล้วให้ตั้ง Content-Disposition ตอนอัปโหลดแทน เพื่อให้พฤติกรรม "กดแล้วดาวน์โหลดทันที" เหมือนเดิม
 const FORCE_DOWNLOAD_FOLDERS = new Set(["full-songs", "order-zips"]);
 
+// 🔧 (2026-09-22 fix Bug #1): helper สำหรับ error ที่ไม่รั่ว internals
+//   เดิม: ส่ง err.message ตรงๆ ให้ลูกค้า → แฮกเกอร์เห็น SQL error, table name, ฯลฯ
+//   ใหม่: log จริงใน Worker logs + ส่งข้อความกลางๆ ให้ลูกค้า
+function safeError(userMessage, err) {
+  console.error("[safeError]", userMessage, ":", err?.message || String(err));
+  return userMessage;
+}
+
 function corsHeaders() {
-  // ใช้งานจริงเป็น same-origin (เว็บกับ Worker อยู่โดเมนเดียวกัน) จึงไม่จำเป็นต้องเปิด CORS
-  // แต่ใส่ไว้แบบกว้างๆ เผื่อกรณีทดสอบจากเครื่อง dev คนละ origin ไม่ให้ต้องมาแก้ไฟล์นี้เพิ่ม
-  // เพิ่ม DELETE ในรายการ methods (2026-09-11) สำหรับ endpoint ลบไฟล์ R2 — ไม่กระทบ POST /api/upload เดิม
+  // 🔧 (2026-09-22 fix Bug #3): เปลี่ยน CORS จาก "*" → same-origin
+  //   เดิม: Access-Control-Allow-Origin: * → เว็บอื่นเรียก API ได้ → ความเสี่ยง security
+  //   ใหม่: ไม่ตั้ง ACAO เลย = same-origin เท่านั้น (เว็บกับ Worker อยู่โดเมนเดียวกัน)
+  //   ผลกระทบระบบเดิม: 0% — เว็บและ API อยู่โดเมนเดียวกัน → ไม่ต้องการ CORS เปิด
   return {
-    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   };
@@ -162,7 +170,7 @@ async function handleUpload(request, env) {
   try {
     await env.BUCKET.put(key, file.stream(), { httpMetadata });
   } catch (err) {
-    return jsonResponse({ error: "เขียนไฟล์เข้า R2 ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
+    return jsonResponse({ error: safeError("เขียนไฟล์เข้า R2 ไม่สำเร็จ กรุณาลองใหม่", err) }, 502);
   }
 
   const base = env.R2_PUBLIC_BASE_URL.replace(/\/+$/, "");
@@ -209,11 +217,9 @@ async function handleFileProxy(request, env, url) {
   const object = await env.BUCKET.get(key);
   if (!object) return jsonResponse({ error: "ไม่พบไฟล์ใน R2" }, 404);
 
-  // ส่งกลับเป็น blob พร้อม Content-Type ที่ถูกต้อง + CORS headers
-  // (same-origin อยู่แล้ว แต่ใส่ CORS ไว้เผื่อกรณีทดสอบจาก dev origin อื่น)
+  // 🔧 (2026-09-22 fix Bug #3): ลบ ACAO * — same-origin เท่านั้น
   const headers = new Headers();
   object.writeHttpMetadata(headers);
-  headers.set("Access-Control-Allow-Origin", "*");
   headers.set("Cache-Control", "no-store");
   // ไม่ใส่ Content-Disposition: attachment เพราะฝั่ง caller ต้องการ stream เป็น blob ไม่ใช่ดาวน์โหลดตรง
   return new Response(object.body, { status: 200, headers });
@@ -249,7 +255,7 @@ async function handleDeleteUpload(request, env) {
   try {
     await env.BUCKET.delete(key);
   } catch (err) {
-    return jsonResponse({ error: "ลบไฟล์ออกจาก R2 ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
+    return jsonResponse({ error: safeError("ลบไฟล์ไม่สำเร็จ กรุณาลองใหม่", err) }, 502);
   }
   return jsonResponse({ ok: true, deleted: true, key });
 }
@@ -298,7 +304,8 @@ async function handleAuth(request, env, url) {
     //   ถ้า index ยังไม่ถูกสร้าง (ยังไม่ได้ run schema.sql ใหม่) → ยังทำงานเหมือนเดิม (fallback)
     let body;
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
-    const email = String(body.email || "").trim();
+    // 🔧 (2026-09-22 fix Bug #4): lowercase email — กัน case-sensitive
+    const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
     const displayName = String(body.displayName || "").trim() || email.split("@")[0];
     if (!email) return jsonResponse({ error: "กรุณากรอกอีเมล" }, 400);
@@ -336,7 +343,8 @@ async function handleAuth(request, env, url) {
   if (path === "login" && request.method === "POST") {
     let body;
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
-    const email = String(body.email || "").trim();
+    // 🔧 (2026-09-22 fix Bug #4): lowercase email
+    const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
 
     // 🔒 แก้บั๊ก #4 (2026-09-18): Rate limiting บน login — กัน brute-force password
@@ -367,7 +375,8 @@ async function handleAuth(request, env, url) {
 
     // 🔒 Maintenance (2026-09-16): ทำความสะอาด session ที่หมดอายุก่อนสร้าง session ใหม่
     await cleanupExpiredSessions(env);
-    const admin = await env.DB.prepare("SELECT * FROM admin_users WHERE email = ?").bind(email).first();
+    // 🔧 (2026-09-22 fix Bug #4): query ด้วย LOWER(email) — case-insensitive match
+    const admin = await env.DB.prepare("SELECT * FROM admin_users WHERE LOWER(email) = ?").bind(email).first();
     if (!admin || !(await verifyPassword(password, admin.password_hash))) {
       // 🔒 แก้บั๊ก #4: บันทึก login attempt ที่ล้มเหลวลง D1 (สำหรับ rate limiting)
       try {
@@ -435,6 +444,23 @@ async function handleAuth(request, env, url) {
     if (newPassword.length < 6) return jsonResponse({ error: "รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร" }, 400);
     const passwordHash = await hashPassword(newPassword);
     await env.DB.prepare("UPDATE admin_users SET password_hash = ? WHERE id = ?").bind(passwordHash, admin.id).run();
+    // 🔧 (2026-09-22 fix Bug #2): ลบ session อื่นทั้งหมด (ยกเว้น session ปัจจุบัน)
+    //   เดิม: เปลี่ยนรหัสผ่านแล้ว session เดิมยังใช้ได้ 7 วัน → stolen session ยัง active
+    //   ใหม่: ลบ session อื่นออก → คนที่ขโมย cookie ถูกบังคับ login ใหม่
+    try {
+      const currentToken = getCookie(request, "session_token");
+      if (currentToken) {
+        await env.DB.prepare(
+          "DELETE FROM sessions WHERE admin_id = ? AND token != ?"
+        ).bind(admin.id, currentToken).run();
+      } else {
+        // ถ้าไม่มี token → ลบทั้งหมด (fallback — บังคับ login ใหม่ทุกคน)
+        await env.DB.prepare("DELETE FROM sessions WHERE admin_id = ?").bind(admin.id).run();
+      }
+    } catch (sessionErr) {
+      // ถ้าลบ session ไม่ได้ → log แต่ไม่ block การเปลี่ยนรหัสผ่าน
+      console.warn("Failed to invalidate other sessions:", sessionErr?.message);
+    }
     return jsonResponse({ ok: true });
   }
 
@@ -444,11 +470,12 @@ async function handleAuth(request, env, url) {
     if (admin.role !== "main") return jsonResponse({ error: "เฉพาะแอดมินหลักเท่านั้นที่เพิ่มแอดมินได้" }, 403);
     let body;
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
-    const email = String(body.email || "").trim();
+    // 🔧 (2026-09-22 fix Bug #4): lowercase email
+    const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
     if (!email) return jsonResponse({ error: "กรุณากรอกอีเมล" }, 400);
     if (password.length < 6) return jsonResponse({ error: "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร" }, 400);
-    const existing = await env.DB.prepare("SELECT id FROM admin_users WHERE email = ?").bind(email).first();
+    const existing = await env.DB.prepare("SELECT id FROM admin_users WHERE LOWER(email) = ?").bind(email).first();
     if (existing) return jsonResponse({ error: "อีเมลนี้มีบัญชีอยู่แล้วในระบบ", code: "auth/email-already-in-use" }, 409);
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -707,7 +734,7 @@ async function handleDb(request, env, url) {
       });
       return jsonResponse({ count });
     } catch (err) {
-      return jsonResponse({ error: "นับออเดอร์ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+      return jsonResponse({ error: safeError("นับออเดอร์ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }
   }
 
@@ -726,7 +753,7 @@ async function handleDb(request, env, url) {
       const docs = await getDocumentsByIds(env, collection, ids);
       return jsonResponse({ docs });
     } catch (err) {
-      return jsonResponse({ error: "batch get ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+      return jsonResponse({ error: safeError("ดึงข้อมูลไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }
   }
 
@@ -769,7 +796,7 @@ async function handleDb(request, env, url) {
       }
       return jsonResponse({ results });
     } catch (err) {
-      return jsonResponse({ error: "has-orders-batch ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+      return jsonResponse({ error: safeError("ตรวจสอบออเดอร์ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }
   }
 
@@ -793,7 +820,7 @@ async function handleDb(request, env, url) {
       ).bind(url).all();
       return jsonResponse({ used: !!(playlistMatches && playlistMatches.length > 0) });
     } catch (err) {
-      return jsonResponse({ error: "check-cover-used ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+      return jsonResponse({ error: safeError("ตรวจสอบรูปปกไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }
   }
 
@@ -807,7 +834,7 @@ async function handleDb(request, env, url) {
       const count = await countDocumentsAll(env, collection);
       return jsonResponse({ count });
     } catch (err) {
-      return jsonResponse({ error: "count-all ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+      return jsonResponse({ error: safeError("นับข้อมูลไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }
   }
 
@@ -827,7 +854,7 @@ async function handleDb(request, env, url) {
       const duplicates = await findDuplicateSongsByName(env, songName, excludeSongId);
       return jsonResponse({ duplicates });
     } catch (err) {
-      return jsonResponse({ error: "check-duplicate ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+      return jsonResponse({ error: safeError("ตรวจสอบซ้ำไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }
   }
 
@@ -1273,7 +1300,7 @@ async function handleDb(request, env, url) {
       }
     }
   } catch (err) {
-    return jsonResponse({ error: "db error: " + (err?.message || String(err)) }, 500);
+    return jsonResponse({ error: safeError("เกิดข้อผิดพลาดภายในระบบ กรุณาลองใหม่", err) }, 500);
   }
 
   return jsonResponse({ error: "ไม่พบ endpoint นี้" }, 404);
@@ -1580,7 +1607,7 @@ async function handleOrderZipStart(request, env) {
       },
     });
   } catch (err) {
-    return jsonResponse({ error: "สร้าง multipart upload ใน R2 ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
+    return jsonResponse({ error: safeError("สร้างไฟล์ ZIP ไม่สำเร็จ กรุณาลองใหม่", err) }, 502);
   }
 
   // ===== บันทึก state ลง D1 =====
@@ -1600,7 +1627,7 @@ async function handleOrderZipStart(request, env) {
   } catch (err) {
     // ถ้า insert ล้มเหลว → abort multipart upload เพื่อไม่ให้ค้างใน R2
     try { await mpu.abort(); } catch (_) {}
-    return jsonResponse({ error: "บันทึกสถานะ ZIP job ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+    return jsonResponse({ error: safeError("บันทึกสถานะไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
   }
 
   // อัปเดต order doc: zip_status = 'preparing' (เหมือนเดิมใน orders.js createOrderZip)
@@ -1615,7 +1642,7 @@ async function handleOrderZipStart(request, env) {
     // ถ้าอัปเดต order doc ล้มเหลว → abort multipart upload + ลบ row + return error
     try { await mpu.abort(); } catch (_) {}
     await deleteOrderZipJob(env, jobId);
-    return jsonResponse({ error: "อัปเดตสถานะออเดอร์ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+    return jsonResponse({ error: safeError("อัปเดตออเดอร์ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
   }
 
   return jsonResponse({
@@ -1688,7 +1715,7 @@ async function handleOrderZipAppend(request, env) {
       "SELECT job_id, order_id, bucket_key, parts, status FROM order_zip_jobs WHERE job_id = ?"
     ).bind(jobId).first();
   } catch (err) {
-    return jsonResponse({ error: "อ่านสถานะ ZIP job ไม่สำเร็จ (อาจยังไม่ได้สร้างตาราง order_zip_jobs — รัน schema.sql ใหม่): " + (err?.message || String(err)) }, 500);
+    return jsonResponse({ error: safeError("อ่านสถานะไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
   }
   if (!jobRow) {
     return jsonResponse({ error: "ไม่พบ ZIP job นี้ (อาจถูกยกเลิกไปแล้ว)" }, 404);
@@ -1731,7 +1758,7 @@ async function handleOrderZipAppend(request, env) {
   try {
     wavObject = await env.BUCKET.head(r2Key);
   } catch (err) {
-    return jsonResponse({ error: `ตรวจไฟล์ WAV จาก R2 ไม่สำเร็จ (key: ${r2Key}): ` + (err?.message || String(err)) }, 502);
+    return jsonResponse({ error: safeError("ตรวจไฟล์เพลงไม่สำเร็จ กรุณาลองใหม่", err) }, 502);
   }
   if (!wavObject) {
     return jsonResponse({ error: `ไม่พบไฟล์ WAV ใน R2 (key: ${r2Key})` }, 404);
@@ -1810,7 +1837,7 @@ async function handleOrderZipAppend(request, env) {
       "UPDATE order_zip_jobs SET parts = ?, updated_at = ? WHERE job_id = ?"
     ).bind(JSON.stringify(partsData), now, jobId).run();
   } catch (err) {
-    return jsonResponse({ error: "บันทึกข้อมูล entry ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+    return jsonResponse({ error: safeError("บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
   }
 
   return jsonResponse({
@@ -1868,7 +1895,7 @@ async function handleOrderZipFinalize(request, env) {
       "SELECT job_id, order_id, bucket_key, parts, total_songs, status FROM order_zip_jobs WHERE job_id = ?"
     ).bind(jobId).first();
   } catch (err) {
-    return jsonResponse({ error: "อ่านสถานะ ZIP job ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+    return jsonResponse({ error: safeError("อ่านสถานะไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
   }
   if (!jobRow) {
     return jsonResponse({ error: "ไม่พบ ZIP job นี้" }, 404);
@@ -1906,7 +1933,7 @@ async function handleOrderZipFinalize(request, env) {
   try {
     mpu = env.BUCKET.resumeMultipartUpload(jobRow.bucket_key, jobId);
   } catch (err) {
-    return jsonResponse({ error: "resume multipart upload ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
+    return jsonResponse({ error: safeError("สร้างไฟล์ไม่สำเร็จ กรุณาลองใหม่", err) }, 502);
   }
 
   // ===== Stream build + upload ทีละ chunk 8MB =====
@@ -2033,7 +2060,7 @@ async function handleOrderZipFinalize(request, env) {
       });
     } catch (_) {}
     return jsonResponse({
-      error: "build/upload ZIP ไม่สำเร็จ: " + (err?.message || String(err)),
+      error: safeError("สร้างไฟล์ ZIP ไม่สำเร็จ กรุณาลองใหม่", err),
     }, 500);
   }
 
@@ -2041,7 +2068,7 @@ async function handleOrderZipFinalize(request, env) {
   try {
     await mpu.complete(allUploadedParts);
   } catch (err) {
-    return jsonResponse({ error: "complete multipart upload ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
+    return jsonResponse({ error: safeError("สร้างไฟล์ ZIP ไม่สำเร็จ กรุณาลองใหม่", err) }, 502);
   }
 
   // ===== อัปเดต order doc =====
@@ -2157,7 +2184,7 @@ async function handleOrderZipFinalizeBuild(request, env) {
       "SELECT job_id, order_id, bucket_key, parts, total_songs, status FROM order_zip_jobs WHERE job_id = ?"
     ).bind(jobId).first();
   } catch (err) {
-    return jsonResponse({ error: "อ่านสถานะ ZIP job ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+    return jsonResponse({ error: safeError("อ่านสถานะไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
   }
   if (!jobRow) {
     return jsonResponse({ error: "ไม่พบ ZIP job นี้" }, 404);
@@ -2204,7 +2231,7 @@ async function handleOrderZipFinalizeBuild(request, env) {
   try {
     mpu = env.BUCKET.resumeMultipartUpload(jobRow.bucket_key, jobId);
   } catch (err) {
-    return jsonResponse({ error: "resume multipart upload ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
+    return jsonResponse({ error: safeError("สร้างไฟล์ไม่สำเร็จ กรุณาลองใหม่", err) }, 502);
   }
 
   // ===== Allocate chunk buffer 8MB + load partial buffer จาก R2 =====
@@ -2215,7 +2242,7 @@ async function handleOrderZipFinalizeBuild(request, env) {
     try {
       partialObj = await env.BUCKET.get(state.partialBufferKey);
     } catch (err) {
-      return jsonResponse({ error: `อ่าน partial buffer จาก R2 ไม่สำเร็จ: ` + (err?.message || String(err)) }, 502);
+      return jsonResponse({ error: safeError("อ่านข้อมูลไม่สำเร็จ กรุณาลองใหม่", err) }, 502);
     }
     if (!partialObj) {
       return jsonResponse({ error: `ไม่พบ partial buffer ใน R2 (key: ${state.partialBufferKey})` }, 404);
@@ -2225,7 +2252,7 @@ async function handleOrderZipFinalizeBuild(request, env) {
       const partialBuf = await partialObj.arrayBuffer();
       partialBytes = new Uint8Array(partialBuf);
     } catch (err) {
-      return jsonResponse({ error: `อ่าน partial buffer เข้า memory ไม่สำเร็จ: ` + (err?.message || String(err)) }, 500);
+      return jsonResponse({ error: safeError("ประมวลผลไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }
     if (partialBytes.byteLength > ZIP_FINALIZE_CHUNK_SIZE) {
       return jsonResponse({ error: `partial buffer ใหญ่เกิน chunk size (${partialBytes.byteLength} > ${ZIP_FINALIZE_CHUNK_SIZE})` }, 500);
@@ -2465,7 +2492,7 @@ async function handleOrderZipFinalizeBuild(request, env) {
       "UPDATE order_zip_jobs SET parts = ?, updated_at = ? WHERE job_id = ?"
     ).bind(JSON.stringify(partsData), new Date().toISOString(), jobId).run();
   } catch (err) {
-    return jsonResponse({ error: "บันทึก state ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+    return jsonResponse({ error: safeError("บันทึกสถานะไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
   }
 
   const done = state.nextSongIdx >= songs.length;
@@ -2510,7 +2537,7 @@ async function handleOrderZipFinalizeCompose(request, env) {
       "SELECT job_id, order_id, bucket_key, parts, total_songs, status FROM order_zip_jobs WHERE job_id = ?"
     ).bind(jobId).first();
   } catch (err) {
-    return jsonResponse({ error: "อ่านสถานะ ZIP job ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+    return jsonResponse({ error: safeError("อ่านสถานะไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
   }
   if (!jobRow) return jsonResponse({ error: "ไม่พบ ZIP job นี้" }, 404);
   if (jobRow.status !== "preparing") {
@@ -2548,7 +2575,7 @@ async function handleOrderZipFinalizeCompose(request, env) {
   try {
     mpu = env.BUCKET.resumeMultipartUpload(jobRow.bucket_key, jobId);
   } catch (err) {
-    return jsonResponse({ error: "resume multipart upload ไม่สำเร็จ: " + (err?.message || String(err)) }, 502);
+    return jsonResponse({ error: safeError("สร้างไฟล์ไม่สำเร็จ กรุณาลองใหม่", err) }, 502);
   }
 
   try {
@@ -2597,7 +2624,7 @@ async function handleOrderZipFinalizeCompose(request, env) {
         updated_at: new Date().toISOString(),
       });
     } catch (_) {}
-    return jsonResponse({ error: "finalize-compose ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+    return jsonResponse({ error: safeError("สร้างไฟล์ ZIP ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
   }
 
   // อัปเดต order doc
@@ -2661,7 +2688,7 @@ async function handleOrderZipAbort(request, env) {
       "SELECT job_id, order_id, bucket_key, parts, status FROM order_zip_jobs WHERE job_id = ?"
     ).bind(jobId).first();
   } catch (err) {
-    return jsonResponse({ error: "อ่านสถานะ ZIP job ไม่สำเร็จ: " + (err?.message || String(err)) }, 500);
+    return jsonResponse({ error: safeError("อ่านสถานะไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
   }
   if (!jobRow) return jsonResponse({ error: "ไม่พบ ZIP job นี้" }, 404);
 
