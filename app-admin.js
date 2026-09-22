@@ -321,6 +321,12 @@ document.getElementById("logoutBtn").addEventListener("click", () => {
 document.getElementById("logoutConfirmClose")?.addEventListener("click", () => {
   document.getElementById("logoutConfirmBackdrop").style.display = "none";
 });
+// ปุ่ม "ดูหน้าร้าน" ใน modal → ปิด modal ก่อน แล้วให้ <a target="_blank"> เปิดแท็บใหม่
+//   (session ค้างอยู่ใน cookie → แท็บใหม่ยังคง login อยู่)
+document.getElementById("logoutConfirmViewStore")?.addEventListener("click", () => {
+  document.getElementById("logoutConfirmBackdrop").style.display = "none";
+  // ไม่ preventDefault → ปล่อยให้ browser เปิด href="/" ในแท็บใหม่ (target="_blank")
+});
 // ปุ่ม "ออกจากระบบ" จริง ๆ ใน modal
 document.getElementById("logoutConfirmLogout")?.addEventListener("click", () => {
   document.getElementById("logoutConfirmBackdrop").style.display = "none";
