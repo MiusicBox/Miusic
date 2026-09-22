@@ -44,9 +44,23 @@ export async function verifyPassword(password, stored) {
     keyMaterial, 256
   );
   const gotHashB64 = bytesToBase64(new Uint8Array(bits));
-  // เทียบความยาวเท่ากันก่อนเพื่อลด timing side-channel เบื้องต้น (ไม่ใช่ constant-time เต็มรูปแบบ
-  // แต่เพียงพอสำหรับ use case นี้ ซึ่งเดิม Firebase Auth ก็ไม่ได้เปิดเผยรายละเอียดการเทียบนี้ให้ client อยู่แล้ว)
-  return gotHashB64.length === expectedHashB64.length && gotHashB64 === expectedHashB64;
+  // 🔧 (2026-09-22 fix Bug #1): constant-time comparison — กัน timing attack
+  //   เดิม: gotHashB64 === expectedHashB64 → ถ้าตัวแรกต่าง → return เร็วกว่า → timing leak
+  //   ใหม่: XOR ทุก byte เสมอ → ใช้เวลาเท่ากันไม่ว่าจะถูกหรือผิด
+  return constantTimeEqual(gotHashB64, expectedHashB64);
+}
+
+// 🔧 (2026-09-22 fix Bug #1): constant-time string comparison
+//   วิธี: XOR ทุกตัวอักษร → ถ้าผลลัพธ์เป็น 0 ทุกตัว → ตรงกัน
+//   ไม่ว่าจะตรงหรือผิด → วนลูปครบทุกตัวเสมอ → ใช้เวลาเท่ากัน
+function constantTimeEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
 }
 
 export function getCookie(request, name) {
