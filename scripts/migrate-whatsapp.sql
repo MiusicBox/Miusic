@@ -1,112 +1,72 @@
 -- ============================================================
--- Migration: Normalize whatsapp field in orders collection
+-- Migration v2: Normalize whatsapp field — SAFE version
 -- ============================================================
--- วัตถุประสงค์: แปลง whatsapp field ของทุก order ให้อยู่ในรูปแบบ normalized
---   "20XXXXXXXX" (ลบ +, ลด 856 country code, ลด leading 0 ออก)
+-- ปัญหา: migration เดิม (migrate-whatsapp.sql) strip 856 จากทุกออเดอร์
+--   → ทำลายออเดอร์ใหม่ที่เก็บ WITH country code แล้ว
 --
--- หลังรันเสร็จ: ทุก order ใน DB จะมี whatsapp field เป็น "20XXXXXXXX"
---   → worker/index.js _customer-list สามารถใช้ query เดียว (1 D1 read)
---   แทนการ query 4 รูปแบบ (4 D1 reads) → ประหยัด D1 quota 4 เท่า
+-- Migration ใหม่นี้ SAFE:
+--   1. ข้ามออเดอร์ที่มี country code แล้ว (856* หรือ 66*) → ไม่แตะ
+--   2. ตรวจเบอร์ที่ไม่มี country code → เพิ่ม 856 หรือ 66 ตามรูปแบบ
+--   3. มี verification query ท้ายไฟล์
 --
--- ============================================================
--- ⚠️ คำเตือนสำคัญ:
--- ============================================================
--- 1. ทำ BACKUP ก่อนรัน! ใช้คำสั่ง:
---      wrangler d1 export miusic-store-db --output=backup-before-migrate.sql
---    หรือ Cloudflare Dashboard → D1 → เลือก DB → Backup
---
--- 2. รันใน staging ก่อน (ถ้ามี) เพื่อทดสอบ
---
--- 3. รันครั้งเดียวเท่านั้น — รันซ้ำไม่มีผลเสีย (idempotent) แต่เปลืองเวลา
---
--- 4. ตรวจสอบผลลัพธ์ด้วย verification query ท้ายไฟล์ก่อนปิด session
---
--- 5. หลัง migration เสร็จ + verify ผ่าน → จึง deploy worker ใหม่ที่ใช้ 1 query
---    (ไฟล์ worker/index.js ที่แก้แล้ว)
---
--- วิธีรัน:
---   wrangler d1 execute miusic-store-db --file=/home/z/my-project/scripts/migrate-whatsapp.sql
---
--- หรือถ้ารันบน Windows ใช้ path:
---   wrangler d1 execute miusic-store-db --file=scripts\migrate-whatsapp.sql
+-- รันทีละ statement (D1 Console ไม่รองรับหลาย statements)
 -- ============================================================
 
--- ────────────────────────────────────────────────────────────
--- Step 1: ลบตัว "+" ออกจาก whatsapp field (ถ้ามี)
--- ────────────────────────────────────────────────────────────
--- ตัวอย่าง: "+8562012345678" → "8562012345678"
+-- Step 1: เพิ่ม country code 856 ให้ออเดอร์ลาวที่ยังไม่มี country code
+--   เงื่อนไข: whatsapp ไม่ขึ้นต้นด้วย 856 และ 66 และขึ้นต้นด้วย 2 (Laos local)
 UPDATE documents
-SET data = json_set(data, '$.whatsapp',
-  REPLACE(json_extract(data, '$.whatsapp'), '+', '')
-)
+SET data = json_set(data, '$.whatsapp', '856' || json_extract(data, '$.whatsapp'))
 WHERE collection = 'orders'
   AND json_extract(data, '$.whatsapp') IS NOT NULL
-  AND json_extract(data, '$.whatsapp') LIKE '%+%';
+  AND json_extract(data, '$.whatsapp') NOT LIKE '856%'
+  AND json_extract(data, '$.whatsapp') NOT LIKE '66%'
+  AND json_extract(data, '$.whatsapp') LIKE '2%';
 
--- ────────────────────────────────────────────────────────────
--- Step 2: ลด "856" prefix ออก (Laos country code)
--- ────────────────────────────────────────────────────────────
--- ตัวอย่าง: "8562012345678" → "2012345678"
--- ⚠️ รันหลัง Step 1 เสร็จ — ไม่งั้ "+" ยังอยู่ ทำให้ LIKE '856%' ไม่ match
+-- Step 2: เพิ่ม country code 66 ให้ออเดอร์ไทยที่ยังไม่มี country code
+--   เงื่อนไข: whatsapp ไม่ขึ้นต้นด้วย 856 และ 66 และขึ้นต้นด้วย 8 หรือ 9 (Thai local, 9 หลัก)
 UPDATE documents
-SET data = json_set(data, '$.whatsapp',
-  substr(json_extract(data, '$.whatsapp'), 4)
-)
+SET data = json_set(data, '$.whatsapp', '66' || json_extract(data, '$.whatsapp'))
 WHERE collection = 'orders'
   AND json_extract(data, '$.whatsapp') IS NOT NULL
-  AND json_extract(data, '$.whatsapp') LIKE '856%';
+  AND json_extract(data, '$.whatsapp') NOT LIKE '856%'
+  AND json_extract(data, '$.whatsapp') NOT LIKE '66%'
+  AND (json_extract(data, '$.whatsapp') LIKE '8%' OR json_extract(data, '$.whatsapp') LIKE '9%')
+  AND length(json_extract(data, '$.whatsapp')) = 9;
 
--- ────────────────────────────────────────────────────────────
--- Step 3: ลด leading "0" ออก (เบอร์ local format)
--- ────────────────────────────────────────────────────────────
--- ตัวอย่าง: "02012345678" → "2012345678"
--- ⚠️ รันหลัง Step 2 เสร็จ — ไม่งั้ "0856..." จะถูกลด 0 ออกกลายเป็น "856..."
---    แล้ว Step 2 จะไม่ได้รันซ้ำ (idempotent แต่ลำดับสำคัญ)
+-- Step 3: เพิ่ม country code 856 ให้เบอร์ที่ขึ้นต้นด้วย 0 (strip 0 ก่อนแล้วเติม 856)
+--   เงื่อนไข: whatsapp ขึ้นต้นด้วย 0 และไม่ขึ้นต้นด้วย 08 หรือ 09 (เพราะ 08/09 = ไทย)
 UPDATE documents
-SET data = json_set(data, '$.whatsapp',
-  substr(json_extract(data, '$.whatsapp'), 2)
-)
+SET data = json_set(data, '$.whatsapp', '856' || substr(json_extract(data, '$.whatsapp'), 2))
 WHERE collection = 'orders'
   AND json_extract(data, '$.whatsapp') IS NOT NULL
+  AND json_extract(data, '$.whatsapp') NOT LIKE '856%'
+  AND json_extract(data, '$.whatsapp') NOT LIKE '66%'
   AND json_extract(data, '$.whatsapp') LIKE '0%'
-  AND length(json_extract(data, '$.whatsapp')) > 1;
+  AND json_extract(data, '$.whatsapp') NOT LIKE '08%'
+  AND json_extract(data, '$.whatsapp') NOT LIKE '09%';
+
+-- Step 4: เพิ่ม country code 66 ให้เบอร์ไทยที่ขึ้นต้นด้วย 08 หรือ 09 (strip 0 ก่อนแล้วเติม 66)
+UPDATE documents
+SET data = json_set(data, '$.whatsapp', '66' || substr(json_extract(data, '$.whatsapp'), 2))
+WHERE collection = 'orders'
+  AND json_extract(data, '$.whatsapp') IS NOT NULL
+  AND json_extract(data, '$.whatsapp') NOT LIKE '856%'
+  AND json_extract(data, '$.whatsapp') NOT LIKE '66%'
+  AND (json_extract(data, '$.whatsapp') LIKE '08%' OR json_extract(data, '$.whatsapp') LIKE '09%');
 
 -- ============================================================
 -- Verification: ตรวจสอบผลลัพธ์หลังรัน migration
 -- ============================================================
--- ควรเห็น: ทุก whatsapp field เริ่มต้นด้วยตัวเลข 2-9 (ไม่ใช่ 0, 856, หรือ +)
--- ถ้ามี whatsapp ที่ขึ้นต้นด้วย 0, 856, หรือ + แปลว่า migration ยังไม่สมบูรณ์
+-- ควรเห็น: ทุก whatsapp field ขึ้นต้นด้วย 856 หรือ 66
 SELECT
   CASE
     WHEN json_extract(data, '$.whatsapp') IS NULL THEN 'NULL'
-    WHEN json_extract(data, '$.whatsapp') LIKE '+%' THEN '❌ ยังมี + อยู่'
-    WHEN json_extract(data, '$.whatsapp') LIKE '856%' THEN '❌ ยังมี 856 อยู่'
-    WHEN json_extract(data, '$.whatsapp') LIKE '0%' THEN '❌ ยังมี 0 นำหน้า'
-    ELSE '✅ normalized ถูกต้อง'
+    WHEN json_extract(data, '$.whatsapp') LIKE '856%' THEN '✅ Laos (856)'
+    WHEN json_extract(data, '$.whatsapp') LIKE '66%' THEN '✅ Thai (66)'
+    ELSE '❌ MISSING_COUNTRY_CODE'
   END AS status,
   COUNT(*) AS count
 FROM documents
 WHERE collection = 'orders'
 GROUP BY status
 ORDER BY count DESC;
-
--- ============================================================
--- ตัวอย่างผลลัพธ์ที่คาดหวัง:
--- ============================================================
--- ✅ normalized ถูกต้อง | 1234
--- (ถ้ามีแค่บรรทัดนี้ = migration สำเร็จ)
--- ============================================================
-
--- ============================================================
--- (Optional) ดูตัวอย่าง 5 orders แรกเพื่อยืนยันด้วยตา
--- ============================================================
-SELECT
-  id,
-  json_extract(data, '$.customer_name') AS customer_name,
-  json_extract(data, '$.whatsapp') AS whatsapp_normalized,
-  json_extract(data, '$.receipt_number') AS receipt_number,
-  json_extract(data, '$.created_at') AS created_at
-FROM documents
-WHERE collection = 'orders'
-ORDER BY json_extract(data, '$.created_at') DESC
-LIMIT 5;
