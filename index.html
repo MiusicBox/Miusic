@@ -3,8 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
-<title>Music Store</title>
+<meta name="description" content="เพลงแดนซ์สายปาตี้ DJ Remix — โหลดเพลงดีเจรีมิกซ์ ฟังเพลงแดนซ์ออนไลน์ สั่งซื้อผ่าน WhatsApp ส่งทั่วลาวและไทย">
+<meta name="keywords" content="เพลงแดนซ์, สายปาตี้, DJ Remix, เพลงดีเจ, รีมิกซ์, ดาวน์โหลดเพลง, แดนซ์ลาว, แดนซ์ไทย, เพลงปาร์ตี้, เพลงรีมิกซ์">
+<meta name="author" content="Music Store">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="language" content="Thai">
+<meta name="geo.region" content="TH">
+<meta name="geo.placename" content="Laos, Thailand">
+<title>Music Store — เพลงแดนซ์สายปาตี้ DJ Remix | โหลดเพลงดีเจรีมิกซ์</title>
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #15): Open Graph tags สำหรับแชร์ Facebook/Line -->
 <!--   ปัญหา: แชร์ URL ใน Line/Facebook → แสดงแค่ URL ไม่มีรูป preview
@@ -12,14 +18,16 @@
      ผลกระทบ: แชร์เว็บใน social → แสดง title + รูป + description สวยงาม → คนคลิกเยอะขึ้น -->
 <!-- Open Graph tags จะถูกอัปเดตจาก settings.website_name + settings.meta_description + settings.website_logo ตอน init() รันใน app-user.js -->
 <meta property="og:type" content="website">
-<meta property="og:title" content="Music Store — ร้านเพลงออนไลน์">
-<meta property="og:description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
-<meta property="og:url" content="">
+<meta property="og:locale" content="th_TH">
+<meta property="og:locale:alternate" content="lo_LA">
+<meta property="og:title" content="Music Store — เพลงแดนซ์สายปาตี้ DJ Remix">
+<meta property="og:description" content="โหลดเพลงดีเจรีมิกซ์ ฟังเพลงแดนซ์ออนไลน์ สั่งซื้อผ่าน WhatsApp ส่งทั่วลาวและไทย">
+<meta property="og:url" content="https://miusic-store.dj-remix.workers.dev/">
 <meta property="og:image" content="default-song-cover.svg">
 <meta property="og:site_name" content="Music Store">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Music Store — ร้านเพลงออนไลน์">
-<meta name="twitter:description" content="ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp">
+<meta name="twitter:title" content="Music Store — เพลงแดนซ์สายปาตี้ DJ Remix">
+<meta name="twitter:description" content="โหลดเพลงดีเจรีมิกซ์ ฟังเพลงแดนซ์ออนไลน์ สั่งซื้อผ่าน WhatsApp ส่งทั่วลาวและไทย">
 <meta name="twitter:image" content="default-song-cover.svg">
 
 <!-- 🔧 (2026-09-22 fix): Favicon — แสดง icon ในแท็บ browser -->
@@ -29,18 +37,23 @@
 <!-- 🔧 (2026-09-22 fix): Canonical URL — กัน Google index ซ้ำ (เช่น http vs https) -->
 <link rel="canonical" href="https://miusic-store.dj-remix.workers.dev/">
 
-<!-- 🔧 (2026-09-22 fix): JSON-LD Structured Data — บอก Google ว่าเว็บนี้คือร้านค้า -->
+<!-- 🔧 (2026-09-23 SEO): JSON-LD Structured Data — บอก Google ว่าเว็บนี้คือร้านเพลง DJ Remix -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "Store",
   "name": "Music Store",
-  "description": "ร้านเพลงออนไลน์ ฟังเพลงฟรี สั่งซื้อง่ายผ่าน WhatsApp",
+  "description": "เพลงแดนซ์สายปาตี้ DJ Remix — โหลดเพลงดีเจรีมิกซ์ สั่งซื้อผ่าน WhatsApp ส่งทั่วลาวและไทย",
   "url": "https://miusic-store.dj-remix.workers.dev/",
-  "image": "default-song-cover.svg",
-  "priceRange": "LAK",
+  "image": "https://miusic-store.dj-remix.workers.dev/default-song-cover.svg",
+  "priceRange": "LAK, THB",
   "paymentAccepted": "Cash, Bank Transfer",
-  "currenciesAccepted": "LAK"
+  "currenciesAccepted": "LAK, THB",
+  "areaServed": [
+    { "@type": "Country", "name": "Laos" },
+    { "@type": "Country", "name": "Thailand" }
+  ],
+  "keywords": "เพลงแดนซ์, สายปาตี้, DJ Remix, เพลงดีเจ, รีมิกซ์, แดนซ์ลาว, แดนซ์ไทย"
 }
 </script>
 
