@@ -3479,6 +3479,219 @@ export default {
     //   เดิม: ส่ง document count กลับ → ใครก็รู้ว่ามีกี่ออเดอร์/เพลง
     //   ใหม่: ส่งแค่ ok: true/false → ไม่รั่ว business metrics
     // response: { ok: true, timestamp, d1: { ok }, r2: { ok } }
+    // 🔧 (2026-09-23 SEO): GET /sitemap.xml — สร้าง sitemap อัตโนมัติจาก D1
+    //   ดึง songs + playlists ทั้งหมด → สร้าง XML → cache 24 ชม.
+    //   Googlebot ดึง URL นี้เพื่อรู้ว่าเว็บมีหน้าอะไรบ้าง
+    //   ผลกระทบระบบเดิม: 0% — endpoint ใหม่, ไม่แตะ /api/* ใด ๆ
+    if (url.pathname === "/sitemap.xml" && request.method === "GET") {
+      const SITE_BASE = "https://miusic-store.dj-remix.workers.dev";
+      try {
+        const [songsRows, playlistsRows] = await Promise.all([
+          listDocuments(env, "songs"),
+          listDocuments(env, "playlists"),
+        ]);
+        const urls = [
+          { loc: SITE_BASE + "/", priority: "1.0", changefreq: "daily" },
+        ];
+        // เพิ่มเพลงที่ active เท่านั้น (status !== 'hidden' หรือ inactive)
+        for (const s of songsRows) {
+          if (!s || !s.data) continue;
+          const status = s.data.status || "";
+          if (status === "hidden" || status === "inactive" || s.data.active === false) continue;
+          const songName = String(s.data.song_name || "").trim();
+          if (!songName) continue;
+          urls.push({
+            loc: SITE_BASE + "/song/" + encodeURIComponent(s.id),
+            priority: "0.8",
+            changefreq: "weekly",
+            lastmod: s.data.updated_at || s.data.created_at || "",
+          });
+        }
+        // เพิ่มเพลย์ลิสต์ที่ active เท่านั้น
+        for (const p of playlistsRows) {
+          if (!p || !p.data) continue;
+          if (p.data.active === false || p.data.is_active === false) continue;
+          const plName = String(p.data.playlist_name || p.data.name || "").trim();
+          if (!plName) continue;
+          urls.push({
+            loc: SITE_BASE + "/playlist/" + encodeURIComponent(p.id),
+            priority: "0.7",
+            changefreq: "weekly",
+            lastmod: p.data.updated_at || p.data.created_at || "",
+          });
+        }
+        // สร้าง XML
+        let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+        xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
+        for (const u of urls) {
+          xml += "  <url>\n";
+          xml += "    <loc>" + u.loc.replace(/&/g, "&amp;") + "</loc>\n";
+          xml += "    <changefreq>" + u.changefreq + "</changefreq>\n";
+          xml += "    <priority>" + u.priority + "</priority>\n";
+          if (u.lastmod) xml += "    <lastmod>" + u.lastmod + "</lastmod>\n";
+          xml += "  </url>\n";
+        }
+        xml += "</urlset>\n";
+        return new Response(xml, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/xml; charset=utf-8",
+            "Cache-Control": "public, max-age=86400",  // cache 24 ชม. — ลด D1 reads
+          },
+        });
+      } catch (err) {
+        return new Response('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>' + SITE_BASE + '/</loc><priority>1.0</priority></url>\n</urlset>\n', {
+          status: 200,
+          headers: { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=300" },
+        });
+      }
+    }
+
+    // 🔧 (2026-09-23 SEO): GET /song/:id — หน้า static HTML สำหรับเพลง (Googlebot อ่านได้)
+    //   ดึงเพลงจาก D1 → สร้าง HTML ที่มี meta tags + JSON-LD (MusicRecording schema)
+    //   ลูกค้าคลิกลิงก์ Google → ตก landing page → กด "ฟังเพลง" → ไปหน้าหลัก
+    //   ผลกระทบระบบเดิม: 0% — endpoint ใหม่ ไม่แตะฝั่ง client
+    const songMatch = url.pathname.match(/^\/song\/([^\/]+)$/);
+    if (songMatch && request.method === "GET") {
+      const songId = decodeURIComponent(songMatch[1]);
+      try {
+        const doc = await getDocument(env, "songs", songId);
+        if (!doc || !doc.data) {
+          return new Response("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>ไม่พบเพลง</title></head><body><h1>ไม่พบเพลง</h1></body></html>", { status: 404, headers: { "Content-Type": "text/html; charset=utf-8" } });
+        }
+        const s = doc.data;
+        const songName = String(s.song_name || "").replace(/[<>&"']/g, "");
+        const artist = String(s.dj_name || s.artist || "").replace(/[<>&"']/g, "");
+        const coverUrl = String(s.cover_url || "/default-song-cover.svg").replace(/[<>&"']/g, "");
+        const price = Number(s.price) || 0;
+        const description = `ฟังเพลง ${songName} ${artist ? "โดย " + artist : ""} — เพลงแดนซ์สายปาตี้ DJ Remix สั่งซื้อผ่าน WhatsApp ส่งทั่วลาวและไทย`;
+        const SITE_BASE = "https://miusic-store.dj-remix.workers.dev";
+        const songUrl = SITE_BASE + "/song/" + encodeURIComponent(songId);
+        const html = `<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${songName}${artist ? " — " + artist : ""} | เพลงแดนซ์ DJ Remix</title>
+<meta name="description" content="${description}">
+<meta name="keywords" content="${songName}, ${artist}, เพลงแดนซ์, DJ Remix, สายปาตี้, ดาวน์โหลดเพลง">
+<link rel="canonical" href="${songUrl}">
+<meta property="og:type" content="music.song">
+<meta property="og:title" content="${songName}${artist ? " — " + artist : ""}">
+<meta property="og:description" content="${description}">
+<meta property="og:image" content="${coverUrl}">
+<meta property="og:url" content="${songUrl}">
+<meta property="og:site_name" content="Music Store">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${songName}${artist ? " — " + artist : ""}">
+<meta name="twitter:description" content="${description}">
+<meta name="twitter:image" content="${coverUrl}">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "MusicRecording",
+  "name": "${songName}",
+  "byArtist": { "@type": "MusicGroup", "name": "${artist}" },
+  "inAlbum": { "@type": "MusicAlbum", "name": "Music Store — DJ Remix" },
+  "url": "${songUrl}",
+  "image": "${coverUrl}",
+  "description": "${description}",
+  "offers": { "@type": "Offer", "price": "${price}", "priceCurrency": "LAK", "availability": "https://schema.org/InStock" }
+}
+</script>
+</head>
+<body style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; text-align: center;">
+  <h1>${songName}</h1>
+  ${artist ? "<p style='color: #666; font-size: 18px;'>โดย " + artist + "</p>" : ""}
+  <img src="${coverUrl}" alt="${songName}" style="max-width: 300px; border-radius: 12px; margin: 16px 0;">
+  <p style="font-size: 16px; color: #333;">${description}</p>
+  <p style="font-size: 20px; font-weight: bold; color: #1a73e8; margin: 20px 0;">ราคา ${price} กีบ</p>
+  <a href="${SITE_BASE}/?song=${encodeURIComponent(songId)}" style="display: inline-block; padding: 14px 28px; background: #1a73e8; color: white; text-decoration: none; border-radius: 8px; font-size: 18px; margin: 8px;">▶️ ฟังเพลง + สั่งซื้อ</a>
+  <a href="${SITE_BASE}/" style="display: inline-block; padding: 14px 28px; background: #f5f5f7; color: #1d1d1f; text-decoration: none; border-radius: 8px; font-size: 18px; margin: 8px; border: 1px solid #d2d2d7;">ดูเพลงอื่น ๆ</a>
+  <p style="margin-top: 32px; color: #86868b; font-size: 14px;">Music Store — เพลงแดนซ์สายปาตี้ DJ Remix ส่งทั่วลาวและไทย</p>
+</body>
+</html>`;
+        return new Response(html, {
+          status: 200,
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "public, max-age=3600",  // cache 1 ชม.
+          },
+        });
+      } catch (err) {
+        return new Response("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>เกิดข้อผิดพลาด</title></head><body><h1>ไม่สามารถโหลดเพลงได้</h1></body></html>", { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } });
+      }
+    }
+
+    // 🔧 (2026-09-23 SEO): GET /playlist/:id — หน้า static HTML สำหรับเพลย์ลิสต์ (Googlebot อ่านได้)
+    const playlistMatch = url.pathname.match(/^\/playlist\/([^\/]+)$/);
+    if (playlistMatch && request.method === "GET") {
+      const playlistId = decodeURIComponent(playlistMatch[1]);
+      try {
+        const doc = await getDocument(env, "playlists", playlistId);
+        if (!doc || !doc.data) {
+          return new Response("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>ไม่พบเพลย์ลิสต์</title></head><body><h1>ไม่พบเพลย์ลิสต์</h1></body></html>", { status: 404, headers: { "Content-Type": "text/html; charset=utf-8" } });
+        }
+        const p = doc.data;
+        const plName = String(p.playlist_name || p.name || "").replace(/[<>&"']/g, "");
+        const coverUrl = String(p.cover_url || "/default-playlist-cover.svg").replace(/[<>&"']/g, "");
+        const price = Number(p.price) || 0;
+        const description = `เพลย์ลิสต์ ${plName} — เพลงแดนซ์สายปาตี้ DJ Remix รวมเพลงฮิตในเซ็ตเดียว สั่งซื้อผ่าน WhatsApp ส่งทั่วลาวและไทย`;
+        const SITE_BASE = "https://miusic-store.dj-remix.workers.dev";
+        const playlistUrl = SITE_BASE + "/playlist/" + encodeURIComponent(playlistId);
+        const html = `<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${plName} | เพลย์ลิสต์ DJ Remix</title>
+<meta name="description" content="${description}">
+<meta name="keywords" content="${plName}, เพลย์ลิสต์, เพลงแดนซ์, DJ Remix, สายปาตี้, ดาวน์โหลดเพลง">
+<link rel="canonical" href="${playlistUrl}">
+<meta property="og:type" content="music.playlist">
+<meta property="og:title" content="${plName}">
+<meta property="og:description" content="${description}">
+<meta property="og:image" content="${coverUrl}">
+<meta property="og:url" content="${playlistUrl}">
+<meta property="og:site_name" content="Music Store">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${plName}">
+<meta name="twitter:description" content="${description}">
+<meta name="twitter:image" content="${coverUrl}">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "MusicPlaylist",
+  "name": "${plName}",
+  "url": "${playlistUrl}",
+  "image": "${coverUrl}",
+  "description": "${description}",
+  "offers": { "@type": "Offer", "price": "${price}", "priceCurrency": "LAK", "availability": "https://schema.org/InStock" }
+}
+</script>
+</head>
+<body style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; text-align: center;">
+  <h1>${plName}</h1>
+  <img src="${coverUrl}" alt="${plName}" style="max-width: 300px; border-radius: 12px; margin: 16px 0;">
+  <p style="font-size: 16px; color: #333;">${description}</p>
+  <p style="font-size: 20px; font-weight: bold; color: #1a73e8; margin: 20px 0;">ราคา ${price} กีบ</p>
+  <a href="${SITE_BASE}/?playlist=${encodeURIComponent(playlistId)}" style="display: inline-block; padding: 14px 28px; background: #1a73e8; color: white; text-decoration: none; border-radius: 8px; font-size: 18px; margin: 8px;">▶️ ฟังเพลย์ลิสต์ + สั่งซื้อ</a>
+  <a href="${SITE_BASE}/" style="display: inline-block; padding: 14px 28px; background: #f5f5f7; color: #1d1d1f; text-decoration: none; border-radius: 8px; font-size: 18px; margin: 8px; border: 1px solid #d2d2d7;">ดูเพลงอื่น ๆ</a>
+  <p style="margin-top: 32px; color: #86868b; font-size: 14px;">Music Store — เพลงแดนซ์สายปาตี้ DJ Remix ส่งทั่วลาวและไทย</p>
+</body>
+</html>`;
+        return new Response(html, {
+          status: 200,
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "public, max-age=3600",
+          },
+        });
+      } catch (err) {
+        return new Response("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>เกิดข้อผิดพลาด</title></head><body><h1>ไม่สามารถโหลดเพลย์ลิสต์ได้</h1></body></html>", { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } });
+      }
+    }
+
     if (url.pathname === "/api/health" && request.method === "GET") {
       const result = {
         ok: true,
