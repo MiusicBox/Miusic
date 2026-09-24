@@ -60,8 +60,16 @@
 <!-- 🎨 (2026-09-20) Google Fonts: Mali (ตัวทำมะดา สำหรับชื่อเพลง) + Bai Jamjuree (ตัวหนา สำหรับหัวเพลย์ลิสต์) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Mali:wght@400;700&family=Bai+Jamjuree:wght@400;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260922-reduced-motion">
+<!-- 🔧 (2026-09-24 SEO/perf): เปลี่ยนจาก <link rel="stylesheet"> ปกติ (บล็อกการแสดงผลหน้าเว็บ ~1,780ms ตาม
+     PageSpeed) เป็นเทคนิค media="print" + onload — เบราว์เซอร์โหลดไฟล์แบบไม่บล็อก แล้วค่อยสลับเป็น "all" ตอนโหลด
+     เสร็จ ไฟล์/URL เดิมทุกอย่าง ไม่มีไฟล์ไหนถูกตัดออก มี <noscript> รองรับกรณีปิด JavaScript ไว้ด้วย -->
+<link rel="preload" href="https://fonts.googleapis.com/css2?family=Mali:wght@400;700&family=Bai+Jamjuree:wght@400;700;900&display=swap" as="style">
+<link href="https://fonts.googleapis.com/css2?family=Mali:wght@400;700&family=Bai+Jamjuree:wght@400;700;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'; this.onload=null;">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Mali:wght@400;700&family=Bai+Jamjuree:wght@400;700;900&display=swap" rel="stylesheet"></noscript>
+
+<link rel="preload" href="style.css?v=20260922-reduced-motion" as="style">
+<link rel="stylesheet" href="style.css?v=20260922-reduced-motion" media="print" onload="this.media='all'; this.onload=null;">
+<noscript><link rel="stylesheet" href="style.css?v=20260922-reduced-motion"></noscript>
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): เพิ่ม .visually-hidden class สำหรับ h1 SEO -->
 <style>
