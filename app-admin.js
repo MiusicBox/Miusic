@@ -46,6 +46,36 @@ let editingSongId = null, editingCatId = null, editingDjId = null, editingPlayli
 let pendingSongFile = null, pendingCoverFile = null, pendingDjImageFile = null, existingDjImageUrl = "";
 let pendingPlaylistCoverFile = null, existingPlaylistCoverUrl = "";
 let pendingFullSongFile = null, existingFullFileUrl = "";
+
+// 🔧 (2026-09-24 SEO/perf): ย่อ+บีบอัดรูปภาพในเบราว์เซอร์ก่อนอัปโหลด (ปกเพลง/รูป DJ/ปกเพลย์ลิสต์)
+//   เหตุผล: PageSpeed Insights พบรูปที่อัปโหลดจริงมีขนาด 1640x1647 แต่แสดงผลแค่ ~105x151
+//   ทำให้เว็บโหลดช้า (คะแนนประสิทธิภาพมือถือ 69) — ฟังก์ชันนี้ย่อรูปเหลือด้านยาวสุด ~900px
+//   และแปลงเป็น JPEG คุณภาพ 85% ก่อนส่งเข้า pipeline อัปโหลดเดิม (uploadToCloudinary → R2) ทุกอย่างเหมือนเดิม
+//   ไม่กระทบ: endpoint /api/upload, storage-adapter.js, DB, ชื่อฟิลด์ — ส่งแค่ File ที่เล็กลงแทนตัวเดิม
+//   ปลอดภัย: ถ้าย่อไม่สำเร็จ (เบราว์เซอร์เก่า/ไฟล์เสีย) จะคืนไฟล์ต้นฉบับกลับไปใช้แทนทันที ไม่ทำให้อัปโหลดพัง
+async function compressImageFile(file, maxDim = 900, quality = 0.85) {
+  try {
+    if (!file || !file.type || !file.type.startsWith("image/")) return file;
+    if (file.size < 300 * 1024) return file; // ไฟล์เล็กอยู่แล้ว (<300KB) ไม่ต้องย่อซ้ำ
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    if (scale >= 1) { bitmap.close && bitmap.close(); return file; } // รูปเล็กอยู่แล้ว ไม่ต้องย่อ
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close && bitmap.close();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    if (!blob) return file; // เผื่อ toBlob คืน null (บางเบราว์เซอร์เก่า)
+    const newName = file.name.replace(/\.[^.]+$/, "") + ".jpg";
+    return new File([blob], newName, { type: "image/jpeg" });
+  } catch (err) {
+    console.warn("compressImageFile: ย่อรูปไม่สำเร็จ ใช้ไฟล์ต้นฉบับแทน", err);
+    return file; // ผิดพลาดอะไรก็ตาม → ใช้ไฟล์เดิม ไม่ทำให้ผู้ใช้อัปโหลดไม่ได้
+  }
+}
 // ===== Auto Preview (Dance Section) — ไม่ตัดไฟล์ ไม่อัปโหลดไฟล์ใหม่ เก็บแค่วินาทีเริ่ม/จบ =====
 // pendingPreviewData: ผลวิเคราะห์ล่าสุด (จากไฟล์ที่เพิ่งเลือก หรือจากการวิเคราะห์ใหม่/แก้มือ) รอบันทึกตอนกด "บันทึกเพลง"
 let pendingPreviewData = null;
@@ -1500,9 +1530,9 @@ document.getElementById("songFileInput").addEventListener("change", (e) => {
   // Auto Preview: วิเคราะห์ไฟล์ที่เพิ่งเลือกทันที (ทำในเบราว์เซอร์ ไม่ต้องรออัปโหลดขึ้น Cloudinary ก่อน)
   runAnalysisOnFile(f);
 });
-document.getElementById("coverFileInput").addEventListener("change", (e) => {
+document.getElementById("coverFileInput").addEventListener("change", async (e) => {
   const f = e.target.files[0]; if (!f) return;
-  pendingCoverFile = f;
+  pendingCoverFile = await compressImageFile(f); // 🔧 (2026-09-24 SEO/perf) ย่อรูปก่อนเก็บ
   document.getElementById("coverFilePicker").textContent = "🖼️ " + f.name;
   document.getElementById("coverFilePicker").className = "file-picker filled";
 });
@@ -2055,9 +2085,9 @@ function openEditDj(id) {
 }
 document.getElementById("addDjBtn").addEventListener("click", openAddDj);
 document.getElementById("djFormClose").addEventListener("click", () => document.getElementById("djFormBackdrop").classList.remove("show"));
-document.getElementById("djImageInput").addEventListener("change", (e) => {
+document.getElementById("djImageInput").addEventListener("change", async (e) => {
   const f = e.target.files[0]; if (!f) return;
-  pendingDjImageFile = f;
+  pendingDjImageFile = await compressImageFile(f); // 🔧 (2026-09-24 SEO/perf) ย่อรูปก่อนเก็บ
   document.getElementById("djImagePicker").textContent = "🖼️ " + f.name;
   document.getElementById("djImagePicker").className = "file-picker filled";
 });
@@ -2320,9 +2350,9 @@ function openEditPlaylist(id) {
 }
 document.getElementById("addPlaylistBtn").addEventListener("click", openAddPlaylist);
 document.getElementById("playlistFormClose").addEventListener("click", () => document.getElementById("playlistFormBackdrop").classList.remove("show"));
-document.getElementById("playlistCoverInput").addEventListener("change", (e) => {
+document.getElementById("playlistCoverInput").addEventListener("change", async (e) => {
   const f = e.target.files[0]; if (!f) return;
-  pendingPlaylistCoverFile = f;
+  pendingPlaylistCoverFile = await compressImageFile(f); // 🔧 (2026-09-24 SEO/perf) ย่อรูปก่อนเก็บ
   document.getElementById("playlistCoverPicker").textContent = "🖼️ " + f.name;
   document.getElementById("playlistCoverPicker").className = "file-picker filled";
 });
@@ -2518,9 +2548,9 @@ document.getElementById("bulkFullFilesInput").addEventListener("change", (e) => 
 });
 // 🔒🔒🔒 จบส่วนที่ห้าม AI แก้เอง (ไฟล์เพลงเต็มแบบ Bulk) 🔒🔒🔒
 
-document.getElementById("bulkCoverInput").addEventListener("change", (e) => {
+document.getElementById("bulkCoverInput").addEventListener("change", async (e) => {
   const f = e.target.files[0]; if (!f) return;
-  pendingBulkCoverFile = f;
+  pendingBulkCoverFile = await compressImageFile(f); // 🔧 (2026-09-24 SEO/perf) ย่อรูปก่อนเก็บ
   document.getElementById("bulkCoverPicker").textContent = "🖼️ " + f.name;
   document.getElementById("bulkCoverPicker").className = "file-picker filled";
 });
