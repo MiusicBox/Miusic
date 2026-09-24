@@ -1,2 +1,12 @@
 /robots.txt
   Content-Type: text/plain; charset=utf-8
+
+# 🔧 (2026-09-24 SEO/perf): แคชไฟล์ static ยาวขึ้น (PageSpeed แจ้ง "ใช้อายุการใช้งานแคชที่มีประสิทธิภาพ")
+# ปลอดภัย: ทุกไฟล์เหล่านี้เรียกผ่าน query string เวอร์ชัน (เช่น ?v=20260922-...) อยู่แล้วในโค้ด
+# เวลาผู้ดูแลอัปเดตไฟล์แล้วเปลี่ยนเลขเวอร์ชันใน index.html/admin.html เบราว์เซอร์จะดึงไฟล์ใหม่ทันที ไม่ติดแคชเก่า
+/*.css
+  Cache-Control: public, max-age=31536000, immutable
+/*.js
+  Cache-Control: public, max-age=31536000, immutable
+/*.svg
+  Cache-Control: public, max-age=31536000, immutable
