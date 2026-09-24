@@ -368,6 +368,9 @@ button:active {
   max-width: 1080px;
   margin: 0 auto 12px;
   padding: 0 16px;
+  /* 🔧 (2026-09-24 SEO/perf): จองพื้นที่ไว้ล่วงหน้า กัน CLS ตอนเนื้อหา (fetch เพลย์ลิสต์) โหลดเสร็จแล้วดันเนื้อหาด้านล่างลง
+     ค่านี้เป็นเพียงพื้นที่ขั้นต่ำ ไม่กระทบเลย์เอาต์ตอนมีเนื้อหาจริง (เพราะเป็น min-height ไม่ใช่ height ตายตัว) */
+  min-height: 64px;
 }
 
 .playlist-header-btn {
