@@ -1258,7 +1258,10 @@ async function handleDb(request, env, url) {
       //   ผลกระทบระบบเดิม: 0% — header แค่บอก CDN cache key, ไม่เปลี่ยน response content
       //   ผลกระทบ cache hit rate: ลดลงนิดน้อย (แต่ละ session มี cache ของตัวเอง) — รับเพื่อ security
       const extraHeaders = isCacheable
-        ? { "Cache-Control": "public, max-age=60, s-maxage=300", "Vary": "Cookie" }
+        // 🔧 (2026-09-24 fix ข้อมูลไม่อัปเดตทันที): เดิม "public, max-age=60, s-maxage=300" → เบราว์เซอร์ใช้ข้อมูลเก่าซ้ำ 60 วิ
+        //   เปลี่ยนเป็น "public, max-age=10" → ข้อมูลเก่าค้างได้สูงสุด 10 วิ (Vary: Cookie คงเดิม, ตัด s-maxage ออกกัน CDN ถือสำเนา 5 นาที)
+        //   ย้อนกลับ: คืนค่าเดิมเป็น "public, max-age=60, s-maxage=300"
+        ? { "Cache-Control": "public, max-age=10", "Vary": "Cookie" }
         : {};
       // ใช้ new Response เพื่อใส่ Cache-Control header (jsonResponse ไม่รองรับ cache)
       const body = JSON.stringify({ docs });
