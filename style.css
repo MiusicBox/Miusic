@@ -294,6 +294,9 @@ button:active {
   scrollbar-width: none;
   max-width: 1080px;
   margin: 0 auto;
+  /* 🔧 (2026-09-24 SEO/perf): จองพื้นที่ไว้ล่วงหน้า กัน CLS ตอนดึงรายชื่อ DJ (fetch) เสร็จแล้วดันเนื้อหาด้านล่างลง
+     คำนวณจาก .dj-avatar 68px + margin 8px + .dj-name ~14px + padding บน-ล่างของแถวนี้เอง (6+20) ≈ 116px */
+  min-height: 116px;
 }
 
 .dj-row::-webkit-scrollbar {
