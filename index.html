@@ -67,9 +67,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Mali:wght@400;700&family=Bai+Jamjuree:wght@400;700;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'; this.onload=null;">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Mali:wght@400;700&family=Bai+Jamjuree:wght@400;700;900&display=swap" rel="stylesheet"></noscript>
 
-<link rel="preload" href="style.css?v=20260922-reduced-motion" as="style">
-<link rel="stylesheet" href="style.css?v=20260922-reduced-motion" media="print" onload="this.media='all'; this.onload=null;">
-<noscript><link rel="stylesheet" href="style.css?v=20260922-reduced-motion"></noscript>
+<!-- 🔧 (2026-09-24 CLS fix): style.css กลับมาเป็น <link rel="stylesheet"> ปกติ (บล็อกการแสดงผลสั้น ๆ)
+     สาเหตุ: เทคนิค media="print"+onload ทำให้หน้าเว็บวาดแบบ "ไม่มีสไตล์" ก่อน แล้วสไตล์มาทีหลัง → ทุกอย่างกระโดด
+     (CLS 0.649 = ตัวที่ทำให้คะแนนตก 76) ไฟล์/เวอร์ชันเดิมทุกอย่าง แค่เอาการโหลดแบบหน่วงออก -->
+<link rel="stylesheet" href="style.css?v=20260924-cls-fix">
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): เพิ่ม .visually-hidden class สำหรับ h1 SEO -->
 <style>
