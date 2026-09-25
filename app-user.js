@@ -1941,6 +1941,7 @@ function renderTrackOrderResult(order) {
           ? `<div style="margin-top:10px;font-size:12px;color:var(--text-dim);">⏳ รอแอดมินตรวจสอบการโอนเงิน — หลังยืนยันแล้วไฟล์จะถูกเตรียมให้</div>`
           : ""}
     <div class="track-order-actions">
+      ${order.status === "pending_verify" || order.status === "cancelled" ? `<button class="btn" type="button" id="trackOrderPayBtn" style="background:var(--accent);color:#fff;">💳 ชำระเงิน</button>` : ""}
       <button class="btn" type="button" id="trackOrderWhatsappBtn">ติดต่อแอดมินผ่าน WhatsApp</button>
       ${canCustomerDeleteOrder(order) ? `<button class="btn danger" type="button" id="trackOrderDeleteBtn">ลบออเดอร์นี้</button>` : ""}
     </div>
@@ -1953,6 +1954,22 @@ function renderTrackOrderResult(order) {
       const number = STATE.settings.whatsapp_number;
       if (!number) { showToast("ร้านยังไม่ได้ตั้งค่าเบอร์ WhatsApp", "error"); return; }
       window.open(buildWhatsAppLink(number, buildTrackOrderWhatsAppText(order)), "_blank", "noopener");
+    };
+  }
+
+  // 📸 (added): ปุ่ม "💳 ชำระเงิน" — เปิด receipt modal (ที่มีปุ่ม payment ใหม่อยู่แล้ว)
+  //   ใช้ฟังก์ชัน showReceipt ที่ export จาก initCart — ไม่ duplicate logic
+  //   แสดงเฉพาะตอน status='pending_verify' หรือ 'cancelled' (เหมือนหน้าออเดอร์ทั้งหมด)
+  const payBtn = document.getElementById("trackOrderPayBtn");
+  if (payBtn) {
+    payBtn.onclick = () => {
+      const orderWithId = order._docId ? order : { ...order, _docId: order._docId || order.id };
+      // ปิด track order backdrop ก่อน แล้วเปิด receipt modal ผ่าน showReceipt
+      const trackBackdrop = document.getElementById("trackOrderBackdrop");
+      if (trackBackdrop) trackBackdrop.classList.remove("show");
+      const trackAllBackdrop = document.getElementById("trackOrderAllBackdrop");
+      if (trackAllBackdrop) trackAllBackdrop.classList.remove("show");
+      showReceipt(orderWithId, order.receipt_number, STATE.settings.whatsapp_number);
     };
   }
 
