@@ -3055,7 +3055,7 @@ async function renderPaymentsList() {
 }
 
 async function verifyPayment(proofId, orderId) {
-  if (!confirm("ยืนยันว่าสลิปนี้ถูกต้อง?\n\nหลังยืนยัน: ลูกค้าจะยังไม่ได้รับไฟล์ — แอดมินต้องไปกดเปลี่ยนสถานะออเดอร์เป็น 'processing' เพื่อสร้าง ZIP ส่งลูกค้าเองในหน้าจัดการออเดอร์ (เหมือนเดิม)\n\nระบบจะเปิด WhatsApp แจ้งลูกค้าว่าสลิปได้รับการยืนยันแล้ว")) return;
+  if (!confirm("ยืนยันว่าสลิปนี้ถูกต้อง?\n\nหลังยืนยัน: ลูกค้าจะยังไม่ได้รับไฟล์ — แอดมินต้องไปกดเปลี่ยนสถานะออเดอร์เป็น 'processing' เพื่อสร้าง ZIP ส่งลูกค้าเองในหน้าจัดการออเดอร์ (เหมือนเดิม)\n\nหลังกดยืนยัน → ระบบจะเปิดหน้าต่างให้คุณตรวจสอบข้อความ + กดเปิด WhatsApp ส่งลูกค้าเอง")) return;
   try {
     const res = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/verify-payment?proof_id=${encodeURIComponent(proofId)}`, {
       method: "POST",
@@ -3071,11 +3071,21 @@ async function verifyPayment(proofId, orderId) {
     showToast("✓ ยืนยันสลิปแล้ว — ไปหน้าออเดอร์เพื่อเปลี่ยนสถานะเป็น processing", "success");
     await renderPaymentsList();
     await refreshPaymentsBadge();
-    // 📸 (added) auto-open WhatsApp แจ้งลูกค้าว่าสลิปได้รับการยืนยัน (notification only)
-    if (data?.whatsapp_notify_url) {
-      setTimeout(() => {
-        window.open(data.whatsapp_notify_url, "_blank", "noopener");
-      }, 500);
+    // 📸 (replaced auto-open with manual modal) — แสดง modal ให้ admin ตรวจสอบข้อความก่อนคลิกเปิด WhatsApp เอง
+    //   เหตุผล: popup blocker จะบล็อก window.open() ที่เรียกหลัง await (นอก user gesture context)
+    //   การใช้ modal + ปุ่ม click → admin click เปิด WhatsApp เอง → ไม่ถูกบล็อก + ตรวจสอบข้อความก่อนส่ง
+    if (data?.whatsapp_notify_url || data?.customer_whatsapp) {
+      openWhatsAppNotifyModal({
+        title: "✅ ยืนยันสลิปแล้ว — ส่งข้อความแจ้งลูกค้า",
+        customerName: data.customer_name || "",
+        customerWhatsapp: data.customer_whatsapp || "",
+        receiptNumber: data.receipt_number || "",
+        orderTotal: data.order_total ?? null,
+        rejectReason: null,
+        action: "verified",
+      });
+    } else {
+      showToast("ยืนยันสำเร็จ แต่ไม่พบเบอร์ลูกค้า → ไม่สามารถส่ง WhatsApp ได้", "info");
     }
   } catch (err) {
     showToast("ยืนยันไม่สำเร็จ: " + (err.message || String(err)), "error");
@@ -3097,23 +3107,170 @@ async function rejectPayment(proofId, orderId) {
       showToast("ปฏิเสธไม่สำเร็จ: " + (data?.error || res.statusText), "error");
       return;
     }
-    showToast("ปฏิเสธสลิปแล้ว — กำลังเปิด WhatsApp แจ้งลูกค้า", "success");
+    showToast("ปฏิเสธสลิปแล้ว — กรุณาเปิด WhatsApp ส่งข้อความแจ้งลูกค้า", "success");
     await renderPaymentsList();
     await refreshPaymentsBadge();
-    // 📸 (added) auto-open WhatsApp ส่งข้อความแจ้งเหตุผลปฏิเสธให้ลูกค้า (notification only)
-    if (data?.whatsapp_notify_url) {
-      setTimeout(() => {
-        window.open(data.whatsapp_notify_url, "_blank", "noopener");
-      }, 500);
+    // 📸 (replaced auto-open with manual modal) — แสดง modal พร้อมเหตุผล + ข้อความ auto-fill
+    //   admin ตรวจสอบข้อความ + กดเปิด WhatsApp เอง (ไม่ถูก popup blocker)
+    if (data?.whatsapp_notify_url || data?.customer_whatsapp) {
+      openWhatsAppNotifyModal({
+        title: "❌ ปฏิเสธสลิปแล้ว — ส่งเหตุผลให้ลูกค้า",
+        customerName: data.customer_name || "",
+        customerWhatsapp: data.customer_whatsapp || "",
+        receiptNumber: data.receipt_number || "",
+        orderTotal: data.order_total ?? null,
+        rejectReason: data.reject_reason || reason || "",
+        action: "rejected",
+      });
     } else {
-      // fallback: ถ้า server ไม่คืน URL แสดงข้อความแทน
-      const customerMsg = `ปฏิเสธสลิปสำเร็จ\n\nเหตุผลที่ระบุ: ${reason || "ไม่ระบุ"}\n\n${data?.customer_whatsapp ? "เบอร์ลูกค้า: " + data.customer_whatsapp + " — กรุณาติดต่อลูกค้าด้วยตนเอง" : "ไม่พบเบอร์ลูกค้า"}`;
-      alert(customerMsg);
+      // fallback: ถ้าไม่มีเบอร์ลูกค้า → แจ้งให้ admin ติดต่อเอง
+      alert(`ปฏิเสธสลิปสำเร็จ แต่ไม่พบเบอร์ลูกค้า\n\nเหตุผลที่ระบุ: ${reason || "ไม่ระบุ"}\n\nกรุณาติดต่อลูกค้าด้วยตนเอง`);
     }
   } catch (err) {
     showToast("ปฏิเสธไม่สำเร็จ: " + (err.message || String(err)), "error");
   }
 }
+
+// 📸 (added) Modal สำหรับ admin ตรวจสอบข้อความ WhatsApp ก่อนส่ง
+//   - แสดงเบอร์ลูกค้า + receipt + ยอด (กันส่งผิดคน)
+//   - textarea แสดงข้อความที่จะส่ง — admin แก้ไขก่อนส่งได้
+//   - ปุ่ม "💬 เปิด WhatsApp ส่ง" → window.open() ใน click handler → ไม่ถูก popup blocker
+//   - ปุ่ม "📋 คัดลอกข้อความ" → สำรองกรณี WhatsApp เปิดไม่ได้
+function openWhatsAppNotifyModal({ title, customerName, customerWhatsapp, receiptNumber, orderTotal, rejectReason, action }) {
+  const backdrop = document.getElementById("whatsappNotifyBackdrop");
+  const titleEl = document.getElementById("whatsappNotifyTitle");
+  const customerInfoEl = document.getElementById("whatsappNotifyCustomerInfo");
+  const messageEl = document.getElementById("whatsappNotifyMessage");
+  const openBtn = document.getElementById("whatsappNotifyOpenBtn");
+  const copyBtn = document.getElementById("whatsappNotifyCopyBtn");
+  const cancelBtn = document.getElementById("whatsappNotifyCancelBtn");
+  const closeBtn = document.getElementById("whatsappNotifyClose");
+  const errorHint = document.getElementById("whatsappNotifyErrorHint");
+  if (!backdrop || !messageEl || !openBtn) return;
+
+  if (titleEl) titleEl.textContent = title || "💬 ส่งข้อความ WhatsApp";
+
+  // format customer info
+  const amt = (orderTotal != null && !isNaN(Number(orderTotal)))
+    ? Number(orderTotal).toLocaleString("th-TH") + " ₭"
+    : "—";
+  if (customerInfoEl) {
+    customerInfoEl.innerHTML = `
+      <div style="display:flex;justify-content:space-between;margin:2px 0;">
+        <span style="color:var(--text-dim);">ลูกค้า</span>
+        <strong>${escapeHtml(customerName || "—")}</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin:2px 0;">
+        <span style="color:var(--text-dim);">WhatsApp</span>
+        <strong>${escapeHtml(customerWhatsapp || "—")}</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin:2px 0;">
+        <span style="color:var(--text-dim);">Order</span>
+        <strong>${escapeHtml(receiptNumber || "—")}</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin:2px 0;">
+        <span style="color:var(--text-dim);">ยอด</span>
+        <strong>${amt}</strong>
+      </div>
+      ${rejectReason ? `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border,#ddd);"><span style="color:var(--text-dim);">เหตุผล:</span> <strong style="color:var(--danger);">${escapeHtml(rejectReason)}</strong></div>` : ""}
+    `;
+  }
+
+  // build prefilled message
+  const message = buildWhatsAppNotifyMessage({ action, customerName, receiptNumber, orderTotal, rejectReason });
+  messageEl.value = message;
+
+  // show modal
+  backdrop.classList.add("show");
+  backdrop.setAttribute("aria-hidden", "false");
+  if (errorHint) errorHint.style.display = "none";
+
+  // bind open button (in click handler → not blocked by popup blocker)
+  openBtn.onclick = () => {
+    const num = String(customerWhatsapp || "").replace(/[^0-9]/g, "");
+    if (!num) {
+      if (errorHint) {
+        errorHint.textContent = "ไม่พบเบอร์ลูกค้า — ไม่สามารถเปิด WhatsApp ได้";
+        errorHint.style.display = "block";
+      }
+      return;
+    }
+    const editedText = messageEl.value.trim();
+    if (!editedText) {
+      if (errorHint) {
+        errorHint.textContent = "กรุณากรอกข้อความก่อนส่ง";
+        errorHint.style.display = "block";
+      }
+      return;
+    }
+    const waUrl = `https://wa.me/${num}?text=${encodeURIComponent(editedText)}`;
+    window.open(waUrl, "_blank", "noopener");
+    // ปิด modal หลังคลิก (optional — ปล่อยให้ admin ส่งซ้ำได้ถ้าต้องการ)
+    // closeWhatsAppNotifyModal();
+  };
+
+  // bind copy button
+  if (copyBtn) copyBtn.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(messageEl.value);
+      showToast("📋 คัดลอกข้อความแล้ว", "success");
+    } catch {
+      messageEl.select();
+      try { document.execCommand("copy"); showToast("📋 คัดลอกข้อความแล้ว", "success"); }
+      catch { showToast("คัดลอกไม่สำเร็จ", "error"); }
+    }
+  };
+
+  // bind close/cancel
+  if (cancelBtn) cancelBtn.onclick = closeWhatsAppNotifyModal;
+  if (closeBtn) closeBtn.onclick = closeWhatsAppNotifyModal;
+}
+
+function closeWhatsAppNotifyModal() {
+  const backdrop = document.getElementById("whatsappNotifyBackdrop");
+  if (backdrop) { backdrop.classList.remove("show"); backdrop.setAttribute("aria-hidden", "true"); }
+}
+
+// 📸 (added) Build WhatsApp message based on action (verified/rejected)
+function buildWhatsAppNotifyMessage({ action, customerName, receiptNumber, orderTotal, rejectReason }) {
+  const amt = (orderTotal != null && !isNaN(Number(orderTotal)))
+    ? Number(orderTotal).toLocaleString("th-TH") + " ₭"
+    : "—";
+  const rcpt = receiptNumber || "—";
+  if (action === "verified") {
+    return `สวัสดีครับ/ค่ะ ${customerName || ""}
+
+✅ ยืนยันสลิปการโอนเงินแล้ว
+
+Order: ${rcpt}
+ยอด: ${amt}
+
+ไฟล์เพลงกำลังเตรียมให้ — แอดมินจะส่งลิงก์ดาวน์โหลดให้อีกครั้งในไม่ช้า
+ขอบคุณที่สั่งซื้อครับ/ค่ะ 🙏`;
+  }
+  if (action === "rejected") {
+    return `สวัสดีครับ/ค่ะ ${customerName || ""}
+
+❌ สลิปการโอนเงินของคุณยังไม่ผ่านการตรวจสอบ
+
+Order: ${rcpt}
+ยอดที่ต้องชำระ: ${amt}
+
+เหตุผล: ${rejectReason || "ไม่ระบุ"}
+
+กรุณาตรวจสอบและอัปโหลดสลิปใหม่อีกครั้งที่หน้าเว็บ
+หากมีข้อสงสัย ติดต่อแอดมินได้ครับ/ค่ะ 🙏`;
+  }
+  return `Order ${rcpt}`;
+}
+
+// bind modal backdrop click to close
+document.addEventListener("DOMContentLoaded", () => {
+  const backdrop = document.getElementById("whatsappNotifyBackdrop");
+  if (backdrop) backdrop.addEventListener("click", (e) => {
+    if (e.target === backdrop) closeWhatsAppNotifyModal();
+  });
+});
 
 // bind refresh button
 document.getElementById("refreshPaymentsBtn")?.addEventListener("click", () => {
