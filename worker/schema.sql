@@ -243,3 +243,39 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_admin ON audit_log(admin_id, created_at
 CREATE INDEX IF NOT EXISTS idx_audit_log_collection ON audit_log(collection, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at);
+
+-- ========================================================================
+-- 📸 Payment Proofs (เพิ่มใหม่ — STEP 3+4 of payment slip upload feature)
+--   - 1 order อาจมีหลาย proof (ลูกค้าอัปโหลดซ้ำได้)
+--   - status: pending → verified | rejected
+--   - safe migration: CREATE TABLE IF NOT EXISTS → รันซ้ำปลอดภัย, ไม่กระทบข้อมูลเดิม
+--   - order_id เป็น logical FK → documents.id WHERE collection='orders' (D1 ไม่ enforce FK)
+-- ========================================================================
+CREATE TABLE IF NOT EXISTS payment_proofs (
+  id              TEXT PRIMARY KEY,           -- crypto.randomUUID()
+  order_id        TEXT NOT NULL,              -- → documents.id WHERE collection='orders'
+  file_key        TEXT NOT NULL,              -- R2 object key "payment-proofs/{orderId}/{uuid}.{ext}"
+  file_url        TEXT NOT NULL,              -- R2 public URL (admin view via /api/file/<key>)
+  uploaded_at     TEXT NOT NULL,              -- ISO 8601
+  uploaded_by     TEXT,                       -- NULL = ลูกค้าอัปเอง; admin_id = admin อัปแทน
+  customer_name   TEXT NOT NULL,              -- snapshot from order (ownership verify)
+  whatsapp        TEXT NOT NULL,              -- snapshot from order (ownership verify)
+  amount_claimed  REAL,                       -- ยอดที่ลูกค้าบอกว่าโอน (optional, for admin check)
+  transfer_ref    TEXT,                       -- เลขอ้างอิงการโอน (optional)
+  status          TEXT NOT NULL DEFAULT 'pending',  -- pending | verified | rejected
+  verified_at     TEXT,                       -- ISO ตอน admin ตรวจ
+  verified_by     TEXT,                       -- admin_id ที่ตรวจ
+  reject_reason   TEXT                        -- ถ้า rejected
+);
+CREATE INDEX IF NOT EXISTS idx_payment_proofs_order ON payment_proofs(order_id);
+CREATE INDEX IF NOT EXISTS idx_payment_proofs_status ON payment_proofs(status);
+CREATE INDEX IF NOT EXISTS idx_payment_proofs_uploaded ON payment_proofs(uploaded_at);
+
+-- Rate limit การอัปโหลด slip (กัน spam — pattern เดียวกับ order_creation_attempts)
+-- 5 uploads / 15 นาที / IP (config ใน worker/index.js)
+CREATE TABLE IF NOT EXISTS payment_proof_attempts (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  ip            TEXT NOT NULL,
+  attempted_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_payment_proof_attempts_ip ON payment_proof_attempts(ip, attempted_at);
