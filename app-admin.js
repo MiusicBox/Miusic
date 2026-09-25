@@ -3055,6 +3055,7 @@ async function renderPaymentsList() {
 }
 
 async function verifyPayment(proofId, orderId) {
+  if (!confirm("ยืนยันว่าสลิปนี้ถูกต้อง?\n\nหลังยืนยัน: ลูกค้าจะยังไม่ได้รับไฟล์ — แอดมินต้องไปกดเปลี่ยนสถานะออเดอร์เป็น 'processing' เพื่อสร้าง ZIP ส่งลูกค้าเองในหน้าจัดการออเดอร์ (เหมือนเดิม)\n\nหลังกดยืนยัน → ระบบจะเปิดหน้าต่างให้คุณตรวจสอบข้อความ + กดเปิด WhatsApp ส่งลูกค้าเอง")) return;
   try {
     const res = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/verify-payment?proof_id=${encodeURIComponent(proofId)}`, {
       method: "POST",
