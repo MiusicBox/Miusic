@@ -127,6 +127,25 @@ function jsonResponse(obj, status = 200, extraHeaders = {}) {
 
 // สุ่มชื่อไฟล์ปลายทางใน R2 ให้ไม่ชนกัน (คล้าย public_id ของ Cloudinary) แต่ยังเก็บนามสกุลไฟล์เดิมไว้
 // เพื่อให้เบราว์เซอร์/แอปเดา content type และเปิดไฟล์ได้ถูกต้อง
+// 📸 (added STEP 6+) — สร้าง wa.me deep link สำหรับแอดมินส่งข้อความแจ้งลูกค้าหลัง verify/reject slip
+//   notification only — ไม่ใช่ระบบหลัก (R2+D1 คือ source of truth)
+//   ถ้า WhatsApp เปิดไม่ได้ slip ยังอยู่ในระบบ
+function buildAdminNotifyWhatsAppUrl(customerWhatsapp, newStatus, receiptNumber, customerName, orderTotal, rejectReason) {
+  const num = String(customerWhatsapp || "").replace(/[^0-9]/g, "");
+  if (!num) return null;
+  const amt = orderTotal != null ? Number(orderTotal).toLocaleString("th-TH") + " ₭" : "—";
+  const rcpt = receiptNumber || "—";
+  let text;
+  if (newStatus === "verified") {
+    text = `✅ ยืนยันสลิปการโอนเงินแล้ว\n\nOrder: ${rcpt}\nยอด: ${amt}\n\nไฟล์เพลงกำลังเตรียมให้ — แอดมินจะส่งลิงก์ดาวน์โหลดให้อีกครั้งในไม่ช้า\nขอบคุณที่สั่งซื้อครับ/ค่ะ`;
+  } else if (newStatus === "rejected") {
+    text = `❌ สลิปการโอนเงินของคุณยังไม่ผ่านการตรวจสอบ\n\nOrder: ${rcpt}\nยอดที่ต้องชำระ: ${amt}\n\nเหตุผล: ${rejectReason || "ไม่ระบุ"}\n\nกรุณาตรวจสอบและอัปโหลดสลิปใหม่อีกครั้งที่หน้าเว็บ\nหากมีข้อสงสัย ติดต่อแอดมินได้ครับ/ค่ะ`;
+  } else {
+    text = `Order ${rcpt} — สถานะสลิป: ${newStatus}`;
+  }
+  return `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
+}
+
 function buildObjectKey(folder, originalName) {
   const safeFolder = (folder || "").replace(/[^a-zA-Z0-9/_-]/g, "").replace(/^\/+|\/+$/g, "");
   const extMatch = /\.[a-zA-Z0-9]+$/.exec(originalName || "");
@@ -4042,6 +4061,11 @@ export default {
         `SELECT data FROM documents WHERE collection='orders' AND id=?`
       ).bind(orderId).first();
       let orderUpdateOk = false;
+      // snapshot สำหรับส่งกลับ client (ใช้ตอนเปิด WhatsApp แจ้งลูกค้า)
+      let receiptNumber = null;
+      let customerWhatsapp = proofRow.whatsapp || null;
+      let customerName = proofRow.customer_name || null;
+      let orderFinalTotal = null;
       if (orderRow?.data) {
         try {
           const orderData = JSON.parse(orderRow.data);
@@ -4064,6 +4088,9 @@ export default {
             `UPDATE documents SET data=?, updated_at=? WHERE collection='orders' AND id=?`
           ).bind(JSON.stringify(orderData), verifiedAt, orderId).run();
           orderUpdateOk = true;
+          // ดึง snapshot สำหรับ response
+          receiptNumber = orderData.receipt_number || null;
+          orderFinalTotal = orderData.final_total ?? orderData.total ?? null;
         } catch (err) {
           console.error("Failed to update order after verify-payment:", err);
         }
@@ -4090,10 +4117,20 @@ export default {
         verified_at: verifiedAt,
         verified_by: admin.id,
         order_updated: orderUpdateOk,
+        // 📸 (added) snapshot สำหรับ frontend ใช้สร้าง WhatsApp message ส่งลูกค้า
+        customer_whatsapp: customerWhatsapp,
+        customer_name: customerName,
+        receipt_number: receiptNumber,
+        order_total: orderFinalTotal,
+        reject_reason: rejectReason,
+        // 📸 (added) สร้าง WhatsApp link สำเร็จรูป ให้ frontend เปิดได้เลย (notification only)
+        whatsapp_notify_url: customerWhatsapp
+          ? buildAdminNotifyWhatsAppUrl(customerWhatsapp, newStatus, receiptNumber, customerName, orderFinalTotal, rejectReason)
+          : null,
         // hint สำหรับ client: ถ้า verified → admin ควรไปกดเปลี่ยน status ในหน้า orders เอง
         next_action_hint: newStatus === "verified"
           ? "ไปที่หน้าจัดการออเดอร์ → คลิก 'ยืนยันโอนแล้ว' เพื่อสร้าง ZIP ส่งลูกค้า"
-          : "ลูกค้าจะสามารถอัปโหลดสลิปใหม่ได้",
+          : "ลูกค้าจะสามารถอัปโหลดสลิปใหม่ได้ — กดปุ่มด้านล่างเพื่อเปิด WhatsApp แจ้งลูกค้า",
       }, 200);
     }
 
