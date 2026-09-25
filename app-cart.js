@@ -1305,9 +1305,11 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       slipUrl ? `สลิป: ${slipUrl}` : "(สลิปอัปโหลดในระบบแล้ว — ดูในหน้าตรวจสอบสลิป)",
     ];
     const text = lines.join("\n");
-    const ok = confirm("อัปโหลดสลิปสำเร็จ!\n\nต้องการเปิด WhatsApp เพื่อแจ้งแอดมินด้วยไหม?\n\n(ระบบบันทึกสลิปแล้ว — WhatsApp เป็นเพียงการแจ้งเตือนเสริม)");
-    if (!ok) return;
-    window.open(buildWhatsAppLink(adminNumber, text), "_blank", "noopener");
+    // 📸 (แก้ไข 2026-09-26) เปิด WhatsApp ทันทีอัตโนมัติ โดยไม่ถามยืนยันก่อน
+    //   เหตุผล: เว็บยังไม่มีระบบแจ้งเตือนแอดมินแบบอื่น (push notif ฯลฯ) จึงจำเป็นต้องให้แอดมินรู้ทันทีที่มีลูกค้าสั่งซื้อ
+    //   ใช้ location.href (เปลี่ยนหน้าในแท็บเดิม) แทน window.open (เปิดแท็บใหม่)
+    //   เพราะ window.open หลัง await fetch() มักถูก popup blocker ของ Safari บล็อก แต่ location.href ไม่ถูกบล็อก
+    window.location.href = buildWhatsAppLink(adminNumber, text);
   }
 
   // bind close buttons for new modals
