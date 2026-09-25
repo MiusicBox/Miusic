@@ -17,6 +17,8 @@ import {
 } from "./song-analyzer.js?v=20260908-previewrange1";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261101-promo1";
+// 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
+import { sortByThaiName } from "./thai-sort.js";
 
 const CACHE = { songs: [], categories: [], djs: [], playlists: [] };
 // 🔧 (2026-09-17 Phase 1): TTL cache สำหรับ admin views — ลด D1 reads ตอนเข้า view ซ้ำ ๆ
@@ -1170,7 +1172,10 @@ async function loadSongs() {
     const results = await Promise.all(fetches);
     results.forEach((snap, i) => {
       const key = fetchKeys[i];
-      CACHE[key] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const mapped = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // 🔧 (ใหม่) เรียง categories/djs/playlists ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข (songs ไม่แตะ — คงพฤติกรรมเดิม)
+      const sortField = key === "categories" ? "category_name" : key === "djs" ? "dj_name" : key === "playlists" ? "playlist_name" : null;
+      CACHE[key] = sortField ? sortByThaiName(mapped, sortField) : mapped;
       CACHE_AT[key] = now;
     });
   }
@@ -1987,7 +1992,7 @@ async function loadCategories() {
     // ใช้ cache — skip fetch
   } else {
     const snap = await getDocs(collection(db, "categories"));
-    CACHE.categories = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    CACHE.categories = sortByThaiName(snap.docs.map(d => ({ id: d.id, ...d.data() })), "category_name");
     CACHE_AT.categories = Date.now();
   }
   const wrap = document.getElementById("catList");
@@ -2040,7 +2045,7 @@ document.getElementById("catSaveBtn").addEventListener("click", async () => {
 async function loadDjs() {
   if (!isAdminCacheFresh("djs")) {
     const snap = await getDocs(collection(db, "djs"));
-    CACHE.djs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    CACHE.djs = sortByThaiName(snap.docs.map(d => ({ id: d.id, ...d.data() })), "dj_name");
     CACHE_AT.djs = Date.now();
   }
   const wrap = document.getElementById("djList");
@@ -2126,7 +2131,7 @@ document.getElementById("djSaveBtn").addEventListener("click", async function ()
 async function loadPlaylists() {
   if (!isAdminCacheFresh("playlists")) {
     const snap = await getDocs(collection(db, "playlists"));
-    CACHE.playlists = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    CACHE.playlists = sortByThaiName(snap.docs.map(d => ({ id: d.id, ...d.data() })), "playlist_name");
     CACHE_AT.playlists = Date.now();
   }
   const wrap = document.getElementById("playlistList");
@@ -2434,9 +2439,9 @@ async function openBulkUpload() {
   const [catSnap, djSnap, playlistSnap] = await Promise.all([
     getDocs(collection(db, "categories")), getDocs(collection(db, "djs")), getDocs(collection(db, "playlists"))
   ]);
-  CACHE.categories = catSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  CACHE.djs = djSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  CACHE.playlists = playlistSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  CACHE.categories = sortByThaiName(catSnap.docs.map(d => ({ id: d.id, ...d.data() })), "category_name");
+  CACHE.djs = sortByThaiName(djSnap.docs.map(d => ({ id: d.id, ...d.data() })), "dj_name");
+  CACHE.playlists = sortByThaiName(playlistSnap.docs.map(d => ({ id: d.id, ...d.data() })), "playlist_name");
   populateSelect("bulkCategory", CACHE.categories, "id", "category_name");
   populateSelect("bulkDj", CACHE.djs, "id", "dj_name");
   populateSelect("bulkPlaylist", CACHE.playlists, "id", "playlist_name");
