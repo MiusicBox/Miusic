@@ -325,6 +325,29 @@
       </div>
     </div>
 
+    <!-- ===================== WHATSAPP NOTIFY MODAL (added — preview before sending) ===================== -->
+    <!--   ใช้หลัง admin กดยืนยัน/ปฏิเสธ slip → แสดง modal นี้ให้ admin ตรวจสอบข้อความ + กดเปิด WhatsApp เอง
+           (ทำงานเพราะ user click → window.open ไม่ถูก popup blocker บล็อก) -->
+    <div class="modal-backdrop" id="whatsappNotifyBackdrop" aria-hidden="true">
+      <div class="modal" style="max-width:480px;">
+        <div class="modal-header">
+          <h3 id="whatsappNotifyTitle">💬 ส่งข้อความ WhatsApp</h3>
+          <button class="modal-close" id="whatsappNotifyClose" type="button">✕</button>
+        </div>
+        <div style="padding:14px 16px;">
+          <div id="whatsappNotifyCustomerInfo" style="margin-bottom:10px;padding:10px;background:var(--bg-soft,#f5f5f5);border-radius:8px;font-size:13px;"></div>
+          <label style="font-size:12px;color:var(--text-dim);margin-bottom:6px;display:block;">ข้อความที่จะส่ง (สามารถแก้ไขก่อนส่งได้):</label>
+          <textarea id="whatsappNotifyMessage" rows="8" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border,#ccc);font-size:13px;font-family:inherit;resize:vertical;"></textarea>
+          <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+            <button class="btn" id="whatsappNotifyOpenBtn" type="button" style="flex:1;min-width:140px;background:#25D366;color:#fff;">💬 เปิด WhatsApp ส่ง</button>
+            <button class="btn secondary" id="whatsappNotifyCopyBtn" type="button" style="flex:1;min-width:140px;">📋 คัดลอกข้อความ</button>
+            <button class="btn secondary" id="whatsappNotifyCancelBtn" type="button" style="flex:1;min-width:100px;">ปิด</button>
+          </div>
+          <div id="whatsappNotifyErrorHint" style="display:none;margin-top:10px;font-size:12px;color:var(--danger);padding:8px;background:rgba(239,68,68,.08);border-radius:6px;"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ===================== PAYMENT VERIFY VIEW (added — slip verification queue) ===================== -->
     <div id="view-payments" class="view" style="display:none;">
       <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
