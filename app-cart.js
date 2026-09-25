@@ -1036,8 +1036,296 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     const downloadBtn = document.getElementById("receiptDownloadImgBtn");
     if (downloadBtn) downloadBtn.onclick = () => downloadReceiptAsImage(receiptNumber);
 
+    // 📸 (added STEP 2): ปุ่ม "💳 ชำระเงิน" — เปิด payment modal แสดง QR/บัญชี
+    const payBtn = document.getElementById("receiptPayBtn");
+    if (payBtn) payBtn.onclick = () => openPaymentModal(order, receiptNumber);
+
     renderPendingOrderBanner();
   }
+
+  // ================= 📸 PAYMENT FLOW (added STEP 2-6 — additive, no existing function touched) =================
+  //   Endpoints (เห็นใน worker/index.js — เพิ่มใหม่ทั้งหมด ไม่แตะของเดิม):
+  //     POST /api/orders/:id/payment-proof — ลูกค้าอัปโหลดสลิป (anonymous + ownership verify)
+  //
+  //   UI:
+  //     #paymentBackdrop      — modal แสดง QR/บัญชี + ปุ่ม "อัปโหลดสลิป" + ปุ่ม "คัดลอกเลขบัญชี"
+  //     #uploadSlipBackdrop   — modal เลือกไฟล์ + preview + ยืนยัน
+  //
+  //   Settings ที่ใช้ (จาก settings/main doc):
+  //     bank_name, bank_account, bank_account_name, qr_code_url, payment_instructions
+  //
+  //   WhatsApp: ใช้ buildWhatsAppLink() ของเดิม — เป็น wa.me deep link (notification only)
+  //            ระบบหลัก: R2 + D1 — ถ้า WhatsApp เปิดไม่ได้ slip ยังอยู่ในระบบ
+
+  let __currentPaymentOrder = null; // snapshot ของ order ที่กำลังชำระ — ใช้ตอน upload slip
+
+  async function openPaymentModal(order, receiptNumber) {
+    __currentPaymentOrder = { order, receiptNumber };
+    const backdrop = document.getElementById("paymentBackdrop");
+    const content = document.getElementById("paymentContent");
+    if (!backdrop || !content) return;
+    content.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:30px 0;">กำลังโหลด...</div>`;
+    backdrop.classList.add("show");
+    backdrop.setAttribute("aria-hidden", "false");
+
+    // fetch settings
+    let settings = {};
+    try {
+      const snap = await getDoc(doc(db, "settings", "main"));
+      settings = snap.exists() ? snap.data() : {};
+    } catch (err) {
+      content.innerHTML = `<div style="text-align:center;color:var(--danger);padding:30px 0;">โหลดข้อมูลไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
+      return;
+    }
+
+    const amount = order?.final_total ?? order?.total ?? 0;
+    const hasBankInfo = settings.bank_name || settings.bank_account || settings.bank_account_name;
+    const hasQr = !!settings.qr_code_url;
+
+    if (!hasBankInfo && !hasQr) {
+      content.innerHTML = `
+        <div style="padding:24px 8px;text-align:center;color:var(--text-dim);">
+          <div style="font-size:48px;margin-bottom:8px;">🏦</div>
+          <div style="font-weight:800;color:var(--text);margin-bottom:6px;">ร้านยังไม่ได้ตั้งค่าข้อมูลการชำระเงิน</div>
+          <div style="font-size:13px;">กรุณาติดต่อแอดมินผ่าน WhatsApp เพื่อสอบถามวิธีโอน</div>
+          <button class="btn" id="paymentContactAdminBtn" style="margin-top:14px;width:100%;">💬 ติดต่อแอดมิน</button>
+        </div>
+      `;
+      const contactBtn = document.getElementById("paymentContactAdminBtn");
+      if (contactBtn) contactBtn.onclick = () => {
+        const num = String(settings.whatsapp_number || "").replace(/[^0-9]/g, "");
+        if (!num) { showToast("ร้านยังไม่ได้ตั้งค่าเบอร์ WhatsApp", "error"); return; }
+        const text = `สวัสดีครับ/ค่ะ สั่งซื้อ ${escapeHtml(receiptNumber)} แต่ยังไม่เห็นข้อมูลบัญชีโอน รบกวนส่ง QR ด้วยครับ/ค่ะ`;
+        window.open(buildWhatsAppLink(num, text), "_blank", "noopener");
+      };
+      return;
+    }
+
+    content.innerHTML = `
+      <div style="padding:14px 8px 6px;">
+        <div style="text-align:center;margin-bottom:14px;">
+          <div style="color:var(--text-dim);font-size:13px;">ยอดที่ต้องชำระ</div>
+          <div style="font-size:28px;font-weight:800;color:var(--success);">${formatPrice(amount)}</div>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">เลขที่ ${escapeHtml(receiptNumber)}</div>
+        </div>
+        ${settings.bank_name ? `<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--border, #eee);">
+          <span style="color:var(--text-dim);">🏦 ธนาคาร</span><strong>${escapeHtml(settings.bank_name)}</strong>
+        </div>` : ""}
+        ${settings.bank_account_name ? `<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--border, #eee);">
+          <span style="color:var(--text-dim);">👤 ชื่อบัญชี</span><strong>${escapeHtml(settings.bank_account_name)}</strong>
+        </div>` : ""}
+        ${settings.bank_account ? `<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--border, #eee);align-items:center;">
+          <span style="color:var(--text-dim);">🔢 เลขบัญชี</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <strong id="paymentBankAccountText">${escapeHtml(settings.bank_account)}</strong>
+            <button class="btn secondary" id="paymentCopyBtn" type="button" style="padding:4px 10px;font-size:12px;min-width:auto;">📋 คัดลอก</button>
+          </div>
+        </div>` : ""}
+        ${hasQr ? `<div style="text-align:center;margin:16px 0;padding:12px;border:1px dashed var(--border, #ddd);border-radius:10px;">
+          <img src="${escapeHtml(settings.qr_code_url)}" alt="QR Code" style="max-width:200px;width:100%;height:auto;border-radius:6px;">
+          <div style="font-size:11px;color:var(--text-dim);margin-top:6px;">สแกน QR เพื่อโอนเงิน</div>
+        </div>` : ""}
+        ${settings.payment_instructions ? `<div style="font-size:12px;color:var(--text-dim);background:var(--bg-soft, #f7f7f7);padding:10px;border-radius:6px;margin:8px 0;line-height:1.5;">
+          ${escapeHtml(settings.payment_instructions).replace(/\n/g, "<br>")}
+        </div>` : ""}
+        <button class="btn" id="paymentUploadSlipBtn" type="button" style="width:100%;margin-top:14px;background:var(--accent);color:#fff;font-size:15px;padding:12px;">
+          📸 แจ้งชำระเงิน (อัปโหลดสลิป)
+        </button>
+        <button class="btn secondary" id="paymentCloseBtn2" type="button" style="width:100%;margin-top:6px;">ปิด</button>
+      </div>
+    `;
+
+    // bind copy button
+    const copyBtn = document.getElementById("paymentCopyBtn");
+    if (copyBtn) copyBtn.onclick = async () => {
+      const acctText = document.getElementById("paymentBankAccountText");
+      const value = acctText?.textContent || settings.bank_account || "";
+      try {
+        await navigator.clipboard.writeText(value);
+        showToast("📋 คัดลอกเลขบัญชีแล้ว", "success");
+      } catch {
+        // fallback: select + execCommand
+        const ta = document.createElement("textarea");
+        ta.value = value;
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand("copy"); showToast("📋 คัดลอกเลขบัญชีแล้ว", "success"); } catch { showToast("คัดลอกไม่สำเร็จ — กรุณาก๊อปปี้เอง", "error"); }
+        document.body.removeChild(ta);
+      }
+    };
+
+    // bind upload slip button → open upload slip modal
+    const uploadSlipBtn = document.getElementById("paymentUploadSlipBtn");
+    if (uploadSlipBtn) uploadSlipBtn.onclick = () => {
+      const paymentBackdrop = document.getElementById("paymentBackdrop");
+      if (paymentBackdrop) paymentBackdrop.classList.remove("show");
+      openUploadSlipModal(order, receiptNumber);
+    };
+
+    // bind close button
+    const closeBtn2 = document.getElementById("paymentCloseBtn2");
+    if (closeBtn2) closeBtn2.onclick = closePaymentModal;
+  }
+
+  function closePaymentModal() {
+    const backdrop = document.getElementById("paymentBackdrop");
+    if (backdrop) { backdrop.classList.remove("show"); backdrop.setAttribute("aria-hidden", "true"); }
+  }
+
+  async function openUploadSlipModal(order, receiptNumber) {
+    const backdrop = document.getElementById("uploadSlipBackdrop");
+    const content = document.getElementById("uploadSlipContent");
+    if (!backdrop || !content) return;
+    const amount = order?.final_total ?? order?.total ?? 0;
+    content.innerHTML = `
+      <div style="padding:14px 8px 6px;">
+        <div style="margin-bottom:12px;">
+          <div style="font-size:13px;color:var(--text-dim);">Order</div>
+          <div style="font-weight:800;">#${escapeHtml(receiptNumber)}</div>
+        </div>
+        <div style="margin-bottom:14px;">
+          <div style="font-size:13px;color:var(--text-dim);">ยอดที่ต้องชำระ</div>
+          <div style="font-size:24px;font-weight:800;color:var(--success);">${formatPrice(amount)}</div>
+        </div>
+        <div style="margin-bottom:8px;font-size:13px;font-weight:600;">รูปหลักฐานการโอนเงิน</div>
+        <input type="file" id="slipFileInput" accept="image/jpeg,image/png,image/webp" style="display:none;">
+        <label for="slipFileInput" style="display:block;border:2px dashed var(--border, #ccc);border-radius:10px;padding:24px;text-align:center;cursor:pointer;color:var(--text-dim);">
+          <div id="slipPreviewArea" style="margin:0 auto;">
+            <div style="font-size:36px;">📷</div>
+            <div style="font-size:13px;margin-top:4px;">คลิกเพื่อเลือกรูปสลิป</div>
+            <div style="font-size:11px;margin-top:2px;color:var(--text-dim);">JPEG / PNG / WEBP • สูงสุด 5MB</div>
+          </div>
+        </label>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:8px;display:flex;justify-content:space-between;">
+          <span>ชื่อลูกค้า</span><strong>${escapeHtml(order?.customer_name || "")}</strong>
+        </div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:4px;display:flex;justify-content:space-between;">
+          <span>เบอร์ WhatsApp</span><strong>${escapeHtml(order?.whatsapp || "")}</strong>
+        </div>
+        <button class="btn" id="uploadSlipConfirmBtn" type="button" disabled style="width:100%;margin-top:14px;background:var(--accent);color:#fff;font-size:15px;padding:12px;opacity:0.5;">
+          ✅ ยืนยันการชำระเงิน
+        </button>
+        <button class="btn secondary" id="uploadSlipCancelBtn" type="button" style="width:100%;margin-top:6px;">ยกเลิก</button>
+      </div>
+    `;
+    backdrop.classList.add("show");
+    backdrop.setAttribute("aria-hidden", "false");
+
+    let selectedFile = null;
+    const fileInput = document.getElementById("slipFileInput");
+    const previewArea = document.getElementById("slipPreviewArea");
+    const confirmBtn = document.getElementById("uploadSlipConfirmBtn");
+
+    if (fileInput) fileInput.onchange = () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      // size check 5MB
+      if (file.size > 5 * 1024 * 1024) {
+        showToast("ไฟล์ใหญ่เกิน 5MB — กรุณาลดขนาดรูป", "error");
+        fileInput.value = "";
+        return;
+      }
+      // MIME check
+      const allowedMimes = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
+      if (!allowedMimes.includes((file.type || "").toLowerCase())) {
+        showToast("อนุญาตเฉพาะ JPEG, PNG, WEBP", "error");
+        fileInput.value = "";
+        return;
+      }
+      selectedFile = file;
+      // show preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        previewArea.innerHTML = `<img src="${e.target.result}" alt="รูปสลิปตัวอย่าง" style="max-width:100%;max-height:240px;border-radius:6px;border:1px solid var(--border, #eee);">`;
+      };
+      reader.readAsDataURL(file);
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.style.opacity = "1"; }
+    };
+
+    if (confirmBtn) confirmBtn.onclick = async () => {
+      if (!selectedFile) { showToast("กรุณาเลือกรูปสลิปก่อน", "error"); return; }
+      await uploadSlipToServer(order, receiptNumber, selectedFile);
+    };
+
+    const cancelBtn = document.getElementById("uploadSlipCancelBtn");
+    if (cancelBtn) cancelBtn.onclick = closeUploadSlipModal;
+  }
+
+  function closeUploadSlipModal() {
+    const backdrop = document.getElementById("uploadSlipBackdrop");
+    if (backdrop) { backdrop.classList.remove("show"); backdrop.setAttribute("aria-hidden", "true"); }
+  }
+
+  async function uploadSlipToServer(order, receiptNumber, file) {
+    const orderId = order?._docId || order?.id;
+    if (!orderId) {
+      showToast("ไม่พบเลขออเดอร์ — กรุณารีเฟรชหน้าแล้วลองใหม่", "error");
+      return;
+    }
+    const confirmBtn = document.getElementById("uploadSlipConfirmBtn");
+    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "กำลังอัปโหลด..."; confirmBtn.style.opacity = "0.7"; }
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("customer_name", order.customer_name || "");
+      fd.append("whatsapp", order.whatsapp || "");
+      const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/payment-proof`, {
+        method: "POST",
+        body: fd, // multipart — no Content-Type header (browser sets boundary)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast("อัปโหลดไม่สำเร็จ: " + (data?.error || res.statusText), "error");
+        if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "✅ ยืนยันการชำระเงิน"; confirmBtn.style.opacity = "1"; }
+        return;
+      }
+      showToast("✅ อัปโหลดสลิปสำเร็จ — รอแอดมินตรวจสอบ", "success");
+      closeUploadSlipModal();
+      closePaymentModal();
+      // เปิด WhatsApp แจ้งแอดมิน (notification only — slip บันทึกใน R2+D1 แล้ว)
+      openWhatsAppNotifyAdmin(order, receiptNumber, data.file_url);
+    } catch (err) {
+      showToast("อัปโหลดไม่สำเร็จ: " + (err.message || String(err)), "error");
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "✅ ยืนยันการชำระเงิน"; confirmBtn.style.opacity = "1"; }
+    }
+  }
+
+  function openWhatsAppNotifyAdmin(order, receiptNumber, slipUrl) {
+    // ใช้ settings.whatsapp_number เดียวกับเดิม — notification only ไม่ใช่ระบบหลัก
+    const adminNumber = String(state?.settings?.whatsapp_number || "").replace(/[^0-9]/g, "");
+    if (!adminNumber) {
+      showToast("อัปโหลดสลิปสำเร็จ — แต่ร้านยังไม่ได้ตั้งค่าเบอร์ WhatsApp แอดมินจะเห็นสลิปในหน้าตรวจสอบ", "success");
+      return;
+    }
+    const amount = order?.final_total ?? order?.total ?? 0;
+    const customerName = order?.customer_name || "";
+    const lines = [
+      `📸 แจ้งชำระเงิน Order ${receiptNumber}`,
+      `ลูกค้า: ${customerName}`,
+      `ยอด: ${formatPrice(amount)}`,
+      slipUrl ? `สลิป: ${slipUrl}` : "(สลิปอัปโหลดในระบบแล้ว — ดูในหน้าตรวจสอบสลิป)",
+    ];
+    const text = lines.join("\n");
+    const ok = confirm("อัปโหลดสลิปสำเร็จ!\n\nต้องการเปิด WhatsApp เพื่อแจ้งแอดมินด้วยไหม?\n\n(ระบบบันทึกสลิปแล้ว — WhatsApp เป็นเพียงการแจ้งเตือนเสริม)");
+    if (!ok) return;
+    window.open(buildWhatsAppLink(adminNumber, text), "_blank", "noopener");
+  }
+
+  // bind close buttons for new modals
+  document.addEventListener("DOMContentLoaded", () => {
+    const paymentClose = document.getElementById("paymentClose");
+    if (paymentClose) paymentClose.onclick = closePaymentModal;
+    const uploadSlipClose = document.getElementById("uploadSlipClose");
+    if (uploadSlipClose) uploadSlipClose.onclick = closeUploadSlipModal;
+    // close on backdrop click
+    const paymentBackdrop = document.getElementById("paymentBackdrop");
+    if (paymentBackdrop) paymentBackdrop.addEventListener("click", (e) => {
+      if (e.target === paymentBackdrop) closePaymentModal();
+    });
+    const uploadSlipBackdrop = document.getElementById("uploadSlipBackdrop");
+    if (uploadSlipBackdrop) uploadSlipBackdrop.addEventListener("click", (e) => {
+      if (e.target === uploadSlipBackdrop) closeUploadSlipModal();
+    });
+  });
 
   async function checkoutCart() {
     if (submitting) return;
@@ -1143,6 +1431,9 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         // ครั้งที่ 1: ใช้ orderRef ที่อาจเป็น reusableOrderId (ถ้ามี)
         const mainTask = buildAndSaveOrder(orderRef);
         order = await Promise.race([mainTask, timeoutPromise]);
+        // 📸 (added STEP 2): เก็บ order_id ไว้ใน order object เพื่อใช้ตอน upload slip
+        //   ไม่กระทบ D1 (setDoc ทำงานเสร็จแล้วก่อนบรรทัดนี้) — _docId เป็น client-only field
+        if (order && !order._docId && orderRef?.id) order._docId = orderRef.id;
       } catch (firstErr) {
         // 🔧 แก้บั๊ก I9 (2026-09-18): Dead code path หลัง Bug #1 + Bug #5 fixes
         // -----------------------------------------------------------
