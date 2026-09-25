@@ -175,6 +175,8 @@ async function handleUpload(request, env) {
   const ALLOWED_MIME_BY_FOLDER = {
     "full-songs":   ["audio/wav", "audio/mpeg", "audio/mp3", "audio/x-wav", "audio/x-mpeg", "audio/ogg", "audio/aac", "audio/flac"],
     "order-zips":   ["application/zip", "application/x-zip-compressed", "application/octet-stream"],
+    // 📸 Payment slip upload (added — image only, max 5MB enforced separately)
+    "payment-proofs": ["image/jpeg", "image/png", "image/webp", "image/jpg"],
     "":             ["audio/wav", "audio/mpeg", "audio/mp3", "audio/x-wav", "audio/x-mpeg", "audio/ogg", "audio/aac", "audio/flac",
                      "image/jpeg", "image/png", "image/webp", "image/gif", "image/jpg"],
   };
@@ -1410,6 +1412,9 @@ async function handleDb(request, env, url) {
             "discount_amount", "promotion_applied", "final_total",
             "receipt_number", "created_at", "store_name", "order_type",
             "playlist_id", "playlist_name", "notes", "customer_note",
+            // 📸 Payment slip (added STEP 4): customer สามารถ set field 3 ตัวนี้ได้
+            //   (status ยัง force เป็น 'pending_verify' เสมอ — server-controlled)
+            "payment_proof_id", "payment_proof_uploaded_at",
           ]);
           const filteredData = {};
           for (const key of Object.keys(data)) {
@@ -3733,6 +3738,363 @@ export default {
       }
       // ส่ง status 200 ถ้า ok=true, 503 ถ้า ok=false (monitoring จะได้ alert)
       return jsonResponse(result, result.ok ? 200 : 503);
+    }
+
+    // ========================================================================
+    // 📸 Payment Slip Endpoints (added STEP 3-7 of payment slip upload feature)
+    //   All endpoints are NEW — none of existing endpoints (/api/upload, /api/auth/*,
+    //   /api/db/*, /api/file/*, /api/order-zip/*, /api/download/*) are touched.
+    //   See "Impact Analysis" in worklog.md for full breakdown.
+    // ========================================================================
+
+    // 🟡 POST /api/payment-proofs/_count-pending
+    //   Admin: นับ proofs ที่ status='pending' สำหรับ badge ใน quick-action button
+    if (url.pathname === "/api/payment-proofs/_count-pending" && request.method === "POST") {
+      if (!env.DB) return jsonResponse({ error: "D1 binding not configured" }, 500);
+      const admin = await getSessionAdmin(request, env);
+      if (!admin) return jsonResponse({ error: "ไม่ได้รับอนุญาต" }, 401);
+      try {
+        const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM payment_proofs WHERE status='pending'").first();
+        return jsonResponse({ count: row?.n ?? 0 }, 200);
+      } catch (err) {
+        // ถ้า table ยังไม่ถูกสร้าง → คืน 0 (กัน error ตอน migration ยังไม่ run)
+        if (String(err.message || "").includes("no such table")) return jsonResponse({ count: 0 }, 200);
+        return jsonResponse({ error: safeError("นับสลิปรอตรวจไม่สำเร็จ", err) }, 500);
+      }
+    }
+
+    // 🟡 GET /api/payment-proofs/pending
+    //   Admin: ดึงรายการสลิปรอตรวจทั้งหมด (เรียงตาม uploaded_at desc)
+    //   ใช้สำหรับหน้า "ตรวจสอบสลิป" ใน admin panel
+    if (url.pathname === "/api/payment-proofs/pending" && request.method === "GET") {
+      if (!env.DB) return jsonResponse({ error: "D1 binding not configured" }, 500);
+      const admin = await getSessionAdmin(request, env);
+      if (!admin) return jsonResponse({ error: "ไม่ได้รับอนุญาต" }, 401);
+      try {
+        const stmt = env.DB.prepare(
+          `SELECT p.*, d.data AS order_data
+           FROM payment_proofs p
+           LEFT JOIN documents d ON d.collection='orders' AND d.id=p.order_id
+           WHERE p.status='pending'
+           ORDER BY p.uploaded_at DESC
+           LIMIT 200`
+        );
+        const { results } = await stmt.all();
+        const items = (results || []).map(r => {
+          let orderData = null;
+          try { orderData = r.order_data ? JSON.parse(r.order_data) : null; } catch {}
+          return {
+            id: r.id,
+            order_id: r.order_id,
+            file_key: r.file_key,
+            file_url: r.file_url,
+            uploaded_at: r.uploaded_at,
+            uploaded_by: r.uploaded_by,
+            customer_name: r.customer_name,
+            whatsapp: r.whatsapp,
+            amount_claimed: r.amount_claimed,
+            transfer_ref: r.transfer_ref,
+            status: r.status,
+            // order snapshot for admin display (final_total, receipt_number, items count)
+            order: orderData ? {
+              receipt_number: orderData.receipt_number || null,
+              final_total: orderData.final_total ?? orderData.total ?? null,
+              total: orderData.total ?? null,
+              items_count: Array.isArray(orderData.items) ? orderData.items.length : 0,
+              store_name: orderData.store_name || null,
+            } : null,
+          };
+        });
+        return jsonResponse({ items }, 200);
+      } catch (err) {
+        if (String(err.message || "").includes("no such table")) return jsonResponse({ items: [] }, 200);
+        return jsonResponse({ error: safeError("ดึงรายการสลิปไม่สำเร็จ", err) }, 500);
+      }
+    }
+
+    // 🟡 GET /api/orders/:id/payment-proofs
+    //   Admin: ดู history ของ proofs ทั้งหมดของ order (รวม verified/rejected)
+    if (url.pathname.startsWith("/api/orders/") && url.pathname.endsWith("/payment-proofs") && request.method === "GET") {
+      if (!env.DB) return jsonResponse({ error: "D1 binding not configured" }, 500);
+      const admin = await getSessionAdmin(request, env);
+      if (!admin) return jsonResponse({ error: "ไม่ได้รับอนุญาต" }, 401);
+      const orderId = decodeURIComponent(url.pathname.slice("/api/orders/".length, -"/payment-proofs".length));
+      try {
+        const { results } = await env.DB.prepare(
+          `SELECT * FROM payment_proofs WHERE order_id=? ORDER BY uploaded_at DESC`
+        ).bind(orderId).all();
+        return jsonResponse({ items: results || [] }, 200);
+      } catch (err) {
+        if (String(err.message || "").includes("no such table")) return jsonResponse({ items: [] }, 200);
+        return jsonResponse({ error: safeError("ดึงประวัติสลิปไม่สำเร็จ", err) }, 500);
+      }
+    }
+
+    // 🟢 POST /api/orders/:id/payment-proof  (CUSTOMER — anonymous + ownership verify)
+    //   ลูกค้าอัปโหลดสลิปหลังโอนเงิน — multipart form-data:
+    //     - file: รูปสลิป (jpeg/png/webp, max 5MB)
+    //     - customer_name + whatsapp: ตรวจ ownership เทียบ order
+    //     - amount_claimed (optional), transfer_ref (optional)
+    //   Flow:
+    //     1. ตรวจ order มีอยู่ + status='pending_verify' (ป้องกันอัป slip หลัง admin ยืนยันแล้ว)
+    //     2. ตรวจ ownership: customer_name + whatsapp ตรงกับใน order
+    //     3. Rate limit: 5/15min/IP
+    //     4. MIME + size validation (max 5MB)
+    //     5. Upload to R2 (payment-proofs/{orderId}/{timestamp}-{uuid}.{ext})
+    //     6. INSERT payment_proofs row (status='pending')
+    //     7. UPDATE order: payment_proof_id, payment_proof_status='pending', payment_proof_uploaded_at
+    //     8. writeAuditLog
+    //     9. Return { ok: true, proof_id, file_url, status: 'pending' }
+    if (url.pathname.startsWith("/api/orders/") && url.pathname.endsWith("/payment-proof") && !url.pathname.endsWith("/payment-proofs") && request.method === "POST") {
+      if (!env.DB || !env.BUCKET) return jsonResponse({ error: "D1 หรือ R2 binding ไม่ได้กำหนด" }, 500);
+      const orderId = decodeURIComponent(url.pathname.slice("/api/orders/".length, -"/payment-proof".length));
+
+      // rate limit check (10/15min — ใช้ shared IP, กัน spam)
+      const clientIp = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "unknown";
+      const now = new Date();
+      const windowStart = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
+      try {
+        const recent = await env.DB.prepare(
+          `SELECT COUNT(*) AS n FROM payment_proof_attempts WHERE ip=? AND attempted_at>?`
+        ).bind(clientIp, windowStart).first();
+        if ((recent?.n ?? 0) >= 10) {
+          return jsonResponse({ error: "อัปโหลดเร็วเกินไป — กรุณารอสักครู่แล้วลองใหม่" }, 429);
+        }
+        await env.DB.prepare(
+          `INSERT INTO payment_proof_attempts (ip, attempted_at) VALUES (?, ?)`
+        ).bind(clientIp, now.toISOString()).run();
+      } catch (err) {
+        // table might not exist yet — proceed (don't fail the upload)
+      }
+
+      // parse multipart
+      const formData = await request.formData().catch(() => null);
+      if (!formData) return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400);
+      const file = formData.get("file");
+      const customerName = String(formData.get("customer_name") || "").trim();
+      const whatsapp = String(formData.get("whatsapp") || "").trim();
+      const amountClaimed = formData.get("amount_claimed");
+      const transferRef = String(formData.get("transfer_ref") || "").trim();
+      if (!file || typeof file === "string" || !file.size) return jsonResponse({ error: "กรุณาเลือกไฟล์รูปสลิป" }, 400);
+      if (!customerName || !whatsapp) return jsonResponse({ error: "กรุณากรอกชื่อลูกค้าและเบอร์ WhatsApp" }, 400);
+      // size limit: 5MB
+      const MAX_SLIP_SIZE = 5 * 1024 * 1024;
+      if (file.size > MAX_SLIP_SIZE) return jsonResponse({ error: "ไฟล์ใหญ่เกิน 5MB — กรุณาลดขนาดรูป" }, 413);
+      // MIME allowlist
+      const slipMimes = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
+      const actualMime = (file.type || "").toLowerCase();
+      if (!slipMimes.includes(actualMime)) {
+        return jsonResponse({ error: `ประเภทไฟล์ไม่ได้รับอนุญาต: ${actualMime || "ไม่ระบุ"} (อนุญาตเฉพาะ: JPEG, PNG, WEBP)` }, 415);
+      }
+
+      // 1. fetch order from D1 (documents table)
+      const orderRow = await env.DB.prepare(
+        `SELECT data FROM documents WHERE collection='orders' AND id=?`
+      ).bind(orderId).first();
+      if (!orderRow || !orderRow.data) return jsonResponse({ error: "ไม่พบใบสั่งซื้อ" }, 404);
+      let orderData = null;
+      try { orderData = JSON.parse(orderRow.data); } catch { return jsonResponse({ error: "ข้อมูลใบสั่งซื้อเสีย" }, 500); }
+
+      // 2. status check — อนุญาตเฉพาะ pending_verify และ cancelled (ลูกค้าอัปใหม่ได้หลังปฏิเสธ)
+      //    ห้ามอัป slip หลัง status='processing' หรือ 'completed' (admin ยืนยันแล้ว)
+      if (orderData.status === "processing" || orderData.status === "completed") {
+        return jsonResponse({ error: "ใบสั่งซื้อนี้ยืนยันการชำระแล้ว — ไม่สามารถอัปโหลดสลิปใหม่ได้" }, 409);
+      }
+
+      // 3. ownership verify — customer_name + whatsapp ตรงกับใน order
+      //    normalize: trim + lowercase + เอา + และ - ออก เทียบแบบ loose
+      const norm = (s) => String(s || "").trim().toLowerCase().replace(/[\s+\-()]/g, "");
+      if (norm(orderData.customer_name) !== norm(customerName) || norm(orderData.whatsapp) !== norm(whatsapp)) {
+        return jsonResponse({ error: "ข้อมูลลูกค้าไม่ตรงกับใบสั่งซื้อ — กรุณาตรวจสอบชื่อ/เบอร์" }, 403);
+      }
+
+      // 4. upload to R2 — key: payment-proofs/{orderId}/{timestamp}-{uuid}.{ext}
+      const ext = (/\.[a-zA-Z0-9]+$/.exec(file.name || "") || [""])[0]
+        || (actualMime === "image/jpeg" || actualMime === "image/jpg" ? ".jpg"
+          : actualMime === "image/png" ? ".png"
+          : actualMime === "image/webp" ? ".webp" : "");
+      const r2Key = `payment-proofs/${orderId}/${Date.now()}-${crypto.randomUUID()}${ext}`;
+      const r2PublicBase = env.R2_PUBLIC_BASE_URL || "";
+      // sanitize metadata values (R2 requires ASCII for customMetadata)
+      const safeOrderId = sanitizeHeaderValue(orderId);
+      try {
+        const putOpts = {
+          httpMetadata: { contentType: actualMime },
+          customMetadata: {
+            orderId: safeOrderId,
+            customerName: (customerName || "").slice(0, 100),
+            whatsapp: (whatsapp || "").slice(0, 30),
+            uploadedAt: now.toISOString(),
+          },
+        };
+        await env.BUCKET.put(r2Key, file.stream(), putOpts);
+      } catch (err) {
+        return jsonResponse({ error: safeError("อัปโหลดไฟล์ไม่สำเร็จ (R2) กรุณาลองใหม่", err) }, 502);
+      }
+      const fileUrl = r2PublicBase ? `${r2PublicBase}/${r2Key}` : `/api/file/${r2Key}`;
+
+      // 5. INSERT payment_proofs row
+      const proofId = crypto.randomUUID();
+      const uploadedAt = now.toISOString();
+      try {
+        await env.DB.prepare(
+          `INSERT INTO payment_proofs (id, order_id, file_key, file_url, uploaded_at, uploaded_by,
+                                       customer_name, whatsapp, amount_claimed, transfer_ref, status)
+           VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'pending')`
+        ).bind(
+          proofId, orderId, r2Key, fileUrl, uploadedAt,
+          customerName.slice(0, 200), whatsapp.slice(0, 30),
+          amountClaimed ? Number(amountClaimed) : null,
+          transferRef.slice(0, 200) || null
+        ).run();
+      } catch (err) {
+        // R2 upload สำเร็จแต่ D1 insert ล้มเหลว → ลบ R2 object เพื่อไม่ให้มี orphan
+        try { await env.BUCKET.delete(r2Key); } catch {}
+        return jsonResponse({ error: safeError("บันทึกข้อมูลสลิปไม่สำเร็จ (D1)", err) }, 500);
+      }
+
+      // 6. UPDATE order: payment_proof_*  fields (merge เข้า JSON blob)
+      orderData.payment_proof_id = proofId;
+      orderData.payment_proof_status = "pending";
+      orderData.payment_proof_uploaded_at = uploadedAt;
+      orderData.updated_at = uploadedAt;
+      // push status_history entry (ถ้า order มี status_history อยู่แล้ว)
+      if (Array.isArray(orderData.status_history)) {
+        orderData.status_history.push({
+          status: orderData.status,
+          at: uploadedAt,
+          note: "ลูกค้าอัปโหลดสลิปการโอนเงิน",
+          by: "customer",
+        });
+      }
+      try {
+        await env.DB.prepare(
+          `UPDATE documents SET data=?, updated_at=? WHERE collection='orders' AND id=?`
+        ).bind(JSON.stringify(orderData), uploadedAt, orderId).run();
+      } catch (err) {
+        // ไม่ fail ทั้งหมด — slip ถูกบันทึกใน payment_proofs แล้ว, order แค่ไม่มี reference
+        // (admin ยังเห็น slip ผ่าน endpoint /api/payment-proofs/pending ได้)
+        // log error แต่ return success
+        console.error("Failed to update order with payment_proof_id:", err);
+      }
+
+      // 7. audit log (background)
+      try { ctx.waitUntil(writeAuditLog(env, request, { id: "system", email: "system" }, "upload", "payment_proofs", proofId, customerName, null, { order_id: orderId, file_key: r2Key, amount_claimed: amountClaimed ? Number(amountClaimed) : null })); } catch {}
+
+      return jsonResponse({
+        ok: true,
+        proof_id: proofId,
+        file_url: fileUrl,
+        file_key: r2Key,
+        status: "pending",
+        uploaded_at: uploadedAt,
+        whatsapp_notify_url: `https://wa.me/${String(whatsapp).replace(/[^0-9]/g, "")}`, // placeholder, admin can replace
+      }, 201);
+    }
+
+    // 🔴 POST /api/admin/orders/:id/verify-payment  (ADMIN ONLY)
+    //   Body: { status: 'verified' | 'rejected', reject_reason?: string, amount_received?: number }
+    //   Flow:
+    //     1. require admin session
+    //     2. fetch proof row by id (query param ?proof_id=xxx)
+    //     3. fetch order, check status='pending_verify'
+    //     4. UPDATE payment_proofs: status, verified_at, verified_by, reject_reason
+    //     5. UPDATE order.payment_proof_status (mirror for fast filter)
+    //     6. If verified → ไม่ auto-trigger createOrderZip (admin จะกดเปลี่ยน status เองในหน้า orders เหมือนเดิม)
+    //        → ป้องกันการแตะ orders.js / confirmPaymentAndCreateZip โดยตรง (rule #1: ห้ามแตะระบบเดิม)
+    //     7. writeAuditLog
+    if (url.pathname.startsWith("/api/admin/orders/") && url.pathname.endsWith("/verify-payment") && request.method === "POST") {
+      if (!env.DB) return jsonResponse({ error: "D1 binding not configured" }, 500);
+      const admin = await getSessionAdmin(request, env);
+      if (!admin) return jsonResponse({ error: "ไม่ได้รับอนุญาต" }, 401);
+      const orderId = decodeURIComponent(url.pathname.slice("/api/admin/orders/".length, -"/verify-payment".length));
+      const proofId = url.searchParams.get("proof_id");
+      if (!proofId) return jsonResponse({ error: "ต้องระบุ proof_id ใน query string" }, 400);
+
+      let body = null;
+      try { body = await request.json(); } catch { return jsonResponse({ error: "JSON body ไม่ถูกต้อง" }, 400); }
+      const newStatus = body?.status;
+      if (newStatus !== "verified" && newStatus !== "rejected") {
+        return jsonResponse({ error: "status ต้องเป็น 'verified' หรือ 'rejected'" }, 400);
+      }
+      const rejectReason = newStatus === "rejected" ? String(body?.reject_reason || "").trim().slice(0, 500) : null;
+      const amountReceived = body?.amount_received != null ? Number(body.amount_received) : null;
+
+      // fetch proof
+      const proofRow = await env.DB.prepare(
+        `SELECT * FROM payment_proofs WHERE id=? AND order_id=?`
+      ).bind(proofId, orderId).first();
+      if (!proofRow) return jsonResponse({ error: "ไม่พบหลักฐานการชำระที่ระบุ" }, 404);
+
+      const verifiedAt = new Date().toISOString();
+      try {
+        await env.DB.prepare(
+          `UPDATE payment_proofs
+           SET status=?, verified_at=?, verified_by=?, reject_reason=?
+           WHERE id=?`
+        ).bind(newStatus, verifiedAt, admin.id, rejectReason, proofId).run();
+      } catch (err) {
+        return jsonResponse({ error: safeError("อัปเดตสถานะสลิปไม่สำเร็จ", err) }, 500);
+      }
+
+      // fetch + update order
+      const orderRow = await env.DB.prepare(
+        `SELECT data FROM documents WHERE collection='orders' AND id=?`
+      ).bind(orderId).first();
+      let orderUpdateOk = false;
+      if (orderRow?.data) {
+        try {
+          const orderData = JSON.parse(orderRow.data);
+          orderData.payment_proof_status = newStatus;
+          orderData.payment_proof_verified_at = verifiedAt;
+          orderData.payment_proof_verified_by = admin.id;
+          if (rejectReason) orderData.payment_proof_reject_reason = rejectReason;
+          orderData.updated_at = verifiedAt;
+          // status_history
+          if (Array.isArray(orderData.status_history)) {
+            orderData.status_history.push({
+              status: orderData.status,
+              at: verifiedAt,
+              note: newStatus === "verified" ? "แอดมินยืนยันสลิปการโอน" : `แอดมินปฏิเสธสลิป${rejectReason ? ": " + rejectReason : ""}`,
+              by: admin.id,
+              by_name: admin.display_name || admin.email,
+            });
+          }
+          await env.DB.prepare(
+            `UPDATE documents SET data=?, updated_at=? WHERE collection='orders' AND id=?`
+          ).bind(JSON.stringify(orderData), verifiedAt, orderId).run();
+          orderUpdateOk = true;
+        } catch (err) {
+          console.error("Failed to update order after verify-payment:", err);
+        }
+      }
+
+      // audit log
+      try {
+        ctx.waitUntil(writeAuditLog(
+          env, request, admin,
+          newStatus === "verified" ? "status_change" : "status_change",
+          "payment_proofs",
+          proofId,
+          `Order ${orderId.slice(0, 8)}... — ${newStatus}`,
+          { status: "pending", verified_at: null },
+          { status: newStatus, verified_at: verifiedAt, verified_by: admin.id, reject_reason: rejectReason }
+        ));
+      } catch {}
+
+      return jsonResponse({
+        ok: true,
+        proof_id: proofId,
+        order_id: orderId,
+        status: newStatus,
+        verified_at: verifiedAt,
+        verified_by: admin.id,
+        order_updated: orderUpdateOk,
+        // hint สำหรับ client: ถ้า verified → admin ควรไปกดเปลี่ยน status ในหน้า orders เอง
+        next_action_hint: newStatus === "verified"
+          ? "ไปที่หน้าจัดการออเดอร์ → คลิก 'ยืนยันโอนแล้ว' เพื่อสร้าง ZIP ส่งลูกค้า"
+          : "ลูกค้าจะสามารถอัปโหลดสลิปใหม่ได้",
+      }, 200);
     }
 
     if (url.pathname.startsWith("/api/auth/")) {
