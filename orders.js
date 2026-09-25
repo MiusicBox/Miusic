@@ -1490,6 +1490,16 @@ function renderHistory() {
       : isMixedOrder
         ? `<span class="order-type-badge" style="background:rgba(245,180,0,.15);color:#F5B400;">🛒 เพลง+เพลย์ลิสต์ (${(o.items || []).length} รายการ)</span>`
         : `<span class="order-type-badge" style="background:rgba(255,255,255,.08);color:var(--text-dim);">🎵 เพลงเดี่ยว</span>`;
+    // 📸 (added) green "✅ โอนแล้ว" badge — แสดงเมื่อ slip ผ่านการยืนยันจากหน้าตรวจสอบสลิป
+    //   ใช้กับ order ที่มี payment_proof_status='verified' (จาก /api/admin/orders/:id/verify-payment)
+    //   ไม่แสดงถ้าเป็น order เก่าที่ยังไม่มี payment_proof_status field (backward compat)
+    const paymentVerifiedBadge = (o.payment_proof_status === "verified")
+      ? `<span class="order-type-badge" style="background:rgba(16,185,129,.18);color:var(--success);font-weight:700;">✅ โอนแล้ว</span>`
+      : (o.payment_proof_status === "pending")
+        ? `<span class="order-type-badge" style="background:rgba(245,180,0,.15);color:#F5B400;">🟡 รอตรวจสลิป</span>`
+        : (o.payment_proof_status === "rejected")
+          ? `<span class="order-type-badge" style="background:rgba(239,68,68,.15);color:var(--danger);">❌ สลิปถูกปฏิเสธ</span>`
+          : "";
     const zipInfo = o.zip_download_url
       ? `<div class="n2" style="color:var(--success);">📦 ${escapeHtml(o.zip_file_name || `Order-${o.id}.zip`)} · ${Number(o.zip_song_count || (o.items || []).length)} เพลง · <a href="${escapeHtml(toCloudinaryDownloadUrl(o.zip_download_url))}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;">ดาวน์โหลด ZIP</a></div>`
       : o.zip_status === "failed"
@@ -1505,6 +1515,7 @@ function renderHistory() {
       <div class="list-row" style="flex-direction:column;align-items:stretch;gap:8px;">
         <div class="info">
           ${typeBadge}
+          ${paymentVerifiedBadge}
           <div class="n1">${escapeHtml(o.customer_name)} · ${formatLAK((o.final_total != null) ? Number(o.final_total) : Number(o.total))}</div>
           <div class="n2">${dateStr} · ${escapeHtml(o.whatsapp)}</div>
           <div class="n2">${songNames}</div>
