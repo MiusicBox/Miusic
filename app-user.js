@@ -1,6 +1,8 @@
 // app-user.js — หน้า User: ดึงข้อมูลจาก Cloudflare D1, เล่นเพลงจาก Cloudflare R2 โดยตรง
 // ===================================================
 import { db } from "./firebase-init.js?v=20260905-fix1";
+// 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
+import { sortByThaiName } from "./thai-sort.js";
 // ────────────────────────────────────────────────────────────────────────────
 // ⚠️  สำหรับ Dev ใหม่: อ่านก่อนแก้ import block นี้  ────────────────────────
 // ────────────────────────────────────────────────────────────────────────────
@@ -188,9 +190,9 @@ async function init() {
     getDocs(collection(db, "playlists")),
     getDoc(doc(db, "settings", "main"))
   ]);
-  STATE.categories = catSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  STATE.djs = djSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  STATE.playlists = playlistSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  STATE.categories = sortByThaiName(catSnap.docs.map(d => ({ id: d.id, ...d.data() })), "category_name");
+  STATE.djs = sortByThaiName(djSnap.docs.map(d => ({ id: d.id, ...d.data() })), "dj_name");
+  STATE.playlists = sortByThaiName(playlistSnap.docs.map(d => ({ id: d.id, ...d.data() })), "playlist_name");
   STATE.settings = settingsSnap.exists() ? settingsSnap.data() : {};
 
   // 🔧 (2026-09-18 v6 perf): โหลด songs แบบ pagination + slim (50 songs/page)
