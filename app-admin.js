@@ -3047,7 +3047,7 @@ async function renderPaymentsList() {
       btn.addEventListener("click", () => verifyPayment(btn.dataset.verify, btn.dataset.order));
     });
     container.querySelectorAll("[data-reject]").forEach(btn => {
-      btn.addEventListener("click", () => rejectPayment(btn.dataset.verify, btn.dataset.order));
+      btn.addEventListener("click", () => rejectPayment(btn.dataset.reject, btn.dataset.order));
     });
   } catch (err) {
     container.innerHTML = `<div style="text-align:center;color:var(--danger);padding:30px 0;">โหลดไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
