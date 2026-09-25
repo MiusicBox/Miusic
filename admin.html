@@ -56,6 +56,7 @@
         <button id="qaManageCats">🗂️<br>จัดการหมวดหมู่</button>
         <button id="qaManageDjs">🎧<br>จัดการ DJ</button>
         <button id="qaOrders">🧾<br>จัดการออเดอร์<span class="badge" id="ordersBadge">0</span></button>
+        <button id="qaPayments">🧾<br>ตรวจสอบสลิป<span class="badge" id="paymentsBadge">0</span></button>
         <button id="qaDiscounts">🏷️<br>ลดราคา</button>
         <button id="qaPromotions">🎁<br>โปรโมชั่น</button>
         <button id="qaSettings">🔧<br>ตั้งค่าเว็บไซต์</button>
@@ -313,7 +314,27 @@
         <div class="field"><label>ชื่อ Admin</label><input id="setAdminName" placeholder="ชื่อแอดมิน"></div>
         <div class="field"><label>เบอร์ WhatsApp (20XXXXXXXX)</label><input id="setWhatsapp"></div>
         <div class="field"><label>URL โลโก้เว็บไซต์</label><input id="setLogo"></div>
+
+        <div style="margin:18px 0 8px;font-weight:800;border-top:1px dashed var(--border);padding-top:14px;">💳 ตั้งค่าการชำระเงิน</div>
+        <div class="field"><label>ชื่อธนาคาร</label><input id="setBankName" placeholder="เช่น BCEL, JDB, LDB, BBL"></div>
+        <div class="field"><label>ชื่อบัญชี</label><input id="setBankAccountName" placeholder="ชื่อเจ้าของบัญชี"></div>
+        <div class="field"><label>เลขบัญชี</label><input id="setBankAccount" placeholder="เลขบัญชีธนาคาร"></div>
+        <div class="field"><label>URL รูป QR Code</label><input id="setQrCodeUrl" placeholder="https://...qr.webp"></div>
+        <div class="field"><label>คำอธิบายวิธีโอน</label><textarea id="setPaymentInstructions" placeholder="โอนแล้วแจ้งแอดมินพร้อมแนบสลิป..."></textarea></div>
         <button class="btn" id="saveSettingsBtn">บันทึกการตั้งค่า</button>
+      </div>
+    </div>
+
+    <!-- ===================== PAYMENT VERIFY VIEW (added — slip verification queue) ===================== -->
+    <div id="view-payments" class="view" style="display:none;">
+      <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
+        <button class="icon-btn back-btn">←</button>
+        <div style="flex:1;font-weight:800;">🧾 ตรวจสอบสลิป</div>
+        <button class="icon-btn" id="refreshPaymentsBtn" title="รีเฟรช">↻</button>
+      </div>
+      <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">รายการสลิปที่ลูกค้าอัปโหลดและรอแอดมินตรวจสอบ — กดยืนยันเพื่อไปขั้นตอนสร้าง ZIP ส่งลูกค้า</p>
+      <div id="paymentsList" class="container" style="padding:10px 16px 24px;">
+        <div style="text-align:center;color:var(--text-dim);padding:30px 0;">กำลังโหลด...</div>
       </div>
     </div>
 
