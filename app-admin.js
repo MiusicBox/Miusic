@@ -3055,7 +3055,7 @@ async function renderPaymentsList() {
 }
 
 async function verifyPayment(proofId, orderId) {
-  if (!confirm("ยืนยันว่าสลิปนี้ถูกต้อง?\n\nหลังยืนยัน: ลูกค้าจะยังไม่ได้รับไฟล์ — แอดมินต้องไปกดเปลี่ยนสถานะออเดอร์เป็น 'processing' เพื่อสร้าง ZIP ส่งลูกค้าเองในหน้าจัดการออเดอร์ (เหมือนเดิม)")) return;
+  if (!confirm("ยืนยันว่าสลิปนี้ถูกต้อง?\n\nหลังยืนยัน: ลูกค้าจะยังไม่ได้รับไฟล์ — แอดมินต้องไปกดเปลี่ยนสถานะออเดอร์เป็น 'processing' เพื่อสร้าง ZIP ส่งลูกค้าเองในหน้าจัดการออเดอร์ (เหมือนเดิม)\n\nระบบจะเปิด WhatsApp แจ้งลูกค้าว่าสลิปได้รับการยืนยันแล้ว")) return;
   try {
     const res = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/verify-payment?proof_id=${encodeURIComponent(proofId)}`, {
       method: "POST",
@@ -3071,13 +3071,19 @@ async function verifyPayment(proofId, orderId) {
     showToast("✓ ยืนยันสลิปแล้ว — ไปหน้าออเดอร์เพื่อเปลี่ยนสถานะเป็น processing", "success");
     await renderPaymentsList();
     await refreshPaymentsBadge();
+    // 📸 (added) auto-open WhatsApp แจ้งลูกค้าว่าสลิปได้รับการยืนยัน (notification only)
+    if (data?.whatsapp_notify_url) {
+      setTimeout(() => {
+        window.open(data.whatsapp_notify_url, "_blank", "noopener");
+      }, 500);
+    }
   } catch (err) {
     showToast("ยืนยันไม่สำเร็จ: " + (err.message || String(err)), "error");
   }
 }
 
 async function rejectPayment(proofId, orderId) {
-  const reason = prompt("กรุณาระบุเหตุผลที่ปฏิเสธ (ลูกค้าจะเห็นข้อความนี้ในการแจ้งเตือน):", "ยอดเงินไม่ตรง / สลิปไม่ชัด");
+  const reason = prompt("กรุณาระบุเหตุผลที่ปฏิเสธ (ลูกค้าจะเห็นข้อความนี้ใน WhatsApp):\n\nตัวอย่าง: ยอดเงินไม่ตรง / สลิปไม่ชัด / โอนผิดบัญชี", "ยอดเงินไม่ตรง / สลิปไม่ชัด");
   if (reason === null) return;
   try {
     const res = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/verify-payment?proof_id=${encodeURIComponent(proofId)}`, {
@@ -3091,9 +3097,19 @@ async function rejectPayment(proofId, orderId) {
       showToast("ปฏิเสธไม่สำเร็จ: " + (data?.error || res.statusText), "error");
       return;
     }
-    showToast("ปฏิเสธสลิปแล้ว — ลูกค้าจะสามารถอัปโหลดสลิปใหม่ได้", "success");
+    showToast("ปฏิเสธสลิปแล้ว — กำลังเปิด WhatsApp แจ้งลูกค้า", "success");
     await renderPaymentsList();
     await refreshPaymentsBadge();
+    // 📸 (added) auto-open WhatsApp ส่งข้อความแจ้งเหตุผลปฏิเสธให้ลูกค้า (notification only)
+    if (data?.whatsapp_notify_url) {
+      setTimeout(() => {
+        window.open(data.whatsapp_notify_url, "_blank", "noopener");
+      }, 500);
+    } else {
+      // fallback: ถ้า server ไม่คืน URL แสดงข้อความแทน
+      const customerMsg = `ปฏิเสธสลิปสำเร็จ\n\nเหตุผลที่ระบุ: ${reason || "ไม่ระบุ"}\n\n${data?.customer_whatsapp ? "เบอร์ลูกค้า: " + data.customer_whatsapp + " — กรุณาติดต่อลูกค้าด้วยตนเอง" : "ไม่พบเบอร์ลูกค้า"}`;
+      alert(customerMsg);
+    }
   } catch (err) {
     showToast("ปฏิเสธไม่สำเร็จ: " + (err.message || String(err)), "error");
   }
