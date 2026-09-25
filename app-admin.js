@@ -482,6 +482,8 @@ document.getElementById("qaManageDjs").addEventListener("click", () => { showVie
 document.getElementById("qaManagePlaylists").addEventListener("click", () => { showView("view-playlists"); loadPlaylists(); });
 document.getElementById("qaBulkUpload").addEventListener("click", () => { openBulkUpload(); });
 document.getElementById("qaOrders").addEventListener("click", () => { showView("view-orders"); initOrdersView(); });
+// 📸 (added STEP 5) — slip verification queue
+document.getElementById("qaPayments")?.addEventListener("click", () => { showView("view-payments"); initPaymentsView(); });
 document.getElementById("qaSettings").addEventListener("click", () => { showView("view-settings"); loadSettings(); });
 document.getElementById("qaManageAdmins").addEventListener("click", () => {
   if (currentAdminRole !== "main") { showToast("เฉพาะแอดมินหลักเท่านั้นที่เข้าหน้านี้ได้", "error"); return; }
@@ -767,6 +769,8 @@ const AUDIT_COLLECTION_LABELS = {
   promotions:  "โปรโมชั่น",
   discounts:   "ลดราคา",
   admins:      "แอดมิน",
+  // 📸 (added STEP 5) — slip verification audit log
+  payment_proofs: "หลักฐานการชำระ",
 };
 
 // 🔧 (2026-09-22 fix Bug #2 UI v2): map field name → ป้ายภาษาไทย
@@ -2928,6 +2932,12 @@ async function loadSettings() {
   document.getElementById("setAdminName").value = s.admin_name || "";
   document.getElementById("setWhatsapp").value = s.whatsapp_number || "";
   document.getElementById("setLogo").value = s.website_logo || "";
+  // Payment settings (added in STEP 1 — backward compat: fields optional, fall back to "")
+  document.getElementById("setBankName").value = s.bank_name || "";
+  document.getElementById("setBankAccountName").value = s.bank_account_name || "";
+  document.getElementById("setBankAccount").value = s.bank_account || "";
+  document.getElementById("setQrCodeUrl").value = s.qr_code_url || "";
+  document.getElementById("setPaymentInstructions").value = s.payment_instructions || "";
 }
 document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
   const payload = {
@@ -2935,7 +2945,13 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
     meta_description: document.getElementById("setMetaDesc").value.trim(),
     admin_name: document.getElementById("setAdminName").value.trim(),
     whatsapp_number: document.getElementById("setWhatsapp").value.trim(),
-    website_logo: document.getElementById("setLogo").value.trim()
+    website_logo: document.getElementById("setLogo").value.trim(),
+    // Payment settings (added in STEP 1 — merge:true keeps everything backward compatible)
+    bank_name: document.getElementById("setBankName").value.trim(),
+    bank_account_name: document.getElementById("setBankAccountName").value.trim(),
+    bank_account: document.getElementById("setBankAccount").value.trim(),
+    qr_code_url: document.getElementById("setQrCodeUrl").value.trim(),
+    payment_instructions: document.getElementById("setPaymentInstructions").value.trim()
   };
   try {
     await setDoc(doc(db, "settings", "main"), payload, { merge: true });
@@ -2944,6 +2960,155 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
     showToast("บันทึกไม่สำเร็จ: " + err.message, "error");
   }
 });
+
+// ================= 📸 PAYMENT VERIFICATION (added STEP 5) =================
+//   ไม่ขึ้นกับระบบเดิมใด ๆ — ใช้ apiFetch() ของ db-client เพื่อเรียก endpoints ใหม่ที่ worker ของเรา
+//   Endpoints ใหม่ (เห็นใน worker/index.js):
+//     POST /api/payment-proofs/_count-pending  — badge count
+//     GET  /api/payment-proofs/pending         — list pending slips (with order snapshot)
+//     POST /api/admin/orders/:id/verify-payment?proof_id=xxx — verify/reject
+
+async function fetchPendingPaymentsCount() {
+  try {
+    const res = await fetch("/api/payment-proofs/_count-pending", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    return Number(data?.count ?? 0);
+  } catch { return 0; }
+}
+
+async function refreshPaymentsBadge() {
+  const n = await fetchPendingPaymentsCount();
+  const badge = document.getElementById("paymentsBadge");
+  if (badge) {
+    badge.textContent = String(n);
+    badge.style.display = n > 0 ? "" : "none";
+  }
+}
+
+async function initPaymentsView() {
+  await renderPaymentsList();
+  await refreshPaymentsBadge();
+}
+
+async function renderPaymentsList() {
+  const container = document.getElementById("paymentsList");
+  if (!container) return;
+  container.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:30px 0;">กำลังโหลดรายการสลิป...</div>`;
+  try {
+    const res = await fetch("/api/payment-proofs/pending", {
+      method: "GET",
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      container.innerHTML = `<div style="text-align:center;color:var(--danger);padding:30px 0;">โหลดไม่สำเร็จ: ${escapeHtml(err?.error || res.statusText)}</div>`;
+      return;
+    }
+    const data = await res.json();
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (items.length === 0) {
+      container.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:40px 0;">🎉 ไม่มีสลิปรอตรวจสอบ</div>`;
+      return;
+    }
+    container.innerHTML = items.map(p => {
+      const amt = p.order?.final_total ?? p.order?.total ?? null;
+      const amtText = amt != null ? formatPrice(amt) : "—";
+      const claimed = p.amount_claimed != null ? formatPrice(p.amount_claimed) : null;
+      const uploaded = p.uploaded_at ? new Date(p.uploaded_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "—";
+      const slipImgUrl = p.file_url || "";
+      return `
+        <div class="card" style="margin-bottom:12px;padding:14px;border:1px solid var(--border);border-radius:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:800;font-size:14px;">${escapeHtml(p.order?.receipt_number || p.order_id.slice(0,8))}</div>
+              <div style="color:var(--text-dim);font-size:12px;margin-top:2px;">${escapeHtml(p.customer_name)} • ${escapeHtml(p.whatsapp)}</div>
+              <div style="font-size:12px;margin-top:4px;">ยอดในออเดอร์: <strong>${amtText}</strong>${claimed ? ` • ยอดที่บอกโอน: <strong>${claimed}</strong>` : ""}</div>
+              <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">อัปโหลด: ${uploaded}</div>
+              ${p.transfer_ref ? `<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">อ้างอิง: ${escapeHtml(p.transfer_ref)}</div>` : ""}
+            </div>
+            <a href="${escapeHtml(slipImgUrl)}" target="_blank" rel="noopener" style="display:block;flex-shrink:0;">
+              <img src="${escapeHtml(slipImgUrl)}" alt="สลิป" style="max-width:120px;max-height:120px;border-radius:6px;border:1px solid var(--border);object-fit:cover;">
+            </a>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button class="btn" data-verify="${escapeHtml(p.id)}" data-order="${escapeHtml(p.order_id)}" style="flex:1;background:var(--success);color:#fff;">✓ ยืนยันสลิปถูกต้อง</button>
+            <button class="btn" data-reject="${escapeHtml(p.id)}" data-order="${escapeHtml(p.order_id)}" style="flex:1;background:var(--danger);color:#fff;">✗ ปฏิเสธ</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+    // bind buttons
+    container.querySelectorAll("[data-verify]").forEach(btn => {
+      btn.addEventListener("click", () => verifyPayment(btn.dataset.verify, btn.dataset.order));
+    });
+    container.querySelectorAll("[data-reject]").forEach(btn => {
+      btn.addEventListener("click", () => rejectPayment(btn.dataset.verify, btn.dataset.order));
+    });
+  } catch (err) {
+    container.innerHTML = `<div style="text-align:center;color:var(--danger);padding:30px 0;">โหลดไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
+  }
+}
+
+async function verifyPayment(proofId, orderId) {
+  if (!confirm("ยืนยันว่าสลิปนี้ถูกต้อง?\n\nหลังยืนยัน: ลูกค้าจะยังไม่ได้รับไฟล์ — แอดมินต้องไปกดเปลี่ยนสถานะออเดอร์เป็น 'processing' เพื่อสร้าง ZIP ส่งลูกค้าเองในหน้าจัดการออเดอร์ (เหมือนเดิม)")) return;
+  try {
+    const res = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/verify-payment?proof_id=${encodeURIComponent(proofId)}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "verified" }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast("ยืนยันไม่สำเร็จ: " + (data?.error || res.statusText), "error");
+      return;
+    }
+    showToast("✓ ยืนยันสลิปแล้ว — ไปหน้าออเดอร์เพื่อเปลี่ยนสถานะเป็น processing", "success");
+    await renderPaymentsList();
+    await refreshPaymentsBadge();
+  } catch (err) {
+    showToast("ยืนยันไม่สำเร็จ: " + (err.message || String(err)), "error");
+  }
+}
+
+async function rejectPayment(proofId, orderId) {
+  const reason = prompt("กรุณาระบุเหตุผลที่ปฏิเสธ (ลูกค้าจะเห็นข้อความนี้ในการแจ้งเตือน):", "ยอดเงินไม่ตรง / สลิปไม่ชัด");
+  if (reason === null) return;
+  try {
+    const res = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/verify-payment?proof_id=${encodeURIComponent(proofId)}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "rejected", reject_reason: reason || "" }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast("ปฏิเสธไม่สำเร็จ: " + (data?.error || res.statusText), "error");
+      return;
+    }
+    showToast("ปฏิเสธสลิปแล้ว — ลูกค้าจะสามารถอัปโหลดสลิปใหม่ได้", "success");
+    await renderPaymentsList();
+    await refreshPaymentsBadge();
+  } catch (err) {
+    showToast("ปฏิเสธไม่สำเร็จ: " + (err.message || String(err)), "error");
+  }
+}
+
+// bind refresh button
+document.getElementById("refreshPaymentsBtn")?.addEventListener("click", () => {
+  const btn = document.getElementById("refreshPaymentsBtn");
+  if (btn) { btn.style.transform = "rotate(360deg)"; btn.style.transition = "transform 0.6s"; setTimeout(() => { btn.style.transform = ""; }, 600); }
+  initPaymentsView();
+});
+
+// poll payments badge every 60s (same pattern as orders badge)
+setInterval(refreshPaymentsBadge, 60_000);
+refreshPaymentsBadge();
 
 // ================= Confirm modal =================
 function openConfirm(text, onOk) {
