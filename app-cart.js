@@ -1302,6 +1302,11 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   }
 
   function openWhatsAppNotifyAdmin(order, receiptNumber, slipUrl) {
+    // 🔧 (2026-09-26 ต่อสายให้ครบ): ต้อง markLastOrderContacted() ที่นี่ด้วย เหมือนปุ่ม "ติดต่อแอดมินผ่าน WhatsApp" เดิม (บรรทัด ~1045)
+    //   เหตุผล: สลิปถูกบันทึกเข้า R2+D1 แล้วตั้งแต่ uploadSlipToServer สำเร็จ — แอดมินเห็นในหน้าตรวจสอบได้แน่นอน
+    //   ไม่ว่าจะมีเบอร์ WhatsApp ตั้งค่าไว้หรือไม่ก็ตาม จึงถือว่า "แจ้งแอดมินแล้ว" ทั้งสองกรณี
+    //   ก่อนแก้: flag นี้ไม่เคย set ในเส้นทางอัปโหลดสลิป → ปิดใบเสร็จทีหลังจะโดน popup เตือนซ้ำว่ายังไม่ได้แจ้ง ทั้งที่แจ้งไปแล้ว
+    markLastOrderContacted();
     // ใช้ settings.whatsapp_number เดียวกับเดิม — notification only ไม่ใช่ระบบหลัก
     const adminNumber = String(state?.settings?.whatsapp_number || "").replace(/[^0-9]/g, "");
     if (!adminNumber) {
