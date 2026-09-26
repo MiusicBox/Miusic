@@ -458,11 +458,11 @@
     </div>
   </div>
 
-  <!-- เพิ่มใหม่: แถบเตือนออเดอร์ที่ยังไม่ได้แจ้งแอดมิน -->
+  <!-- 🔧 (2026-09-26) แก้ไข: แถบเตือนออเดอร์ที่ยังไม่ได้ชำระเงิน (เดิมเป็น "ยังไม่ได้แจ้งแอดมิน" — ดู app-cart.js renderPendingOrderBanner()) -->
   <div class="pending-order-banner" id="pendingOrderBanner" hidden>
-    <div class="pending-order-banner-text">คุณมีออเดอร์ที่ยังไม่ได้แจ้งแอดมินเพื่อชำระเงิน</div>
+    <div class="pending-order-banner-text" id="pendingOrderBannerText">คุณมีออเดอร์ที่ยังไม่ได้ชำระเงิน<br>กรุณาชำระเงินเพื่อดำเนินการสั่งซื้อให้เสร็จสมบูรณ์</div>
     <div class="pending-order-banner-actions">
-      <button class="pending-order-banner-btn" id="pendingOrderBannerBtn" type="button">แจ้งแอดมินตอนนี้</button>
+      <button class="pending-order-banner-btn" id="pendingOrderBannerBtn" type="button">ไปชำระเงิน</button>
       <button class="pending-order-banner-dismiss" id="pendingOrderBannerDismiss" type="button" aria-label="ซ่อนคำเตือนนี้ชั่วคราว">✕</button>
     </div>
   </div>
