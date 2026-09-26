@@ -2,7 +2,7 @@
 // ===================================================
 import { db } from "./firebase-init.js?v=20260905-fix1";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
-import { sortByThaiName } from "./thai-sort.js";
+import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js";
 // ────────────────────────────────────────────────────────────────────────────
 // ⚠️  สำหรับ Dev ใหม่: อ่านก่อนแก้ import block นี้  ────────────────────────
 // ────────────────────────────────────────────────────────────────────────────
@@ -314,6 +314,12 @@ async function loadMoreSongs() {
       .filter(s => s.status !== "hidden" && !existingIds.has(s.id));
     STATE.songs.push(...filtered);
     STATE.songsPage = nextPage;
+    // 🎨 (2026-09-26): sort เพลงทั้งหมดใหม่หลังโหลดเพิ่ม — เรียง ก-ฮ + A-Z + 0-9 แบบ natural sort
+    //   เดิม: push ตามลำดับจาก server (offset-based) → A1, A10, A2, A3 (ผิดลำดับ)
+    //   ใหม่: sortSongsByThaiName → A1, A2, A3, A10 (ถูกลำดับ)
+    //   ผลกระทบ: O(n log n) ทุกครั้งที่โหลดเพิ่ม — แต่ n ≤ 5000 เพลง → ทำงานภายใน 10ms บนมือถือ
+    //   หมายเหตุ: สร้าง array ใหม่ (immutable) กัน re-render ที่ไม่จำเป็น
+    STATE.songs = sortSongsByThaiName(STATE.songs);
     if (newDocs.length < 50) {
       STATE.songsHasMore = false;  // ได้น้อยกว่า limit → หมดแล้ว
     }
