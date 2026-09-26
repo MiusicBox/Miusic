@@ -3055,7 +3055,12 @@ async function renderPaymentsList() {
 }
 
 async function verifyPayment(proofId, orderId) {
-  if (!confirm("ยืนยันว่าสลิปนี้ถูกต้อง?\n\nหลังยืนยัน: ลูกค้าจะยังไม่ได้รับไฟล์ — แอดมินต้องไปกดเปลี่ยนสถานะออเดอร์เป็น 'processing' เพื่อสร้าง ZIP ส่งลูกค้าเองในหน้าจัดการออเดอร์ (เหมือนเดิม)\n\nหลังกดยืนยัน → ระบบจะเปิดหน้าต่างให้คุณตรวจสอบข้อความ + กดเปิด WhatsApp ส่งลูกค้าเอง")) return;
+  // 🎨 (2026-09-26): ใช้ adminConfirm แทน confirm() — สไตล์เดียวกับเว็บ
+  const ok = await adminConfirm(
+    "ยืนยันว่าสลิปนี้ถูกต้อง?\n\nหลังยืนยัน: ลูกค้าจะยังไม่ได้รับไฟล์ — แอดมินต้องไปกดเปลี่ยนสถานะออเดอร์เป็น 'processing' เพื่อสร้าง ZIP ส่งลูกค้าเองในหน้าจัดการออเดอร์ (เหมือนเดิม)\n\nหลังกดยืนยัน → ระบบจะเปิดหน้าต่างให้คุณตรวจสอบข้อความ + กดเปิด WhatsApp ส่งลูกค้าเอง",
+    { title: "ยืนยันสลิปการโอนเงิน", okText: "ยืนยันสลิป", success: true }
+  );
+  if (!ok) return;
   try {
     const res = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/verify-payment?proof_id=${encodeURIComponent(proofId)}`, {
       method: "POST",
@@ -3124,7 +3129,11 @@ async function rejectPayment(proofId, orderId) {
       });
     } else {
       // fallback: ถ้าไม่มีเบอร์ลูกค้า → แจ้งให้ admin ติดต่อเอง
-      alert(`ปฏิเสธสลิปสำเร็จ แต่ไม่พบเบอร์ลูกค้า\n\nเหตุผลที่ระบุ: ${reason || "ไม่ระบุ"}\n\nกรุณาติดต่อลูกค้าด้วยตนเอง`);
+      // 🎨 (2026-09-26): ใช้ adminAlert แทน alert()
+      await adminAlert(
+        `ปฏิเสธสลิปสำเร็จ แต่ไม่พบเบอร์ลูกค้า\n\nเหตุผลที่ระบุ: ${reason || "ไม่ระบุ"}\n\nกรุณาติดต่อลูกค้าด้วยตนเอง`,
+        { title: "ปฏิเสธสลิปแล้ว" }
+      );
     }
   } catch (err) {
     showToast("ปฏิเสธไม่สำเร็จ: " + (err.message || String(err)), "error");
@@ -3284,12 +3293,55 @@ setInterval(refreshPaymentsBadge, 60_000);
 refreshPaymentsBadge();
 
 // ================= Confirm modal =================
-function openConfirm(text, onOk) {
-  document.getElementById("confirmText").textContent = text;
+// 🎨 (2026-09-26): อัปเกรดให้รองรับ options (title, okText, cancelText, danger, success)
+//   - เดิม: openConfirm(text, onOk) — ใช้ได้แค่ข้อความเดียว + หัวข้อ "ยืนยันการลบ" ตายตัว
+//   - ใหม่: openConfirm(text, onOk, options) — รองรับ options เหมือน customConfirm ฝั่งลูกค้า
+//   - ยังรองรับ caller เดิมที่เรียกแบบ (text, onOk) → options จะเป็น undefined → ใช้ค่า default
+//   หมายเหตุ: confirmAction ประกาศที่บรรทัด 84 (module-level) — ไม่ต้องประกาศซ้ำ
+function openConfirm(text, onOk, options) {
+  options = options || {};
+  const titleEl = document.getElementById("confirmTitle");
+  const textEl = document.getElementById("confirmText");
+  const okBtn = document.getElementById("confirmOk");
+  const cancelBtn = document.getElementById("confirmCancel");
+  if (titleEl) titleEl.textContent = options.title || "กรุณายืนยัน";
+  if (textEl) textEl.textContent = text;
+  if (okBtn) {
+    okBtn.textContent = options.okText || "ยืนยัน";
+    // เปลี่ยน style ตามประเภท (danger/success/default)
+    // 🛡️ ไม่ลบ class "danger" เดิม (เพราะ HTML ตั้งไว้) แค่เพิ่ม class ใหม่ถ้ามี
+    okBtn.classList.remove("success-confirm");
+    if (options.success) {
+      okBtn.classList.remove("danger");
+      okBtn.classList.add("success-confirm");
+    } else if (options.danger === false) {
+      // ถ้าระบุ danger:false ชัด ๆ → ใช้สีม่วง (default .btn)
+      okBtn.classList.remove("danger");
+    }
+    // default: ถ้าไม่ระบุ danger หรือ success → ใช้ class "danger" ที่ตั้งไว้ใน HTML (ยืนยันการลบ)
+  }
+  if (cancelBtn) cancelBtn.textContent = options.cancelText || "ยกเลิก";
   confirmAction = onOk;
   document.getElementById("confirmBackdrop").classList.add("show");
+  // 🆕 (2026-09-26): focus ที่ปุ่มยืนยันเพื่อ accessibility
+  if (okBtn) okBtn.focus();
 }
-document.getElementById("confirmCancel").addEventListener("click", () => document.getElementById("confirmBackdrop").classList.remove("show"));
+document.getElementById("confirmCancel").addEventListener("click", () => {
+  document.getElementById("confirmBackdrop").classList.remove("show");
+  // 🛡️ (2026-09-26): ล้าง confirmAction เมื่อ cancel (กัน leak ไปยัง modal ถัดไป)
+  confirmAction = null;
+});
+// 🆕 (2026-09-26): ปุ่ม close (✕) และคลิกพื้นหลัง = ยกเลิก
+document.getElementById("confirmCloseBtn")?.addEventListener("click", () => {
+  document.getElementById("confirmBackdrop").classList.remove("show");
+  confirmAction = null;
+});
+document.getElementById("confirmBackdrop")?.addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) {
+    document.getElementById("confirmBackdrop").classList.remove("show");
+    confirmAction = null;
+  }
+});
 document.getElementById("confirmOk").addEventListener("click", async () => {
   // 🔧 (2026-09-22 Batch 7 fix Bug #9): รอ confirmAction เสร็จก่อนค่อยปิด modal
   //   เดิม: ปิด modal ก่อน → แล้วเรียก confirmAction → แต่ adminConfirm's setInterval detect modal ปิด → resolve(false) ก่อน
@@ -3306,7 +3358,12 @@ document.getElementById("confirmOk").addEventListener("click", async () => {
 //              → adminConfirm คืน false เสมอ แม้ user กด "ยืนยัน" → bugs หลายตัวที่ใช้ adminConfirm
 //   วิธีแก้: ใช้ state flag แยก "okClicked" vs "cancelClicked" → resolve ครั้งเดียวจากทางที่ถูกต้อง
 //   ผลกระทบระบบเดิม: 0% — adminConfirm ยังคืน Promise<boolean> เหมือนเดิม แค่ค่าที่ได้ถูกต้อง
-function adminConfirm(message) {
+//
+// 🎨 (2026-09-26): อัปเกรดให้รองรับ options (เหมือน customConfirm ฝั่งลูกค้า)
+//   - adminConfirm(message)                       → ใช้ default (เหมือนเดิม — backward compat)
+//   - adminConfirm(message, { title, okText, danger, success, cancelText })
+//   ยังรองรับ caller เดิมที่เรียกแบบ adminConfirm(message) → ใช้ค่า default ของ HTML (danger)
+function adminConfirm(message, options) {
   return new Promise((resolve) => {
     let resolved = false;
     // Helper: resolve ครั้งเดียว (กันซ้ำ)
@@ -3319,7 +3376,7 @@ function adminConfirm(message) {
     };
     // ตั้งค่า confirmAction เป็น wrapper ที่ resolve(true) แทน resolve(true) ตรงๆ
     // เพื่อกันซ้ำ + ล้าง state หลัง resolve
-    openConfirm(message, () => safeResolve(true));
+    openConfirm(message, () => safeResolve(true), options);
     // ฟังการปิด modal (ยกเลิก / กดพื้นหลัง / ESC) — แทน setInterval
     //   ใช้ MutationObserver (efficient กว่า setInterval มาก)
     const backdrop = document.getElementById("confirmBackdrop");
@@ -3336,12 +3393,78 @@ function adminConfirm(message) {
       observer.disconnect();
       safeResolve(false);
     }, 30000);
+    // 🆕 (2026-09-26): ESC = ยกเลิก (เหมือน customConfirm ฝั่งลูกค้า)
+    const escHandler = (e) => {
+      if (e.key === 'Escape' && backdrop.classList.contains('show')) {
+        document.removeEventListener('keydown', escHandler);
+        document.getElementById("confirmBackdrop").classList.remove("show");
+        // safeResolve(false) จะถูกเรียกโดย MutationObserver
+      }
+    };
+    document.addEventListener('keydown', escHandler);
   });
 }
 
-// ให้ admin-roles.js เรียกใช้ toast/confirm modal ตัวเดียวกับหน้านี้ได้ (ไม่ต้องสร้างซ้ำ)
+// 🆕 (2026-09-26): adminAlert — สำหรับแทน alert() แบบเดิม
+//   ใช้ผ่าน adminAlert(message, options) → Promise<void>
+//   options: { title, okText }
+//   ตัวอย่าง:
+//     await adminAlert("บันทึกสำเร็จ", { title: "สำเร็จ", okText: "ตกลง" });
+function adminAlert(message, options) {
+  return new Promise((resolve) => {
+    options = options || {};
+    const backdrop = document.getElementById("alertBackdrop");
+    const titleEl = document.getElementById("alertTitle");
+    const messageEl = document.getElementById("alertMessage");
+    const okBtn = document.getElementById("alertOkBtn");
+    const closeBtn = document.getElementById("alertCloseBtn");
+    if (!backdrop || !messageEl || !okBtn) {
+      // fallback: ถ้า element ไม่มี → ใช้ alert() แบบเดิม (กันพัง)
+      alert(message);
+      resolve();
+      return;
+    }
+    if (titleEl) titleEl.textContent = options.title || "แจ้งเตือน";
+    messageEl.textContent = message;
+    okBtn.textContent = options.okText || "ตกลง";
+    backdrop.classList.add("show");
+    backdrop.setAttribute("aria-hidden", "false");
+    // ล็อก body scroll
+    document.body.classList.add("modal-open");
+    let done = false;
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      backdrop.classList.remove("show");
+      backdrop.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("modal-open");
+      okBtn.removeEventListener("click", onOk);
+      closeBtn?.removeEventListener("click", onClose);
+      backdrop.removeEventListener("click", onBackdrop);
+      document.removeEventListener("keydown", onEsc);
+      resolve();
+    };
+    const onOk = () => cleanup();
+    const onClose = () => cleanup();
+    const onBackdrop = (e) => { if (e.target === backdrop) cleanup(); };
+    const onEsc = (e) => { if (e.key === 'Escape') cleanup(); };
+    okBtn.addEventListener("click", onOk);
+    closeBtn?.addEventListener("click", onClose);
+    backdrop.addEventListener("click", onBackdrop);
+    document.addEventListener("keydown", onEsc);
+    // focus ที่ปุ่มตกลงเพื่อ accessibility
+    okBtn.focus();
+    // Safety: ปิดอัตโนมัติหลัง 30 วินาที
+    setTimeout(cleanup, 30000);
+  });
+}
+
+// ให้ admin-roles.js เรียกใช้ toast/confirm/alert modal ตัวเดียวกับหน้านี้ได้ (ไม่ต้องสร้างซ้ำ)
 window.__showToast = showToast;
 window.__openConfirm = openConfirm;
+// 🆕 (2026-09-26): expose adminConfirm/adminAlert ให้ใช้ได้ทั้งจาก app-admin.js และไฟล์อื่น (orders.js, app-promotion.js, admin-roles.js)
+window.adminConfirm = adminConfirm;
+window.adminAlert = adminAlert;
 
 // ====================================================================
 // ===== Popup รายละเอียดเพลง (เพิ่มใหม่ — additive, ไม่กระทบระบบเดิม) =====
