@@ -1063,7 +1063,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     if (downloadBtn) downloadBtn.onclick = () => downloadReceiptAsImage(receiptNumber);
 
     // 📸 (added STEP 2): ปุ่ม "💳 ชำระเงิน" — เปิด payment modal แสดง QR/บัญชี
-    // 🛡️ (added 2026-09-26): ซ่อนปุ่มเมื่อ order อยู่ในสถานะที่ห้ามชำระซ้ำ (paid / pending_review)
+    // 🛡️ (added 2026-09-26): ซ่อนปุ่มเมื่อ order อยู่ในสถานะที่ห้ามชำระซ้ำ (paid / pending_review / verified_awaiting_zip)
     //   ปุ่มยังแสดงเมื่อ state เป็น unpaid / rejected / cancelled (ลูกค้ายังชำระใหม่/ส่งสลิปใหม่ได้)
     const payBtn = document.getElementById("receiptPayBtn");
     if (payBtn) {
@@ -1130,15 +1130,15 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   //   ใช้สำหรับซ่อน/แสดง ปุ่ม "ชำระเงิน" และ QR บนหน้าลูกค้า เพื่อป้องกันการชำระซ้ำ
   //
   //   คืนค่า: { state, label, color, bg, message, warning, showPayButton, showQR, allowUploadSlip }
-  //     state: 'paid' | 'pending_review' | 'rejected' | 'unpaid' | 'cancelled'
+  //     state: 'paid' | 'verified_awaiting_zip' | 'pending_review' | 'rejected' | 'unpaid' | 'cancelled'
   //     showPayButton: true เมื่อลูกค้ายังสามารถกดชำระเงินได้ (state unpaid / rejected / cancelled)
   //     showQR: true เมื่อควรแสดง QR บัญชี (state unpaid / rejected)
   //     allowUploadSlip: true เมื่อลูกค้ายังอัปโหลดสลิปใหม่ได้ (state unpaid / rejected / cancelled)
   //
   //   หลักเกณฑ์ (ตรวจสอบกับระบบเดิมแล้ว ไม่ขัดกับ behavior ที่มี):
   //     - status 'processing' / 'completed' → 'paid' (เนื่องจากแอดมินกดยืนยันโอนแล้ว)
-  //     - status 'pending_verify' + payment_proof_status='pending' → 'pending_review'
-  //     - status 'pending_verify' + payment_proof_status='verified' → 'pending_review' (รอแอดมินเปลี่ยน status เป็น processing)
+  //     - status 'pending_verify' + payment_proof_status='pending' → 'pending_review' (🟡 รอตรวจสอบ)
+  //     - status 'pending_verify' + payment_proof_status='verified' → 'verified_awaiting_zip' (🟢 ยืนยันแล้ว รอเตรียมไฟล์)
   //     - status 'pending_verify' + payment_proof_status='rejected' → 'rejected' (ลูกค้าส่งสลิปใหม่ได้)
   //     - status 'pending_verify' + ไม่มี payment_proof_id → 'unpaid'
   //     - status 'cancelled' → 'cancelled' (อัปโหลดสลิปใหม่ได้ตามระบบเดิม — backend ยังอนุญาต)
@@ -1165,14 +1165,35 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         allowUploadSlip: false,
       };
     }
-    // 2) ส่งหลักฐานแล้ว รอตรวจสอบ (ยังไม่ถึงเวลาเปลี่ยน status เป็น processing)
-    if (status === "pending_verify" && (ppStatus === "pending" || ppStatus === "verified")) {
+    // 2a) ส่งหลักฐานแล้ว รอแอดมินตรวจสอบ (payment_proof_status='pending')
+    //   สถานะนี้เกิดหลังลูกค้าอัปสลิป แต่แอดมินยังไม่ได้ตรวจ
+    //   แสดงสีเหลือง เพื่อให้ลูกค้ารู้ว่าต้องรอแอดมินตรวจสอบ
+    if (status === "pending_verify" && ppStatus === "pending") {
       return {
         state: "pending_review",
         label: "🟡 ส่งหลักฐานการชำระเงินแล้ว",
         color: "#F5B400",
         bg: "rgba(245,180,0,.15)",
         message: "ระบบได้รับหลักฐานการชำระเงินของคุณแล้ว กรุณารอการตรวจสอบ",
+        warning: "⚠️ ไม่ต้องชำระเงินซ้ำสำหรับออเดอร์นี้",
+        showPayButton: false,
+        showQR: false,
+        allowUploadSlip: false,
+      };
+    }
+    // 2b) 🆕 (2026-09-26): แอดมินยืนยันสลิปแล้ว รอเตรียมไฟล์ส่งให้ (payment_proof_status='verified')
+    //   สถานะนี้เกิดหลังแอดมินกดยืนยันสลิปผ่านหน้าตรวจสอบสลิป
+    //   แต่ยังไม่ได้กดเปลี่ยน status เป็น 'processing' (ตาม comment ใน worker/index.js บรรทัด 4022-4023
+    //   ที่ระบุว่า verify สลิปแล้ว admin ต้องไปกดเปลี่ยน status เองในหน้า orders)
+    //   แสดงสีเขียวให้ลูกค้ารู้ว่าสลิปผ่านการตรวจแล้ว รอแอดมินเตรียมไฟล์ ZIP ส่งให้
+    //   ป้องกันไม่ให้ลูกค้าชำระซ้ำ (เหมือน pending_review แต่เป็นสีเขียวเพื่อยืนยันว่าผ่านแล้ว)
+    if (status === "pending_verify" && ppStatus === "verified") {
+      return {
+        state: "verified_awaiting_zip",
+        label: "🟢 ยืนยันการชำระเงินแล้ว",
+        color: "#28c76f",
+        bg: "rgba(41,204,113,.15)",
+        message: "แอดมินยืนยันหลักฐานการชำระเงินของคุณแล้ว รอแอดมินเตรียมไฟล์ส่งให้",
         warning: "⚠️ ไม่ต้องชำระเงินซ้ำสำหรับออเดอร์นี้",
         showPayButton: false,
         showQR: false,
@@ -1278,14 +1299,23 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     const hasBankInfo = settings.bank_name || settings.bank_account || settings.bank_account_name;
     const hasQr = !!settings.qr_code_url;
 
-    // 🛡️ (added 2026-09-26): กรณี 'paid' หรือ 'pending_review' → แสดงหน้าสถานะก่อนเช็คว่ามีบัญชีไหม
+    // 🛡️ (added 2026-09-26): กรณี 'paid' / 'pending_review' / 'verified_awaiting_zip' → แสดงหน้าสถานะก่อนเช็คว่ามีบัญชีไหม
     //   ป้องกันลูกค้าชำระเงินซ้ำในออเดอร์ที่ยืนยันแล้ว หรือที่ส่งสลิปแล้วรอตรวจสอบ
     //   ต้องเช็คก่อนเช็ค bank info เพราะถ้า order "ชำระแล้ว" ไม่จำเป็นต้องแสดง QR อีก
     //   แม้ว่าร้านจะยังไม่ได้ตั้งค่าบัญชี (เช่น ตั้งไว้ตอนชำระ แล้วลบทีหลัง)
-    if (paymentState.state === "paid" || paymentState.state === "pending_review") {
+    //   🆕 (2026-09-26): เพิ่ม state 'verified_awaiting_zip' — แอดมินยืนยันสลิปแล้ว รอเตรียมไฟล์ส่งให้ (สีเขียว)
+    if (paymentState.state === "paid" || paymentState.state === "pending_review" || paymentState.state === "verified_awaiting_zip") {
+      // 🆕: เลือก emoji ตาม state — pending_review ใช้ ⏳ (รอตรวจสอบ), paid/verified_awaiting_zip ใช้ ✅ (ผ่านแล้ว)
+      const statusEmoji = paymentState.state === "pending_review" ? "⏳" : "✅";
+      // 🆕: เพิ่มข้อมูล "ยืนยันเมื่อ" ถ้ามี payment_proof_verified_at (กรณี verified_awaiting_zip)
+      const verifiedAtHtml = (paymentState.state === "verified_awaiting_zip" && freshOrder?.payment_proof_verified_at)
+        ? `<div style="display:flex;justify-content:space-between;padding:6px 0;">
+            <span>ยืนยันสลิปเมื่อ</span><strong>${escapeHtml(new Date(freshOrder.payment_proof_verified_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }))}</strong>
+          </div>`
+        : "";
       content.innerHTML = `
         <div style="padding:20px 8px;text-align:center;">
-          <div style="font-size:48px;margin-bottom:12px;">${paymentState.state === "paid" ? "✅" : "⏳"}</div>
+          <div style="font-size:48px;margin-bottom:12px;">${statusEmoji}</div>
           <div style="padding:14px;border-radius:10px;border:1px solid ${paymentState.color};background:${paymentState.bg};">
             <div style="font-weight:800;color:${paymentState.color};font-size:18px;margin-bottom:8px;">${escapeHtml(paymentState.label)}</div>
             ${paymentState.message ? `<div style="font-size:14px;color:var(--text);line-height:1.6;margin-bottom:10px;">${escapeHtml(paymentState.message)}</div>` : ""}
@@ -1303,6 +1333,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
                   <span>ส่งหลักฐานเมื่อ</span><strong>${escapeHtml(new Date(freshOrder.payment_proof_uploaded_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }))}</strong>
                 </div>`
               : ""}
+            ${verifiedAtHtml}
           </div>
           <button class="btn secondary" id="paymentCloseBtn_paid" type="button" style="width:100%;margin-top:18px;">ปิด</button>
         </div>
