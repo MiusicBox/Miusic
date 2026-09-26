@@ -18,7 +18,7 @@ import {
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261101-promo1";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
-import { sortByThaiName } from "./thai-sort.js";
+import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js";
 
 const CACHE = { songs: [], categories: [], djs: [], playlists: [] };
 // 🔧 (2026-09-17 Phase 1): TTL cache สำหรับ admin views — ลด D1 reads ตอนเข้า view ซ้ำ ๆ
@@ -1177,9 +1177,16 @@ async function loadSongs() {
     results.forEach((snap, i) => {
       const key = fetchKeys[i];
       const mapped = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      // 🔧 (ใหม่) เรียง categories/djs/playlists ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข (songs ไม่แตะ — คงพฤติกรรมเดิม)
-      const sortField = key === "categories" ? "category_name" : key === "djs" ? "dj_name" : key === "playlists" ? "playlist_name" : null;
-      CACHE[key] = sortField ? sortByThaiName(mapped, sortField) : mapped;
+      // 🎨 (2026-09-26 fix): เรียงเพลงด้วย — เดิมไม่ได้ sort (sortField=null) → ใช้ลำดับจาก DB
+      //   ตอนนี้เรียงด้วย sortSongsByThaiName (ก-ฮ + A-Z + 0-9 แบบ natural sort)
+      //   ทำให้เพลง A1, A2, A3, A10 เรียงถูกลำดับ (ไม่ใช่ A1, A10, A2, A3 แบบเดิม)
+      if (key === "songs") {
+        CACHE[key] = sortSongsByThaiName(mapped);
+      } else {
+        // categories/djs/playlists ใช้ sortByThaiName ตามฟิลด์ของแต่ละ collection
+        const sortField = key === "categories" ? "category_name" : key === "djs" ? "dj_name" : key === "playlists" ? "playlist_name" : null;
+        CACHE[key] = sortField ? sortByThaiName(mapped, sortField) : mapped;
+      }
       CACHE_AT[key] = now;
     });
   }
