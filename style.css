@@ -1648,54 +1648,99 @@ button:active {
 /* ============================================================
    🎨 (2026-09-26) QR Code Preview — สไตล์สำหรับหน้าตั้งค่าการชำระเงิน
    ------------------------------------------------------------
-   ใช้ !important สำหรับบางค่าเพื่อกัน inline style อื่น บังรูป preview
+   🎨 (2026-09-26 v2 fix): ขยายรูป QR ให้เต็มพื้นที่ + padding ด้านเท่ากัน + ดูง่าย
+   - ใช้ class .qr-preview-wrap, .qr-preview-img-box, .qr-preview-img แทน #id selector
+   - กล่องรูปใช้ padding เท่ากันทุกด้าน + พื้นขาว + ขยายเต็มพื้นที่ (max-width 280px)
+   - ใช้ !important เพื่อกัน inline style อื่น override (iOS Safari bug)
    ============================================================ */
-#qrPreviewWrap {
-  /* 🛡️ (2026-09-26 fix iOS): ใช้ !important เพื่อกัน inline style ใน HTML ถูก override */
+#qrPreviewWrap.qr-preview-wrap {
   display: block !important;
-  padding: 14px !important;
+  /* 🎨 (2026-09-26 v2): padding เท่ากันทุกด้าน 16px + พื้นหลังไล่เฉดสีสวย */
+  padding: 20px !important;
   background: linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.03)) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 12px !important;
+  border-radius: 14px !important;
   text-align: center;
-  margin-bottom: 12px;
-  /* animation เข้าแบบสวย */
+  margin-bottom: 14px;
   animation: qrPreviewFadeIn .25s ease;
 }
 @keyframes qrPreviewFadeIn {
   from { opacity: 0; transform: scale(.95); }
   to   { opacity: 1; transform: scale(1); }
 }
-#qrPreviewImg {
-  /* ใช้ !important กัน inline style อื่น override */
-  max-width: 200px !important;
-  width: auto !important;
-  max-height: 200px !important;
-  height: auto !important;
-  border-radius: 8px !important;
-  background: #fff !important;
-  padding: 8px !important;
-  /* กันรูปถูกบังด้วย aspect-ratio bug บน iOS */
-  display: inline-block !important;
-  object-fit: contain !important;
-  /* เงาเล็ก ๆ ให้ดูมีมิติ */
-  box-shadow: 0 4px 12px rgba(0,0,0,.2);
-  /* 🛡️ (2026-09-26 fix iOS): บางครั้ง iOS Safari ต้อง min-height เพื่อแสดงรูป */
-  min-height: 80px;
+
+/* 🎨 (2026-09-26 v2): กล่องรูป QR — padding เท่ากันทุกด้าน + พื้นขาว + ขยายเต็มพื้นที่ */
+.qr-preview-img-box {
+  /* กล่องครอบรูป — พื้นขาว + padding เท่ากันทุกด้าน 20px → QR มีพื้นที่สวย */
+  display: inline-block;
+  padding: 20px !important;  /* 🎨 เท่ากันทุกด้าน 20px */
+  background: #ffffff !important;
+  border-radius: 12px !important;
+  /* 🎨 (2026-09-26 v2): กล่องขยายได้ถึง 280px (เดิม 180px เล็กเกินไป) */
+  max-width: 280px;
+  width: 100%;
+  /* 🎨 ให้กล่องจัดกึ่งกลาง */
+  margin: 0 auto;
+  /* 🎨 เงาเล็ก ๆ ให้กล่องมีมิติ */
+  box-shadow: 0 4px 14px rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.04);
+  /* 🛡️ กัน padding collapse */
+  box-sizing: border-box;
 }
-/* ปุ่มเปลี่ยน/ลบรูปใน preview */
-#qrChangeBtn, #qrDeleteBtn {
+
+/* 🎨 (2026-09-26 v2): รูป QR ขยายเต็มกล่อง (width:100%) — ดูง่าย */
+.qr-preview-img,
+#qrPreviewImg {
+  /* รูปขยายเต็มกล่อง (กล่องควบคุมขนาด) */
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  /* 🎨 ไม่มี padding ที่รูป (padding อยู่ที่กล่อง .qr-preview-img-box แทน) → เท่ากันทุกด้าน */
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 4px !important;
+  /* 🎨 พื้นหลังโปร่งใส (ใช้สีของกล่องเป็นพื้นรองรับ) */
+  background: transparent !important;
+  /* 🎨 แสดงครบไม่ crop */
+  object-fit: contain !important;
+  /* 🛡️ iOS Safari ต้อง min-height เพื่อแสดงรูป */
+  min-height: 100px;
+  /* 🎨 กันรูปเบี้ยว */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+
+/* 🎨 (2026-09-26 v2): ปุ่มเปลี่ยน/ลบรูป — จัดเรียงสวย + เท่ากัน */
+.qr-preview-actions {
+  display: flex !important;
+  gap: 10px !important;
+  justify-content: center !important;
+  margin-top: 16px !important;
+  flex-wrap: wrap;
+}
+.qr-preview-actions > button {
+  flex: 0 0 auto !important;
+  min-width: 120px !important;
+  padding: 10px 18px !important;
+  font-size: 13px !important;
+  font-weight: 700;
   transition: all .15s ease;
 }
 #qrChangeBtn:hover {
   filter: brightness(1.08);
   transform: translateY(-1px);
+  border-color: var(--accent) !important;
+}
+#qrDeleteBtn {
+  color: var(--danger) !important;
+  border-color: var(--danger) !important;
 }
 #qrDeleteBtn:hover {
-  background: rgba(239, 68, 68, .15) !important;
+  background: rgba(239, 68, 68, .12) !important;
   filter: brightness(1.08);
   transform: translateY(-1px);
 }
+
 /* file picker label — ให้ดูสวยและชัดเจน */
 #qrFilePickerLabel {
   display: block !important;
