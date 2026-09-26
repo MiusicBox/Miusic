@@ -208,7 +208,11 @@ async function loadJSZip() {
 
 function orderToast(message, type = "") {
   if (window.__showToast) window.__showToast(message, type);
-  else if (type === "error") alert(message);
+  // 🎨 (2026-09-26): fallback ใช้ adminAlert แทน alert (กรณี __showToast ยังไม่โหลด)
+  else if (type === "error") {
+    if (window.adminAlert) window.adminAlert(message, { title: "ข้อผิดพลาด" });
+    else alert(message);
+  }
 }
 
 function getOrderPlaylistIds(order) {
@@ -1890,7 +1894,12 @@ async function openFullFilesModal(orderId) {
   if (!order || !content || !backdrop) return;
 
   if (order.status !== "processing" && order.status !== "completed") {
-    alert("ออเดอร์นี้ยังไม่ได้ยืนยันการชำระเงิน");
+    // 🎨 (2026-09-26): ใช้ adminAlert แทน alert() — สไตล์เดียวกับเว็บ
+    if (window.adminAlert) {
+      await window.adminAlert("ออเดอร์นี้ยังไม่ได้ยืนยันการชำระเงิน\n\nกรุณายืนยันการชำระเงินก่อนเพื่อดูไฟล์เต็ม", { title: "ไม่สามารถดูไฟล์ได้" });
+    } else {
+      alert("ออเดอร์นี้ยังไม่ได้ยืนยันการชำระเงิน");
+    }
     return;
   }
 
@@ -2140,7 +2149,12 @@ async function handleStatusChange(orderId, newStatus) {
     await updateOrderInState(orderId, { status: newStatus, updated_at: new Date().toISOString(), ...statusAudit });
     renderFromState();
   } catch (err) {
-    alert("เปลี่ยนสถานะไม่สำเร็จ: " + err.message);
+    // 🎨 (2026-09-26): ใช้ adminAlert แทน alert()
+    if (window.adminAlert) {
+      await window.adminAlert("เปลี่ยนสถานะไม่สำเร็จ: " + err.message, { title: "เกิดข้อผิดพลาด" });
+    } else {
+      alert("เปลี่ยนสถานะไม่สำเร็จ: " + err.message);
+    }
   }
 }
 
@@ -2256,39 +2270,22 @@ async function retryOrderZip(orderId) {
      - ใช้ confirmAction state ตัวเดียวกัน → ไม่มี cross-handler trigger
      - มี fallback กันกรณี app-admin.js ยังไม่โหลด → ใช้ window.confirm ธรรมดา
 
+   🎨 (2026-09-26): อัปเกรดให้ใช้ window.adminConfirm (Promise-based) ที่ app-admin.js expose
+     - ลดความซ้ำซ้อน: ไม่ต้องจัดการ cancel listener เอง
+     - รองรับ options (title, okText, danger, success)
+     - ยังรองรับ caller เดิมที่เรียก askConfirm(message) → ใช้ default
+
    ผลกระทบต่อระบบเดิม: 0%
      - ทุก caller ของ askConfirm (handleDeleteOrder, handleDeleteOrderZip, ฯลฯ) ยังได้ Promise<boolean>
        เหมือนเดิม → ไม่ต้องแก้ caller เลย
      - openConfirm เดิมใน app-admin.js ไม่ถูกแตะ → ไม่กระทบ
    ===================================================================== */
-function askConfirm(message) {
-  // 🔧 แก้บั๊ก C1: ใช้ window.__openConfirm ของ app-admin.js แทน เพื่อกัน conflict + inline style leak
-  if (window.__openConfirm) {
-    return new Promise((resolve) => {
-      let resolved = false;
-      // กด "ยืนยัน" → openConfirm เรียก onOk callback → resolve(true)
-      window.__openConfirm(message, () => {
-        if (resolved) return;
-        resolved = true;
-        cleanup();
-        resolve(true);
-      });
-      // กด "ยกเลิก" → ปุ่ม #confirmCancel แค่ remove "show" class → ไม่ resolve ปกติ
-      //   เลยต้องเพิ่ม listener ชั่วคราวเพื่อ catch การกด cancel
-      const cancelBtn = document.getElementById("confirmCancel");
-      function onCancel() {
-        if (resolved) return;
-        resolved = true;
-        cleanup();
-        resolve(false);
-      }
-      function cleanup() {
-        if (cancelBtn) cancelBtn.removeEventListener("click", onCancel);
-      }
-      if (cancelBtn) cancelBtn.addEventListener("click", onCancel);
-    });
+function askConfirm(message, options) {
+  // 🎨 (2026-09-26): ใช้ window.adminConfirm (Promise-based) ที่ app-admin.js expose
+  if (window.adminConfirm) {
+    return window.adminConfirm(message, options);
   }
-  // Fallback: ถ้า app-admin.js ยังไม่โหลด (หากเรียกก่อน module load) → ใช้ window.confirm ธรรมดา
+  // 🔧 fallback เดิม: ถ้า app-admin.js ยังไม่โหลด → ใช้ window.confirm ธรรมดา
   return Promise.resolve(window.confirm(message));
 }
 
@@ -2340,13 +2337,20 @@ async function handleDeleteOrderZip(orderId) {
 /* ---------------- ลบออเดอร์ ---------------- */
 async function handleDeleteOrder(orderId) {
   if (!isMainAdmin()) {
-    if (window.__showToast) window.__showToast("เฉพาะแอดมินหลักเท่านั้นที่ลบประวัติออเดอร์ได้", "error");
-    else alert("เฉพาะแอดมินหลักเท่านั้นที่ลบประวัติออเดอร์ได้");
+    // 🎨 (2026-09-26): ใช้ adminAlert แทน alert() — สไตล์เดียวกับเว็บ
+    const msg = "เฉพาะแอดมินหลักเท่านั้นที่ลบประวัติออเดอร์ได้";
+    if (window.adminAlert) await window.adminAlert(msg, { title: "ไม่ได้รับอนุญาต" });
+    else if (window.__showToast) window.__showToast(msg, "error");
+    else alert(msg);
     return;
   }
   const order = state.allOrders.find((o) => o.id === orderId);
   const label = order ? `ออเดอร์ของ ${order.customer_name} (${formatLAK(order.total)})` : "ออเดอร์นี้";
-  const ok = await askConfirm(`ต้องการลบ${label}ใช่หรือไม่? การลบไม่สามารถย้อนกลับได้`);
+  // 🎨 (2026-09-26): ใช้ askConfirm พร้อม options danger + title
+  const ok = await askConfirm(
+    `ต้องการลบ${label}ใช่หรือไม่?\n\nการลบไม่สามารถย้อนกลับได้`,
+    { title: "ยืนยันการลบออเดอร์", okText: "ลบ", danger: true }
+  );
   if (!ok) return;
 
   try {
@@ -2366,7 +2370,9 @@ async function handleDeleteOrder(orderId) {
     removeOrderFromState(orderId);
     renderFromState();
   } catch (err) {
-    alert("ลบออเดอร์ไม่สำเร็จ: " + err.message);
+    // 🎨 (2026-09-26): ใช้ adminAlert แทน alert()
+    if (window.adminAlert) await window.adminAlert("ลบออเดอร์ไม่สำเร็จ: " + err.message, { title: "เกิดข้อผิดพลาด" });
+    else alert("ลบออเดอร์ไม่สำเร็จ: " + err.message);
   }
 }
 
