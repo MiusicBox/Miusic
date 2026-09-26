@@ -30,7 +30,7 @@ import {
   fetchCustomerOrdersOnce
 // 🔧 (2026-09-17 v2): เพิ่ม ?v=20260917-polling-fix บังคับ browser โหลด db-client.js ใหม่ (กัน cache เก่า)
 } from "./db-client.js?v=20260917-polling-fix";
-import { initCart } from "./app-cart.js?v=20260926-payment-state-v4";
+import { initCart } from "./app-cart.js?v=20260926-payment-state-v5";
 // ===== ลดราคา + โปรโมชั่น + ออเดอร์ของฉัน (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, applyDiscountToPrice, findActiveDiscountFor,
@@ -1893,7 +1893,11 @@ async function handleCustomerDeleteOrder(order, onDeleted) {
     showToast("ไม่พบข้อมูลออเดอร์นี้ กรุณาลองใหม่", "error");
     return;
   }
-  const confirmed = window.confirm(`ต้องการลบ Order ${order.receipt_number || ""} ใช่หรือไม่? เมื่อลบแล้วจะไม่สามารถกู้คืนได้`);
+  // 🎨 (2026-09-26): ใช้ customConfirm แทน window.confirm() — สไตล์เดียวกับเว็บ
+  const confirmed = await window.customConfirm(
+    `ต้องการลบ Order ${order.receipt_number || ""} ใช่หรือไม่?\n\nเมื่อลบแล้วจะไม่สามารถกู้คืนได้`,
+    { title: "ยืนยันการลบออเดอร์", okText: "ลบ", danger: true }
+  );
   if (!confirmed) return;
   try {
     // 🔒 Security (2026-09-11): ส่ง customer_name + whatsapp ไปด้วยใน body ของ DELETE
@@ -2006,9 +2010,13 @@ function renderTrackOrderResult(order) {
 
   const deleteBtn = document.getElementById("trackOrderDeleteBtn");
   if (deleteBtn) {
-    deleteBtn.onclick = () => {
+    deleteBtn.onclick = async () => {
       // 🔧 (2026-09-22 fix v3): อัปเดต UI ทุกส่วนทันที — list + badge + banner
-      const confirmed = window.confirm(`ต้องการลบ Order ${order.receipt_number || ""} ใช่หรือไม่? เมื่อลบแล้วจะไม่สามารถกู้คืนได้`);
+      // 🎨 (2026-09-26): ใช้ customConfirm แทน window.confirm()
+      const confirmed = await window.customConfirm(
+        `ต้องการลบ Order ${order.receipt_number || ""} ใช่หรือไม่?\n\nเมื่อลบแล้วจะไม่สามารถกู้คืนได้`,
+        { title: "ยืนยันการลบออเดอร์", okText: "ลบ", danger: true }
+      );
       if (!confirmed) return;
       // 1. ลบจากหน้าจอทันที
       resultEl.hidden = true;
@@ -2346,9 +2354,13 @@ function openTrackOrderAllDetail(order) {
 
   const deleteBtn = document.getElementById("trackOrderAllDeleteBtn");
   if (deleteBtn) {
-    deleteBtn.onclick = () => {
+    deleteBtn.onclick = async () => {
       // 🔧 (2026-09-22 fix v3): อัปเดต UI ทุกส่วนทันที — list + badge + banner
-      const confirmed = window.confirm(`ต้องการลบ Order ${order.receipt_number || ""} ใช่หรือไม่? เมื่อลบแล้วจะไม่สามารถกู้คืนได้`);
+      // 🎨 (2026-09-26): ใช้ customConfirm แทน window.confirm()
+      const confirmed = await window.customConfirm(
+        `ต้องการลบ Order ${order.receipt_number || ""} ใช่หรือไม่?\n\nเมื่อลบแล้วจะไม่สามารถกู้คืนได้`,
+        { title: "ยืนยันการลบออเดอร์", okText: "ลบ", danger: true }
+      );
       if (!confirmed) return;
       // 1. ลบจาก local array ทันที
       trackOrderAllOrders = trackOrderAllOrders.filter(o => o._docId !== order._docId);
