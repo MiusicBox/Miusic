@@ -1645,6 +1645,87 @@ button:active {
     inset 0 1px 0 rgba(255,255,255,.15);
 }
 
+/* ============================================================
+   🎨 (2026-09-26) QR Code Preview — สไตล์สำหรับหน้าตั้งค่าการชำระเงิน
+   ------------------------------------------------------------
+   ใช้ !important สำหรับบางค่าเพื่อกัน inline style อื่น บังรูป preview
+   ============================================================ */
+#qrPreviewWrap {
+  /* 🛡️ (2026-09-26 fix iOS): ใช้ !important เพื่อกัน inline style ใน HTML ถูก override */
+  display: block !important;
+  padding: 14px !important;
+  background: linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.03)) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px !important;
+  text-align: center;
+  margin-bottom: 12px;
+  /* animation เข้าแบบสวย */
+  animation: qrPreviewFadeIn .25s ease;
+}
+@keyframes qrPreviewFadeIn {
+  from { opacity: 0; transform: scale(.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+#qrPreviewImg {
+  /* ใช้ !important กัน inline style อื่น override */
+  max-width: 200px !important;
+  width: auto !important;
+  max-height: 200px !important;
+  height: auto !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  padding: 8px !important;
+  /* กันรูปถูกบังด้วย aspect-ratio bug บน iOS */
+  display: inline-block !important;
+  object-fit: contain !important;
+  /* เงาเล็ก ๆ ให้ดูมีมิติ */
+  box-shadow: 0 4px 12px rgba(0,0,0,.2);
+  /* 🛡️ (2026-09-26 fix iOS): บางครั้ง iOS Safari ต้อง min-height เพื่อแสดงรูป */
+  min-height: 80px;
+}
+/* ปุ่มเปลี่ยน/ลบรูปใน preview */
+#qrChangeBtn, #qrDeleteBtn {
+  transition: all .15s ease;
+}
+#qrChangeBtn:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+#qrDeleteBtn:hover {
+  background: rgba(239, 68, 68, .15) !important;
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+/* file picker label — ให้ดูสวยและชัดเจน */
+#qrFilePickerLabel {
+  display: block !important;
+  padding: 32px 16px !important;
+  border: 2px dashed var(--border) !important;
+  border-radius: 12px !important;
+  text-align: center;
+  cursor: pointer;
+  transition: all .25s ease;
+  background: rgba(255, 255, 255, 0.02) !important;
+}
+#qrFilePickerLabel:hover {
+  border-color: var(--accent) !important;
+  background: rgba(139, 92, 246, 0.06) !important;
+  transform: translateY(-1px);
+}
+/* progress bar อัปโหลด */
+#qrUploadProgress {
+  display: none;
+  margin-top: 8px;
+  padding: 10px 12px !important;
+  background: linear-gradient(135deg, rgba(139,92,246,.12), rgba(236,72,153,.08)) !important;
+  border: 1px solid var(--accent) !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  color: var(--accent) !important;
+  text-align: center;
+  animation: qrPreviewFadeIn .25s ease;
+}
+
 .modal-header {
   display: flex;
   align-items: center;
