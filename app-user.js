@@ -30,7 +30,7 @@ import {
   fetchCustomerOrdersOnce
 // 🔧 (2026-09-17 v2): เพิ่ม ?v=20260917-polling-fix บังคับ browser โหลด db-client.js ใหม่ (กัน cache เก่า)
 } from "./db-client.js?v=20260917-polling-fix";
-import { initCart } from "./app-cart.js?v=20260926-payment-state-v1";
+import { initCart } from "./app-cart.js?v=20260926-payment-state-v2";
 // ===== ลดราคา + โปรโมชั่น + ออเดอร์ของฉัน (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, applyDiscountToPrice, findActiveDiscountFor,
@@ -1931,11 +1931,12 @@ function renderTrackOrderResult(order) {
   `).join("");
 
   // 🛡️ (added 2026-09-26): banner สถานะการชำระเงิน — แสดงเฉพาะเมื่อมี message หรือ warning
-  //   - state 'paid' → แสดง "ชำระเงินแล้ว"
-  //   - state 'pending_review' → แสดง "ส่งหลักฐานแล้ว รอตรวจสอบ" + "⚠️ ไม่ต้องชำระซ้ำ"
-  //   - state 'rejected' → แสดง "สลิปถูกปฏิเสธ กรุณาส่งใหม่" + เหตุผล (ถ้ามี)
+  //   - state 'paid' → แสดง "ชำระเงินแล้ว" (เขียว)
+  //   - state 'verified_awaiting_zip' → แสดง "ยืนยันการชำระเงินแล้ว รอเตรียมไฟล์ส่งให้" (เขียว)
+  //   - state 'pending_review' → แสดง "ส่งหลักฐานแล้ว รอตรวจสอบ" + "⚠️ ไม่ต้องชำระซ้ำ" (เหลือง)
+  //   - state 'rejected' → แสดง "สลิปถูกปฏิเสธ กรุณาส่งใหม่" + เหตุผล (ถ้ามี) (แดง)
   //   - state 'unpaid' → ไม่แสดง banner (ใช้ข้อความเดิม "รอแอดมินตรวจสอบ")
-  //   - state 'cancelled' → แสดง "ออเดอร์ถูกยกเลิก"
+  //   - state 'cancelled' → แสดง "ออเดอร์ถูกยกเลิก" (แดง)
   const paymentBanner = (paymentState.message || paymentState.warning)
     ? `<div style="margin-top:10px;padding:12px;border-radius:8px;border:1px solid ${paymentState.color};background:${paymentState.bg};color:${paymentState.color};">
         <div style="font-weight:700;font-size:14px;">${escapeHtml(paymentState.label)}</div>
@@ -1966,7 +1967,7 @@ function renderTrackOrderResult(order) {
           ? `<div style="margin-top:10px;font-size:12px;color:var(--text-dim);">⏳ รอแอดมินตรวจสอบการโอนเงิน — หลังยืนยันแล้วไฟล์จะถูกเตรียมให้</div>`
           : ""}
     <div class="track-order-actions">
-      ${/* 🛡️ (added 2026-09-26): ซ่อนปุ่ม "ชำระเงิน" เมื่อ state เป็น paid หรือ pending_review */ ""}
+      ${/* 🛡️ (added 2026-09-26): ซ่อนปุ่ม "ชำระเงิน" เมื่อ state เป็น paid / pending_review / verified_awaiting_zip */ ""}
       ${/*   ปุ่มยังแสดงเมื่อ state เป็น unpaid / rejected / cancelled (ลูกค้ายังชำระ/ส่งสลิปใหม่ได้) */ ""}
       ${paymentState.showPayButton ? `<button class="btn" type="button" id="trackOrderPayBtn" style="background:var(--accent);color:#fff;">💳 ชำระเงิน</button>` : ""}
       <button class="btn" type="button" id="trackOrderWhatsappBtn">ติดต่อแอดมินผ่าน WhatsApp</button>
@@ -1988,6 +1989,7 @@ function renderTrackOrderResult(order) {
   //   ใช้ฟังก์ชัน showReceipt ที่ export จาก initCart — ไม่ duplicate logic
   //   แสดงเฉพาะตอน status='pending_verify' หรือ 'cancelled' (เหมือนหน้าออเดอร์ทั้งหมด)
   // 🛡️ (added 2026-09-26): ปุ่มนี้จะถูกซ่อนจากด้านบนถ้า paymentState.showPayButton=false
+  //   (paid / pending_review / verified_awaiting_zip)
   //   แต่ถ้าแสดงอยู่ → onclick ยังเปิด receipt modal ซึ่งจะเช็คสถานะซ้ำใน showReceipt/openPaymentModal
   const payBtn = document.getElementById("trackOrderPayBtn");
   if (payBtn) {
@@ -2220,13 +2222,16 @@ function renderTrackOrderAllList(orders) {
     // 🛡️ (added 2026-09-26 prevent double payment): เพิ่ม payment badge ย่อยบน card
     //   ทำให้ลูกค้าเห็นสถานะการชำระเงินทันทีใน list โดยไม่ต้องคลิกเข้าแต่ละออเดอร์
     //   - paid → "✅ ชำระแล้ว" (เขียว)
-    //   - pending_review → "📸 ส่งสลิปแล้ว" (เหลือง)
+    //   - verified_awaiting_zip → "✅ ยืนยันแล้ว" (เขียว) — แอดมินยืนยันสลิปแล้ว รอเตรียมไฟล์
+    //   - pending_review → "📸 ส่งสลิปแล้ว" (เหลือง) — รอแอดมินตรวจสอบ
     //   - rejected → "⚠️ สลิปถูกปฏิเสธ" (แดง)
     //   - unpaid/cancelled → ไม่แสดง badge เพิ่ม (ใช้ status badge หลักอย่างเดียว)
     const pState = getOrderPaymentState(order);
     let paymentBadgeHtml = "";
     if (pState.state === "paid") {
       paymentBadgeHtml = `<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(41,204,113,.15);color:var(--success);font-weight:600;">✅ ชำระแล้ว</span>`;
+    } else if (pState.state === "verified_awaiting_zip") {
+      paymentBadgeHtml = `<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(41,204,113,.15);color:var(--success);font-weight:600;">✅ ยืนยันแล้ว</span>`;
     } else if (pState.state === "pending_review") {
       paymentBadgeHtml = `<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(245,180,0,.15);color:#F5B400;font-weight:600;">📸 ส่งสลิปแล้ว</span>`;
     } else if (pState.state === "rejected") {
@@ -2294,7 +2299,7 @@ function openTrackOrderAllDetail(order) {
     ${/* 🛡️ (added 2026-09-26): banner สถานะการชำระเงิน */ ""}
     ${paymentBanner}
     <div class="track-order-actions">
-      ${/* 🛡️ (added 2026-09-26): ซ่อนปุ่ม "ชำระเงิน" เมื่อ state เป็น paid/pending_review */ ""}
+      ${/* 🛡️ (added 2026-09-26): ซ่อนปุ่ม "ชำระเงิน" เมื่อ state เป็น paid/pending_review/verified_awaiting_zip */ ""}
       ${paymentState.showPayButton ? `<button class="btn" type="button" id="trackOrderAllPayBtn" style="background:var(--accent);color:#fff;">💳 ชำระเงิน</button>` : ""}
       <button class="btn" type="button" id="trackOrderAllWhatsappBtn">ติดต่อแอดมินผ่าน WhatsApp</button>
       ${canCustomerDeleteOrder(order) ? `<button class="btn danger" type="button" id="trackOrderAllDeleteBtn">ลบออเดอร์นี้</button>` : ""}
@@ -2316,6 +2321,7 @@ function openTrackOrderAllDetail(order) {
   // 📸 (added STEP 2): ปุ่ม "💳 ชำระเงิน" — เปิด receipt modal (ที่มีปุ่ม payment ใหม่อยู่แล้ว)
   //   ใช้ฟังก์ชัน showReceipt ที่ export จาก initCart — ไม่ต้อง duplicate logic
   // 🛡️ (added 2026-09-26): ปุ่มนี้จะถูกซ่อนจากด้านบนถ้า paymentState.showPayButton=false
+  //   (paid / pending_review / verified_awaiting_zip)
   //   แต่ถ้าแสดงอยู่ → onclick ยังเปิด receipt modal ซึ่งจะเช็คสถานะซ้ำใน showReceipt/openPaymentModal
   const payBtn = document.getElementById("trackOrderAllPayBtn");
   if (payBtn) {
