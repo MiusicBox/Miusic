@@ -2,7 +2,7 @@
 // ===================================================
 import { db } from "./firebase-init.js?v=20260905-fix1";
 import {
-  collection, doc, query, where, getDoc, getDocs, setDoc
+  collection, doc, query, where, getDoc, getDocs, setDoc, queryCustomerOrder
 } from "./db-client.js";
 //
 // 🔧 แก้บั๊ก (2026-09-12): "ยังไม่ได้ login" ตอนกดสั่งซื้อ
@@ -1008,6 +1008,11 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       ? "-"
       : date.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
 
+    // 🛡️ (added 2026-09-26 prevent double payment): คำนวณสถานะการชำระเงิน เพื่อ
+    //   ซ่อน/แสดงปุ่ม "ชำระเงิน" + แสดง banner สถานะเด่นชัดบนใบเสร็จ
+    //   ใช้ helper getOrderPaymentState() ด้านล่าง (ฟังก์ชัน declaration → hoisted จึงอ้างอิงได้)
+    let paymentState = getOrderPaymentState(order);
+
     const content = document.getElementById("receiptContent");
     if (!content) return;
     content.innerHTML = `
@@ -1018,6 +1023,15 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
           <small>เลขที่ ${escapeHtml(receiptNumber)}</small>
           <small>${escapeHtml(dateText)}</small>
         </div>
+        ${/* 🛡️ (added 2026-09-26): banner สถานะการชำระเงิน แสดงใต้ header ก่อนรายการสินค้า */ ""}
+        ${(paymentState.message || paymentState.warning)
+          ? `<div style="margin:10px 0;padding:12px;border-radius:8px;border:1px solid ${paymentState.color};background:${paymentState.bg};color:${paymentState.color};">
+              <div style="font-weight:700;font-size:14px;">${escapeHtml(paymentState.label)}</div>
+              ${paymentState.message ? `<div style="font-size:13px;margin-top:6px;line-height:1.5;">${escapeHtml(paymentState.message)}</div>` : ""}
+              ${paymentState.warning ? `<div style="font-size:13px;margin-top:6px;line-height:1.5;font-weight:600;">${escapeHtml(paymentState.warning)}</div>` : ""}
+              ${paymentState.customHtml || ""}
+            </div>`
+          : ""}
         <div class="receipt-customer">
           <div><span>ลูกค้า</span><strong>${escapeHtml(order.customer_name)}</strong></div>
           <div><span>WhatsApp</span><strong>${escapeHtml(order.whatsapp)}</strong></div>
@@ -1049,10 +1063,52 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     if (downloadBtn) downloadBtn.onclick = () => downloadReceiptAsImage(receiptNumber);
 
     // 📸 (added STEP 2): ปุ่ม "💳 ชำระเงิน" — เปิด payment modal แสดง QR/บัญชี
+    // 🛡️ (added 2026-09-26): ซ่อนปุ่มเมื่อ order อยู่ในสถานะที่ห้ามชำระซ้ำ (paid / pending_review)
+    //   ปุ่มยังแสดงเมื่อ state เป็น unpaid / rejected / cancelled (ลูกค้ายังชำระใหม่/ส่งสลิปใหม่ได้)
     const payBtn = document.getElementById("receiptPayBtn");
-    if (payBtn) payBtn.onclick = () => openPaymentModal(order, receiptNumber);
+    if (payBtn) {
+      if (paymentState.showPayButton) {
+        payBtn.hidden = false;
+        payBtn.style.display = "";
+        payBtn.onclick = () => openPaymentModal(order, receiptNumber);
+      } else {
+        payBtn.hidden = true;
+        payBtn.style.display = "none";
+        payBtn.onclick = null;
+      }
+    }
 
     renderPendingOrderBanner();
+
+    // 🛡️ (added 2026-09-26): silent refetch — ตรวจสอบสถานะล่าสุดจาก server หลังแสดงใบเสร็จ
+    //   เพื่อจัดการกรณี order object ในเครื่องเก่า (เช่น เปิดจาก getLastOrderRecord หลังผ่านไปหลายชม.)
+    //   ถ้าพบว่าสถานะการชำระเงินเปลี่ยน → re-render receipt + แสดง toast แจ้งเตือนลูกค้า
+    //   ไม่บล็อค UI — ใบเสร็จแสดงทันทีด้วยข้อมูลที่มี แล้วอัปเดตภายหลังถ้าจำเป็น
+    //   ผลกระทบระบบเดิม: 0% — เพิ่ม background fetch ไม่แตะ flow เดิม
+    (async () => {
+      try {
+        const result = await queryCustomerOrder({
+          receiptNumber: String(receiptNumber || order?.receipt_number || ""),
+          customerName: String(order?.customer_name || ""),
+          whatsapp: String(order?.whatsapp || ""),
+        });
+        if (!result || !result.exists || !result.data) return;
+        const freshOrder = { ...result.data, _docId: result.id };
+        const freshState = getOrderPaymentState(freshOrder);
+        // ถ้าสถานะเปลี่ยน (เช่น จาก unpaid → pending_review หรือ paid) → re-render
+        if (freshState.state !== paymentState.state) {
+          // เช็คว่า modal ยังเปิดอยู่ (กัน re-render หลังปิด)
+          const currentBackdrop = document.getElementById("receiptBackdrop");
+          if (!currentBackdrop || !currentBackdrop.classList.contains("show")) return;
+          // re-render ด้วยข้อมูลล่าสุด
+          showToast("สถานะการชำระเงินได้รับการอัปเดต", "info");
+          showReceipt(freshOrder, receiptNumber, adminWhatsappNumber, alreadyContacted);
+        }
+      } catch (err) {
+        // silent fail — ถ้า fetch ล้มเหลว (offline ฯลฯ) ไม่บล็อค UX
+        console.warn("showReceipt: silent refetch failed:", err?.message || err);
+      }
+    })();
   }
 
   // ================= 📸 PAYMENT FLOW (added STEP 2-6 — additive, no existing function touched) =================
@@ -1069,6 +1125,105 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   //   WhatsApp: ใช้ buildWhatsAppLink() ของเดิม — เป็น wa.me deep link (notification only)
   //            ระบบหลัก: R2 + D1 — ถ้า WhatsApp เปิดไม่ได้ slip ยังอยู่ในระบบ
 
+  // 🛡️ (added 2026-09-26 prevent double payment): helper function
+  //   getOrderPaymentState(order) — คำนวณ "สถานะการชำระเงิน" ของ order จาก field ที่มีอยู่แล้ว
+  //   ใช้สำหรับซ่อน/แสดง ปุ่ม "ชำระเงิน" และ QR บนหน้าลูกค้า เพื่อป้องกันการชำระซ้ำ
+  //
+  //   คืนค่า: { state, label, color, bg, message, warning, showPayButton, showQR, allowUploadSlip }
+  //     state: 'paid' | 'pending_review' | 'rejected' | 'unpaid' | 'cancelled'
+  //     showPayButton: true เมื่อลูกค้ายังสามารถกดชำระเงินได้ (state unpaid / rejected / cancelled)
+  //     showQR: true เมื่อควรแสดง QR บัญชี (state unpaid / rejected)
+  //     allowUploadSlip: true เมื่อลูกค้ายังอัปโหลดสลิปใหม่ได้ (state unpaid / rejected / cancelled)
+  //
+  //   หลักเกณฑ์ (ตรวจสอบกับระบบเดิมแล้ว ไม่ขัดกับ behavior ที่มี):
+  //     - status 'processing' / 'completed' → 'paid' (เนื่องจากแอดมินกดยืนยันโอนแล้ว)
+  //     - status 'pending_verify' + payment_proof_status='pending' → 'pending_review'
+  //     - status 'pending_verify' + payment_proof_status='verified' → 'pending_review' (รอแอดมินเปลี่ยน status เป็น processing)
+  //     - status 'pending_verify' + payment_proof_status='rejected' → 'rejected' (ลูกค้าส่งสลิปใหม่ได้)
+  //     - status 'pending_verify' + ไม่มี payment_proof_id → 'unpaid'
+  //     - status 'cancelled' → 'cancelled' (อัปโหลดสลิปใหม่ได้ตามระบบเดิม — backend ยังอนุญาต)
+  //
+  //   ผลกระทบระบบเดิม: 0% — เป็น helper ใหม่ ไม่แตะฟังก์ชันเดิม
+  function getOrderPaymentState(order) {
+    if (!order) {
+      return { state: "unpaid", label: "🟡 ยังไม่ได้ชำระเงิน", color: "#F5B400", bg: "rgba(245,180,0,.15)",
+               message: "", warning: "", showPayButton: true, showQR: true, allowUploadSlip: true };
+    }
+    const status = String(order.status || "");
+    const ppStatus = String(order.payment_proof_status || "");
+    // 1) ชำระเงินแล้ว (แอดมินยืนยันโอนแล้ว เปลี่ยน status เป็น processing/completed)
+    if (status === "processing" || status === "completed") {
+      return {
+        state: "paid",
+        label: "🟢 ชำระเงินแล้ว",
+        color: "#28c76f",
+        bg: "rgba(41,204,113,.15)",
+        message: "ออเดอร์นี้ชำระเงินเรียบร้อยแล้ว",
+        warning: "",
+        showPayButton: false,
+        showQR: false,
+        allowUploadSlip: false,
+      };
+    }
+    // 2) ส่งหลักฐานแล้ว รอตรวจสอบ (ยังไม่ถึงเวลาเปลี่ยน status เป็น processing)
+    if (status === "pending_verify" && (ppStatus === "pending" || ppStatus === "verified")) {
+      return {
+        state: "pending_review",
+        label: "🟡 ส่งหลักฐานการชำระเงินแล้ว",
+        color: "#F5B400",
+        bg: "rgba(245,180,0,.15)",
+        message: "ระบบได้รับหลักฐานการชำระเงินของคุณแล้ว กรุณารอการตรวจสอบ",
+        warning: "⚠️ ไม่ต้องชำระเงินซ้ำสำหรับออเดอร์นี้",
+        showPayButton: false,
+        showQR: false,
+        allowUploadSlip: false,
+      };
+    }
+    // 3) สลิปถูกปฏิเสธ → ลูกค้าส่งสลิปใหม่ได้
+    if (status === "pending_verify" && ppStatus === "rejected") {
+      const rejectReason = order.payment_proof_reject_reason ? String(order.payment_proof_reject_reason) : "";
+      const reasonLine = rejectReason ? `<div style="font-size:12px;color:var(--text-dim);margin-top:6px;">เหตุผลที่ปฏิเสธ: ${escapeHtml(rejectReason)}</div>` : "";
+      return {
+        state: "rejected",
+        label: "🔴 สลิปถูกปฏิเสธ กรุณาส่งใหม่",
+        color: "#ef4444",
+        bg: "rgba(239,68,68,.15)",
+        message: "หลักฐานการชำระเงินของคุณถูกปฏิเสธ กรุณาตรวจสอบและอัปโหลดสลิปใหม่",
+        warning: "⚠️ กรุณากดปุ่ม \"ชำระเงิน\" และอัปโหลดสลิปใหม่สำหรับออเดอร์นี้",
+        customHtml: reasonLine,
+        showPayButton: true,
+        showQR: true,
+        allowUploadSlip: true,
+      };
+    }
+    // 4) ออเดอร์ยกเลิก — backend ยังอนุญาตให้อัปสลิปใหม่ได้ (เหมือนเดิม) แต่แสดงสถานะให้ชัดเจน
+    if (status === "cancelled") {
+      return {
+        state: "cancelled",
+        label: "🔴 ออเดอร์ถูกยกเลิก",
+        color: "#ff6b6b",
+        bg: "rgba(255,107,107,.15)",
+        message: "ออเดอร์นี้ถูกยกเลิก หากต้องการชำระเงิน กรุณากดปุ่ม \"ชำระเงิน\" เพื่อแจ้งยอดโอน",
+        warning: "",
+        showPayButton: true,
+        showQR: true,
+        allowUploadSlip: true,
+      };
+    }
+    // 5) ยังไม่ได้ชำระเงิน (pending_verify ไม่มี payment_proof_id หรือไม่มีสถานะสลิป)
+    return {
+      state: "unpaid",
+      label: "🟡 ยังไม่ได้ชำระเงิน",
+      color: "#F5B400",
+      bg: "rgba(245,180,0,.15)",
+      message: "",
+      warning: "",
+      showPayButton: true,
+      showQR: true,
+      allowUploadSlip: true,
+    };
+  }
+
   let __currentPaymentOrder = null; // snapshot ของ order ที่กำลังชำระ — ใช้ตอน upload slip
 
   async function openPaymentModal(order, receiptNumber) {
@@ -1076,9 +1231,38 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     const backdrop = document.getElementById("paymentBackdrop");
     const content = document.getElementById("paymentContent");
     if (!backdrop || !content) return;
-    content.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:30px 0;">กำลังโหลด...</div>`;
+    content.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:30px 0;">กำลังตรวจสอบสถานะการชำระเงิน...</div>`;
     backdrop.classList.add("show");
     backdrop.setAttribute("aria-hidden", "false");
+
+    // 🛡️ (added 2026-09-26 prevent double payment): refetch order จาก server ก่อนแสดง QR
+    //   ต้องตรวจสอบสถานะการชำระเงินล่าสุดเสมอ ก่อนแสดง QR/ปุ่มอัปโหลดสลิป
+    //   เพื่อป้องกันกรณี:
+    //     - ลูกค้าเคยอัปสลิปแล้วในเซสชั่นก่อน → กลับมากดปุ่ม "ชำระเงิน" ซ้ำ
+    //     - แอดมิน verify ไปแล้ว → ลูกค้าเปิดเข้ามาใหม่ แต่ order object ในเครื่องยังเก่า
+    //     - ลูกค้าเปลี่ยนอุปกรณ์ → localStorage ไม่มีข้อมูลสถานะล่าสุด
+    //   ใช้ queryCustomerOrder (endpoint public + ownership verify) — ตรวบ customer_name + whatsapp + receipt_number
+    let freshOrder = order;
+    try {
+      const result = await queryCustomerOrder({
+        receiptNumber: String(receiptNumber || order?.receipt_number || ""),
+        customerName: String(order?.customer_name || ""),
+        whatsapp: String(order?.whatsapp || ""),
+      });
+      if (result && result.exists && result.data) {
+        // รวม _docId กลับเข้าไปเพื่อให้ upload slip flow ทำงานได้ (ต้องการ orderId)
+        freshOrder = { ...result.data, _docId: result.id };
+        // อัปเดต __currentPaymentOrder ด้วย order ล่าสุด → ใช้ตอน upload slip
+        __currentPaymentOrder = { order: freshOrder, receiptNumber };
+      }
+      // ถ้าไม่พบ order (server ไม่มี / ข้อมูลไม่ตรง) → ใช้ order เดิมที่ส่งมา (fallback)
+    } catch (err) {
+      // ถ้า fetch ล้มเหลว (offline / server ล่ม) → ใช้ order เดิม + แสดงตามสถานะที่มี (best effort)
+      console.warn("openPaymentModal: queryCustomerOrder failed, using stale order:", err?.message || err);
+    }
+
+    // คำนวณสถานะการชำระเงินจากข้อมูลล่าสุด
+    const paymentState = getOrderPaymentState(freshOrder);
 
     // fetch settings
     let settings = {};
@@ -1090,9 +1274,47 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       return;
     }
 
-    const amount = order?.final_total ?? order?.total ?? 0;
+    const amount = freshOrder?.final_total ?? freshOrder?.total ?? 0;
     const hasBankInfo = settings.bank_name || settings.bank_account || settings.bank_account_name;
     const hasQr = !!settings.qr_code_url;
+
+    // 🛡️ (added 2026-09-26): กรณี 'paid' หรือ 'pending_review' → แสดงหน้าสถานะก่อนเช็คว่ามีบัญชีไหม
+    //   ป้องกันลูกค้าชำระเงินซ้ำในออเดอร์ที่ยืนยันแล้ว หรือที่ส่งสลิปแล้วรอตรวจสอบ
+    //   ต้องเช็คก่อนเช็ค bank info เพราะถ้า order "ชำระแล้ว" ไม่จำเป็นต้องแสดง QR อีก
+    //   แม้ว่าร้านจะยังไม่ได้ตั้งค่าบัญชี (เช่น ตั้งไว้ตอนชำระ แล้วลบทีหลัง)
+    if (paymentState.state === "paid" || paymentState.state === "pending_review") {
+      content.innerHTML = `
+        <div style="padding:20px 8px;text-align:center;">
+          <div style="font-size:48px;margin-bottom:12px;">${paymentState.state === "paid" ? "✅" : "⏳"}</div>
+          <div style="padding:14px;border-radius:10px;border:1px solid ${paymentState.color};background:${paymentState.bg};">
+            <div style="font-weight:800;color:${paymentState.color};font-size:18px;margin-bottom:8px;">${escapeHtml(paymentState.label)}</div>
+            ${paymentState.message ? `<div style="font-size:14px;color:var(--text);line-height:1.6;margin-bottom:10px;">${escapeHtml(paymentState.message)}</div>` : ""}
+            ${paymentState.warning ? `<div style="font-size:14px;color:var(--text);line-height:1.6;font-weight:700;background:rgba(255,200,0,.15);padding:10px;border-radius:6px;margin-top:8px;">${escapeHtml(paymentState.warning)}</div>` : ""}
+          </div>
+          <div style="margin-top:16px;text-align:left;font-size:13px;color:var(--text-dim);">
+            <div style="display:flex;justify-content:space-between;padding:6px 0;">
+              <span>เลขที่</span><strong>${escapeHtml(receiptNumber)}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;">
+              <span>ยอดชำระ</span><strong style="color:var(--success);">${formatPrice(amount)}</strong>
+            </div>
+            ${freshOrder?.payment_proof_uploaded_at
+              ? `<div style="display:flex;justify-content:space-between;padding:6px 0;">
+                  <span>ส่งหลักฐานเมื่อ</span><strong>${escapeHtml(new Date(freshOrder.payment_proof_uploaded_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }))}</strong>
+                </div>`
+              : ""}
+          </div>
+          <button class="btn secondary" id="paymentCloseBtn_paid" type="button" style="width:100%;margin-top:18px;">ปิด</button>
+        </div>
+      `;
+      const closeBtn = document.getElementById("paymentCloseBtn_paid");
+      if (closeBtn) closeBtn.onclick = closePaymentModal;
+      return;
+    }
+
+    // 🛡️ (added 2026-09-26): กรณี order ถูกปฏิเสธสลิป → แสดง warning + ปุ่มติดต่อแอดมิน (ก่อนเช็คว่ามีบัญชีไหม)
+    //   ทำเครื่องหมายว่าเป็นการส่งสลิปใหม่ (ไม่ใช่การชำระซ้ำ) และให้เหตุผลที่ปฏิเสธ
+    //   ถ้าร้านยังไม่ได้ตั้งค่าบัญชี → ยังแสดงหน้า "ติดต่อแอดมิน" ด้านล่าง
 
     if (!hasBankInfo && !hasQr) {
       content.innerHTML = `
@@ -1113,8 +1335,20 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       return;
     }
 
+    // 🛡️ (added 2026-09-26): กรณี 'rejected' → แสดง warning banner ด้านบน ก่อนแสดง QR/ปุ่มอัปโหลด
+    //   ใช้ flow เดิม (QR + อัปโหลดสลิป) เพียงแต่เพิ่ม banner แจ้งเตือนให้ลูกค้ารับทราบว่าสลิปก่อนหน้าถูกปฏิเสธ
+    const rejectedBanner = paymentState.state === "rejected"
+      ? `<div style="margin-bottom:14px;padding:12px;border-radius:8px;border:1px solid ${paymentState.color};background:${paymentState.bg};color:${paymentState.color};">
+          <div style="font-weight:700;font-size:14px;">${escapeHtml(paymentState.label)}</div>
+          ${paymentState.message ? `<div style="font-size:13px;margin-top:6px;line-height:1.5;">${escapeHtml(paymentState.message)}</div>` : ""}
+          ${paymentState.warning ? `<div style="font-size:13px;margin-top:6px;line-height:1.5;font-weight:600;">${escapeHtml(paymentState.warning)}</div>` : ""}
+          ${paymentState.customHtml || ""}
+        </div>`
+      : "";
+
     content.innerHTML = `
       <div style="padding:14px 8px 6px;">
+        ${rejectedBanner}
         <div style="text-align:center;margin-bottom:14px;">
           <div style="color:var(--text-dim);font-size:13px;">ยอดที่ต้องชำระ</div>
           <div style="font-size:28px;font-weight:800;color:var(--success);">${formatPrice(amount)}</div>
@@ -1166,11 +1400,13 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     };
 
     // bind upload slip button → open upload slip modal
+    // 🛡️ (added 2026-09-26): ใช้ freshOrder (ข้อมูลล่าสุดจาก server) ตอนเปิด upload slip
+    //   กันกรณี order object เดิมเก่าเกิน → _docId อาจไม่ตรงกับ order ปัจจุบัน
     const uploadSlipBtn = document.getElementById("paymentUploadSlipBtn");
     if (uploadSlipBtn) uploadSlipBtn.onclick = () => {
       const paymentBackdrop = document.getElementById("paymentBackdrop");
       if (paymentBackdrop) paymentBackdrop.classList.remove("show");
-      openUploadSlipModal(order, receiptNumber);
+      openUploadSlipModal(freshOrder, receiptNumber);
     };
 
     // bind close button
@@ -1700,6 +1936,10 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     checkoutCart,
     getLastOrderRecord,
     showReceipt,
-    updatePendingPaymentInfo
+    updatePendingPaymentInfo,
+    // 🛡️ (added 2026-09-26 prevent double payment): export helper สำหรับ app-user.js
+    //   เพื่อใช้ใน renderTrackOrderResult / openTrackOrderAllDetail / renderTrackOrderAllList
+    //   ทำให้ frontend ทุกส่วนใช้สถานะเดียวกัน (synced) — กัน inconsistency
+    getOrderPaymentState
   };
 }
