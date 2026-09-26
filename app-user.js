@@ -134,12 +134,16 @@ function buildWhatsAppLink(number, text) {
 }
 
 function debounce(fn, wait) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), wait); }; }
-const { loadCart, bindCartEvents, addToCart, getLastOrderRecord, showReceipt } = initCart({
+const { loadCart, bindCartEvents, addToCart, getLastOrderRecord, showReceipt, updatePendingPaymentInfo } = initCart({
   state: STATE,
   showToast,
   escapeHtml,
   formatPrice,
-  buildWhatsAppLink
+  buildWhatsAppLink,
+  // 🔧 (2026-09-26) เพิ่มใหม่: ปุ่ม "ไปชำระเงิน" บนแถบเตือน (app-cart.js) เรียก callback นี้
+  //   เพื่อเปิด modal "ติดตามออเดอร์" โหมด "ออเดอร์ทั้งหมดของฉัน" — ฟังก์ชันจริงอยู่ด้านล่างในไฟล์นี้
+  //   (function declaration ถูก hoisted จึงอ้างอิงได้แม้นิยามอยู่ถัดไปในไฟล์)
+  openTrackOrderAllPicker: () => openPendingPaymentPicker()
 });
 
 // 💙 (2026-09-20): สไตล์ C2 Vivid Cyan — แยกตัวอักษรชื่อร้านเป็น span.char
@@ -2154,6 +2158,27 @@ function switchTrackOrderMode(mode) {
   if (!isAll) stopTrackOrderAllListener();
 }
 
+// 🔧 (2026-09-26) เพิ่มใหม่: เปิด modal "ติดตามออเดอร์" ตรงไปที่โหมด "ออเดอร์ทั้งหมดของฉัน" ทันที
+//   เรียกจากปุ่ม "ไปชำระเงิน" บนแถบเตือน (pendingOrderBanner ใน app-cart.js ผ่าน callback openTrackOrderAllPicker)
+//   ใช้ชื่อ+เบอร์ที่จำไว้แล้ว (TRACK_ORDER_BADGE_INFO_KEY เดียวกับที่ badge ใช้) auto-fill + fetch ให้เลย
+//   ไม่ต้องให้ลูกค้าพิมพ์ซ้ำ — reuse loadTrackOrderInfoForBadge()/startTrackOrderAllListener() ที่มีอยู่แล้ว
+//   (ไม่สร้างระบบดึงข้อมูลใหม่)
+function openPendingPaymentPicker() {
+  const backdrop = document.getElementById("trackOrderBackdrop");
+  if (backdrop) backdrop.classList.add("show");
+  switchTrackOrderMode("all");
+  const info = loadTrackOrderInfoForBadge();
+  if (info && info.name && info.whatsapp) {
+    const nameInput = document.getElementById("trackOrderAllName");
+    const phoneInput = document.getElementById("trackOrderAllPhone");
+    if (nameInput) nameInput.value = info.name;
+    if (phoneInput) phoneInput.value = info.whatsapp;
+    startTrackOrderAllListener(info.name, info.whatsapp);
+  }
+  // ถ้าไม่มีข้อมูลจำไว้ (กรณีหายาก เพราะต้องมีข้อมูลนี้อยู่แล้วถึงจะคำนวณ banner ได้ตั้งแต่แรก)
+  // ก็แค่เปิดโหมด "ทั้งหมด" ให้เปล่าๆ ลูกค้ากรอกเองได้ตามปกติ
+}
+
 function renderTrackOrderAllList(orders) {
   const listEl = document.getElementById("trackOrderAllList");
   if (!listEl) return;
@@ -2517,6 +2542,8 @@ async function fetchTrackOrderBadgeOnce() {
   const info = loadTrackOrderInfoForBadge();
   if (!info || !info.name || !info.whatsapp) {
     updateTrackOrderBadge(0);
+    // 🔧 (2026-09-26) เพิ่มใหม่: ยังไม่มีข้อมูลลูกค้า → ไม่มีทางรู้ว่ามีออเดอร์ค้างชำระไหม → ซ่อนแถบเตือนไปด้วย
+    updatePendingPaymentInfo([]);
     return;
   }
   try {
@@ -2526,11 +2553,17 @@ async function fetchTrackOrderBadgeOnce() {
     });
     // นับเฉพาะออเดอร์ที่ active: pending_verify + processing
     let count = 0;
+    // 🔧 (2026-09-26) เพิ่มใหม่: เก็บ order data ทั้งชุดไว้ด้วย เพื่อส่งต่อให้แถบเตือน "ยังไม่ได้ชำระเงิน"
+    //   ใช้ผลลัพธ์ fetch ชุดเดียวกันนี้ — ไม่ยิง fetchCustomerOrdersOnce ซ้ำรอบสอง
+    const orders = [];
     snap.forEach((d) => {
-      const status = String(d.data()?.status || "");
+      const data = d.data() || {};
+      orders.push({ ...data, _docId: d.id });
+      const status = String(data.status || "");
       if (status === "pending_verify" || status === "processing") count += 1;
     });
     updateTrackOrderBadge(count);
+    updatePendingPaymentInfo(orders);
   } catch (err) {
     // error — ไม่ทำให้ badge พัง แค่ log
     console.warn("fetchTrackOrderBadgeOnce error:", err?.message || err);
