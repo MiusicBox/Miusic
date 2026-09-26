@@ -71,7 +71,7 @@
 <!-- 🔧 (2026-09-24 CLS fix): style.css กลับมาเป็น <link rel="stylesheet"> ปกติ (บล็อกการแสดงผลสั้น ๆ)
      สาเหตุ: เทคนิค media="print"+onload ทำให้หน้าเว็บวาดแบบ "ไม่มีสไตล์" ก่อน แล้วสไตล์มาทีหลัง → ทุกอย่างกระโดด
      (CLS 0.649 = ตัวที่ทำให้คะแนนตก 76) ไฟล์/เวอร์ชันเดิมทุกอย่าง แค่เอาการโหลดแบบหน่วงออก -->
-<link rel="stylesheet" href="style.css?v=20260-cls-fix">
+<link rel="stylesheet" href="style.css?v=20260926-qr-display-v2">
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): เพิ่ม .visually-hidden class สำหรับ h1 SEO -->
 <style>
@@ -1065,6 +1065,6 @@
   <!-- เปลี่ยนเลข v ทุกครั้งที่อัปโหลดไฟล์ใหม่ เพื่อไม่ให้มือถือใช้ไฟล์ JS จาก cache -->
   <!-- 🔧 v=20260917-p0: P0 แก้ Bug 1 (ลูกค้าตั้ง status เองไม่ได้) + Sec 1 (change-password ต้อง verify เดิม) -->
   <!-- 🔧 v=20260917-polling-fix: Phase 0 ยกเลิก polling ทุก 4 วิ + Phase 1 จุด 5 (admin view cache) + Phase 2 จุด 1 (state ฝั่ง client) -->
-  <script type="module" src="app-user.js?v=20260926-payment-state-v5"></script>
+  <script type="module" src="app-user.js?v=20260926-qr-display-v2"></script>
 </body>
 </html>
