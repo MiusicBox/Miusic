@@ -321,15 +321,20 @@
         <div class="field"><label>เลขบัญชี</label><input id="setBankAccount" placeholder="เลขบัญชีธนาคาร"></div>
 
         <!-- 🎨 (2026-09-26) QR Code — อัปโหลดรูปจาก iPhone/iPad/PC/Mac ได้โดยตรง
-             + คงช่อง URL ไว้สำหรับกรณีรูปอยู่บนเว็บอื่น (optional) -->
+             + คงช่อง URL ไว้สำหรับกรณีรูปอยู่บนเว็บอื่น (optional)
+             🎨 (2026-09-26 v2 fix): ขยายรูป QR ให้เต็มพื้นที่ + padding ด้านเท่ากัน + ดูง่าย -->
         <div class="field">
           <label>รูป QR Code</label>
-          <!-- preview รูป QR (ถ้ามี) -->
-          <div id="qrPreviewWrap" style="display:none;margin-bottom:10px;padding:10px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;text-align:center;">
-            <img id="qrPreviewImg" src="" alt="QR Code preview" style="max-width:180px;width:100%;height:auto;border-radius:6px;background:#fff;padding:4px;">
-            <div style="display:flex;gap:8px;justify-content:center;margin-top:8px;flex-wrap:wrap;">
-              <button class="btn secondary" id="qrChangeBtn" type="button" style="flex:0 0 auto;min-width:auto;padding:8px 14px;font-size:13px;">เปลี่ยนรูป</button>
-              <button class="btn secondary" id="qrDeleteBtn" type="button" style="flex:0 0 auto;min-width:auto;padding:8px 14px;font-size:13px;color:var(--danger);border-color:var(--danger);">🗑 ลบรูป</button>
+          <!-- preview รูป QR (ถ้ามี) — ใช้ class แทน inline style เพื่อให้ CSS จัดการได้ -->
+          <div id="qrPreviewWrap" class="qr-preview-wrap" style="display:none;">
+            <!-- กล่องรูป QR — padding ด้านเท่ากันทุกด้าน + พื้นขาว + ขยายเต็มพื้นที่ -->
+            <div class="qr-preview-img-box">
+              <img id="qrPreviewImg" src="" alt="QR Code preview" class="qr-preview-img">
+            </div>
+            <!-- ปุ่มเปลี่ยน/ลบรูป -->
+            <div class="qr-preview-actions">
+              <button class="btn secondary" id="qrChangeBtn" type="button">เปลี่ยนรูป</button>
+              <button class="btn secondary" id="qrDeleteBtn" type="button">🗑 ลบรูป</button>
             </div>
           </div>
           <!-- file picker (ใช้ได้บน iPhone/iPad/PC/Mac) — accept="image/*" เปิดกล้อง/คลังรูปได้ -->
@@ -1191,6 +1196,6 @@
 
   <div class="toast" id="toast"></div>
 
-  <script type="module" src="app-admin.js?v=20260926-qr-upload-v2"></script>
+  <script type="module" src="app-admin.js?v=20260926-qr-upload-v3"></script>
 </body>
 </html>
