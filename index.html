@@ -387,13 +387,17 @@
       0 0 0 1px rgba(0,0,0,.04),
       inset 0 1px 0 rgba(255,255,255,.8);
     position:relative;
+    overflow:hidden;
   }
-  #receiptBackdrop .receipt-paper::before {
-    content:""; position:absolute; left:0; right:0; top:0; height:4px;
+  /* 🛡️ (2026-09-26 fix): ใช้ <div class="receipt-accent-bar"> แทน ::before
+     เพราะ html2canvas ไม่ support pseudo-element → รูปที่ดาวน์โหลดจะไม่มีแถบสี */
+  #receiptBackdrop .receipt-accent-bar {
+    position:absolute; left:0; right:0; top:0; height:4px;
     background: linear-gradient(90deg, var(--accent), var(--accent-2));
     border-radius:16px 16px 0 0;
+    pointer-events:none;
   }
-  #receiptBackdrop .receipt-head { text-align:center; border-bottom:2px dashed #d4d4d4; padding-bottom:16px; margin-bottom:8px; }
+  #receiptBackdrop .receipt-head { text-align:center; border-bottom:2px dashed #d4d4d4; padding:8px 0 16px; margin-bottom:8px; }
   #receiptBackdrop .receipt-head h2 { margin:0 0 4px; font-size:21px; font-weight:800; letter-spacing:-0.02em; }
   #receiptBackdrop .receipt-head small { display:block; color:#666; margin-top:3px; font-size:12px; }
   #receiptBackdrop .receipt-customer { padding:14px 0; border-bottom:1px solid #e5e5e5; }
@@ -418,7 +422,8 @@
     position:fixed; left:12px; right:12px;
     bottom:calc(64px + var(--safe-bottom) + 12px);
     z-index:60; display:flex; align-items:center; gap:12px;
-    background: linear-gradient(135deg, rgba(245,180,0,.18), rgba(245,180,0,.10));
+    /* 🛡️ (2026-09-26 fix): solid fallback สำหรับมือถือเก่าที่ไม่รองรับ backdrop-filter */
+    background: linear-gradient(135deg, rgba(245,180,0,.95), rgba(245,180,0,.85));
     border:1px solid rgba(245,180,0,.55);
     backdrop-filter:blur(14px) saturate(140%);
     -webkit-backdrop-filter:blur(14px) saturate(140%);
@@ -429,6 +434,13 @@
       inset 0 1px 0 rgba(255,255,255,.06);
     animation:bannerSlideUp .35s cubic-bezier(.16,1,.3,1);
     transition: transform .25s ease, box-shadow .25s ease;
+  }
+  /* 🛡️ (2026-09-26 fix): ถ้าเบราเซอร์รองรับ backdrop-filter → ใช้พื้นโปร่งแสง (สวยกว่า)
+     ถ้าไม่รองรับ → ใช้ solid background ข้างบน (ยังเห็นชัด) */
+  @supports ((backdrop-filter: blur(14px)) or (-webkit-backdrop-filter: blur(14px))) {
+    .pending-order-banner {
+      background: linear-gradient(135deg, rgba(245,180,0,.18), rgba(245,180,0,.10));
+    }
   }
   .pending-order-banner:hover {
     transform: translateY(-1px);
@@ -887,6 +899,25 @@
 
   <div class="toast" id="toast"></div>
 
+  <!-- 🎨 (2026-09-26) Custom Confirm Modal — แทน window.confirm() แบบเดิม
+       ใช้ผ่าน window.customConfirm(message, options) → Promise<boolean>
+       theme: ม่วง-ชมพูเหมือนเว็บหลัก -->
+  <div class="modal-backdrop" id="confirmBackdrop" aria-hidden="true">
+    <div class="modal" style="max-width:400px;">
+      <div class="modal-header">
+        <h3 id="confirmTitle">กรุณายืนยัน</h3>
+        <button class="modal-close" id="confirmClose" type="button">✕</button>
+      </div>
+      <div id="confirmContent" style="padding:0 4px 8px;">
+        <div id="confirmMessage" style="font-size:14.5px;line-height:1.55;color:var(--text);"></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap;">
+        <button class="btn secondary" id="confirmCancelBtn" type="button" style="flex:1;min-width:120px;">ยกเลิก</button>
+        <button class="btn" id="confirmOkBtn" type="button" style="flex:1;min-width:120px;">ยืนยัน</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 🔧 (2026-09-20 player bar): วัดความสูงจริงของเมนูล่าง (.bottom-nav) แล้วเก็บไว้ใน --bottom-nav-h
        เพื่อให้เครื่องเล่นเพลงลอย (.player-bar) วางติดขอบบนของเมนูพอดี ไม่ทับเมนู — ไม่แตะ/ไม่ลบสคริปต์เดิม -->
   <!-- 🔧 (2026-09-22 fix topbar): วัดความสูงจริงของแถบบน (.topbar) แล้วเก็บไว้ใน --topbar-h
@@ -955,9 +986,85 @@
     });
   </script>
 
+  <!-- 🎨 (2026-09-26) Custom Confirm Modal — แทน window.confirm()
+       window.customConfirm(message, options) → Promise<boolean>
+       options: { title, okText, cancelText, danger, success }
+       - danger: true → ปุ่มยืนยันเป็นสีแดง (สำหรับการลบ)
+       - success: true → ปุ่มยืนยันเป็นสีเขียว (สำหรับยืนยันทั่วไป)
+       - title: หัวข้อ modal (default "กรุณายืนยัน")
+       - okText: ข้อความปุ่มยืนยัน (default "ยืนยัน")
+       - cancelText: ข้อความปุ่มยกเลิก (default "ยกเลิก")
+       ตัวอย่าง:
+         const ok = await window.customConfirm("ลบออเดอร์นี้?", { danger: true, okText: "ลบ" });
+         if (ok) { doDelete(); }
+  -->
+  <script>
+    (function () {
+      const backdrop = document.getElementById('confirmBackdrop');
+      const titleEl = document.getElementById('confirmTitle');
+      const messageEl = document.getElementById('confirmMessage');
+      const okBtn = document.getElementById('confirmOkBtn');
+      const cancelBtn = document.getElementById('confirmCancelBtn');
+      const closeBtn = document.getElementById('confirmClose');
+      let _resolve = null;
+
+      function close(value) {
+        if (!backdrop) return;
+        backdrop.classList.remove('show');
+        backdrop.setAttribute('aria-hidden', 'true');
+        // ปลดล็อก body scroll
+        document.body.classList.remove('modal-open');
+        if (_resolve) {
+          const resolve = _resolve;
+          _resolve = null;
+          resolve(value);
+        }
+      }
+      function open(message, options) {
+        if (!backdrop) return Promise.resolve(false);
+        options = options || {};
+        if (titleEl) titleEl.textContent = options.title || "กรุณายืนยัน";
+        if (messageEl) messageEl.textContent = message;
+        if (okBtn) {
+          okBtn.textContent = options.okText || "ยืนยัน";
+          // เปลี่ยน style ตามประเภท (danger/success/default)
+          okBtn.classList.remove('danger-confirm', 'success-confirm');
+          if (options.danger) okBtn.classList.add('danger-confirm');
+          else if (options.success) okBtn.classList.add('success-confirm');
+        }
+        if (cancelBtn) cancelBtn.textContent = options.cancelText || "ยกเลิก";
+        backdrop.classList.add('show');
+        backdrop.setAttribute('aria-hidden', 'false');
+        // ล็อก body scroll (ใช้ร่วมกับ CSS body.modal-open)
+        document.body.classList.add('modal-open');
+        // focus ที่ปุ่มยืนยันเพื่อ accessibility (ให้กด Enter ได้ทันที)
+        if (okBtn) okBtn.focus();
+        return new Promise((resolve) => { _resolve = resolve; });
+      }
+
+      // bind events (ครั้งเดียว)
+      if (okBtn) okBtn.addEventListener('click', () => close(true));
+      if (cancelBtn) cancelBtn.addEventListener('click', () => close(false));
+      if (closeBtn) closeBtn.addEventListener('click', () => close(false));
+      if (backdrop) backdrop.addEventListener('click', (e) => {
+        // คลิกพื้นหลัง = ยกเลิก (เหมือน confirm() ที่ ESC ได้)
+        if (e.target === backdrop) close(false);
+      });
+      // ESC = ยกเลิก
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && backdrop && backdrop.classList.contains('show')) {
+          close(false);
+        }
+      });
+
+      // expose เป็น global API
+      window.customConfirm = open;
+    })();
+  </script>
+
   <!-- เปลี่ยนเลข v ทุกครั้งที่อัปโหลดไฟล์ใหม่ เพื่อไม่ให้มือถือใช้ไฟล์ JS จาก cache -->
   <!-- 🔧 v=20260917-p0: P0 แก้ Bug 1 (ลูกค้าตั้ง status เองไม่ได้) + Sec 1 (change-password ต้อง verify เดิม) -->
   <!-- 🔧 v=20260917-polling-fix: Phase 0 ยกเลิก polling ทุก 4 วิ + Phase 1 จุด 5 (admin view cache) + Phase 2 จุด 1 (state ฝั่ง client) -->
-  <script type="module" src="app-user.js?v=20260926-payment-state-v4"></script>
+  <script type="module" src="app-user.js?v=20260926-payment-state-v5"></script>
 </body>
 </html>
