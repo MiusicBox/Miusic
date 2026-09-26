@@ -1090,13 +1090,39 @@
     </div>
   </div>
 
+  <!-- 🎨 (2026-09-26) Custom Confirm Modal (ฝั่งแอดมิน) — อัปเกรดจากแบบเดิม
+       รองรับ options: title, okText, cancelText, danger, success
+       ใช้ผ่าน adminConfirm(message, options) → Promise<boolean> หรือ window.adminConfirm()
+       + เพิ่ม adminAlert(message, options) → Promise<void> สำหรับแทน alert() -->
   <div class="modal-backdrop" id="confirmBackdrop">
-    <div class="modal">
-      <div class="modal-header"><h3>ยืนยันการลบ</h3></div>
-      <p id="confirmText" style="color:var(--text-dim);">คุณต้องการลบรายการนี้หรือไม่?</p>
-      <div style="display:flex;gap:10px;">
-        <button class="btn secondary" id="confirmCancel" style="flex:1;">ยกเลิก</button>
-        <button class="btn danger" id="confirmOk" style="flex:1;">ลบ</button>
+    <div class="modal" style="max-width:400px;">
+      <div class="modal-header">
+        <h3 id="confirmTitle">ยืนยันการลบ</h3>
+        <button class="modal-close" id="confirmCloseBtn" type="button">✕</button>
+      </div>
+      <div id="confirmContent" style="padding:0 4px 8px;">
+        <p id="confirmText" style="color:var(--text);font-size:14.5px;line-height:1.55;white-space:pre-line;word-break:break-word;">คุณต้องการลบรายการนี้หรือไม่?</p>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
+        <button class="btn secondary" id="confirmCancel" style="flex:1;min-width:120px;">ยกเลิก</button>
+        <button class="btn danger" id="confirmOk" style="flex:1;min-width:120px;">ลบ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🆕 (2026-09-26) Alert Modal (ฝั่งแอดมิน) — สำหรับแทน alert() แบบเดิม
+       ใช้ผ่าน adminAlert(message, options) → Promise<void> -->
+  <div class="modal-backdrop" id="alertBackdrop" aria-hidden="true">
+    <div class="modal" style="max-width:380px;">
+      <div class="modal-header">
+        <h3 id="alertTitle">แจ้งเตือน</h3>
+        <button class="modal-close" id="alertCloseBtn" type="button">✕</button>
+      </div>
+      <div id="alertContent" style="padding:0 4px 8px;">
+        <p id="alertMessage" style="color:var(--text);font-size:14.5px;line-height:1.55;white-space:pre-line;word-break:break-word;"></p>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        <button class="btn" id="alertOkBtn" type="button" style="flex:1;min-width:120px;">ตกลง</button>
       </div>
     </div>
   </div>
@@ -1132,6 +1158,6 @@
 
   <div class="toast" id="toast"></div>
 
-  <script type="module" src="app-admin.js?v=20260925-fix-reject"></script>
+  <script type="module" src="app-admin.js?v=20260926-custom-modal-v1"></script>
 </body>
 </html>
