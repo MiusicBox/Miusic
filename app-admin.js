@@ -2959,14 +2959,21 @@ function updateQrPreview(url) {
   const filePickerLabel = document.getElementById("qrFilePickerLabel");
   if (url) {
     if (previewImg) previewImg.src = url;
-    if (previewWrap) previewWrap.style.display = "block";
+    // 🛡️ (2026-09-26 fix iOS): force show ด้วย style.display = "block" (กัน inline style display:none ค้าง)
+    if (previewWrap) {
+      previewWrap.style.display = "block";
+      previewWrap.style.setProperty("display", "block", "important");
+    }
     if (filePickerLabel) filePickerLabel.style.display = "none";
     // sync ช่อง URL ด้วย (ถ้าผู้ใช้กรอก URL เอง → แสดง preview ทันที)
     const urlInput = document.getElementById("setQrCodeUrl");
     if (urlInput && urlInput.value !== url) urlInput.value = url;
   } else {
     if (previewWrap) previewWrap.style.display = "none";
-    if (filePickerLabel) filePickerLabel.style.display = "block";
+    if (filePickerLabel) {
+      filePickerLabel.style.display = "block";
+      filePickerLabel.style.setProperty("display", "block", "important");
+    }
     if (previewImg) previewImg.src = "";
     // ล้างช่อง URL ด้วย
     const urlInput = document.getElementById("setQrCodeUrl");
@@ -2997,7 +3004,56 @@ function updateQrPreview(url) {
         fileInput.value = "";
         return;
       }
+      // 🎨 (2026-09-26 fix iOS preview): แสดง preview ทันทีด้วย FileReader.readAsDataURL (base64)
+      //   เพราะ URL.createObjectURL บน iOS Safari บางครั้งโหลด blob ไม่เสร็จ → รูปไม่แสดง
+      //   base64 data URL แสดงได้แน่นอนทุกเบราว์เซอร์ (iOS, Android, PC, Mac)
+      //   แสดง preview ก่อนย่อรูป → ผู้ใช้เห็นรูปทันทีที่เลือก
+      const previewWrap = document.getElementById("qrPreviewWrap");
+      const previewImg = document.getElementById("qrPreviewImg");
+      const filePickerLabel = document.getElementById("qrFilePickerLabel");
+      // อ่านไฟล์เป็น base64 data URL แล้ว set เป็น src ของ <img>
+      try {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error("อ่านไฟล์รูปไม่สำเร็จ"));
+          reader.readAsDataURL(file);
+        });
+        if (previewImg) {
+          previewImg.src = dataUrl;
+          // 🛡️ รอโหลดเสร็จก่อน (บางครั้ง iOS Safari ต้องการ trigger)
+          previewImg.onload = () => {
+            if (previewWrap) previewWrap.style.display = "block";
+            if (filePickerLabel) filePickerLabel.style.display = "none";
+          };
+          previewImg.onerror = () => {
+            showToast("ไม่สามารถแสดงรูปพรีวิวได้ — แต่ไฟล์ถูกเลือกแล้ว กดบันทึกเพื่ออัปโหลด", "info");
+            if (previewWrap) previewWrap.style.display = "block";
+            if (filePickerLabel) filePickerLabel.style.display = "none";
+          };
+          // 🛡️ fallback ถ้า onload ไม่ทำงาน (iOS เก่า) → force show หลัง 100ms
+          setTimeout(() => {
+            if (previewWrap) previewWrap.style.display = "block";
+            if (filePickerLabel) filePickerLabel.style.display = "none";
+          }, 100);
+        } else {
+          if (previewWrap) previewWrap.style.display = "block";
+          if (filePickerLabel) filePickerLabel.style.display = "none";
+        }
+      } catch (err) {
+        console.warn("QR preview failed, but will still upload:", err);
+        // fallback: ใช้ object URL (อาจไม่แสดงบน iOS แต่ก็ดีกว่าไม่มี)
+        try {
+          const objectUrl = URL.createObjectURL(file);
+          if (previewImg) previewImg.src = objectUrl;
+          if (previewWrap) previewWrap.style.display = "block";
+          if (filePickerLabel) filePickerLabel.style.display = "none";
+        } catch (err2) {
+          showToast("ไม่สามารถแสดง preview ได้ แต่ไฟล์ถูกเลือกแล้ว — กดบันทึกเพื่ออัปโหลด", "info");
+        }
+      }
       // ย่อรูปใหญ่ก่อน (เร็วขึ้น + ประหยัด bandwidth — ใช้ compressImageFile ที่มีอยู่แล้ว)
+      //   ทำหลังแสดง preview แล้ว → ผู้ใช้ไม่ต้องรอ
       let processedFile = file;
       try {
         processedFile = await compressImageFile(file, 900, 0.85);
@@ -3007,14 +3063,6 @@ function updateQrPreview(url) {
       }
       pendingQrFile = processedFile;
       pendingQrDelete = false; // ล้าง flag ลบถ้ามี
-      // แสดง preview ทันทีด้วย object URL (ก่อนอัปโหลดจริง)
-      const objectUrl = URL.createObjectURL(processedFile);
-      const previewWrap = document.getElementById("qrPreviewWrap");
-      const previewImg = document.getElementById("qrPreviewImg");
-      const filePickerLabel = document.getElementById("qrFilePickerLabel");
-      if (previewImg) previewImg.src = objectUrl;
-      if (previewWrap) previewWrap.style.display = "block";
-      if (filePickerLabel) filePickerLabel.style.display = "none";
       // แจ้งผู้ใช้ว่าต้องกด "บันทึกการตั้งค่า" เพื่ออัปโหลดจริง
       showToast("เลือกรูปแล้ว — กด \"บันทึกการตั้งค่า\" เพื่ออัปโหลด", "info");
     });
