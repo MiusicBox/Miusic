@@ -827,7 +827,17 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     const record = getLastOrderRecord();
     if (!record) return;
     try {
-      localStorage.setItem(LAST_ORDER_STORAGE_KEY, JSON.stringify({ ...record, contacted: true }));
+      // 🛡️ (added 2026-09-26 sync payment state): อัปเดต order ใน localStorage ด้วยสถานะการชำระล่าสุด
+      //   ก่อนหน้านี้แค่ set contacted=true → record.order ยังเป็นข้อมูลเก่า (status=pending_verify ไม่มี payment_proof_status)
+      //   ทำให้ renderPendingOrderBanner ใช้ getOrderPaymentState(record.order) → ได้ state='unpaid' → banner ยังแสดง
+      //   ทั้งที่จริง ๆ ลูกค้าอัปสลิปแล้ว → state ควรเป็น 'pending_review' → banner ควรซ่อน
+      //   แก้: merge payment_proof_status='pending' เข้าไปใน order ด้วย เพื่อให้ helper คำนวณถูก
+      const updatedOrder = {
+        ...record.order,
+        payment_proof_status: "pending",
+        payment_proof_uploaded_at: new Date().toISOString(),
+      };
+      localStorage.setItem(LAST_ORDER_STORAGE_KEY, JSON.stringify({ ...record, order: updatedOrder, contacted: true }));
     } catch (_) {}
     receiptContacted = true;
     renderPendingOrderBanner();
@@ -851,15 +861,58 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         localStorage.removeItem(BANNER_DISMISS_KEY);
       }
     } catch (_) {}
-    // 🔧 (2026-09-26 ต่อสายให้ครบ): เพิ่มเงื่อนไขจาก DB — มีออเดอร์สถานะ "pending_verify" (ยังไม่ผ่านการตรวจสอบ/ชำระ) ของลูกค้าจริงไหม
-    //   เดิมเช็คแค่ record ในเครื่องนี้ใบเดียว → ถ้าลูกค้าเปลี่ยนอุปกรณ์/ล้าง cache ก็จะไม่เห็นแถบเตือนทั้งที่มีออเดอร์ค้างจริง
-    const hasDbPending = dbPendingOrders.some(order => String(order?.status || "") === "pending_verify");
-    const shouldShow = ((!!record && !record.contacted) || hasDbPending) && !dismissed;
+    // 🛡️ (added 2026-09-26 fix banner logic): ใช้ getOrderPaymentState() แทนการเช็คแค่ status
+    //   เพื่อให้ banner แสดงเฉพาะเมื่อมีออเดอร์ที่ "ยังต้องชำระ" จริง (state unpaid / rejected / cancelled)
+    //   ไม่ใช่กรณีที่ออเดอร์อยู่ระหว่างตรวจสอบ (pending_review / verified_awaiting_zip / paid)
+    //   เดิมเช็คแค่ status='pending_verify' → รวมกรณีส่งสลิปแล้วรอตรวจ หรือยืนยันแล้ว ซึ่งไม่ใช่ "ค้างชำระ"
+    //   ใหม่: ใช้ helper getOrderPaymentState → state unpaid/rejected/cancelled เท่านั้นที่นับเป็นค้างชำระ
+    //   ผลกระทบระบบเดิม: banner จะซ่อนเมื่อลูกค้าอัปสลิปแล้ว (ถูกต้อง) แทนที่จะยังแสดงเตือนทั้งที่ส่งสลิปแล้ว
+    let recordStillUnpaid = false;
+    if (record && !record.contacted) {
+      // ใช้ helper getOrderPaymentState (function declaration → hoisted จึงอ้างอิงได้)
+      const recordState = getOrderPaymentState(record.order);
+      recordStillUnpaid = recordState.showPayButton; // unpaid / rejected / cancelled → true
+    }
+    const hasDbPending = dbPendingOrders.some(order => {
+      const oState = getOrderPaymentState(order);
+      return oState.showPayButton; // unpaid / rejected / cancelled
+    });
+    const shouldShow = (recordStillUnpaid || hasDbPending) && !dismissed;
     banner.hidden = !shouldShow;
   }
 
-  function attemptCloseReceipt() {
-    if (!receiptContacted) {
+  // 🛡️ (added 2026-09-26 fix close warning): เก็บ order ปัจจุบันที่กำลังเปิดใบเสร็จอยู่
+  //   เพื่อใช้ตอน attemptCloseReceipt เช็คสถานะการชำระล่าสุดจาก server
+  //   แทนการเช็คแค่ receiptContacted (ในเครื่อง) ที่ไม่รู้ว่าแอดมินปฏิเสธสลิปหรือยืนยันแล้ว
+  let __currentReceiptOrder = null;
+  let __currentReceiptNumber = null;
+
+  async function attemptCloseReceipt() {
+    // 🛡️ (added 2026-09-26 fix close warning): เช็คสถานะการชำระจาก server ก่อนปิด
+    //   ถ้า order ยัง "ต้องชำระ" (state unpaid/rejected/cancelled) → เตือนก่อนปิด
+    //   ถ้า order ส่งสลิปแล้ว/ยืนยันแล้ว/ชำระแล้ว → ปิดได้ทันที ไม่ต้องเตือน
+    //   fallback: ถ้า fetch server ล้มเหลว (offline) → ใช้ receiptContacted เป็น fallback เหมือนเดิม
+    let needWarn = !receiptContacted; // default ตามเดิม (ถ้า fetch ไม่ได้)
+    if (__currentReceiptOrder) {
+      try {
+        const result = await queryCustomerOrder({
+          receiptNumber: String(__currentReceiptNumber || __currentReceiptOrder?.receipt_number || ""),
+          customerName: String(__currentReceiptOrder?.customer_name || ""),
+          whatsapp: String(__currentReceiptOrder?.whatsapp || ""),
+        });
+        if (result && result.exists && result.data) {
+          const freshOrder = { ...result.data, _docId: result.id };
+          const freshState = getOrderPaymentState(freshOrder);
+          // ถ้าสถานะคือ paid/pending_review/verified_awaiting_zip → ไม่ต้องเตือน (ลูกค้าจ่ายหรือแจ้งแล้ว)
+          // ถ้าสถานะคือ unpaid/rejected/cancelled → เตือน (ยังไม่ได้จ่ายหรือสลิปถูกปฏิเสธ)
+          needWarn = freshState.showPayButton;
+        }
+      } catch (err) {
+        // silent fail — ใช้ค่า default (receiptContacted) เหมือนเดิม
+        console.warn("attemptCloseReceipt: queryCustomerOrder failed, using receiptContacted fallback:", err?.message || err);
+      }
+    }
+    if (needWarn) {
       const confirmed = window.confirm("คุณยังไม่ได้กดแจ้งแอดมินเพื่อชำระเงิน หากปิดตอนนี้ แอดมินจะยังไม่เห็นออเดอร์ของคุณ ต้องการปิดหรือไม่?");
       if (!confirmed) return;
     }
@@ -872,6 +925,9 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     if (!backdrop) return;
     backdrop.classList.remove("show");
     backdrop.setAttribute("aria-hidden", "true");
+    // 🛡️ (added 2026-09-26): ล้าง order ปัจจุบันเมื่อปิดใบเสร็จ — กัน attemptCloseReceipt ใช้ข้อมูลเก่า
+    __currentReceiptOrder = null;
+    __currentReceiptNumber = null;
   }
 
   function buildReceiptItemRows(order) {
@@ -1003,6 +1059,9 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
 
   function showReceipt(order, receiptNumber, adminWhatsappNumber, alreadyContacted) {
     receiptContacted = !!alreadyContacted;
+    // 🛡️ (added 2026-09-26): เก็บ order ปัจจุบันไว้ใช้ตอน attemptCloseReceipt
+    __currentReceiptOrder = order;
+    __currentReceiptNumber = receiptNumber;
     const date = order.created_at ? new Date(order.created_at) : new Date();
     const dateText = Number.isNaN(date.getTime())
       ? "-"
@@ -1560,6 +1619,13 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       showToast("✅ อัปโหลดสลิปสำเร็จ — รอแอดมินตรวจสอบ", "success");
       closeUploadSlipModal();
       closePaymentModal();
+      // 🛡️ (added 2026-09-26 auto-close receipt): ปิดใบเสร็จ (receiptBackdrop) ด้วย
+      //   ตามคำขอผู้ใช้: "เวลากดชำระเงินแล้ว popup ปิดอัตโนมัติ"
+      //   ก่อนหน้านี้หลังอัปสลิปสำเร็จ → paymentBackdrop และ uploadSlipBackdrop ถูกปิด แต่ receiptBackdrop ยังเปิดอยู่
+      //   ทำให้ลูกค้าเห็นใบเสร็จค้างอยู่ → สับสนว่าต้องทำอะไรต่อ
+      //   แก้: ปิด receiptBackdrop ด้วย → ลูกค้าเห็นหน้าหลัก + toast แจ้งสำเร็จ + WhatsApp เปิดแจ้งแอดมิน
+      //   ผลกระทบระบบเดิม: 0% — เพิ่มการปิด modal ไม่ได้แตะ flow เดิม
+      closeReceipt();
       // เปิด WhatsApp แจ้งแอดมิน (notification only — slip บันทึกใน R2+D1 แล้ว)
       openWhatsAppNotifyAdmin(order, receiptNumber, data.file_url);
     } catch (err) {
@@ -1933,7 +1999,29 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       if (event.target === event.currentTarget) attemptCloseReceipt();
     });
     // เพิ่มใหม่: แถบเตือนออเดอร์ค้างแจ้งแอดมิน
-    document.getElementById("pendingOrderBannerBtn")?.addEventListener("click", () => {
+    document.getElementById("pendingOrderBannerBtn")?.addEventListener("click", async () => {
+      // 🛡️ (added 2026-09-26 auto-close banner): ตรวจสถานะล่าสุดจาก server ก่อนเปิด modal
+      //   ถ้าไม่มีออเดอร์ค้างชำระจริง (state unpaid/rejected/cancelled) → ปิด banner อัตโนมัติ ไม่เปิด modal
+      //   ป้องกันกรณีลูกค้ากดปุ่ม "ไปชำระเงิน" แต่จริง ๆ ออเดอร์ถูกยืนยันแล้ว/ส่งสลิปแล้ว → ไม่ต้องเปิด modal ให้สับสน
+      //   ใช้ข้อมูล dbPendingOrders ที่ถูก sync ผ่าน updatePendingPaymentInfo() — ไม่ยิง fetch ซ้ำ
+      const pendingOrders = (dbPendingOrders || []).filter(order => {
+        const oState = getOrderPaymentState(order);
+        return oState.showPayButton; // unpaid / rejected / cancelled
+      });
+      const record = getLastOrderRecord();
+      let recordStillUnpaid = false;
+      if (record && !record.contacted) {
+        const rState = getOrderPaymentState(record.order);
+        recordStillUnpaid = rState.showPayButton;
+      }
+      const hasUnpaid = pendingOrders.length > 0 || recordStillUnpaid;
+      if (!hasUnpaid) {
+        // ไม่มีออเดอร์ค้างชำระจริง → ปิด banner อัตโนมัติ
+        const banner = document.getElementById("pendingOrderBanner");
+        if (banner) banner.hidden = true;
+        showToast("ไม่มีออเดอร์ที่ค้างชำระเงิน", "info");
+        return;
+      }
       // 🔧 (2026-09-26 ต่อสายให้ครบ): ถ้ามี callback เปิดหน้า "ออเดอร์ทั้งหมดของฉัน" (ส่งมาจาก app-user.js)
       //   ใช้อันนี้ก่อน — ลูกค้าจะเห็นออเดอร์ค้างชำระ "ทุกใบ" ไม่ใช่แค่ใบล่าสุดในเครื่องนี้
       if (typeof openTrackOrderAllPicker === "function") {
@@ -1941,7 +2029,6 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         return;
       }
       // fallback เดิม (กรณีไม่มี callback ส่งมา) — เปิดใบเสร็จของออเดอร์ล่าสุดในเครื่องนี้เหมือนเดิม
-      const record = getLastOrderRecord();
       if (!record) { renderPendingOrderBanner(); return; }
       showReceipt(record.order, record.receiptNumber, state.settings?.whatsapp_number, record.contacted);
     });
