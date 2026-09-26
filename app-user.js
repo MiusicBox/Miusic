@@ -30,7 +30,7 @@ import {
   fetchCustomerOrdersOnce
 // 🔧 (2026-09-17 v2): เพิ่ม ?v=20260917-polling-fix บังคับ browser โหลด db-client.js ใหม่ (กัน cache เก่า)
 } from "./db-client.js?v=20260917-polling-fix";
-import { initCart } from "./app-cart.js?v=20260926-payment-state-v2";
+import { initCart } from "./app-cart.js?v=20260926-payment-state-v3";
 // ===== ลดราคา + โปรโมชั่น + ออเดอร์ของฉัน (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, applyDiscountToPrice, findActiveDiscountFor,
@@ -2126,6 +2126,9 @@ async function handleTrackOrderSubmit() {
 let trackOrderAllUnsub = null;      // ← DEAD CODE — ดูคอมเมนต์ด้านบน
 let trackOrderAllOrders = [];       // เก็บผลลัพธ์ล่าสุดไว้ใช้ตอนกดดูรายละเอียดในลิสต์
 let trackOrderAllSlowTimer = null;  // เพิ่มใหม่: ตัวจับเวลาแจ้งเตือน "เน็ตช้า" ของ listener ปัจจุบัน
+// 🛡️ (added 2026-09-26 auto-open rejected): flag สำหรับ auto-open detail ของออเดอร์ที่ถูกปฏิเสธสลิป
+//   ใช้ครั้งเดียวหลัง fetchTrackOrderAllOnce → ล้างหลังใช้ (กัน visibility change ทำซ้ำ)
+let trackOrderAllAutoOpenRejected = false;
 // 🔧 (2026-09-17): เก็บ name+phone ปัจจุบันไว้ใช้ตอน visibility เปลี่ยน (กลับเข้า tab ใหม่)
 let trackOrderAllCurrentName = null;
 let trackOrderAllCurrentPhone = null;
@@ -2200,7 +2203,12 @@ function openPendingPaymentPicker() {
     const phoneInput = document.getElementById("trackOrderAllPhone");
     if (nameInput) nameInput.value = info.name;
     if (phoneInput) phoneInput.value = info.whatsapp;
-    startTrackOrderAllListener(info.name, info.whatsapp);
+    // 🛡️ (added 2026-09-26 auto-open rejected): หลัง fetch ออเดอร์ทั้งหมด → ถ้ามีออเดอร์ที่ถูกปฏิเสธสลิป
+    //   ให้เปิด detail ของออเดอร์นั้นโดยตรง ไม่ต้องให้ลูกค้าเลือกจาก list
+    //   ตามคำขอผู้ใช้: "เวลาแอดมินปฏิเสธสลิป กลับมาแสดงว่าการยืนยันสลิปถูกปฏิเสธ เวลากดเข้าให้พาไปออเดอร์ที่ถูกปฏิเสธ"
+    //   ถ้ามีหลายออเดอร์ที่ถูกปฏิเสธ → พาไปออเดอร์ล่าสุด (created_at desc)
+    //   ถ้าไม่มีออเดอร์ถูกปฏิเสธ → แสดง list ตามปกติ (sort ใหม่ให้ unpaid บนสุด)
+    startTrackOrderAllListener(info.name, info.whatsapp, { autoOpenRejected: true });
   }
   // ถ้าไม่มีข้อมูลจำไว้ (กรณีหายาก เพราะต้องมีข้อมูลนี้อยู่แล้วถึงจะคำนวณ banner ได้ตั้งแต่แรก)
   // ก็แค่เปิดโหมด "ทั้งหมด" ให้เปล่าๆ ลูกค้ากรอกเองได้ตามปกติ
@@ -2401,7 +2409,7 @@ function closeTrackOrderAllDetail() {
   if (listEl) listEl.hidden = false;
 }
 
-function startTrackOrderAllListener(name, phone) {
+function startTrackOrderAllListener(name, phone, options = {}) {
   stopTrackOrderAllListener();
   const listEl = document.getElementById("trackOrderAllList");
   const detailEl = document.getElementById("trackOrderAllDetail");
@@ -2411,6 +2419,10 @@ function startTrackOrderAllListener(name, phone) {
   // 🔧 (2026-09-17): บันทึก name+phone ไว้ใช้ตอน visibility เปลี่ยน (กลับเข้า tab ใหม่)
   trackOrderAllCurrentName = name;
   trackOrderAllCurrentPhone = phone;
+  // 🛡️ (added 2026-09-26 auto-open rejected): เก็บ option ไว้ใช้หลัง fetchTrackOrderAllOnce
+  //   ถ้า autoOpenRejected=true → หลัง fetch แล้วถ้ามีออเดอร์ state='rejected' ให้เปิด detail ของออเดอร์นั้นโดยตรง
+  //   ใช้ครั้งเดียว → ล้างหลังใช้ (กัน visibility change ทำซ้ำ)
+  trackOrderAllAutoOpenRejected = !!options.autoOpenRejected;
 
   // เพิ่มใหม่: ถ้ายังไม่ได้รับข้อมูล snapshot แรกภายในเวลาที่กำหนด แจ้งลูกค้าว่าเน็ตช้า (ยังฟังต่อเบื้องหลัง ไม่ยกเลิก)
   trackOrderAllSlowTimer = setTimeout(() => {
@@ -2454,10 +2466,48 @@ async function fetchTrackOrderAllOnce() {
     trackOrderAllSlowTimer = null;
     const matched = snap.docs
       .map((d) => ({ ...d.data(), _docId: d.id }));
-    matched.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    // 🛡️ (added 2026-09-26 sort rejected first): จัดเรียงให้ออเดอร์ที่ถูกปฏิเสธสลิป (state='rejected')
+    //   ขึ้นมาก่อนเสมอ เพื่อให้ลูกค้าเห็นออเดอร์ที่ต้องส่งสลิปใหม่ทันที
+    //   ลำดับการ sort:
+    //     1. state 'rejected' (สลิปถูกปฏิเสธ) — เรียงตาม created_at desc
+    //     2. state 'unpaid' (ยังไม่ได้ชำระ) — เรียงตาม created_at desc
+    //     3. state 'cancelled' (ออเดอร์ถูกยกเลิก) — เรียงตาม created_at desc
+    //     4. state 'pending_review' (ส่งสลิปแล้วรอตรวจ) — เรียงตาม created_at desc
+    //     5. state 'verified_awaiting_zip' (ยืนยันแล้วรอไฟล์) — เรียงตาม created_at desc
+    //     6. state 'paid' (ชำระแล้ว) — เรียงตาม created_at desc
+    //   ผลกระทบระบบเดิม: 0% — เปลี่ยนแค่ลำดับการ sort ไม่ได้ลบ/เพิ่มฟิลด์
+    matched.sort((a, b) => {
+      const aState = getOrderPaymentState(a).state;
+      const bState = getOrderPaymentState(b).state;
+      // กำหนด priority ตามลำดับที่ต้องการให้แสดงบนสุด
+      const priority = {
+        rejected: 1, unpaid: 2, cancelled: 3,
+        pending_review: 4, verified_awaiting_zip: 5, paid: 6,
+      };
+      const aPriority = priority[aState] || 99;
+      const bPriority = priority[bState] || 99;
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      // ถ้า priority เท่ากัน → เรียงตาม created_at desc (ออเดอร์ใหม่ก่อน)
+      return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+    });
     trackOrderAllOrders = matched;
     setTrackOrderAllFeedback("");
     renderTrackOrderAllList(matched);
+    // 🛡️ (added 2026-09-26 auto-open rejected): ถ้า flag เปิดอยู่ → หาออเดอร์ที่ถูกปฏิเสธสลิป
+    //   แล้วเปิด detail โดยตรง ไม่ต้องให้ลูกค้าเลือกจาก list
+    //   ใช้ครั้งเดียว → ล้าง flag หลังใช้ (กัน visibility change ทำซ้ำ)
+    if (trackOrderAllAutoOpenRejected) {
+      trackOrderAllAutoOpenRejected = false; // ล้างก่อนเพื่อกัน double-trigger
+      // หาออเดอร์ที่ state='rejected' (สลิปถูกปฏิเสธ) — list ถูก sort ให้ rejected อยู่บนสุดอยู่แล้ว
+      // ถ้ามีหลายใบ → เลือกใบแรก (ล่าสุด) ตามที่ sort ไว้
+      const rejectedOrder = matched.find((o) => getOrderPaymentState(o).state === "rejected");
+      if (rejectedOrder) {
+        // ใช้ setTimeout เพื่อให้ renderTrackOrderAllList ทำงานเสร็จก่อน แล้วค่อยเปิด detail
+        // (openTrackOrderAllDetail จะซ่อน list + แสดง detail)
+        setTimeout(() => openTrackOrderAllDetail(rejectedOrder), 50);
+      }
+      // ถ้าไม่มีออเดอร์ถูกปฏิเสธ → แสดง list ตามปกติ (sort ใหม่ให้ unpaid บนสุด)
+    }
   } catch (err) {
     clearTimeout(trackOrderAllSlowTimer);
     trackOrderAllSlowTimer = null;
