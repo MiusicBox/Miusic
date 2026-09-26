@@ -1462,10 +1462,15 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
             <button class="btn secondary" id="paymentCopyBtn" type="button" style="padding:4px 10px;font-size:12px;min-width:auto;">📋 คัดลอก</button>
           </div>
         </div>` : ""}
-        ${hasQr ? `<div style="text-align:center;margin:16px 0;padding:12px;border:1px dashed var(--border, #ddd);border-radius:10px;">
-          <img src="${escapeHtml(settings.qr_code_url)}" alt="QR Code" style="max-width:200px;width:100%;height:auto;border-radius:6px;">
-          <div style="font-size:11px;color:var(--text-dim);margin-top:6px;">สแกน QR เพื่อโอนเงิน</div>
-        </div>` : ""}
+        ${hasQr ? `
+          <!-- 🎨 (2026-09-26 v2): QR Code ในหน้าชำระเงิน — ขยายใหญ่เต็มพื้นที่ + padding เท่ากัน + ดูง่าย
+               เหมือนฝั่งแอดมิน (ใช้ class ชุดเดียวกัน: .qr-preview-img-box, .qr-preview-img) -->
+          <div style="text-align:center;margin:18px 0;">
+            <div class="qr-preview-img-box" style="max-width:260px;">
+              <img src="${escapeHtml(settings.qr_code_url)}" alt="QR Code" class="qr-preview-img" style="min-height:120px;">
+            </div>
+            <div style="font-size:12px;color:var(--text-dim);margin-top:10px;font-weight:600;">📱 สแกน QR เพื่อโอนเงิน</div>
+          </div>` : ""}
         ${settings.payment_instructions ? `<div style="font-size:12px;color:var(--text-dim);background:var(--bg-soft, #f7f7f7);padding:10px;border-radius:6px;margin:8px 0;line-height:1.5;">
           ${escapeHtml(settings.payment_instructions).replace(/\n/g, "<br>")}
         </div>` : ""}
