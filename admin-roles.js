@@ -35,6 +35,12 @@ function showToast(message, type) {
 }
 function openConfirm(text, onOk) {
   if (window.__openConfirm) { window.__openConfirm(text, onOk); return; }
+  // 🎨 (2026-09-26): ใช้ window.adminConfirm (Promise-based) แทน window.confirm (blocking)
+  if (window.adminConfirm) {
+    window.adminConfirm(text).then((ok) => { if (ok) onOk(); });
+    return;
+  }
+  // fallback: ถ้าไม่มี adminConfirm ใช้ window.confirm ธรรมดา
   if (window.confirm(text)) onOk();
 }
 function isMainAdmin() { return window.__currentAdminRole === "main"; }
