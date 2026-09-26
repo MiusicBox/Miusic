@@ -2938,26 +2938,195 @@ async function loadSettings() {
   document.getElementById("setBankAccount").value = s.bank_account || "";
   document.getElementById("setQrCodeUrl").value = s.qr_code_url || "";
   document.getElementById("setPaymentInstructions").value = s.payment_instructions || "";
+  // 🎨 (2026-09-26): แสดง preview รูป QR ถ้ามี — ใช้ qr_code_url ที่โหลดจาก settings
+  updateQrPreview(s.qr_code_url || "");
 }
+
+// 🎨 (2026-09-26) QR Upload — อัปโหลดรูป QR Code จาก iPhone/iPad/PC/Mac ได้โดยตรง
+//   ใช้ uploadToCloudinary (ผ่าน R2 storage) แบบเดียวกับอัปโหลดรูปปกเพลง
+//   + ย่อรูปใหญ่ด้วย compressImageFile ก่อนอัปโหลด (เร็วขึ้น + ประหยัด bandwidth)
+//   + แสดง preview + ปุ่มเปลี่ยน/ลบ
+//   ไม่กระทบ: ระบบเดิม qr_code_url ยังใช้ URL text ได้ (ถ้าไม่อัปโหลดรูปใหม่)
+let pendingQrFile = null;       // เก็บ File ที่เลือก (ถ้ามี) → อัปโหลดตอนกด "บันทึกการตั้งค่า"
+let currentQrUrl = "";          // URL ของรูป QR ปัจจุบัน (จาก settings หรือที่อัปโหลดใหม่)
+let pendingQrDelete = false;   // flag ว่าผู้ใช้กดลบรูป QR (จะ clear qr_code_url ตอนบันทึก)
+
+// อัปเดต preview รูป QR ในหน้าตั้งค่า — แสดง/ซ่อนตามมีรูปหรือไม่
+function updateQrPreview(url) {
+  currentQrUrl = url || "";
+  const previewWrap = document.getElementById("qrPreviewWrap");
+  const previewImg = document.getElementById("qrPreviewImg");
+  const filePickerLabel = document.getElementById("qrFilePickerLabel");
+  if (url) {
+    if (previewImg) previewImg.src = url;
+    if (previewWrap) previewWrap.style.display = "block";
+    if (filePickerLabel) filePickerLabel.style.display = "none";
+    // sync ช่อง URL ด้วย (ถ้าผู้ใช้กรอก URL เอง → แสดง preview ทันที)
+    const urlInput = document.getElementById("setQrCodeUrl");
+    if (urlInput && urlInput.value !== url) urlInput.value = url;
+  } else {
+    if (previewWrap) previewWrap.style.display = "none";
+    if (filePickerLabel) filePickerLabel.style.display = "block";
+    if (previewImg) previewImg.src = "";
+    // ล้างช่อง URL ด้วย
+    const urlInput = document.getElementById("setQrCodeUrl");
+    if (urlInput) urlInput.value = "";
+  }
+}
+
+// ผูก event listeners สำหรับ QR upload
+(function setupQrUpload() {
+  const fileInput = document.getElementById("qrFileInput");
+  const changeBtn = document.getElementById("qrChangeBtn");
+  const deleteBtn = document.getElementById("qrDeleteBtn");
+
+  if (fileInput) {
+    fileInput.addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      // size check 5MB
+      if (file.size > 5 * 1024 * 1024) {
+        showToast("ไฟล์ใหญ่เกิน 5MB — กรุณาลดขนาดรูป", "error");
+        fileInput.value = "";
+        return;
+      }
+      // MIME check
+      const allowedMimes = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
+      if (!allowedMimes.includes((file.type || "").toLowerCase())) {
+        showToast("อนุญาตเฉพาะ JPEG, PNG, WEBP", "error");
+        fileInput.value = "";
+        return;
+      }
+      // ย่อรูปใหญ่ก่อน (เร็วขึ้น + ประหยัด bandwidth — ใช้ compressImageFile ที่มีอยู่แล้ว)
+      let processedFile = file;
+      try {
+        processedFile = await compressImageFile(file, 900, 0.85);
+      } catch (err) {
+        // ถ้าย่อไม่ได้ → ใช้ไฟล์เดิม
+        console.warn("QR compress failed, using original:", err);
+      }
+      pendingQrFile = processedFile;
+      pendingQrDelete = false; // ล้าง flag ลบถ้ามี
+      // แสดง preview ทันทีด้วย object URL (ก่อนอัปโหลดจริง)
+      const objectUrl = URL.createObjectURL(processedFile);
+      const previewWrap = document.getElementById("qrPreviewWrap");
+      const previewImg = document.getElementById("qrPreviewImg");
+      const filePickerLabel = document.getElementById("qrFilePickerLabel");
+      if (previewImg) previewImg.src = objectUrl;
+      if (previewWrap) previewWrap.style.display = "block";
+      if (filePickerLabel) filePickerLabel.style.display = "none";
+      // แจ้งผู้ใช้ว่าต้องกด "บันทึกการตั้งค่า" เพื่ออัปโหลดจริง
+      showToast("เลือกรูปแล้ว — กด \"บันทึกการตั้งค่า\" เพื่ออัปโหลด", "info");
+    });
+  }
+
+  // ปุ่ม "เปลี่ยนรูป" → เปิด file picker อีกครั้ง
+  if (changeBtn) {
+    changeBtn.addEventListener("click", () => {
+      if (fileInput) {
+        fileInput.value = ""; // ล้างค่าเดิมก่อน → เลือกรูปเดิมได้อีก
+        fileInput.click();
+      }
+    });
+  }
+
+  // ปุ่ม "ลบรูป" → ล้าง pendingQrFile + ตั้ง pendingQrDelete = true
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", async () => {
+      // 🎨 (2026-09-26): ใช้ adminConfirm แทน confirm() — สไตล์เดียวกับเว็บ
+      const ok = await adminConfirm(
+        "ต้องการลบรูป QR Code นี้ใช่หรือไม่?\n\nลูกค้าจะไม่เห็น QR Code ในหน้าชำระเงินจนกว่าจะอัปโหลดรูปใหม่",
+        { title: "ลบรูป QR Code", okText: "ลบ", danger: true }
+      );
+      if (!ok) return;
+      pendingQrFile = null;
+      pendingQrDelete = true;
+      // ซ่อน preview + แสดง file picker กลับ
+      const previewWrap = document.getElementById("qrPreviewWrap");
+      const filePickerLabel = document.getElementById("qrFilePickerLabel");
+      if (previewWrap) previewWrap.style.display = "none";
+      if (filePickerLabel) filePickerLabel.style.display = "block";
+      // ล้างช่อง URL
+      const urlInput = document.getElementById("setQrCodeUrl");
+      if (urlInput) urlInput.value = "";
+      showToast("รูป QR Code จะถูกลบเมื่อกด \"บันทึกการตั้งค่า\"", "info");
+    });
+  }
+})();
+
+// 🎨 (2026-09-26): sync URL input → preview (ถ้าผู้ใช้กรอก URL เองแทนการอัปโหลดรูป)
+document.getElementById("setQrCodeUrl")?.addEventListener("input", (e) => {
+  const url = e.target.value.trim();
+  if (url && url !== currentQrUrl) {
+    // ผู้ใช้กรอก URL ใหม่ → แสดง preview ทันที (ถ้า URL valid)
+    updateQrPreview(url);
+    pendingQrFile = null; // ล้าง pending file (ถ้ามี) → ใช้ URL แทน
+    pendingQrDelete = false;
+  } else if (!url && currentQrUrl && !pendingQrFile) {
+    // ผู้ใช้ล้างช่อง URL → ซ่อน preview
+    updateQrPreview("");
+  }
+});
+
 document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
-  const payload = {
-    website_name: document.getElementById("setWebsiteName").value.trim(),
-    meta_description: document.getElementById("setMetaDesc").value.trim(),
-    admin_name: document.getElementById("setAdminName").value.trim(),
-    whatsapp_number: document.getElementById("setWhatsapp").value.trim(),
-    website_logo: document.getElementById("setLogo").value.trim(),
-    // Payment settings (added in STEP 1 — merge:true keeps everything backward compatible)
-    bank_name: document.getElementById("setBankName").value.trim(),
-    bank_account_name: document.getElementById("setBankAccountName").value.trim(),
-    bank_account: document.getElementById("setBankAccount").value.trim(),
-    qr_code_url: document.getElementById("setQrCodeUrl").value.trim(),
-    payment_instructions: document.getElementById("setPaymentInstructions").value.trim()
-  };
+  const btn = document.getElementById("saveSettingsBtn");
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "กำลังบันทึก...";
+
   try {
+    // 🎨 (2026-09-26): อัปโหลดรูป QR ก่อน (ถ้าผู้ใช้เลือกรูปใหม่)
+    let finalQrUrl = document.getElementById("setQrCodeUrl").value.trim();
+    if (pendingQrFile) {
+      // แสดง progress bar อัปโหลด
+      const progressEl = document.getElementById("qrUploadProgress");
+      const percentEl = document.getElementById("qrUploadPercent");
+      if (progressEl) progressEl.style.display = "block";
+      try {
+        btn.textContent = "กำลังอัปโหลดรูป QR...";
+        const res = await uploadToCloudinary(pendingQrFile, (pct) => {
+          if (percentEl) percentEl.textContent = pct + "%";
+        });
+        finalQrUrl = res.url;
+        pendingQrFile = null; // ล้าง pending หลังอัปโหลดสำเร็จ
+        showToast("✅ อัปโหลดรูป QR สำเร็จ", "success");
+      } catch (err) {
+        if (progressEl) progressEl.style.display = "none";
+        showToast("อัปโหลดรูป QR ไม่สำเร็จ: " + (err.message || String(err)), "error");
+        btn.disabled = false;
+        btn.textContent = originalText;
+        return; // หยุดบันทึก ถ้าอัปโหลดไม่สำเร็จ
+      }
+      if (progressEl) progressEl.style.display = "none";
+    } else if (pendingQrDelete) {
+      // ผู้ใช้กดลบรูป → ล้าง URL
+      finalQrUrl = "";
+      pendingQrDelete = false;
+    }
+
+    const payload = {
+      website_name: document.getElementById("setWebsiteName").value.trim(),
+      meta_description: document.getElementById("setMetaDesc").value.trim(),
+      admin_name: document.getElementById("setAdminName").value.trim(),
+      whatsapp_number: document.getElementById("setWhatsapp").value.trim(),
+      website_logo: document.getElementById("setLogo").value.trim(),
+      // Payment settings (added in STEP 1 — merge:true keeps everything backward compatible)
+      bank_name: document.getElementById("setBankName").value.trim(),
+      bank_account_name: document.getElementById("setBankAccountName").value.trim(),
+      bank_account: document.getElementById("setBankAccount").value.trim(),
+      qr_code_url: finalQrUrl,
+      payment_instructions: document.getElementById("setPaymentInstructions").value.trim()
+    };
     await setDoc(doc(db, "settings", "main"), payload, { merge: true });
+    // 🎨 (2026-09-26): อัปเดต preview + state หลังบันทึกสำเร็จ
+    currentQrUrl = finalQrUrl;
+    updateQrPreview(finalQrUrl);
     showToast("บันทึกการตั้งค่าแล้ว", "success");
   } catch (err) {
     showToast("บันทึกไม่สำเร็จ: " + err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
   }
 });
 
