@@ -1574,44 +1574,56 @@ button:active {
 }
 
 /* ============================================================
-   🎨 (2026-09-26) Custom Confirm Modal — แทน window.confirm()
+   🎨 (2026-09-26) Custom Confirm/Alert Modal — แทน window.confirm()/alert()
    ------------------------------------------------------------
-   ใช้ผ่าน window.customConfirm(message, options) → Promise<boolean>
+   ใช้ผ่าน window.customConfirm/adminConfirm/adminAlert → Promise
    theme: ม่วง-ชมพูเหมือนเว็บหลัก
    ============================================================ */
-#confirmBackdrop {
-  z-index: 150; /* สูงกว่า modal-backdrop ปกติ (100) เพื่อให้ modal confirm อยู่บนสุด */
+
+/* z-index สูงกว่า modal-backdrop ปกติ (100) เพื่อให้ confirm/alert อยู่บนสุด */
+#confirmBackdrop, #alertBackdrop {
+  z-index: 150;
 }
-#confirmBackdrop .modal {
+
+/* 🛡️ fallback สำหรับเบราเซอร์เก่าที่ไม่รองรับ backdrop-filter */
+#confirmBackdrop .modal,
+#alertBackdrop .modal {
   max-width: 400px;
-  padding: 24px 22px calc(20px + var(--safe-bottom));
+  padding: 22px 22px calc(20px + var(--safe-bottom));
 }
-#confirmTitle {
+
+#confirmTitle, #alertTitle {
   font-size: 17px;
   font-weight: 800;
   letter-spacing: -0.01em;
 }
-#confirmMessage {
+
+#confirmText, #alertMessage {
   font-size: 14.5px;
   line-height: 1.55;
   color: var(--text);
   white-space: pre-line; /* รองรับ \n ในข้อความ */
   word-break: break-word;
+  margin: 0;
 }
-/* 🆕 ปุ่ม danger style — สำหรับกรณี confirm ลบ/ยืนยันการกระทำที่รุนแรง */
+
+/* ปุ่ม danger style — สำหรับกรณี confirm ลบ/ยืนยันการกระทำที่รุนแรง */
+#confirmBackdrop .btn.danger,
 #confirmBackdrop .btn.danger-confirm {
   background: linear-gradient(135deg, var(--danger), #dc2626);
   box-shadow:
     0 4px 16px rgba(239, 68, 68, 0.35),
     inset 0 1px 0 rgba(255,255,255,.15);
 }
+#confirmBackdrop .btn.danger:hover,
 #confirmBackdrop .btn.danger-confirm:hover {
   filter: brightness(1.08);
   box-shadow:
     0 8px 24px rgba(239, 68, 68, 0.5),
     inset 0 1px 0 rgba(255,255,255,.2);
 }
-/* 🆕 ปุ่ม success style — สำหรับ confirm ที่ไม่ใช่การลบ (เช่น "ปิดใบเสร็จ") */
+
+/* ปุ่ม success style — สำหรับ confirm ที่ไม่ใช่การลบ (เช่น "ปิดใบเสร็จ") */
 #confirmBackdrop .btn.success-confirm {
   background: linear-gradient(135deg, var(--success), #059669);
   box-shadow:
@@ -1623,6 +1635,14 @@ button:active {
   box-shadow:
     0 8px 24px rgba(16, 185, 129, 0.5),
     inset 0 1px 0 rgba(255,255,255,.2);
+}
+
+/* Alert modal — ปุ่มตกลงใช้สีม่วงเหมือนปุ่มหลัก */
+#alertBackdrop .btn {
+  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  box-shadow:
+    0 4px 16px var(--accent-glow),
+    inset 0 1px 0 rgba(255,255,255,.15);
 }
 
 .modal-header {
