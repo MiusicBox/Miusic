@@ -9,6 +9,8 @@ import {
   getDocsByIds
 } from "./db-client.js?v=20260917-polling-fix";
 import { uploadOrderZip, deleteFromStorage } from "./storage-adapter.js?v=20260904-rawzip";
+// 🎨 (2026-09-26): เพิ่ม import sortSongsByThaiName สำหรับ sort เพลงในฟอร์มสร้างออเดอร์
+import { sortSongsByThaiName } from "./thai-sort.js";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่) — import มาจาก app-promotion.js กลาง (รวมไฟล์เดียว) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, computeCartPricing
@@ -768,9 +770,15 @@ const state = {
    (ตัดออกเฉพาะที่สั่งซ่อนชัดเจนว่า "hidden" เท่านั้น) เพื่อให้ตรงกันทั้ง 3 จุดในระบบ */
 async function loadSongsFromDatabase() {
   const snap = await getDocs(collection(db, "songs"));
-  return snap.docs
-    .map(d => ({ id: d.id, ...d.data() }))
-    .filter(s => String(s.status || "").trim().toLowerCase() !== "hidden");
+  // 🎨 (2026-09-26): sort เพลงตามชื่อ (ก-ฮ + A-Z + 0-9 แบบ natural sort)
+  //   เดิม: ใช้ลำดับจาก DB ตรง ๆ → A1, A10, A2, A3 (ผิดลำดับ)
+  //   ใหม่: sortSongsByThaiName → A1, A2, A3, A10 (ถูกลำดับ)
+  //   ทำให้การค้นหาเพลงในฟอร์มสร้างออเดอร์เห็นรายการเรียงเป็นระเบียบ
+  return sortSongsByThaiName(
+    snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(s => String(s.status || "").trim().toLowerCase() !== "hidden")
+  );
 }
 
 /* ---------------- โหลดออเดอร์ทั้งหมดจาก Firestore ---------------- */
