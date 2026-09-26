@@ -913,7 +913,11 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       }
     }
     if (needWarn) {
-      const confirmed = window.confirm("คุณยังไม่ได้กดแจ้งแอดมินเพื่อชำระเงิน หากปิดตอนนี้ แอดมินจะยังไม่เห็นออเดอร์ของคุณ ต้องการปิดหรือไม่?");
+      // 🎨 (2026-09-26): ใช้ customConfirm แทน window.confirm() — สไตล์เดียวกับเว็บ
+      const confirmed = await window.customConfirm(
+        "คุณยังไม่ได้กดแจ้งแอดมินเพื่อชำระเงิน\nหากปิดตอนนี้ แอดมินจะยังไม่เห็นออเดอร์ของคุณ\n\nต้องการปิดหรือไม่?",
+        { title: "ยังไม่ได้แจ้งชำระเงิน", okText: "ปิด", cancelText: "ยังอยู่", success: true }
+      );
       if (!confirmed) return;
     }
     closeReceipt();
@@ -1076,6 +1080,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     if (!content) return;
     content.innerHTML = `
       <div class="receipt-paper">
+        <div class="receipt-accent-bar"></div>
         <div class="receipt-head">
           <h2>${escapeHtml(order.store_name || "Music Store")}</h2>
           <div>ใบเสร็จรับเงิน</div>
@@ -1982,8 +1987,14 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         removeFromCart(button.dataset.cartRemove);
       }
     });
-    document.getElementById("clearCartBtn")?.addEventListener("click", () => {
-      if (state.cart.length && window.confirm("ต้องการล้างเพลงทั้งหมดออกจากตะกร้าหรือไม่?")) {
+    document.getElementById("clearCartBtn")?.addEventListener("click", async () => {
+      if (!state.cart.length) return;
+      // 🎨 (2026-09-26): ใช้ customConfirm แทน window.confirm()
+      const confirmed = await window.customConfirm(
+        "ต้องการล้างเพลงทั้งหมดออกจากตะกร้าหรือไม่?",
+        { title: "ล้างตะกร้า", okText: "ล้าง", danger: true }
+      );
+      if (confirmed) {
         state.cart = [];
         activeOrderId = null;
         activeOrderKey = null;
