@@ -1534,7 +1534,7 @@ button:active {
 }
 
 @keyframes slideUp {
-  from { transform: translateY(40px); opacity: 0; }
+  from { transform: translateY(24px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
 
@@ -1550,8 +1550,79 @@ button:active {
 }
 
 @keyframes modalPop {
-  from { transform: scale(.94) translateY(10px); opacity: 0; }
+  from { transform: scale(.96) translateY(6px); opacity: 0; }
   to   { transform: scale(1)    translateY(0);    opacity: 1; }
+}
+
+/* 🛡️ (2026-09-26 accessibility): ปิด animation ทั้งหมดสำหรับผู้ใช้ที่ตั้งค่า reduced-motion
+   ตาม WCAG 2.1 — กัน motion sickness + ประหยัด battery มือถือ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .pending-order-banner-icon::after,
+  .modal-close:hover,
+  .pending-order-banner-dismiss:hover,
+  .btn:hover,
+  .track-order-all-card:hover,
+  .track-order-item:hover,
+  .file-picker:hover {
+    transform: none !important;
+  }
+}
+
+/* ============================================================
+   🎨 (2026-09-26) Custom Confirm Modal — แทน window.confirm()
+   ------------------------------------------------------------
+   ใช้ผ่าน window.customConfirm(message, options) → Promise<boolean>
+   theme: ม่วง-ชมพูเหมือนเว็บหลัก
+   ============================================================ */
+#confirmBackdrop {
+  z-index: 150; /* สูงกว่า modal-backdrop ปกติ (100) เพื่อให้ modal confirm อยู่บนสุด */
+}
+#confirmBackdrop .modal {
+  max-width: 400px;
+  padding: 24px 22px calc(20px + var(--safe-bottom));
+}
+#confirmTitle {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+#confirmMessage {
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-line; /* รองรับ \n ในข้อความ */
+  word-break: break-word;
+}
+/* 🆕 ปุ่ม danger style — สำหรับกรณี confirm ลบ/ยืนยันการกระทำที่รุนแรง */
+#confirmBackdrop .btn.danger-confirm {
+  background: linear-gradient(135deg, var(--danger), #dc2626);
+  box-shadow:
+    0 4px 16px rgba(239, 68, 68, 0.35),
+    inset 0 1px 0 rgba(255,255,255,.15);
+}
+#confirmBackdrop .btn.danger-confirm:hover {
+  filter: brightness(1.08);
+  box-shadow:
+    0 8px 24px rgba(239, 68, 68, 0.5),
+    inset 0 1px 0 rgba(255,255,255,.2);
+}
+/* 🆕 ปุ่ม success style — สำหรับ confirm ที่ไม่ใช่การลบ (เช่น "ปิดใบเสร็จ") */
+#confirmBackdrop .btn.success-confirm {
+  background: linear-gradient(135deg, var(--success), #059669);
+  box-shadow:
+    0 4px 16px rgba(16, 185, 129, 0.35),
+    inset 0 1px 0 rgba(255,255,255,.15);
+}
+#confirmBackdrop .btn.success-confirm:hover {
+  filter: brightness(1.08);
+  box-shadow:
+    0 8px 24px rgba(16, 185, 129, 0.5),
+    inset 0 1px 0 rgba(255,255,255,.2);
 }
 
 .modal-header {
@@ -1567,11 +1638,25 @@ button:active {
   margin: 0;
   font-size: 19px;
   font-weight: 800;
+  /* 🛡️ (2026-09-26 fix): fallback color สำหรับเบราเซอร์ที่ไม่รองรับ background-clip:text
+     ใช้ color: var(--text) เป็นค่าเริ่มต้น แล้วค่อย override ด้วย gradient text */
+  color: var(--text);
   background: linear-gradient(135deg, var(--text), var(--accent));
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   letter-spacing: -0.02em;
+  /* ถ้าเบราเซอร์ไม่รองรับ → -webkit-text-fill-color: transparent จะไม่ทำงาน
+     แต่ color: var(--text) จะเป็น fallback */
+}
+
+/* 🛡️ (2026-09-26 fix): @supports check — ถ้าเบราเซอร์ไม่รองรับ background-clip:text ให้ใช้สี text ปกติ */
+@supports not ((background-clip: text) or (-webkit-background-clip: text)) {
+  .modal-header h3 {
+    background: none;
+    -webkit-text-fill-color: initial;
+    color: var(--text);
+  }
 }
 
 .modal-close {
@@ -1587,17 +1672,21 @@ button:active {
   justify-content: center;
   transition: all .2s ease;
   cursor: pointer;
+  /* 🛡️ (2026-09-26 fix): กัน transform ทำให้ตัวอักษร ⋌/✕ ดูเล็กบนมือถือ
+     ใช้ transform ที่นุ่มนวล + มี backface-visibility กัน flickering */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 .modal-close:hover {
   color: var(--text);
   background: var(--surface-hover);
-  transform: rotate(90deg) scale(1.05);
+  transform: rotate(90deg);
   border-color: var(--accent);
 }
 
 .modal-close:active {
-  transform: rotate(90deg) scale(.96);
+  transform: rotate(90deg) scale(0.92);
 }
 
 /* ---------- Admin Panel UI ---------- */
@@ -1795,7 +1884,7 @@ button:active {
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 13px 22px 13px 18px;
+  padding: 13px 22px;
   border-radius: var(--radius-full);
   font-size: 13.5px;
   font-weight: 600;
@@ -1804,18 +1893,12 @@ button:active {
   transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none;
   box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255,255,255,.04);
-  display:flex; align-items:center; gap:10px;
   min-width: 200px; max-width: calc(100vw - 32px);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-}
-
-.toast::before {
-  content:"";
-  flex:0 0 auto;
-  width:8px; height:8px; border-radius:50%;
-  background: var(--text-dim);
-  box-shadow: 0 0 8px currentColor;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .toast.show {
@@ -1828,21 +1911,18 @@ button:active {
   border-color: transparent;
   color: #fff;
 }
-.toast.error::before { background:#fff; box-shadow:0 0 12px rgba(255,255,255,.6); }
 
 .toast.success {
   background: linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(5, 150, 105, 0.95));
   border-color: transparent;
   color: #fff;
 }
-.toast.success::before { background:#fff; box-shadow:0 0 12px rgba(255,255,255,.6); }
 
 .toast.info {
   background: linear-gradient(135deg, rgba(59, 158, 255, 0.95), rgba(37, 99, 235, 0.95));
   border-color: transparent;
   color: #fff;
 }
-.toast.info::before { background:#fff; box-shadow:0 0 12px rgba(255,255,255,.6); }
 
 /* 🔧 (2026-09-16): toast แบบค้างตลอด ใช้ตอนสร้าง ZIP — ไม่ auto-hide (ดู app-admin.js: showToast) */
 .toast.progress {
@@ -1850,7 +1930,6 @@ button:active {
   border-color: transparent;
   color: #fff;
 }
-.toast.progress::before { background:#fff; box-shadow:0 0 12px rgba(255,255,255,.6); }
 
 /* success_long / error_long — ใช้สีเดียวกับ success/error ปกติ
    แต่มี auto-hide นานกว่า (4 วิ / 6 วิ ตามลำดับ — ดู app-admin.js: showToast)
@@ -1860,14 +1939,12 @@ button:active {
   border-color: transparent;
   color: #fff;
 }
-.toast.success_long::before { background:#fff; box-shadow:0 0 12px rgba(255,255,255,.6); }
 
 .toast.error_long {
   background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 0.95));
   border-color: transparent;
   color: #fff;
 }
-.toast.error_long::before { background:#fff; box-shadow:0 0 12px rgba(255,255,255,.6); }
 
 /* 🔧 (2026-09-16): Badge ตัวเลขสำหรับปุ่ม "🧾 จัดการออเดอร์" — แสดงจำนวนออเดอร์ "รอตรวจสอบการโอน" */
 /* ระดับสีตามจำนวน: 1-2 = เหลือง, 3-5 = ส้ม, 6+ = แดง — เห็นความเร่งด่วนได้ทันที */
