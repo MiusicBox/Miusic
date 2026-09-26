@@ -319,7 +319,40 @@
         <div class="field"><label>ชื่อธนาคาร</label><input id="setBankName" placeholder="เช่น BCEL, JDB, LDB, BBL"></div>
         <div class="field"><label>ชื่อบัญชี</label><input id="setBankAccountName" placeholder="ชื่อเจ้าของบัญชี"></div>
         <div class="field"><label>เลขบัญชี</label><input id="setBankAccount" placeholder="เลขบัญชีธนาคาร"></div>
-        <div class="field"><label>URL รูป QR Code</label><input id="setQrCodeUrl" placeholder="https://...qr.webp"></div>
+
+        <!-- 🎨 (2026-09-26) QR Code — อัปโหลดรูปจาก iPhone/iPad/PC/Mac ได้โดยตรง
+             + คงช่อง URL ไว้สำหรับกรณีรูปอยู่บนเว็บอื่น (optional) -->
+        <div class="field">
+          <label>รูป QR Code</label>
+          <!-- preview รูป QR (ถ้ามี) -->
+          <div id="qrPreviewWrap" style="display:none;margin-bottom:10px;padding:10px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;text-align:center;">
+            <img id="qrPreviewImg" src="" alt="QR Code preview" style="max-width:180px;width:100%;height:auto;border-radius:6px;background:#fff;padding:4px;">
+            <div style="display:flex;gap:8px;justify-content:center;margin-top:8px;flex-wrap:wrap;">
+              <button class="btn secondary" id="qrChangeBtn" type="button" style="flex:0 0 auto;min-width:auto;padding:8px 14px;font-size:13px;">เปลี่ยนรูป</button>
+              <button class="btn secondary" id="qrDeleteBtn" type="button" style="flex:0 0 auto;min-width:auto;padding:8px 14px;font-size:13px;color:var(--danger);border-color:var(--danger);">🗑 ลบรูป</button>
+            </div>
+          </div>
+          <!-- file picker (ใช้ได้บน iPhone/iPad/PC/Mac) — accept="image/*" เปิดกล้อง/คลังรูปได้ -->
+          <input type="file" id="qrFileInput" accept="image/jpeg,image/png,image/webp,image/jpg" style="display:none;">
+          <label for="qrFileInput" id="qrFilePickerLabel" class="file-picker" style="cursor:pointer;">
+            <div id="qrFilePickerText">
+              <div style="font-size:32px;">📷</div>
+              <div style="font-size:13px;margin-top:4px;">คลิกเพื่อเลือกรูป QR Code</div>
+              <div style="font-size:11px;margin-top:2px;color:var(--text-dim);">JPEG / PNG / WEBP • สูงสุด 5MB</div>
+              <div style="font-size:11px;margin-top:2px;color:var(--text-dim);">รองรับ iPhone / iPad / Android / PC</div>
+            </div>
+          </label>
+          <!-- สถานะกำลังอัปโหลด -->
+          <div id="qrUploadProgress" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(139,92,246,.08);border:1px solid var(--accent);border-radius:8px;font-size:13px;color:var(--accent);">
+            กำลังอัปโหลดรูป QR... <span id="qrUploadPercent">0%</span>
+          </div>
+        </div>
+        <!-- ช่อง URL (optional — สำหรับกรณีมี URL รูปอยู่แล้ว ไม่ต้องอัปโหลดใหม่) -->
+        <div class="field">
+          <label>หรือ URL รูป QR Code (optional)</label>
+          <input id="setQrCodeUrl" placeholder="https://...qr.webp (ถ้าอัปโหลดรูปด้านบนแล้ว ไม่ต้องกรอก)">
+        </div>
+
         <div class="field"><label>คำอธิบายวิธีโอน</label><textarea id="setPaymentInstructions" placeholder="โอนแล้วแจ้งแอดมินพร้อมแนบสลิป..."></textarea></div>
         <button class="btn" id="saveSettingsBtn">บันทึกการตั้งค่า</button>
       </div>
@@ -1158,6 +1191,6 @@
 
   <div class="toast" id="toast"></div>
 
-  <script type="module" src="app-admin.js?v=20260926-custom-modal-v1"></script>
+  <script type="module" src="app-admin.js?v=20260926-qr-upload-v1"></script>
 </body>
 </html>
