@@ -39,7 +39,7 @@ const BANNER_DISMISS_KEY = "music_store_banner_dismissed_v1"; // sessionStorage 
 // เพิ่มใหม่: จำชื่อ+เบอร์โทร/WhatsApp ของลูกค้าไว้ในเครื่อง เพื่อเติมให้อัตโนมัติตอนสั่งซื้อครั้งถัดไป (ลดการกรอกซ้ำ)
 const CUSTOMER_INFO_STORAGE_KEY = "music_store_customer_info_v1";
 
-export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhatsAppLink }) {
+export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhatsAppLink, openTrackOrderAllPicker }) {
   let submitting = false;
   let activeOrderId = null;
   let activeOrderKey = null;
@@ -793,6 +793,15 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   // และสร้างข้อความอัตโนมัติด้วย buildAdminWhatsAppText เดิมที่มีอยู่แล้วด้านบน (ใช้ซ้ำ ไม่สร้างข้อความใหม่)
   // ===== เพิ่มใหม่: จำออเดอร์ล่าสุด + แถบเตือน "ยังไม่ได้แจ้งแอดมิน" =====
   let receiptContacted = false; // สถานะของใบเสร็จที่กำลังเปิดอยู่ ณ ขณะนี้ — ใช้เช็คก่อนปิด
+  // 🔧 (2026-09-26 ต่อสายให้ครบ): เก็บออเดอร์ค้างชำระจริงจาก DB (ทุกใบของลูกค้า ไม่ใช่แค่ใบล่าสุดในเครื่องนี้)
+  //   ส่งเข้ามาโดย app-user.js ผ่าน updatePendingPaymentInfo() หลัง fetchTrackOrderBadgeOnce()
+  //   ไม่แทนที่ระบบ localStorage เดิม (record/getLastOrderRecord) — ใช้ "เสริม" กัน เพื่อไม่ให้กระทบ flow เดิมตอนเพิ่งสั่งซื้อเสร็จ
+  let dbPendingOrders = [];
+
+  function updatePendingPaymentInfo(orders) {
+    dbPendingOrders = Array.isArray(orders) ? orders : [];
+    renderPendingOrderBanner();
+  }
 
   function saveLastOrderRecord(order, receiptNumber) {
     try {
@@ -842,7 +851,10 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         localStorage.removeItem(BANNER_DISMISS_KEY);
       }
     } catch (_) {}
-    const shouldShow = !!record && !record.contacted && !dismissed;
+    // 🔧 (2026-09-26 ต่อสายให้ครบ): เพิ่มเงื่อนไขจาก DB — มีออเดอร์สถานะ "pending_verify" (ยังไม่ผ่านการตรวจสอบ/ชำระ) ของลูกค้าจริงไหม
+    //   เดิมเช็คแค่ record ในเครื่องนี้ใบเดียว → ถ้าลูกค้าเปลี่ยนอุปกรณ์/ล้าง cache ก็จะไม่เห็นแถบเตือนทั้งที่มีออเดอร์ค้างจริง
+    const hasDbPending = dbPendingOrders.some(order => String(order?.status || "") === "pending_verify");
+    const shouldShow = ((!!record && !record.contacted) || hasDbPending) && !dismissed;
     banner.hidden = !shouldShow;
   }
 
@@ -1650,6 +1662,13 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     });
     // เพิ่มใหม่: แถบเตือนออเดอร์ค้างแจ้งแอดมิน
     document.getElementById("pendingOrderBannerBtn")?.addEventListener("click", () => {
+      // 🔧 (2026-09-26 ต่อสายให้ครบ): ถ้ามี callback เปิดหน้า "ออเดอร์ทั้งหมดของฉัน" (ส่งมาจาก app-user.js)
+      //   ใช้อันนี้ก่อน — ลูกค้าจะเห็นออเดอร์ค้างชำระ "ทุกใบ" ไม่ใช่แค่ใบล่าสุดในเครื่องนี้
+      if (typeof openTrackOrderAllPicker === "function") {
+        openTrackOrderAllPicker();
+        return;
+      }
+      // fallback เดิม (กรณีไม่มี callback ส่งมา) — เปิดใบเสร็จของออเดอร์ล่าสุดในเครื่องนี้เหมือนเดิม
       const record = getLastOrderRecord();
       if (!record) { renderPendingOrderBanner(); return; }
       showReceipt(record.order, record.receiptNumber, state.settings?.whatsapp_number, record.contacted);
@@ -1675,6 +1694,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     closeCart,
     checkoutCart,
     getLastOrderRecord,
-    showReceipt
+    showReceipt,
+    updatePendingPaymentInfo
   };
 }
