@@ -3920,6 +3920,34 @@ export default {
         return jsonResponse({ error: "ใบสั่งซื้อนี้ยืนยันการชำระแล้ว — ไม่สามารถอัปโหลดสลิปใหม่ได้" }, 409);
       }
 
+      // 🛡️ (added 2026-09-26 prevent double payment): defense-in-depth check
+      //   ป้องกันลูกค้าอัปโหลดสลิปซ้ำในออเดอร์เดิม ตามเป้าหมาย "ป้องกันการชำระเงินซ้ำ"
+      //   เป็นการ enforce ความตั้งใจเดิมของ comment ด้านบน ("ลูกค้าอัปใหม่ได้หลังปฏิเสธ")
+      //   ที่ก่อนหน้านี้ยังไม่ถูก enforce จริง — เช็คแค่ status แต่ไม่เช็ค payment_proof_status
+      //
+      //   กฎ:
+      //     - payment_proof_status='pending' → ห้ามอัปใหม่ (รอแอดมินตรวจสอบอยู่)
+      //     - payment_proof_status='verified' → ห้ามอัปใหม่ (แอดมินยืนยันแล้ว รอเปลี่ยน status เป็น processing)
+      //     - payment_proof_status='rejected' หรือ ไม่มี payment_proof_status → อนุญาต (ลูกค้าอัปใหม่ได้)
+      //     - status='cancelled' → อนุญาต (ตามระบบเดิม — backend ยังอนุญาต)
+      //
+      //   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่มการตรวจสอบที่เข้มขึ้น ไม่ได้ละเว้นเงื่อนไขใดที่อนุญาตไว้ก่อนหน้า
+      //     กรณีที่ยังอัปได้: status=pending_verify โดยไม่มี pending proof, หรือ payment_proof_status=rejected
+      //     กรณีที่ถูกบล็อกใหม่: payment_proof_status=pending หรือ verified (ซึ่งควรถูกบล็อกอยู่แล้วตามเจตนาเดิม)
+      const currentPpStatus = String(orderData.payment_proof_status || "").toLowerCase();
+      if (currentPpStatus === "pending") {
+        return jsonResponse({
+          error: "ระบบได้รับหลักฐานการชำระเงินของคุณแล้ว กรุณารอการตรวจสอบ — ไม่ต้องชำระเงินซ้ำสำหรับออเดอร์นี้",
+          code: "PROOF_PENDING_REVIEW",
+        }, 409);
+      }
+      if (currentPpStatus === "verified") {
+        return jsonResponse({
+          error: "ออเดอร์นี้ยืนยันการชำระแล้ว — ไม่ต้องชำระเงินซ้ำ",
+          code: "PROOF_ALREADY_VERIFIED",
+        }, 409);
+      }
+
       // 3. ownership verify — customer_name + whatsapp ตรงกับใน order
       //    normalize: trim + lowercase + เอา + และ - ออก เทียบแบบ loose
       const norm = (s) => String(s || "").trim().toLowerCase().replace(/[\s+\-()]/g, "");
