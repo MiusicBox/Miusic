@@ -30,7 +30,7 @@ import {
   fetchCustomerOrdersOnce
 // 🔧 (2026-09-17 v2): เพิ่ม ?v=20260917-polling-fix บังคับ browser โหลด db-client.js ใหม่ (กัน cache เก่า)
 } from "./db-client.js?v=20260917-polling-fix";
-import { initCart } from "./app-cart.js?v=20260926-wa-autoredirect";
+import { initCart } from "./app-cart.js?v=20260926-payment-banner-v2";
 // ===== ลดราคา + โปรโมชั่น + ออเดอร์ของฉัน (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, applyDiscountToPrice, findActiveDiscountFor,
