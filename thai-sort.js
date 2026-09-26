@@ -69,3 +69,10 @@ export function thaiNaturalCompare(a, b) {
 export function sortByThaiName(list, field) {
   return [...(list || [])].sort((a, b) => thaiNaturalCompare(a && a[field], b && b[field]));
 }
+
+// 🎨 (2026-09-26): เพิ่ม helper สำหรับ sort เพลง — ใช้ song_name เป็น field หลัก
+//   ทำให้การเรียงเพลงเหมือนกันทั้งฝั่ง user และฝั่งแอดมิน
+//   ลำดับ: พยัญชนะไทย ก-ฮ > A-Z > 0-9 (ตัวเลขเทียบตามค่าจริง: A1, A2, A3, A10 ไม่ใช่ A1, A10, A2)
+export function sortSongsByThaiName(songs) {
+  return sortByThaiName(songs, "song_name");
+}
