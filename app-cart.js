@@ -1471,7 +1471,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
             </div>
             <div style="font-size:12px;color:var(--text-dim);margin-top:10px;font-weight:600;">📱 สแกน QR เพื่อโอนเงิน</div>
           </div>` : ""}
-        ${settings.payment_instructions ? `<div style="font-size:12px;color:var(--text-dim);background:var(--bg-soft, #f7f7f7);padding:10px;border-radius:6px;margin:8px 0;line-height:1.5;">
+        ${settings.payment_instructions ? `<div style="font-size:13.5px;color:#334155;background:var(--bg-soft, #f7f7f7);padding:12px 14px;border-radius:8px;margin:8px 0;line-height:1.65;font-weight:500;">
           ${escapeHtml(settings.payment_instructions).replace(/\n/g, "<br>")}
         </div>` : ""}
         <button class="btn" id="paymentUploadSlipBtn" type="button" style="width:100%;margin-top:14px;background:var(--accent);color:#fff;font-size:15px;padding:12px;">
