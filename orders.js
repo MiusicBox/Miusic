@@ -499,17 +499,21 @@ async function createOrderZip(orderId) {
     }
 
     // ===== Step 2: append ทีละเพลง =====
-    // 🔧 (2026-09-21 perf v3): Parallel append — ส่ง 3 เพลงพร้อมกัน (ลด 9-15 วิ → 3-5 วิ)
-    //   แต่ละ append ยังเป็น Worker invocation แยก → ไม่เกิน CPU/time limit ของ free plan
-    //   ข้อดี: ลด network round-trip + R2 fetch ทำพร้อมกัน (Worker แต่ละตัว fetch WAV ของตัวเอง)
-    //   ข้อเสีย: ถ้าเพลงเยอะ → ใช้ chunk เพื่อกัน D1 update race
-    const PARALLEL_APPEND_CHUNK = 3;  // 3 พร้อมกัน (Cloudflare Worker subrequest limit ~6, เผื่อไว้)
+    // 🐛 (2026-09-27 fix): เดิม PARALLEL_APPEND_CHUNK = 3 → ส่ง 3 เพลงพร้อมกันต่อรอบ
+    //   แต่ /api/order-zip/append แต่ละคำขอทำ SELECT parts (D1) → push entry ตัวเอง → UPDATE parts ทับทั้งคอลัมน์
+    //   เมื่อ 3 คำขอรันพร้อมกัน → ต่างอ่าน parts ชุดเดิมก่อนใครจะเขียนเสร็จ → คำขอที่ UPDATE ทีหลังสุด
+    //   จะเขียนทับพาร์ตของอีก 2 คำขอที่ไม่เห็นข้อมูลของกันและกัน (lost update) → เพลงหายไปราว 2 ใน 3
+    //   ตัวอย่างจริงที่พบ: ออเดอร์มี 47 เพลง แต่ ZIP ที่ได้มีเพลงจริงแค่ ~17 เพลง (ตรงกับสัดส่วน ~1/3 ที่รอดจากคำขอ 3 พร้อมกัน)
+    //   แก้โดยเปลี่ยนเป็นส่งทีละ 1 เพลง (sequential) → ไม่มี concurrent write ทับ parts อีกต่อไป
+    //   ข้อเสีย: ช้าลงกว่าเดิม (ไม่ได้ parallel 3 เพลง) แต่ได้เพลงครบ 100% ตามจำนวนจริงในออเดอร์
+    const PARALLEL_APPEND_CHUNK = 1;  // เดิม = 3 (ทำให้เกิด D1 write race ข้างบน) → เปลี่ยนเป็น 1 เพื่อความถูกต้อง
     for (let i = 0; i < plan.length; i += PARALLEL_APPEND_CHUNK) {
       const chunk = plan.slice(i, Math.min(i + PARALLEL_APPEND_CHUNK, plan.length));
       const progressPct = Math.round((i / plan.length) * 100);
       orderToast(`⏳ กำลังสร้าง ZIP ${i}/${totalSongs} เพลง (${progressPct}%)...`, "progress");
       try {
         await Promise.all(chunk.map(async (item, idx) => {
+
           const partNumber = i + idx + 1;
           let appendRes;
           try {
@@ -1539,8 +1543,15 @@ function renderHistory() {
         <select class="status-select" data-order-id="${o.id}">${options}</select>
         <div class="row-actions" style="justify-content:flex-end;">
           <button class="icon-btn" data-receipt-order="${o.id}" title="ดูใบเสร็จ">🧾</button>
-          ${(o.status === "processing" || o.status === "completed") ? `<button class="icon-btn" data-fullfiles-order="${o.id}" title="ไฟล์เต็มสำหรับส่งลูกค้า">📥</button>` : ""}
-          ${o.zip_status === "failed" ? `<button class="icon-btn" data-retry-zip-order="${o.id}" title="สร้าง ZIP ใหม่">🔁</button>` : ""}
+          ${/* 🐛 (2026-09-27 fix): เดิมปุ่ม "📥 ไฟล์เต็มสำหรับส่งลูกค้า" โชว์ตาม o.status อย่างเดียว
+                → หลังแอดมินลบ ZIP ออกจาก Cloud (zip_download_url ถูกเคลียร์เป็น "") ปุ่มนี้ก็ยังโชว์อยู่เหมือนเดิม
+                → กดเข้าไปดูได้ และเพลงแต่ละเพลงยังฟัง/โหลดได้ เพราะโมดัลดึงลิงก์ตรงจาก song.full_file_url ของแต่ละเพลง
+                  (ไม่ได้อิงกับ ZIP เลย) — ทำให้ดูเหมือน "ลบ ZIP แล้วแต่ยังเข้าถึงได้เหมือนเดิม"
+                แก้: ปุ่ม 📥 โชว์เฉพาะตอนมี ZIP อยู่จริง (o.zip_download_url) เท่านั้น
+                     ถ้าไม่มี ZIP (ลบไปแล้ว/ยังไม่เคยสร้าง/สร้างไม่สำเร็จ) และไม่ได้กำลังสร้างอยู่ (ไม่ใช่ preparing)
+                     → โชว์ปุ่ม 🔁 "สร้าง ZIP ใหม่" แทนที่ */""}
+          ${(o.status === "processing" || o.status === "completed") && o.zip_download_url ? `<button class="icon-btn" data-fullfiles-order="${o.id}" title="ไฟล์เต็มสำหรับส่งลูกค้า">📥</button>` : ""}
+          ${(o.status === "processing" || o.status === "completed") && !o.zip_download_url && o.zip_status !== "preparing" ? `<button class="icon-btn" data-retry-zip-order="${o.id}" title="สร้าง ZIP ใหม่">🔁</button>` : ""}
           ${o.zip_download_url ? `<button class="icon-btn" data-delete-zip-order="${o.id}" title="ลบไฟล์ ZIP ออกจาก Cloud (ไม่ลบออเดอร์ — ประหยัดพื้นที่จัดเก็บ)">🧹</button>` : ""}
           ${/* v5: ปุ่ม "ยกเลิก" แสดงตอนกำลังสร้าง ZIP */""}
           ${zipJobs.has(o.id) ? `<button class="icon-btn danger" data-abort-zip-order="${o.id}" title="ยกเลิกการสร้าง ZIP ระหว่างทำ (cleanup R2 multipart + D1 row)">✕</button>` : ""}
