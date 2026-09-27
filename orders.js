@@ -2407,6 +2407,12 @@ function askConfirm(message, options) {
 /* ---------------- ลบไฟล์ ZIP ออกจาก Cloud (ใหม่ 2026-09-11) ----------------
    ต่างจาก handleDeleteOrder: ไม่ลบออเดอร์ ลบแค่ไฟล์ ZIP ออกจาก R2 + เคลียร์ field ที่เกี่ยวกับ ZIP
    ในออเดอร์ เพื่อประหยัดพื้นที่จัดเก็บ (ออเดอร์ยังอยู่ครบ กดปุ่ม 🔁 สร้าง ZIP ใหม่ได้ภายหลังถ้าต้องการ) */
+// 🔧 (2026-09-27 fix R2 leak): ตรวจ return value ของ deleteFromStorage ก่อนเคลียร์ field
+//   เดิม: ถ้า Worker คืน 503/500 → deleteFromStorage return { ok: false } แต่โค้ดไม่ check
+//         → เคลียร์ zip_download_url="" ทั้งที่ไฟล์ยังอยู่ใน R2 → ลูกค้าดาวน์โหลดไม่ได้แต่ไฟล์ยังค้าง
+//   ใหม่: ถ้า { ok: false } → ไม่เคลียร์ field + แสดง error จริง + ไม่ update state
+//   ผลกระทบระบบเดิม: 0% — ถ้าลบสำเร็จ flow เดิม 100% (เคลียร์ field ปกติ)
+//                   — ถ้าลบไม่สำเร็จ → ออเดอร์ยังเห็น ZIP อยู่ (ปลอดภัยกว่าเดิม)
 async function handleDeleteOrderZip(orderId) {
   const order = state.allOrders.find((o) => o.id === orderId);
   const label = order ? `ZIP ของออเดอร์ ${order.customer_name}` : "ไฟล์ ZIP นี้";
@@ -2416,11 +2422,21 @@ async function handleDeleteOrderZip(orderId) {
   try {
     const orderSnap = await getDoc(doc(db, "orders", orderId));
     const orderData = orderSnap.exists() ? orderSnap.data() : null;
+    // 🔧 (2026-09-27 fix R2 leak): ตรวจ return value ก่อนเคลียร์ field
+    let deleteResult = { ok: false, skipped: true };
     if (orderData?.zip_public_id) {
-      await deleteFromStorage({ key: orderData.zip_public_id });
+      deleteResult = await deleteFromStorage({ key: orderData.zip_public_id });
     } else if (orderData?.zip_download_url) {
-      await deleteFromStorage({ url: orderData.zip_download_url });
+      deleteResult = await deleteFromStorage({ url: orderData.zip_download_url });
     }
+    // ถ้าลบไม่สำเร็จ (และไม่ใช่ skip) → หยุด ไม่เคลียร์ field ในออเดอร์
+    // (กันไฟล์ R2 ค้างเป็นขยะ แต่ user คิดว่าลบแล้ว)
+    if (!deleteResult.ok && !deleteResult.skipped) {
+      const errMsg = deleteResult.error || "ไม่ทราบสาเหตุ";
+      orderToast(`ลบไฟล์ ZIP ไม่สำเร็จ: ${errMsg} — ออเดอร์ยังเก็บ ZIP ไว้ ลองอีกครั้ง`, "error_long");
+      return;
+    }
+    // ลบสำเร็จ (หรือ skipped เพราะไม่มีไฟล์) → เคลียร์ field ปกติ
     await updateDoc(doc(db, "orders", orderId), {
       zip_status: "",
       zip_download_url: "",
@@ -2476,10 +2492,37 @@ async function handleDeleteOrder(orderId) {
     await deleteDoc(doc(db, "orders", orderId));
     // ลบไฟล์ ZIP ออกจาก Cloud ตามไปด้วยถ้าออเดอร์นี้เคยสร้าง ZIP ไว้ — ทำแบบ background ไม่รอ/ไม่ block UI
     // และไม่ทำให้การลบออเดอร์ล้มเหลวถ้าลบไฟล์ cloud ไม่สำเร็จ (ตัว order ลบไปแล้ว ย้อนกลับไม่ได้อยู่แล้ว)
-    if (orderData?.zip_public_id) {
-      deleteFromStorage({ key: orderData.zip_public_id });
-    } else if (orderData?.zip_download_url) {
-      deleteFromStorage({ url: orderData.zip_download_url });
+    // 🔧 (2026-09-27 fix R2 leak): เดิมเป็น fire-and-forget ไม่มี await/catch/retry
+    //   → ถ้า fetch ล้ม (network ชั่วคราว/ปิด browser/Worker 503) ไฟล์ R2 ค้างเป็นขยะตลอดไป
+    //   ใหม่: retry 3 ครั้งด้วย backoff (1s, 2s, 4s) + catch + log warning
+    //   ถ้า retry ครบทั้ง 3 ครั้งยังล้ม → log warning แต่ไม่ block (ออเดอร์ลบไปแล้ว ย้อนกลับไม่ได้)
+    //   ผลกระทบระบบเดิม: 0% — ถ้าลบสำเร็จครั้งแรก flow เดิม 100% (background, ไม่ block UI)
+    //                   — เพิ่มแค่ retry + catch กันไฟล์ค้าง
+    if (orderData?.zip_public_id || orderData?.zip_download_url) {
+      const storageArgs = orderData?.zip_public_id
+        ? { key: orderData.zip_public_id }
+        : { url: orderData.zip_download_url };
+      // ทำแบบ background ไม่ block UI (เหมือนเดิม) — แต่มี retry + catch
+      (async () => {
+        const maxRetries = 3;
+        const backoffMs = [1000, 2000, 4000];  // 1s, 2s, 4s
+        for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+          const result = await deleteFromStorage(storageArgs);
+          if (result.ok || result.skipped) {
+            console.log(`[deleteOrder] R2 file deleted (attempt ${attempt}):`, storageArgs.key || storageArgs.url);
+            return;  // สำเร็จ → ออก
+          }
+          if (attempt < maxRetries) {
+            console.warn(`[deleteOrder] R2 delete failed (attempt ${attempt}/${maxRetries}), retrying in ${backoffMs[attempt-1]}ms:`, result.error);
+            await new Promise((r) => setTimeout(r, backoffMs[attempt-1]));
+          } else {
+            // retry ครบทั้ง 3 ครั้งยังล้ม → log warning (ไฟล์ค้างใน R2 แต่ออเดอร์ลบไปแล้ว)
+            console.error(`[deleteOrder] R2 delete failed after ${maxRetries} attempts — file may be orphaned in R2:`, storageArgs.key || storageArgs.url, result.error);
+          }
+        }
+      })().catch((err) => {
+        console.error("[deleteOrder] R2 delete background task crashed:", err?.message || err);
+      });
     }
     // 🔧 (2026-09-17 Phase 2): ลบ order ออกจาก state ฝั่ง client แทน re-fetch (ลด D1 reads)
     removeOrderFromState(orderId);
