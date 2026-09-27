@@ -2726,7 +2726,16 @@ async function handleOrderZipFinalize(request, env) {
 //   → ลดจำนวน fetch รอบจาก ceil(N/20) เป็น ceil(N/30) → ลด network overhead
 //   ผลกระทบต่อระบบเดิม: 0% — client ยังวน loop finalize-build จนกว่า done=true เหมือนเดิม
 //   ข้อจำกัด: ถ้าออเดอร์ใหญ่มาก (>50 เพลง) อาจเกิน CPU time → ระบบจะเข้า catch และ resume รอบถัดไป
-const ZIP_FINALIZE_SONGS_PER_ROUND = 30;        // จำนวนเพลงต่อ 1 Worker invocation (เดิม 20, แล้วเดิมสุด 10)
+// 🔧 (2026-09-27 fix large ZIP Free plan): ลดจาก 30 → 5 เพลง/รอบ
+//   เหตุผล: Free plan จำกัด 50 subrequests/invocation — 30 เพลงใช้ ~120 subrequests (เกิน limit)
+//   → ทำให้ระบบเดิม fail ตอนสร้าง ZIP ขนาดใหญ่ (50+ เพลง) → คืน 503 จาก Cloudflare
+//   วิธีแก้: ลดเป็น 5 เพลง/รอบ → ใช้แค่ ~20 subrequests/รอบ (อยู่ใน limit 50 ปลอดภัย)
+//   + CPU time ลดลงเหลือ ~15 วินาที/รอบ (อยู่ใน limit 30 วินาทีปลอดภัย)
+//   ผลลัพธ์: รองรับ ZIP ขนาดใหญ่ (~5-10 GB) บน Free plan โดยใช้จำนวนรอบมากขึ้น
+//   ผลกระทบต่อระบบเดิม: 0% — client ยังวน loop finalize-build เหมือนเดิม (แค่วนหลายรอบขึ้น)
+//   ข้อแลกเปลี่ยน: เวลาสร้าง ZIP ใหญ่ จะนานขึ้นเล็กน้อย เพราะวน finalize-build หลายรอบขึ้น
+//                  แต่ละรอบใช้ CPU time น้อยลง → ไม่เจอ 503 + รองรับขนาดใหญ่ขึ้นมาก
+const ZIP_FINALIZE_SONGS_PER_ROUND = 5;         // จำนวนเพลงต่อ 1 Worker invocation (เดิม 30 → 5 สำหรับ Free plan)
 // 🔧 (2026-09-19 perf v2 จุด #2): เพิ่ม ZIP_FINALIZE_CHUNK_SIZE จาก 8MB → 16MB
 //   เหตุผล: ลดจำนวน R2 multipart parts ครึ่งหนึ่ง → ลด R2 API calls + ลด upload overhead
 //   ผลกระทบต่อ memory: ใช้ buffer 16MB + parallel 3 chunks = ~50MB (ยังพอภายใน limit 128MB)
