@@ -343,6 +343,108 @@ async function handleDeleteUpload(request, env) {
   return jsonResponse({ ok: true, deleted: true, key });
 }
 
+// 🔧 (2026-09-27 add): POST /api/order-files/cleanup — ลบไฟล์ทั้งหมดของออเดอร์ออกจาก R2 + D1
+//   ใช้ตอนแอดมินลบออเดอร์ → เรียก endpoint นี้ก่อนลบออเดอร์ใน D1
+//
+//   ทำครบ:
+//     1) Query payment_proofs WHERE order_id = ? → ดึง file_key ทั้งหมด
+//     2) ลบไฟล์สลิปแต่ละไฟล์ออกจาก R2 (รองรับหลายสลิป — ลูกค้าอัปใหม่ถ้าถูก reject)
+//     3) DELETE payment_proofs rows ออกจาก D1 (กันขยะใน D1)
+//     4) ลบไฟล์ ZIP ออกจาก R2 (ถ้ามี zip_public_id ใน order doc)
+//
+//   ผลกระทบระบบเดิม: 0% — เพิ่ม endpoint ใหม่ขั้น ไม่แตะ /api/upload (DELETE) เดิม
+//   ไม่ลบ order doc — caller ยังต้องลบเอง (เพื่อให้ rollback ได้ถ้า cleanup ล้ม)
+//
+//   Request:  { orderId }
+//   Response: { ok: true, proofsDeleted: N, proofsRowsDeleted: N, zipDeleted: bool }
+//             หรือ { error } เมื่อ fail
+async function handleOrderFilesCleanup(request, env) {
+  // 🔧 (2026-09-27 fix 503): หุ้ม getSessionAdmin ด้วย try/catch — กัน D1 throw → 503
+  let admin;
+  try {
+    admin = await getSessionAdmin(request, env);
+  } catch (err) {
+    return jsonResponse({ error: safeError("ตรวจสอบสิทธิ์ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+  }
+  if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+  if (!env.BUCKET) return jsonResponse({ error: "ยังไม่ได้ผูก R2 bucket (binding: BUCKET) ใน wrangler.jsonc" }, 500);
+  if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
+
+  let body;
+  try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+  const orderId = sanitizeHeaderValue(body?.orderId);
+  if (!orderId) return jsonResponse({ error: "กรุณาระบุ orderId" }, 400);
+
+  let proofsDeleted = 0;
+  let proofsRowsDeleted = 0;
+  let zipDeleted = false;
+
+  // ===== 1) ลบไฟล์สลิปโอนเงินทั้งหมดของออเดอร์ =====
+  //   รองรับหลายสลิป: ลูกค้าอัปใหม่ได้ถ้าถูก reject → ออเดอร์เดียวมีได้หลาย rows ใน payment_proofs
+  let proofRows;
+  try {
+    const result = await env.DB.prepare(
+      "SELECT id, file_key FROM payment_proofs WHERE order_id = ?"
+    ).bind(orderId).all();
+    proofRows = result?.results || [];
+  } catch (err) {
+    // ถ้าตาราง payment_proofs ยังไม่ถูกสร้าง (schema ใหม่) → log + ข้าม (ไม่ block)
+    console.warn("order-files/cleanup: query payment_proofs failed (table may not exist):", err?.message || err);
+    proofRows = [];
+  }
+
+  for (const row of proofRows) {
+    if (row?.file_key) {
+      try {
+        await env.BUCKET.delete(row.file_key);
+        proofsDeleted += 1;
+      } catch (err) {
+        // ลบไฟล์เดียวล้ม → log แต่ไม่ block (ลบไฟล์อื่นต่อ)
+        console.warn(`order-files/cleanup: R2 delete proof failed (key: ${row.file_key}):`, err?.message || err);
+      }
+    }
+  }
+
+  // ===== 2) ลบ rows ใน payment_proofs ออกจาก D1 =====
+  if (proofRows.length > 0) {
+    try {
+      const deleteResult = await env.DB.prepare(
+        "DELETE FROM payment_proofs WHERE order_id = ?"
+      ).bind(orderId).run();
+      proofsRowsDeleted = deleteResult?.meta?.changes || 0;
+    } catch (err) {
+      console.warn("order-files/cleanup: DELETE payment_proofs failed:", err?.message || err);
+    }
+  }
+
+  // ===== 3) ลบไฟล์ ZIP ออกจาก R2 (ถ้ามี) =====
+  //   ดึง order doc เพื่อหา zip_public_id (R2 key ของ ZIP)
+  let orderDoc;
+  try {
+    orderDoc = await getDocument(env, "orders", orderId);
+  } catch (err) {
+    console.warn("order-files/cleanup: getDocument(orders) failed:", err?.message || err);
+    orderDoc = null;
+  }
+  const zipR2Key = orderDoc?.data?.zip_public_id || "";
+  if (zipR2Key) {
+    try {
+      await env.BUCKET.delete(zipR2Key);
+      zipDeleted = true;
+    } catch (err) {
+      console.warn(`order-files/cleanup: R2 delete ZIP failed (key: ${zipR2Key}):`, err?.message || err);
+    }
+  }
+
+  return jsonResponse({
+    ok: true,
+    orderId,
+    proofsDeleted,
+    proofsRowsDeleted,
+    zipDeleted,
+  });
+}
+
 function adminToClient(admin) {
   return { uid: admin.id, email: admin.email, displayName: admin.display_name, role: admin.role };
 }
@@ -3364,6 +3466,15 @@ export default {
     if (url.pathname === "/api/upload" && request.method === "DELETE") {
       if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
       return handleDeleteUpload(request, env);
+    }
+
+    // 🔧 (2026-09-27 add): POST /api/order-files/cleanup — ลบไฟล์ทั้งหมดของออเดอร์ออกจาก R2 + D1
+    //   ใช้ตอนแอดมินลบออเดอร์ → ลบสลิปโอนเงินทั้งหมด + ZIP + payment_proofs rows ใน D1
+    //   ต้อง login แอดมินเท่านั้น (เช็คใน handleOrderFilesCleanup)
+    //   ผลกระทบระบบเดิม: 0% — path ใหม่ขั้น ไม่แตะ /api/upload (DELETE) เดิม
+    if (url.pathname === "/api/order-files/cleanup" && request.method === "POST") {
+      if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
+      return handleOrderFilesCleanup(request, env);
     }
 
     // 🔒 /api/file/* — Proxy อ่านไฟล์จาก R2 (ใหม่ 2026-09-12)
