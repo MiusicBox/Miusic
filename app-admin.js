@@ -1211,10 +1211,11 @@ function findDuplicateSongsByName(songName, excludeSongId) {
     .filter(s => s.id !== excludeSongId)
     .filter(s => String(s.song_name || "").trim().toLowerCase().replace(/\s+/g, " ") === normalized);
 }
-function populateSelect(id, items, valueKey, labelKey) {
+function populateSelect(id, items, valueKey, labelKey, placeholderLabel) {
   const sel = document.getElementById(id);
   const current = sel.value;
-  sel.innerHTML = '<option value="">— ไม่ระบุ —</option>' + items.map(it => `<option value="${it[valueKey]}">${escapeHtml(it[labelKey])}</option>`).join("");
+  const placeholder = placeholderLabel || "ไม่ระบุ";
+  sel.innerHTML = `<option value="">— ${escapeHtml(placeholder)} —</option>` + items.map(it => `<option value="${it[valueKey]}">${escapeHtml(it[labelKey])}</option>`).join("");
   sel.value = current;
 }
 // 🔧 (2026-09-18 v6 Full System): incremental render — แสดง 100 แรก + "โหลดเพิ่ม" button
@@ -1323,10 +1324,14 @@ document.getElementById("songRowMenuDelete").addEventListener("click", () => {
 
 // ================= จัดเพลงเข้าเพลย์ลิสต์ / หมวดหมู่ / DJ แบบเร็ว (ไม่ต้องเปิดฟอร์มแก้ไขเพลงเต็ม) =================
 let quickAssignSongId = null;
+// 🔧 (2026-09-27 เพิ่มใหม่ — additive): จัดหลายเพลงพร้อมกัน ใช้ modal เดิม (#quickAssignBackdrop)
+//   quickAssignBulkIds !== null → กำลังอยู่ในโหมดจัดหลายเพลง (ไม่กระทบ path เพลงเดี่ยวเดิมเลย)
+let quickAssignBulkIds = null;
 function openQuickAssign(id) {
   const s = CACHE.songs.find(x => x.id === id);
   if (!s) return;
   quickAssignSongId = id;
+  quickAssignBulkIds = null;
   document.getElementById("quickAssignSongName").textContent = s.song_name;
   // ใช้ populateSelect ตัวเดิม (options ชุดเดียวกับฟอร์มแก้ไขเพลง) — คงพฤติกรรม/ชื่อ field เดิมทุกจุด
   populateSelect("qaDj", CACHE.djs, "id", "dj_name");
@@ -1339,32 +1344,77 @@ function openQuickAssign(id) {
   document.getElementById("qaPlaylist").value = s.playlist_id || "";
   document.getElementById("quickAssignBackdrop").classList.add("show");
 }
+// เปิด modal เดิมในโหมด "จัดหลายเพลงพร้อมกัน" — ทุกช่องเริ่มที่ "ไม่เปลี่ยน" (ไม่ใช่ "ไม่ระบุ")
+// เพื่อไม่ให้เผลอล้างค่า DJ/หมวดหมู่/เพลย์ลิสต์เดิมของเพลงที่ไม่ได้ตั้งใจแก้ (ตามที่ผู้ใช้ยืนยัน)
+function openQuickAssignBulk(ids) {
+  if (!ids || ids.length === 0) return;
+  quickAssignBulkIds = ids;
+  quickAssignSongId = null;
+  document.getElementById("quickAssignSongName").textContent = `กำลังจัดเพลงที่เลือกไว้ ${ids.length} เพลง`;
+  populateSelect("qaDj", CACHE.djs, "id", "dj_name", "ไม่เปลี่ยน");
+  populateSelect("qaCategory", CACHE.categories, "id", "category_name", "ไม่เปลี่ยน");
+  populateSelect("qaPlaylist", CACHE.playlists, "id", "playlist_name", "ไม่เปลี่ยน");
+  document.getElementById("qaDj").value = "";
+  document.getElementById("qaCategory").value = "";
+  document.getElementById("qaPlaylist").value = "";
+  document.getElementById("quickAssignBackdrop").classList.add("show");
+}
 document.getElementById("quickAssignClose").addEventListener("click", () => {
   document.getElementById("quickAssignBackdrop").classList.remove("show");
   quickAssignSongId = null;
+  quickAssignBulkIds = null;
 });
 document.getElementById("quickAssignSaveBtn").addEventListener("click", async function () {
-  if (!quickAssignSongId) return;
+  if (!quickAssignSongId && !quickAssignBulkIds) return;
   const btn = this; btn.disabled = true; btn.textContent = "กำลังบันทึก...";
   try {
     const djSel = document.getElementById("qaDj");
     const catSel = document.getElementById("qaCategory");
     const plSel = document.getElementById("qaPlaylist");
-    const payload = {
-      dj_name: djSel.value ? djSel.options[djSel.selectedIndex].text : "",
-      category_id: catSel.value,
-      category_name: catSel.value ? catSel.options[catSel.selectedIndex].text : "",
-      playlist_id: plSel.value,
-      playlist_name: plSel.value ? plSel.options[plSel.selectedIndex].text : "",
-      updated_at: new Date().toISOString()
-    };
-    await updateDoc(doc(db, "songs", quickAssignSongId), payload);
-    const song = CACHE.songs.find(x => x.id === quickAssignSongId);
-    if (song) Object.assign(song, payload);
-    showToast("จัดเพลงเข้ารายการแล้ว", "success");
-    document.getElementById("quickAssignBackdrop").classList.remove("show");
-    quickAssignSongId = null;
-    renderSongList(currentSongListView);
+    if (quickAssignBulkIds) {
+      // โหมดจัดหลายเพลง: ใส่เฉพาะช่องที่แอดมินเลือกจริง ๆ ช่องที่เว้นว่าง ("ไม่เปลี่ยน") จะไม่ถูกแตะเลย
+      const payload = { updated_at: new Date().toISOString() };
+      if (djSel.value !== "") payload.dj_name = djSel.options[djSel.selectedIndex].text;
+      if (catSel.value !== "") { payload.category_id = catSel.value; payload.category_name = catSel.options[catSel.selectedIndex].text; }
+      if (plSel.value !== "") { payload.playlist_id = plSel.value; payload.playlist_name = plSel.options[plSel.selectedIndex].text; }
+      if (Object.keys(payload).length === 1) {
+        showToast("กรุณาเลือกอย่างน้อย 1 ช่อง (DJ / หมวดหมู่ / เพลย์ลิสต์)", "info");
+        btn.disabled = false; btn.textContent = "บันทึก";
+        return;
+      }
+      for (const id of quickAssignBulkIds) {
+        await updateDoc(doc(db, "songs", id), payload);
+        const song = CACHE.songs.find(x => x.id === id);
+        if (song) Object.assign(song, payload);
+      }
+      showToast(`จัดเพลงเข้ารายการแล้ว ${quickAssignBulkIds.length} เพลง`, "success");
+      document.getElementById("quickAssignBackdrop").classList.remove("show");
+      quickAssignBulkIds = null;
+      // เคลียร์โหมดเลือกหลายเพลงเหมือนหลังกด "ลบที่เลือก" สำเร็จ
+      selectedSongIds.clear();
+      songSelectMode = false;
+      document.getElementById("songBulkBar").style.display = "none";
+      document.getElementById("songSelectModeBtn").style.background = "";
+      document.getElementById("songSelectModeBtn").style.color = "";
+      invalidateAdminCache("songs");
+      renderSongList(currentSongListView);
+    } else {
+      const payload = {
+        dj_name: djSel.value ? djSel.options[djSel.selectedIndex].text : "",
+        category_id: catSel.value,
+        category_name: catSel.value ? catSel.options[catSel.selectedIndex].text : "",
+        playlist_id: plSel.value,
+        playlist_name: plSel.value ? plSel.options[plSel.selectedIndex].text : "",
+        updated_at: new Date().toISOString()
+      };
+      await updateDoc(doc(db, "songs", quickAssignSongId), payload);
+      const song = CACHE.songs.find(x => x.id === quickAssignSongId);
+      if (song) Object.assign(song, payload);
+      showToast("จัดเพลงเข้ารายการแล้ว", "success");
+      document.getElementById("quickAssignBackdrop").classList.remove("show");
+      quickAssignSongId = null;
+      renderSongList(currentSongListView);
+    }
   } catch (err) {
     showToast("บันทึกไม่สำเร็จ: " + err.message, "error");
   }
@@ -1374,6 +1424,7 @@ document.getElementById("quickAssignSaveBtn").addEventListener("click", async fu
 function updateSongBulkBar() {
   document.getElementById("songSelectedCount").textContent = `เลือกแล้ว ${selectedSongIds.size} เพลง`;
   document.getElementById("songBulkDeleteBtn").disabled = selectedSongIds.size === 0;
+  document.getElementById("songBulkAssignBtn").disabled = selectedSongIds.size === 0;
   const allSelected = currentSongListView.length > 0 && currentSongListView.every(s => selectedSongIds.has(s.id));
   document.getElementById("songSelectAllChk").checked = allSelected;
 }
@@ -1392,6 +1443,11 @@ document.getElementById("songSelectAllChk").addEventListener("change", (e) => {
   else selectedSongIds.clear();
   updateSongBulkBar();
   renderSongList(currentSongListView);
+});
+document.getElementById("songBulkAssignBtn").addEventListener("click", () => {
+  const ids = Array.from(selectedSongIds);
+  if (ids.length === 0) return;
+  openQuickAssignBulk(ids);
 });
 document.getElementById("songBulkDeleteBtn").addEventListener("click", () => {
   const ids = Array.from(selectedSongIds);
