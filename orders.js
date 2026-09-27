@@ -432,6 +432,41 @@ function uniqueZipFileName(value, usedNames) {
  *     - function confirmPaymentAndCreateZip/retryOrderZip ไม่ต้องแก้ — ยังอ่าน
  *       result.url/result.publicId/result.error ได้เหมือนเดิม
  */
+// 🔧 (2026-09-27 fix 503): helper อ่าน error จริงจาก Worker เมื่อ response ไม่ใช่ JSON
+//   สาเหตุ: Cloudflare คืน 503 เป็น HTML/plain text (ไม่ใช่ JSON) เมื่อ Worker throw
+//   → res.json() จะ throw → catch block เดิมแค่ throw error ที่ไม่มีรายละเอียด
+//   → ผู้ใช้เห็นแค่ "อ่านผลลัพธ์จาก Worker ไม่สำเร็จ (HTTP 503)" โดยไม่รู้สาเหตุจริง
+//
+//   วิธีแก้: ลองอ่านเป็น JSON ก่อน → ถ้าได้ → ใช้ error จาก JSON (เหมือนเดิม)
+//          → ถ้า JSON parse ล้ม → อ่านเป็น text → ส่งกลับไปให้ผู้ใช้เห็น error จริง
+//   ผลกระทบระบบเดิม: 0% — ถ้า Worker คืน JSON ปกติ จะใช้ flow เดิม 100%
+//                   — ถ้า Worker คืน 503/HTML จะได้ข้อความที่อ่านได้แทน
+async function readWorkerError(res, defaultMsg) {
+  // ลองอ่านเป็น JSON ก่อน (เหมือนเดิม — flow ปกติ)
+  let body;
+  try {
+    body = await res.clone().json();
+    if (body && body.error) {
+      return body.error;  // Worker คืน JSON error ปกติ
+    }
+    if (body) {
+      return JSON.stringify(body).slice(0, 500);  // JSON แต่ไม่มี field error
+    }
+  } catch (_) {
+    // res.json() ล้ม → ตอบกลับเป็น text/HTML → อ่านเป็น text
+  }
+  // อ่านเป็น text (สำหรับ 503 HTML จาก Cloudflare)
+  try {
+    const text = await res.text();
+    if (text && text.length > 0) {
+      // ตัดให้สั้น กัน UI แสดง error ยาวเกิน + ลบ HTML tags
+      const cleanText = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
+      return `${defaultMsg} (HTTP ${res.status}): ${cleanText || "(empty body)"}`;
+    }
+  } catch (_) { /* ไม่สามารถอ่าน body ได้ */ }
+  return `${defaultMsg} (HTTP ${res.status})`;
+}
+
 async function createOrderZip(orderId) {
   if (zipJobs.has(orderId)) return { ok: false, error: "กำลังสร้าง ZIP ของออเดอร์นี้อยู่" };
   const order = state.allOrders.find((item) => item.id === orderId);
@@ -477,7 +512,9 @@ async function createOrderZip(orderId) {
     }
     let startData;
     try { startData = await startRes.json(); } catch {
-      throw new Error(`อ่านผลลัพธ์จาก Worker ไม่สำเร็จ (HTTP ${startRes.status})`);
+      // 🔧 (2026-09-27 fix 503): ใช้ readWorkerError แทน จะได้เห็น error จริงจาก Worker
+      const errText = await readWorkerError(startRes, "อ่านผลลัพธ์จาก Worker ไม่สำเร็จ");
+      throw new Error(errText);
     }
     if (!startRes.ok || !startData.ok) {
       throw new Error(startData?.error || `เริ่มกระบวนการ ZIP ไม่สำเร็จ (HTTP ${startRes.status})`);
@@ -538,7 +575,9 @@ async function createOrderZip(orderId) {
           }
           let appendData;
           try { appendData = await appendRes.json(); } catch {
-            throw new Error(`อ่านผลลัพธ์จาก Worker ไม่สำเร็จ (HTTP ${appendRes.status}) — เพลงที่ ${partNumber}`);
+            // 🔧 (2026-09-27 fix 503): ใช้ readWorkerError แทน จะได้เห็น error จริงจาก Worker
+            const errText = await readWorkerError(appendRes, `ส่งเพลงที่ ${partNumber} เข้า ZIP ไม่สำเร็จ`);
+            throw new Error(errText);
           }
           if (!appendRes.ok || !appendData.ok) {
             throw new Error(appendData?.error || `ส่งเพลงที่ ${partNumber} "${item.songName}" เข้า ZIP ไม่สำเร็จ (HTTP ${appendRes.status})`);
@@ -588,7 +627,9 @@ async function createOrderZip(orderId) {
       }
       let buildData;
       try { buildData = await buildRes.json(); } catch {
-        throw new Error(`อ่านผลลัพธ์จาก Worker ไม่สำเร็จ (HTTP ${buildRes.status})`);
+        // 🔧 (2026-09-27 fix 503): ใช้ readWorkerError แทน จะได้เห็น error จริงจาก Worker
+        const errText = await readWorkerError(buildRes, "finalize-build ไม่สำเร็จ");
+        throw new Error(errText);
       }
       if (!buildRes.ok || !buildData.ok) {
         throw new Error(buildData?.error || `finalize-build ไม่สำเร็จ (HTTP ${buildRes.status})`);
@@ -638,7 +679,9 @@ async function createOrderZip(orderId) {
     clearInterval(composeStatusInterval);  // หยุด rotate ทันทีที่ได้ response
     let composeData;
     try { composeData = await composeRes.json(); } catch {
-      throw new Error(`อ่านผลลัพธ์จาก Worker ไม่สำเร็จ (HTTP ${composeRes.status})`);
+      // 🔧 (2026-09-27 fix 503): ใช้ readWorkerError แทน จะได้เห็น error จริงจาก Worker
+      const errText = await readWorkerError(composeRes, "สร้างลิงก์ดาวน์โหลด ZIP ไม่สำเร็จ");
+      throw new Error(errText);
     }
     if (!composeRes.ok || !composeData.ok) {
       throw new Error(composeData?.error || `สร้างลิงก์ดาวน์โหลด ZIP ไม่สำเร็จ (HTTP ${composeRes.status})`);
