@@ -1973,7 +1973,14 @@ async function cleanupPartialBuffer(env, finalizeState) {
 //   { jobId, plan: [{ songId, folderPath, filename, songName }], totalSongs, zipFileName }
 //   หรือ { error } เมื่อ fail
 async function handleOrderZipStart(request, env) {
-  const admin = await getSessionAdmin(request, env);
+  // 🔧 (2026-09-27 fix 503): หุ้ม getSessionAdmin ด้วย try/catch — ถ้า D1 timeout/throw
+  //   จะได้คืน JSON 500 ที่อ่านได้ แทน 503 จาก Cloudflare ที่อ่านไม่ได้
+  let admin;
+  try {
+    admin = await getSessionAdmin(request, env);
+  } catch (err) {
+    return jsonResponse({ error: safeError("ตรวจสอบสิทธิ์ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+  }
   if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
   if (!env.BUCKET) {
     return jsonResponse({ error: "ยังไม่ได้ผูก R2 bucket (binding: BUCKET) ใน wrangler.jsonc" }, 500);
@@ -1994,7 +2001,13 @@ async function handleOrderZipStart(request, env) {
   if (!orderId) return jsonResponse({ error: "กรุณาระบุ orderId" }, 400);
 
   // โหลด order doc
-  const orderDoc = await getDocument(env, "orders", orderId);
+  // 🔧 (2026-09-27 fix 503): หุ้ม getDocument ด้วย try/catch — กัน D1 throw → 503
+  let orderDoc;
+  try {
+    orderDoc = await getDocument(env, "orders", orderId);
+  } catch (err) {
+    return jsonResponse({ error: safeError("อ่านข้อมูลออเดอร์ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+  }
   if (!orderDoc || !orderDoc.data) {
     return jsonResponse({ error: "ไม่พบออเดอร์ที่ระบุ" }, 404);
   }
@@ -2084,8 +2097,17 @@ async function handleOrderZipStart(request, env) {
       }
     } else if (group.songs.length > 0 && !group.songs[0].title) {
       // มี song_ids แต่ไม่มี title → batch fetch titles
+      // 🔧 (2026-09-27 fix 503): หุ้ม getDocumentsByIds ด้วย try/catch
+      //   ถ้า D1 ล้ม → ใช้ title fallback "เพลง" แทน (ไม่ block flow — เพลงยังเข้า ZIP ได้)
+      //   เหมือน branch ด้านบน (query songs for playlist) ที่มี catch อยู่แล้ว
       const songIds = group.songs.map((s) => s.id);
-      const songDocs = await getDocumentsByIds(env, "songs", songIds);
+      let songDocs = [];
+      try {
+        songDocs = await getDocumentsByIds(env, "songs", songIds);
+      } catch (err) {
+        console.warn("order-zip/start: batch fetch song titles failed:", err?.message || err);
+        songDocs = [];
+      }
       const titleMap = new Map(songDocs.map((d) => [d.id, d.data?.song_name || "เพลง"]));
       group.songs = group.songs.map((s) => ({
         id: s.id,
@@ -2219,7 +2241,13 @@ async function handleOrderZipStart(request, env) {
 //
 // Response: { ok, partNumber, size, partSize, offset, filename, folderPath }
 async function handleOrderZipAppend(request, env) {
-  const admin = await getSessionAdmin(request, env);
+  // 🔧 (2026-09-27 fix 503): หุ้ม getSessionAdmin ด้วย try/catch — กัน D1 throw → 503
+  let admin;
+  try {
+    admin = await getSessionAdmin(request, env);
+  } catch (err) {
+    return jsonResponse({ error: safeError("ตรวจสอบสิทธิ์ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+  }
   if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
   if (!env.BUCKET) return jsonResponse({ error: "ยังไม่ได้ผูก R2 bucket (binding: BUCKET) ใน wrangler.jsonc" }, 500);
   if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
@@ -2271,7 +2299,13 @@ async function handleOrderZipAppend(request, env) {
   }
 
   // โหลด song doc
-  const songDoc = await getDocument(env, "songs", songId);
+  // 🔧 (2026-09-27 fix 503): หุ้ม getDocument ด้วย try/catch — กัน D1 throw → 503
+  let songDoc;
+  try {
+    songDoc = await getDocument(env, "songs", songId);
+  } catch (err) {
+    return jsonResponse({ error: safeError("อ่านข้อมูลเพลงไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+  }
   if (!songDoc || !songDoc.data) {
     return jsonResponse({ error: `ไม่พบข้อมูลเพลง "${songName || songId}"` }, 404);
   }
@@ -2712,7 +2746,13 @@ const ZIP_FINALIZE_CHUNK_SIZE = 16 * 1024 * 1024;  // 16MB (เดิม 8MB, R2
 //   - Update D1: songs CRCs + finalizeState (nextSongIdx, partialBufferLen, nextPartNumber)
 // Response: { ok, processedCount, totalProcessed, totalSongs, done: boolean }
 async function handleOrderZipFinalizeBuild(request, env) {
-  const admin = await getSessionAdmin(request, env);
+  // 🔧 (2026-09-27 fix 503): หุ้ม getSessionAdmin ด้วย try/catch — กัน D1 throw → 503
+  let admin;
+  try {
+    admin = await getSessionAdmin(request, env);
+  } catch (err) {
+    return jsonResponse({ error: safeError("ตรวจสอบสิทธิ์ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+  }
   if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
   if (!env.BUCKET) return jsonResponse({ error: "ยังไม่ได้ผูก R2 bucket (binding: BUCKET) ใน wrangler.jsonc" }, 500);
   if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
@@ -3065,7 +3105,13 @@ async function handleOrderZipFinalizeBuild(request, env) {
 //   - อัปเดต order doc: zip_status='ready'
 // Response: { ok, url, publicId, zipFileName, songCount }
 async function handleOrderZipFinalizeCompose(request, env) {
-  const admin = await getSessionAdmin(request, env);
+  // 🔧 (2026-09-27 fix 503): หุ้ม getSessionAdmin ด้วย try/catch — กัน D1 throw → 503
+  let admin;
+  try {
+    admin = await getSessionAdmin(request, env);
+  } catch (err) {
+    return jsonResponse({ error: safeError("ตรวจสอบสิทธิ์ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+  }
   if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
   if (!env.BUCKET) return jsonResponse({ error: "ยังไม่ได้ผูก R2 bucket (binding: BUCKET) ใน wrangler.jsonc" }, 500);
   if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
@@ -3218,7 +3264,13 @@ async function handleOrderZipFinalizeCompose(request, env) {
 //   - อัปเดต order doc: zip_status='' + zip_error='ยกเลิกโดยแอดมิน'
 // Response: { ok: true, aborted: true, orderId }
 async function handleOrderZipAbort(request, env) {
-  const admin = await getSessionAdmin(request, env);
+  // 🔧 (2026-09-27 fix 503): หุ้ม getSessionAdmin ด้วย try/catch — กัน D1 throw → 503
+  let admin;
+  try {
+    admin = await getSessionAdmin(request, env);
+  } catch (err) {
+    return jsonResponse({ error: safeError("ตรวจสอบสิทธิ์ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+  }
   if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
   if (!env.BUCKET) return jsonResponse({ error: "ยังไม่ได้ผูก R2 bucket (binding: BUCKET) ใน wrangler.jsonc" }, 500);
   if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
@@ -3275,7 +3327,16 @@ export default {
     // 🔧 (2026-09-22 fix Bug #2 UI v6): เก็บ ctx ไว้ใน env.__ctx เพื่อให้ writeAuditLog เรียก ctx.waitUntil() ได้
     //   ปลอดภัยเพราะ env เป็น object ตัวเดียวกันตลอด lifecycle ของ request
     env.__ctx = ctx;
-    const url = new URL(request.url);
+
+    // 🔧 (2026-09-27 fix 503 safety net): คลุม dispatch block ทั้งหมดด้วย try/catch
+    //   เหตุผล: ถ้า handler ใด (เช่น /api/order-zip/*, /api/upload, /api/file/*, /api/db/*, /api/auth/*)
+    //   ยังมี uncaught exception ที่ไม่ถูก catch ภายในตัวเอง → exception จะลากขึ้นมาที่นี่
+    //   แทนที่จะปล่อยให้ Cloudflare คืน 503 (ที่ client อ่านไม่ได้ และ UI แสดง error ไม่ชัดเจน)
+    //   เราคืน JSON 500 ที่อ่านได้ + log error จริงใน Worker logs (ผ่าน safeError)
+    //   ผลกระทบระบบเดิม: 0% — ถ้า handler ทำงานปกติก็จะ return ตามปกติ (ไม่เข้า catch)
+    //                    — ถ้า handler throw ก็จะได้ error ที่อ่านได้แทน 503 (UX ดีขึ้น)
+    try {
+      const url = new URL(request.url);
 
     if (request.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
       return new Response(null, { headers: corsHeaders() });
@@ -4173,6 +4234,13 @@ export default {
     }
 
     return jsonResponse({ error: "ไม่พบ endpoint นี้" }, 404);
+    } catch (err) {
+      // 🔧 (2026-09-27 fix 503 safety net): catch สุดท้าย — ถ้า handler ใด throw
+      //   uncaught exception → คืน JSON 500 ที่ client อ่านได้ แทน 503 จาก Cloudflare
+      //   log error จริงใน Worker logs ผ่าน safeError (ไม่รั่ว internals ให้ client)
+      console.error("[fetch safety net] uncaught exception:", err?.stack || err);
+      return jsonResponse({ error: safeError("เกิดข้อผิดพลาดภายในระบบ กรุณาลองใหม่อีกครั้ง", err) }, 500);
+    }
   },
 
   // 🔒 (2026-09-21 auto-cleanup ZIP): Cron Trigger — ลบ ZIP อัตโนมัติหลัง 24 ชม.
