@@ -1211,6 +1211,43 @@ function findDuplicateSongsByName(songName, excludeSongId) {
     .filter(s => s.id !== excludeSongId)
     .filter(s => String(s.song_name || "").trim().toLowerCase().replace(/\s+/g, " ") === normalized);
 }
+
+// 🔧 (2026-09-27 เพิ่มใหม่ — additive): ตรวจเพลงชื่อซ้ำ "ภายในหมวดหมู่ / เพลย์ลิสต์ / ดีเจเดียวกัน"
+// ต่างจาก findDuplicateSongsByName ด้านบน (เช็คซ้ำทั่วทั้งระบบ) ตัวนี้เช็คเฉพาะภายในกลุ่มเดียวกัน
+// ใช้กับหน้า "จัดหมวดหมู่" (ปุ่ม 📌 ทีละเพลง/หลายเพลง) ที่แก้ category_id/dj_name/playlist_id
+// โดยไม่ได้แก้ชื่อเพลง จึงไม่ผ่าน findDuplicateSongsByName มาก่อน
+// รับ: songName, target {category_id, category_name, dj_name, playlist_id, playlist_name} (ค่าไหนไม่ส่งมา = ไม่เช็คมิตินั้น)
+//      excludeIds: string หรือ Set ของ song id ที่ไม่ต้องเช็ค (ตัวเอง / เพื่อนในชุดเดียวกัน)
+// คืน: object เช่น {category:{label,dups}, playlist:{...}, dj:{...}} — มีเฉพาะมิติที่พบซ้ำ
+function findGroupDuplicateSongs(songName, target, excludeIds) {
+  const normalized = String(songName || "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) return {};
+  const excludeSet = excludeIds instanceof Set ? excludeIds : new Set(excludeIds ? [excludeIds] : []);
+  const matchName = s => !excludeSet.has(s.id) && String(s.song_name || "").trim().toLowerCase().replace(/\s+/g, " ") === normalized;
+  const result = {};
+  if (target && target.category_id) {
+    const dups = (CACHE.songs || []).filter(s => matchName(s) && s.category_id === target.category_id);
+    if (dups.length) result.category = { label: target.category_name || "", dups };
+  }
+  if (target && target.playlist_id) {
+    const dups = (CACHE.songs || []).filter(s => matchName(s) && s.playlist_id === target.playlist_id);
+    if (dups.length) result.playlist = { label: target.playlist_name || "", dups };
+  }
+  if (target && target.dj_name) {
+    const dups = (CACHE.songs || []).filter(s => matchName(s) && s.dj_name === target.dj_name);
+    if (dups.length) result.dj = { label: target.dj_name, dups };
+  }
+  return result;
+}
+// สร้างข้อความ toast จากผลลัพธ์ findGroupDuplicateSongs ด้านบน
+function groupDuplicateMessage(dupResult, songName) {
+  const parts = [];
+  if (dupResult.category) parts.push(`หมวดหมู่ "${dupResult.category.label}"`);
+  if (dupResult.playlist) parts.push(`เพลย์ลิสต์ "${dupResult.playlist.label}"`);
+  if (dupResult.dj) parts.push(`ดีเจ "${dupResult.dj.label}"`);
+  return `❌ เพลง "${songName}" ซ้ำกับเพลงที่มีอยู่แล้วใน${parts.join(", ")} — ห้ามจัดเข้ากลุ่มเดียวกัน`;
+}
+
 function populateSelect(id, items, valueKey, labelKey, placeholderLabel) {
   const sel = document.getElementById(id);
   const current = sel.value;
@@ -1382,6 +1419,35 @@ document.getElementById("quickAssignSaveBtn").addEventListener("click", async fu
         btn.disabled = false; btn.textContent = "บันทึก";
         return;
       }
+      // 🔧 (2026-09-27 เพิ่มใหม่): ตรวจซ้ำ "ทั้งหมดก่อน" แล้วค่อยบันทึกจริง — ถ้าเจอซ้ำจุดใดจุดหนึ่ง
+      // จะไม่บันทึกเลยสักเพลง (กันข้อมูลค้างครึ่ง ๆ กลาง ๆ ตามที่ผู้ใช้ยืนยันให้ "บล็อก")
+      const batchIdSet = new Set(quickAssignBulkIds);
+      const nameNorm = n => String(n || "").trim().toLowerCase().replace(/\s+/g, " ");
+      const batchNameCount = {};
+      quickAssignBulkIds.forEach(bid => {
+        const bs = CACHE.songs.find(x => x.id === bid);
+        if (bs) batchNameCount[nameNorm(bs.song_name)] = (batchNameCount[nameNorm(bs.song_name)] || 0) + 1;
+      });
+      for (const bid of quickAssignBulkIds) {
+        const bsong = CACHE.songs.find(x => x.id === bid);
+        if (!bsong) continue;
+        // ซ้ำกันเองภายในชุดที่เลือกไว้ (จะถูกย้ายเข้ากลุ่มเดียวกันพร้อมกันทุกเพลง)
+        if (batchNameCount[nameNorm(bsong.song_name)] > 1) {
+          showToast(`❌ มีเพลงชื่อ "${bsong.song_name}" ซ้ำกันเองในเพลงที่เลือกไว้ ${batchNameCount[nameNorm(bsong.song_name)]} เพลง — ห้ามจัดเข้ากลุ่มเดียวกัน`, "error");
+          btn.disabled = false; btn.textContent = "บันทึก";
+          return;
+        }
+        const target = {};
+        if (payload.category_id !== undefined) { target.category_id = payload.category_id; target.category_name = payload.category_name; }
+        if (payload.dj_name !== undefined) target.dj_name = payload.dj_name;
+        if (payload.playlist_id !== undefined) { target.playlist_id = payload.playlist_id; target.playlist_name = payload.playlist_name; }
+        const groupDups = findGroupDuplicateSongs(bsong.song_name, target, batchIdSet);
+        if (Object.keys(groupDups).length > 0) {
+          showToast(groupDuplicateMessage(groupDups, bsong.song_name), "error");
+          btn.disabled = false; btn.textContent = "บันทึก";
+          return;
+        }
+      }
       for (const id of quickAssignBulkIds) {
         await updateDoc(doc(db, "songs", id), payload);
         const song = CACHE.songs.find(x => x.id === id);
@@ -1407,6 +1473,14 @@ document.getElementById("quickAssignSaveBtn").addEventListener("click", async fu
         playlist_name: plSel.value ? plSel.options[plSel.selectedIndex].text : "",
         updated_at: new Date().toISOString()
       };
+      // 🔧 (2026-09-27 เพิ่มใหม่): ห้ามจัดเพลงเข้าไปซ้ำกับเพลงชื่อเดียวกันที่อยู่ในหมวดหมู่/เพลย์ลิสต์/ดีเจเดียวกันอยู่แล้ว
+      const soloSong = CACHE.songs.find(x => x.id === quickAssignSongId);
+      const soloDups = findGroupDuplicateSongs(soloSong ? soloSong.song_name : "", payload, quickAssignSongId);
+      if (Object.keys(soloDups).length > 0) {
+        showToast(groupDuplicateMessage(soloDups, soloSong ? soloSong.song_name : ""), "error");
+        btn.disabled = false; btn.textContent = "บันทึก";
+        return;
+      }
       await updateDoc(doc(db, "songs", quickAssignSongId), payload);
       const song = CACHE.songs.find(x => x.id === quickAssignSongId);
       if (song) Object.assign(song, payload);
