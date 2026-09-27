@@ -938,9 +938,9 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     const items = order.items || [];
     if (order.order_type === "playlist") {
       const playlistName = order.playlist_name || "เพลย์ลิสต์";
-      const songLines = items.map(item => `
+      const songLines = items.map((item, idx) => `
         <div class="receipt-line" style="border-bottom:none;padding:4px 0 4px 14px;">
-          <small>• ${escapeHtml(item.title || "เพลง")}</small>
+          <small>${idx + 1}. ${escapeHtml(item.title || "เพลง")}</small>
         </div>
       `).join("");
       return `
@@ -955,15 +955,21 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       `;
     }
 
+    // 🔢 นับเลขลำดับแยกกัน: เพลงเดี่ยว (songCounter) กับเพลย์ลิสต์ (playlistCounter)
+    //    ทั้งสองชุดเริ่มนับที่ 1 อิสระจากกัน แต่แสดงรวมอยู่ในใบเสร็จเดียว/ออเดอร์เดียวกัน
+    let songCounter = 0;
+    let playlistCounter = 0;
     return items.map(item => {
       if (item.kind !== "playlist") {
+        songCounter++;
         return `
           <div class="receipt-line">
-            <div><strong>${escapeHtml(item.title || "เพลง")}</strong></div>
+            <div><strong>${songCounter}. ${escapeHtml(item.title || "เพลง")}</strong></div>
             <strong>${formatPrice(item.price)}</strong>
           </div>
         `;
       }
+      playlistCounter++;
       // เพลย์ลิสต์ในออเดอร์ผสม — ใช้ song_titles ที่ snapshot ไว้ตอนสั่งซื้อ (resolveCartFromDatabase) โดยตรง ไม่ query ซ้ำ
       const songTitles = Array.isArray(item.song_titles) ? item.song_titles : [];
       const songLines = songTitles.map(name => `
@@ -974,7 +980,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       return `
         <div class="receipt-line" style="flex-direction:column;align-items:stretch;gap:2px;">
           <div style="display:flex;justify-content:space-between;">
-            <strong>🎶 ${escapeHtml(item.title || "เพลย์ลิสต์")}</strong>
+            <strong>🎶 ${playlistCounter}. ${escapeHtml(item.title || "เพลย์ลิสต์")}</strong>
             <strong>${formatPrice(item.price)}</strong>
           </div>
           <small style="color:#666;">ยกเพลย์ลิสต์ · ${songTitles.length} เพลง</small>
