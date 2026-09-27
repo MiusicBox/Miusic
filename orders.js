@@ -2485,20 +2485,45 @@ async function handleDeleteOrder(orderId) {
   if (!ok) return;
 
   try {
-    // ดึงข้อมูลออเดอร์สดก่อนลบ เพื่อเช็คว่ามีไฟล์ ZIP บน Cloud ค้างอยู่หรือไม่ (ไม่พึ่ง state.allOrders
-    // เพราะอาจไม่ตรงกับข้อมูลจริง ณ ขณะนี้)
+    // ดึงข้อมูลออเดอร์สดก่อนลบ เพื่อเช็คว่ามีไฟล์ ZIP/สลิป บน Cloud ค้างอยู่หรือไม่
     const orderSnap = await getDoc(doc(db, "orders", orderId));
     const orderData = orderSnap.exists() ? orderSnap.data() : null;
+
+    // 🔧 (2026-09-27 add): เรียก Worker endpoint /api/order-files/cleanup ก่อนลบออเดอร์
+    //   เพื่อลบไฟล์ทั้งหมดที่เกี่ยวกับออเดอร์นี้ออกจาก R2 + D1 ก่อน:
+    //     1) สลิปโอนเงินทั้งหมด (รองรับหลายสลิป — ลูกค้าอัปใหม่ถ้าถูก reject)
+    //     2) ไฟล์ ZIP (ถ้ามี zip_public_id)
+    //     3) rows ในตาราง payment_proofs ใน D1 (กันขยะ)
+    //   ทำก่อนลบออเดอร์ → ถ้า cleanup ล้ม ยัง rollback ได้ (ออเดอร์ยังอยู่)
+    //   ผลกระทบระบบเดิม: 0% — เพิ่มขั้นตอนใหม่ก่อน deleteDoc, flow เดิมยังครบ
+    //                   — ถ้า endpoint ใหม่ไม่มี (Worker เก่า) → catch แล้วข้ามไปลบแบบเดิม
+    let cleanupResult = null;
+    try {
+      const cleanupRes = await fetch("/api/order-files/cleanup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ orderId }),
+      });
+      if (cleanupRes.ok) {
+        try { cleanupResult = await cleanupRes.json(); } catch { /* ไม่ใช่ JSON ก็ข้าม */ }
+        console.log(`[deleteOrder] cleanup: proofsDeleted=${cleanupResult?.proofsDeleted || 0}, zipDeleted=${cleanupResult?.zipDeleted}, proofsRowsDeleted=${cleanupResult?.proofsRowsDeleted || 0}`);
+      } else {
+        // endpoint ใหม่ยังไม่ deploy (Worker เก่า) → log + fallback ไปลบแบบเดิม
+        console.warn("[deleteOrder] /api/order-files/cleanup returned non-OK, falling back to legacy delete:", cleanupRes.status);
+      }
+    } catch (err) {
+      // network error → log + fallback ไปลบแบบเดิม
+      console.warn("[deleteOrder] /api/order-files/cleanup failed (network), falling back:", err?.message || err);
+    }
+
+    // ลบออเดอร์ออกจาก D1
     await deleteDoc(doc(db, "orders", orderId));
-    // ลบไฟล์ ZIP ออกจาก Cloud ตามไปด้วยถ้าออเดอร์นี้เคยสร้าง ZIP ไว้ — ทำแบบ background ไม่รอ/ไม่ block UI
-    // และไม่ทำให้การลบออเดอร์ล้มเหลวถ้าลบไฟล์ cloud ไม่สำเร็จ (ตัว order ลบไปแล้ว ย้อนกลับไม่ได้อยู่แล้ว)
-    // 🔧 (2026-09-27 fix R2 leak): เดิมเป็น fire-and-forget ไม่มี await/catch/retry
-    //   → ถ้า fetch ล้ม (network ชั่วคราว/ปิด browser/Worker 503) ไฟล์ R2 ค้างเป็นขยะตลอดไป
-    //   ใหม่: retry 3 ครั้งด้วย backoff (1s, 2s, 4s) + catch + log warning
-    //   ถ้า retry ครบทั้ง 3 ครั้งยังล้ม → log warning แต่ไม่ block (ออเดอร์ลบไปแล้ว ย้อนกลับไม่ได้)
-    //   ผลกระทบระบบเดิม: 0% — ถ้าลบสำเร็จครั้งแรก flow เดิม 100% (background, ไม่ block UI)
-    //                   — เพิ่มแค่ retry + catch กันไฟล์ค้าง
-    if (orderData?.zip_public_id || orderData?.zip_download_url) {
+
+    // 🔧 (2026-09-27 fix R2 leak): ถ้า endpoint ใหม่ยังไม่ทำงาน (fallback) → ลบ ZIP แบบเดิม
+    //   ถ้า endpoint ใหม่ทำงานแล้ว → ข้ามส่วนนี้ (ลบไปแล้วใน cleanup)
+    //   ใช้คีย์ว่า `cleanupResult?.zipDeleted` เพื่อเช็ค — ถ้า false หรือ null → ยังไม่ได้ลบ → ลบแบบเดิม
+    if (!cleanupResult?.zipDeleted && (orderData?.zip_public_id || orderData?.zip_download_url)) {
       const storageArgs = orderData?.zip_public_id
         ? { key: orderData.zip_public_id }
         : { url: orderData.zip_download_url };
