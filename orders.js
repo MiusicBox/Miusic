@@ -604,12 +604,41 @@ async function createOrderZip(orderId) {
     //     - Append phase: 0% → 50% (ส่ง metadata เพลง)
     //     - Finalize-build phase: 50% → 90% (ประมวลผล WAV + build ZIP entries)
     //     - Finalize-compose phase: 90% → 100% (build CD + EOCD + complete upload)
+    //
+    // 🔧 (2026-09-27 fix large ZIP): ปรับ progress display สำหรับออเดอร์ใหญ่
+    //   เหตุผล: หลังลด ZIP_FINALIZE_SONGS_PER_ROUND จาก 30 → 5 → จำนวนรอบเพิ่มขึ้น 6 เท่า
+    //   สำหรับออเดอร์ 100+ เพลง จะใช้เวลานาน (~5-15 นาที) → user อาจคิดว่าค้าง → กด refresh → fail
+    //   วิธีแก้:
+    //     1) แสดงเวลาโดยประมาณ (ETA) ให้ user รู้ว่าต้องรอนานแค่ไหน
+    //     2) แสดงคำเตือน "ห้ามปิดหน้าต่างนี้" สำหรับออเดอร์ใหญ่ (totalSongs > 20)
+    //     3) แสดงจำนวนรอบที่ผ่านไปแล้ว (round X/Y) ให้ user เห็นว่าทำไปเรื่อย ๆ
+    //   ผลกระทบต่อระบบเดิม: 0% — flow logic เดิม 100% แค่แก้ข้อความ toast
     let finalizeDone = false;
     let lastProcessed = 0;
+    let finalizeRoundCount = 0;
+    const finalizeStartTime = Date.now();
+    const isLargeOrder = totalSongs > 20;  // ใช้ threshold 20 เพลง = ~1GB+ สำหรับ WAV ~50MB/เพลง
     while (!finalizeDone) {
+      finalizeRoundCount += 1;
       // คำนวณ % ก่อนเริ่มรอบนี้ (indeterminate ระหว่างรอ Worker response)
       const beforePct = 50 + Math.round((lastProcessed / Math.max(totalSongs, 1)) * 40);
-      orderToast(`⏳ กำลังประมวลผลเพลง... (${beforePct}%)`, "progress");
+      // คำนวณ ETA (เวลาที่ผ่านไป × % ที่เหลือ / % ที่ผ่านแล้ว)
+      let etaText = "";
+      if (lastProcessed > 0) {
+        const elapsedMs = Date.now() - finalizeStartTime;
+        const pctDone = lastProcessed / Math.max(totalSongs, 1);
+        if (pctDone > 0.05) {  // ป้องกันหาร 0 + กัน ETA กระโดดตอนเริ่ม
+          const remainingMs = elapsedMs * (1 - pctDone) / pctDone;
+          const remainingMin = Math.ceil(remainingMs / 60000);
+          etaText = ` ~${remainingMin} นาที`;
+        }
+      }
+      // สำหรับออเดอร์ใหญ่ → แสดงรอบที่ + เตือนห้ามปิดหน้าต่าง
+      const roundText = isLargeOrder ? ` [รอบที่ ${finalizeRoundCount}]` : "";
+      const warnText = (isLargeOrder && finalizeRoundCount === 1)
+        ? " ⚠️ ออเดอร์ใหญ่ — ห้ามปิดหน้าต่างนี้จนกว่าจะเสร็จ"
+        : "";
+      orderToast(`⏳ กำลังประมวลผลเพลง... (${beforePct}%)${etaText}${roundText}${warnText}`, "progress");
       let buildRes;
       try {
         buildRes = await fetch("/api/order-zip/finalize-build", {
@@ -639,7 +668,19 @@ async function createOrderZip(orderId) {
       const totalSongsFinalize = Number(buildData.totalSongs || totalSongs);
       // คำนวณ % รวม (50% base + 40% ของ finalize phase)
       const overallPct = 50 + Math.round((lastProcessed / Math.max(totalSongsFinalize, 1)) * 40);
-      orderToast(`⏳ กำลังประมวลผลเพลง ${lastProcessed}/${totalSongsFinalize} (${overallPct}%)`, "progress");
+      // คำนวณ ETA หลังรอบนี้เสร็จ
+      let etaAfterText = "";
+      if (lastProcessed > 0) {
+        const elapsedMs = Date.now() - finalizeStartTime;
+        const pctDone = lastProcessed / Math.max(totalSongsFinalize, 1);
+        if (pctDone > 0.05) {
+          const remainingMs = elapsedMs * (1 - pctDone) / pctDone;
+          const remainingMin = Math.ceil(remainingMs / 60000);
+          etaAfterText = ` ~${remainingMin} นาที`;
+        }
+      }
+      const roundAfterText = isLargeOrder ? ` [รอบที่ ${finalizeRoundCount}]` : "";
+      orderToast(`⏳ กำลังประมวลผลเพลง ${lastProcessed}/${totalSongsFinalize} (${overallPct}%)${etaAfterText}${roundAfterText}`, "progress");
     }
 
     // ===== Step 4: finalize-compose — build CD+EOCD + upload trailing chunk + complete =====
