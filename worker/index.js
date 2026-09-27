@@ -303,7 +303,13 @@ async function handleFileProxy(request, env, url) {
 }
 
 async function handleDeleteUpload(request, env) {
-  const admin = await getSessionAdmin(request, env);
+  // 🔧 (2026-09-27 fix 503): หุ้ม getSessionAdmin ด้วย try/catch — กัน D1 throw → 503
+  let admin;
+  try {
+    admin = await getSessionAdmin(request, env);
+  } catch (err) {
+    return jsonResponse({ error: safeError("ตรวจสอบสิทธิ์ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+  }
   if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
   if (!env.BUCKET) {
     return jsonResponse({ error: "ยังไม่ได้ผูก R2 bucket (binding: BUCKET) ใน wrangler.jsonc" }, 500);
