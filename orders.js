@@ -1708,9 +1708,9 @@ async function buildReceiptItemRows(order, total) {
     const items = order.items || [];
     const playlist = order.playlist_id ? state.playlists.find((p) => p.id === order.playlist_id) : null;
     const playlistName = order.playlist_name || getPlaylistName(playlist) || "เพลย์ลิสต์";
-    const songLines = items.map((item) => `
+    const songLines = items.map((item, idx) => `
       <div class="receipt-line" style="border-bottom:none;padding:4px 0 4px 14px;">
-        <small>• ${escapeHtml(item.title || "เพลง")}</small>
+        <small>${idx + 1}. ${escapeHtml(item.title || "เพลง")}</small>
       </div>
     `).join("");
     return `
@@ -1727,11 +1727,23 @@ async function buildReceiptItemRows(order, total) {
 
   // กรณีเพลงเดี่ยว/ออเดอร์ผสม: แต่ละ item อาจเป็นเพลงเดี่ยว หรือ kind:"playlist" ที่ต้องขยายรายชื่อเพลงข้างใน
   const items = order.items || [];
-  const rowGroups = await Promise.all(items.map(async (item) => {
+  // 🔢 นับเลขลำดับแยกกัน: เพลงเดี่ยว (songCounter) กับเพลย์ลิสต์ (playlistCounter) — เหมือนฝั่งลูกค้า (app-cart.js)
+  //   นับล่วงหน้าก่อนเข้า async map เพื่อกันลำดับสลับจาก Promise.all
+  let songCounter = 0;
+  let playlistCounter = 0;
+  const indexedItems = items.map((item) => {
+    if (item?.kind !== "playlist") {
+      songCounter++;
+      return { item, number: songCounter };
+    }
+    playlistCounter++;
+    return { item, number: playlistCounter };
+  });
+  const rowGroups = await Promise.all(indexedItems.map(async ({ item, number }) => {
     if (item?.kind !== "playlist") {
       return `
         <div class="receipt-line">
-          <div><strong>${escapeHtml(item.title || "เพลง")}</strong></div>
+          <div><strong>${number}. ${escapeHtml(item.title || "เพลง")}</strong></div>
           <strong>${formatLAK(item.price)}</strong>
         </div>
       `;
@@ -1760,7 +1772,7 @@ async function buildReceiptItemRows(order, total) {
     return `
       <div class="receipt-line" style="flex-direction:column;align-items:stretch;gap:2px;">
         <div style="display:flex;justify-content:space-between;">
-          <strong>🎶 ${escapeHtml(item.title || "เพลย์ลิสต์")}</strong>
+          <strong>🎶 ${number}. ${escapeHtml(item.title || "เพลย์ลิสต์")}</strong>
           <strong>${formatLAK(item.price)}</strong>
         </div>
         <small style="color:#666;">ยกเพลย์ลิสต์ · ${songNames.length} เพลง</small>
