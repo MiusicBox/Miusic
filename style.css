@@ -1671,9 +1671,9 @@ button:active {
 
 /* 🎨 (2026-09-26 v2): กล่องรูป QR — padding เท่ากันทุกด้าน + พื้นขาว + ขยายเต็มพื้นที่ */
 .qr-preview-img-box {
-  /* กล่องครอบรูป — พื้นขาว + padding เท่ากันทุกด้าน 20px → QR มีพื้นที่สวย */
+  /* กล่องครอบรูป — พื้นขาว + padding 0 (ตามที่ผู้ใช้ยืนยัน) → รูป QR ชิดขอบกล่องเต็มที่ */
   display: inline-block;
-  padding: 20px !important;  /* 🎨 เท่ากันทุกด้าน 20px */
+  padding: 0 !important;  /* 🔧 (2026-09-27 แก้ตามคำขอ): เดิม 20px → เปลี่ยนเป็น 0 */
   background: #ffffff !important;
   border-radius: 12px !important;
   /* 🎨 (2026-09-26 v2): กล่องขยายได้ถึง 280px (เดิม 180px เล็กเกินไป) */
