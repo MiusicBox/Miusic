@@ -72,12 +72,16 @@
         <button class="icon-btn" id="songSelectModeBtn" title="เลือกหลายเพลง">☑️</button>
         <button class="icon-btn" id="addSongBtn" style="background:var(--accent);color:#fff;">＋</button>
       </div>
-      <div id="songBulkBar" style="display:none;padding:0 16px 10px;align-items:center;justify-content:space-between;gap:10px;">
+      <div id="songBulkBar" style="display:none;padding:0 16px 10px;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim);">
           <input type="checkbox" id="songSelectAllChk"> เลือกทั้งหมด
         </label>
         <span id="songSelectedCount" style="font-size:13px;color:var(--text-dim);">เลือกแล้ว 0 เพลง</span>
-        <button class="btn danger" id="songBulkDeleteBtn" style="padding:8px 14px;font-size:13px;" disabled>ลบที่เลือก</button>
+        <div style="display:flex;gap:8px;">
+          <!-- 🔧 (2026-09-27 เพิ่มใหม่): จัดหมวดหมู่/DJ/เพลย์ลิสต์ให้เพลงที่เลือกไว้หลายเพลงพร้อมกัน ใช้ modal เดิม (#quickAssignBackdrop) -->
+          <button class="btn" id="songBulkAssignBtn" style="padding:8px 14px;font-size:13px;" disabled>📌 จัดหมวดหมู่</button>
+          <button class="btn danger" id="songBulkDeleteBtn" style="padding:8px 14px;font-size:13px;" disabled>ลบที่เลือก</button>
+        </div>
       </div>
       <div id="songList"></div>
     </div>
