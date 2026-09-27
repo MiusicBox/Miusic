@@ -1583,7 +1583,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       // show preview
       const reader = new FileReader();
       reader.onload = (e) => {
-        previewArea.innerHTML = `<img src="${e.target.result}" alt="รูปสลิปตัวอย่าง" style="max-width:100%;max-height:240px;border-radius:6px;border:1px solid var(--border, #eee);">`;
+        previewArea.innerHTML = `<img src="${e.target.result}" alt="รูปสลิปตัวอย่าง" style="display:block;margin:0 auto;max-width:100%;max-height:240px;border-radius:6px;border:1px solid var(--border, #eee);">`;
       };
       reader.readAsDataURL(file);
       if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.style.opacity = "1"; }
