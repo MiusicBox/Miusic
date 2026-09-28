@@ -560,19 +560,16 @@
 
   <!-- 🎁 (2026-09-20) แบนเนอร์โปรโมชั่นเด่น บนหน้าแรก — สไตล์ J: CYBERPUNK
        ซ่อน/แสดงผ่าน app-user.js: renderPromotionBanner() → แสดงเฉพาะตอนที่มีโปร active
-       กดที่แบนเนอร์ → สลับไปหน้าโปรโมชั่นเต็ม (#promotionsView) -->
+       กดที่แบนเนอร์ → สลับไปหน้าโปรโมชั่นเต็ม (#promotionsView)
+       🚀 (2026-09-28 fix H-7 v3): แสดงทั้ง tiered + single-song + แยก countdown ของแต่ละโปร -->
   <div class="promo-home-banner" id="promoHomeBanner" hidden>
     <div class="promo-home-banner-inner">
       <div class="promo-home-banner-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
       </div>
       <div class="promo-home-banner-text">
-        <div class="promo-home-banner-label">⚡ โปรโมชั่นพิเศษ</div>
-        <div class="promo-home-banner-title" id="promoHomeBannerTitle">—</div>
-        <div class="promo-home-banner-meta">
-          <span class="promo-home-banner-discount" id="promoHomeBannerDiscount">—</span>
-          <span class="promo-home-banner-countdown" id="promoHomeBannerCountdown">—</span>
-        </div>
+        <div class="promo-home-banner-label">🎵 โปรโมชั่นพิเศษ</div>
+        <div class="promo-home-banner-content" id="promoHomeBannerContent"></div>
       </div>
       <div class="promo-home-banner-arrow" aria-hidden="true">&gt;</div>
     </div>
