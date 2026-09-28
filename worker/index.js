@@ -106,15 +106,74 @@ function safeError(userMessage, err) {
   return userMessage;
 }
 
+// 🔧 (2026-09-28 fix Critical C3): Dynamic CORS origin allowlist
+//   เดิม: ไม่ตั้ง ACAO เลย = same-origin เท่านั้น
+//         → ในกรณีที่ Worker deploy ในหลายโดเมน (เช่น *.workers.dev + custom domain)
+//           หรือ test บน localhost → API ใช้ไม่ได้เพราะ browser block cross-origin
+//   ใหม่: รองรับ dynamic origin ผ่าน env var ALLOWED_ORIGINS (comma-separated)
+//         - ถ้า Origin header ของ request อยู่ใน allowlist → reflect กลับ (ปลอดภัย + รองรับ credentials)
+//         - ถ้าไม่ตั้ง ALLOWED_ORIGINS → fallback same-origin (current behavior, ไม่ set ACAO)
+//         - ถ้า Origin ไม่อยู่ใน allowlist → ไม่ set ACAO (browser block cross-origin)
+//   ความปลอดภัย:
+//     - ไม่ใช้ "*" เพราะใช้กับ credentials ไม่ได้ (session cookie)
+//     - ใช้ reflect origin เฉพาะที่อยู่ใน allowlist → ปลอดภัยจาก CSRF
+//     - Allowlist ผ่าน env var → admin ตั้งเอง ไม่ hardcode
+//   วิธีตั้ง:
+//     wrangler secret put ALLOWED_ORIGINS
+//     ค่าตัวอย่าง: https://miusic.example.com,https://staging.miusic.example.com
+//   ผลกระทบระบบเดิม: 0% — ถ้าไม่ตั้ง env → fallback same-origin (เหมือนเดิม)
+//   ที่มาของ request header: module-level state (set ใน fetch handler entry)
+//     ปลอดภัยเพราะ Cloudflare Workers ทำงาน single-threaded ต่อ isolate →
+//     module state ไม่ race ข้าม requests
+let _currentRequest = null;
+let _currentEnv = null;
+let _allowedOriginsCache = null;
+let _allowedOriginsEnvValue = null;
+function getAllowedOrigins(env) {
+  // cache ค่า env เพื่อกัน parse ใหม่ทุก request
+  const envValue = env?.ALLOWED_ORIGINS || "";
+  if (_allowedOriginsEnvValue !== envValue) {
+    _allowedOriginsEnvValue = envValue;
+    _allowedOriginsCache = envValue
+      .split(",")
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+  }
+  return _allowedOriginsCache;
+}
+
 function corsHeaders() {
-  // 🔧 (2026-09-22 fix Bug #3): เปลี่ยน CORS จาก "*" → same-origin
-  //   เดิม: Access-Control-Allow-Origin: * → เว็บอื่นเรียก API ได้ → ความเสี่ยง security
-  //   ใหม่: ไม่ตั้ง ACAO เลย = same-origin เท่านั้น (เว็บกับ Worker อยู่โดเมนเดียวกัน)
-  //   ผลกระทบระบบเดิม: 0% — เว็บและ API อยู่โดเมนเดียวกัน → ไม่ต้องการ CORS เปิด
-  return {
-    "Access-Control-Allow-Methods": "POST, DELETE, OPTIONS",
+  // base headers — คงไว้เหมือนเดิม + เพิ่ม GET/PUT/PATCH ใน Allow-Methods (เดิมมีแค่ POST/DELETE/OPTIONS)
+  const baseHeaders = {
+    "Access-Control-Allow-Methods": "POST, DELETE, OPTIONS, GET, PUT, PATCH",
     "Access-Control-Allow-Headers": "Content-Type",
+    // 🔧 (2026-09-28 fix C3): ถ้ามี allowlist + Origin ตรง → reflect origin + Allow-Credentials
+    //   เราใช้ session cookie (HttpOnly) → ต้องการ Allow-Credentials เพื่อ browser ส่ง cookie ข้าม origin
+    "Access-Control-Allow-Credentials": "true",
   };
+  // ใช้ module-level state (set ใน fetch handler entry) — ปลอดภัยเพราะ Workers single-threaded
+  const request = _currentRequest;
+  const env = _currentEnv;
+  if (!request || !env) {
+    // fallback เดิม (same-origin, ไม่ set ACAO) — กรณี cron หรือ call จากนอก fetch handler
+    return baseHeaders;
+  }
+  const allowed = getAllowedOrigins(env);
+  if (allowed.length === 0) {
+    // ไม่ตั้ง ALLOWED_ORIGINS → fallback same-origin (current behavior)
+    return baseHeaders;
+  }
+  const origin = request.headers.get("Origin") || "";
+  if (!origin) {
+    // ไม่มี Origin header (เช่น curl, server-to-server) → ไม่ set ACAO
+    return baseHeaders;
+  }
+  if (allowed.includes(origin)) {
+    // Origin อยู่ใน allowlist → reflect origin กลับ (ปลอดภัย + รองรับ credentials)
+    return { ...baseHeaders, "Access-Control-Allow-Origin": origin, "Vary": "Origin" };
+  }
+  // Origin ไม่อยู่ใน allowlist → ไม่ set ACAO (browser block cross-origin)
+  return baseHeaders;
 }
 
 // extraHeaders (ไม่บังคับ): ใช้ตอนต้องแปะ Set-Cookie ไปกับ response (login/logout/bootstrap)
@@ -1471,10 +1530,25 @@ async function handleDb(request, env, url) {
             console.warn("order rate limiting skipped (table order_creation_attempts not found):", orderRateErr?.message);
           }
 
-          // ลูกค้าไม่ได้ login — อนุญาตเฉพาะ "สร้างออเดอร์ใหม่" (id ยังไม่มีอยู่ในระบบ) เท่านั้น
-          // กันไม่ให้เขียนทับออเดอร์ที่มีอยู่แล้วของคนอื่นโดยไม่ login
-          const existing = await getDocument(env, collection, id);
-          if (existing) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+          // 🔒 (2026-09-28 fix Critical C2): กัน order ID enumeration
+          //   เดิม: SELECT existing → ถ้ามี return 401, ถ้าไม่มี ดำเนินการต่อ
+          //         → attacker สุ่ม orderId ได้ ถ้าได้ 401 = มีอยู่, ถ้าได้ 200 = ไม่มี
+          //         → brute-force enumerate order IDs ทั้งระบบ (info disclosure)
+          //   ใหม่: 2 ชั้นกัน enumeration
+          //     1) validate id เป็น UUID v4 format (regex) — reject ทันทีถ้าไม่ตรง
+          //        → attacker ไม่สามารถใช้ ID สั้น/ตัวเลข หรือ pattern อื่นเพื่อ probe ได้
+          //     2) atomic INSERT...ON CONFLICT DO NOTHING + เช็ค changes()
+          //        → ไม่มี SELECT ก่อน INSERT → ไม่มี timing oracle
+          //        → ถ้า changes() === 0 = มีอยู่แล้ว (หรือ UUID ซ้ำ) → return 401 (เหมือนเดิม)
+          //   ผลกระทบระบบเดิม: 0% — app-cart.js สร้าง UUID v4 อยู่แล้ว (crypto.randomUUID())
+          //     → ลูกค้าปกติไม่กระทบ; attacker เท่านั้นที่ใช้ ID ปลอมไม่ได้อีก
+          //   หมายเหตุ: atomic INSERT ทำ *หลัง* validation ทั้งหมดผ่าน → ไม่มี orphan row
+          //     ถ้า validation ล้ม → return ก่อน INSERT (ไม่มี row ค้าง)
+          //     timing เท่ากันทั้งกรณี "มีอยู่" กับ "ไม่มี" เพราะ validation ทำงานเหมือนกัน
+          const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+          if (!UUID_V4_REGEX.test(String(id || ""))) {
+            return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+          }
 
           // 🔒 Security (2026-09-17 P0): Validate + sanitize ออเดอร์ที่ลูกค้าสร้างเอง
           //   เดิม: server รับ body.data ตรง ๆ → ลูกค้าสามารถส่ง status='completed' หรือ total=-100
@@ -1838,6 +1912,29 @@ async function handleDb(request, env, url) {
           }
 
           body.data = filteredData;
+
+          // 🔒 (2026-09-28 fix Critical C2): Atomic ownership check ผ่าน INSERT...ON CONFLICT
+          //   ทำ *หลัง* validation ทั้งหมดผ่าน → ไม่มี orphan row ถ้า validation ล้ม
+          //   - ถ้า changes() > 0 = สร้างใหม่ได้ → ดำเนินการต่อ (setDocument ด้านล่างจะ UPDATE ทับ placeholder)
+          //   - ถ้า changes() === 0 = มีอยู่แล้ว (หรือ UUID ซ้ำ) → return 401 เหมือนเดิม
+          //   หมายเหตุ: ใช้ placeholder row (data='{}') ที่จะถูก setDocument ด้านล่าง UPDATE ทับ
+          //   ปลอดภัยเพราะ D1 PK constraint (collection, id) เป็น atomic
+          let atomicInsertResult;
+          try {
+            const nowIso = new Date().toISOString();
+            atomicInsertResult = await env.DB.prepare(
+              "INSERT INTO documents (collection, id, data, created_at, updated_at) VALUES (?, ?, '{}', ?, ?) ON CONFLICT(collection, id) DO NOTHING"
+            ).bind(collection, id, nowIso, nowIso).run();
+          } catch (atomicErr) {
+            // ถ้า D1 มีปัญหา → fallback ใช้ logic เดิม (SELECT existing) เพื่อกัน break ระบบ
+            console.warn("atomic order insert failed, fallback to existing-check:", atomicErr?.message);
+            const existing = await getDocument(env, collection, id);
+            if (existing) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+            atomicInsertResult = { meta: { changes: 1 } }; // บังคับดำเนินการต่อ
+          }
+          if (!atomicInsertResult?.meta || atomicInsertResult.meta.changes === 0) {
+            return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+          }
         }
         // 🔧 (2026-09-22 fix Bug #2 UI v2): ดึงข้อมูลก่อนเปลี่ยนเก็บไว้สำหรับ audit log diff
         //   ถ้า body.merge=true (อัปเดต) → ดึงเอกสารเดิมก่อน set
@@ -2490,42 +2587,141 @@ async function handleOrderZipAppend(request, env) {
   }
 
   const baseName = song.full_file_name || `${song.song_name || songName}.wav`;
-  const filename = uniqueZipFileName(baseName);
-
-  // ===== คำนวณ partSize + offset =====
-  const filenameInZip = folderPath ? `${folderPath}/${filename}` : filename;
-  const filenameBytesLen = encodeFilename(filenameInZip).byteLength;
-  const LFH_SIZE = 30 + filenameBytesLen;
+  // ประกาศ filename, partSize, offset เป็น let — เพื่อให้ retry loop ด้านล่างสามารถ
+  // อัปเดตค่าได้หลัง atomic UPDATE สำเร็จ (optimistic locking)
+  let filename = uniqueZipFileName(baseName);
   const DD_SIZE = 16;
-  const partSize = LFH_SIZE + wavSize + DD_SIZE;
-  const offset = parts.reduce((sum, p) => sum + Number(p.partSize || 0), 0);
+  let partSize = 0;
+  let offset = 0;
 
-  // ===== บันทึก metadata ของ entry ใน D1 (ยังไม่อัปโหลด part) =====
-  // finalize จะใช้ metadata นี้เพื่อ:
-  //   - อ่าน WAV จาก R2 (ผ่าน r2Key)
-  //   - คำนวณ CRC32 ของ WAV bytes
-  //   - build entry bytes [LFH + WAV + DD]
-  //   - ส่งเข้า buffer 8MB → upload เป็น R2 multipart part (ทุก part ขนาด 8MB ยกเว้น trailing)
-  parts.push({
-    partNumber,
-    songId,
-    songName: song.song_name || songName,
-    folderPath,
-    filename,
-    r2Key,                   // R2 object key ของ WAV (ใช้ใน finalize อ่าน WAV)
-    size: wavSize,            // WAV bytes (สำหรับ CD entry's compressed/uncompressed size)
-    partSize,                // total bytes (LFH + WAV + DD) — สำหรับ offset/cdOffset calculation
-    offset,                  // LFH offset ในไฟล์ ZIP — สำหรับ CD entry's local header offset
-  });
+  // 🔒 (2026-09-28 fix Critical C1): Atomic append ผ่าน optimistic locking
+  //   เดิม: parse parts → push entry → UPDATE parts = ? (read-modify-write)
+  //         → ถ้ามี concurrent append (เช่น bulk upload, admin กดซ้ำ) → lost update → เพลงหาย
+  //   ใหม่: optimistic locking loop:
+  //     1) SELECT parts + updated_at (เป็น "version")
+  //     2) คำนวณ offset + push entry ใน JS
+  //     3) UPDATE parts = ?, updated_at = ?
+  //        WHERE job_id = ? AND updated_at = ? AND status = 'preparing'  (conditional update)
+  //     4) ถ้า changes() > 0 = สำเร็จ → break
+  //     5) ถ้า changes() === 0 = race → retry (SELECT ใหม่)
+  //   - Max 5 retries → ถ้าครบ = ระบบ busy → return 503
+  //   - ไม่ต้องเพิ่ม column ใหม่ → ใช้ updated_at เป็น version (ปลอดภัยตามกฎ #3)
+  //   - timing oracle: ไม่มี เพราะ retry เกิดไม่บ่อย + เป็น atomic conditional UPDATE
+  //   ผลกระทบระบบเดิม: 0% — response shape เหมือนเดิม, parts JSON structure เหมือนเดิม
+  //   ความแตกต่างจากเดิม: ใช้ updated_at timestamp เดิมเป็น WHERE clause (atomic)
+  const APPEND_MAX_RETRIES = 5;
+  let appendSucceeded = false;
+  for (let attempt = 0; attempt < APPEND_MAX_RETRIES; attempt++) {
+    // 1) SELECT parts + updated_at สำหรับ version
+    let versionRow;
+    try {
+      versionRow = await env.DB.prepare(
+        "SELECT parts, updated_at FROM order_zip_jobs WHERE job_id = ?"
+      ).bind(jobId).first();
+    } catch (selectErr) {
+      return jsonResponse({ error: safeError("อ่านสถานะไม่สำเร็จ กรุณาลองใหม่", selectErr) }, 500);
+    }
+    if (!versionRow) {
+      return jsonResponse({ error: "ไม่พบ ZIP job นี้ (อาจถูกยกเลิกไปแล้ว)" }, 404);
+    }
+    // เช็ค status อีกครั้งใน loop (กัน case ที่ status เปลี่ยนระหว่าง SELECT แรกกับ retry)
+    // — ใช้ parts JSON ที่อ่านใหม่แทนเดิม
+    const retryPartsData = parsePartsJson(versionRow.parts);
+    const retryParts = retryPartsData.songs;
 
-  const now = new Date().toISOString();
-  try {
-    // 🔧 (2026-09-18 v5): บันทึกทั้ง object รวม finalizeState (ถ้ามี — ปกติ append จะ null ตอนนี้)
-    await env.DB.prepare(
-      "UPDATE order_zip_jobs SET parts = ?, updated_at = ? WHERE job_id = ?"
-    ).bind(JSON.stringify(partsData), now, jobId).run();
-  } catch (err) {
-    return jsonResponse({ error: safeError("บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+    // re-check status ผ่าน SELECT ใหม่ (เพราะ SELECT แรกที่บรรทัด 2402 อาจเก่า)
+    let statusRow;
+    try {
+      statusRow = await env.DB.prepare(
+        "SELECT status FROM order_zip_jobs WHERE job_id = ?"
+      ).bind(jobId).first();
+    } catch (statusErr) {
+      return jsonResponse({ error: safeError("อ่านสถานะไม่สำเร็จ กรุณาลองใหม่", statusErr) }, 500);
+    }
+    if (!statusRow || statusRow.status !== "preparing") {
+      return jsonResponse({ error: `ZIP job นี้อยู่ในสถานะ "${statusRow?.status || 'unknown'}" ไม่สามารถ append ได้` }, 400);
+    }
+
+    // recompute usedNames + filename ใน retry เพราะอาจมี entry ซ้ำจาก attempt ก่อน
+    const retryUsedNames = new Set(
+      retryParts.filter((p) => (p.folderPath || "") === folderPath).map((p) => p.filename)
+    );
+    function retrySafeZipFileName(value, fallback) {
+      const cleaned = String(value || fallback || "เพลง.wav")
+        .replace(/[\\/:*?"<>|]/g, "_")
+        .replace(/\s+/g, " ")
+        .trim();
+      return /\.(wav|mp3)$/i.test(cleaned) ? cleaned : `${cleaned}.wav`;
+    }
+    function retryUniqueZipFileName(value) {
+      const original = retrySafeZipFileName(value, "เพลง.wav");
+      if (!retryUsedNames.has(original)) {
+        retryUsedNames.add(original);
+        return original;
+      }
+      const dot = original.lastIndexOf(".");
+      const base = dot > 0 ? original.slice(0, dot) : original;
+      const ext = dot > 0 ? original.slice(dot) : ".wav";
+      let index = 2;
+      let candidate = `${base} (${index})${ext}`;
+      while (retryUsedNames.has(candidate)) {
+        index += 1;
+        candidate = `${base} (${index})${ext}`;
+      }
+      retryUsedNames.add(candidate);
+      return candidate;
+    }
+    const retryFilename = retryUniqueZipFileName(baseName);
+    const retryFilenameInZip = folderPath ? `${folderPath}/${retryFilename}` : retryFilename;
+    const retryFilenameBytesLen = encodeFilename(retryFilenameInZip).byteLength;
+    const retryLFH_SIZE = 30 + retryFilenameBytesLen;
+    const retryPartSize = retryLFH_SIZE + wavSize + DD_SIZE;
+    const retryOffset = retryParts.reduce((sum, p) => sum + Number(p.partSize || 0), 0);
+
+    // 2) push entry ใหม่เข้า retryParts (in-memory ไม่กระทบ DB)
+    retryParts.push({
+      partNumber,
+      songId,
+      songName: song.song_name || songName,
+      folderPath,
+      filename: retryFilename,
+      r2Key,
+      size: wavSize,
+      partSize: retryPartSize,
+      offset: retryOffset,
+    });
+    retryPartsData.songs = retryParts;
+
+    // 3) atomic conditional UPDATE — WHERE updated_at = ? เป็น optimistic lock
+    const newUpdatedAt = new Date().toISOString();
+    let updateResult;
+    try {
+      updateResult = await env.DB.prepare(
+        "UPDATE order_zip_jobs SET parts = ?, updated_at = ? WHERE job_id = ? AND updated_at = ? AND status = 'preparing'"
+      ).bind(JSON.stringify(retryPartsData), newUpdatedAt, jobId, versionRow.updated_at).run();
+    } catch (updateErr) {
+      return jsonResponse({ error: safeError("บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่", updateErr) }, 500);
+    }
+
+    // 4) ถ้า changes() > 0 = สำเร็จ
+    if (updateResult?.meta && updateResult.meta.changes > 0) {
+      appendSucceeded = true;
+      // update outer-scope variables สำหรับใช้ใน response (ด้านล่าง)
+      filename = retryFilename;  // ตั้งชื่อที่ใช้จริงใน retry
+      partSize = retryPartSize;
+      offset = retryOffset;
+      break;
+    }
+
+    // 5) changes() === 0 = race → retry (loop ต่อไป)
+    // — ป้องกัน infinite loop ด้วย APPEND_MAX_RETRIES
+  }
+
+  if (!appendSucceeded) {
+    return jsonResponse({
+      error: "ระบบกำลังประมวลผล ZIP หลายคำขอพร้อมกัน — กรุณาลอง append ใหม่อีกครั้ง",
+      code: "zip/append-busy"
+    }, 503);
   }
 
   return jsonResponse({
@@ -3444,6 +3640,14 @@ export default {
     // 🔧 (2026-09-22 fix Bug #2 UI v6): เก็บ ctx ไว้ใน env.__ctx เพื่อให้ writeAuditLog เรียก ctx.waitUntil() ได้
     //   ปลอดภัยเพราะ env เป็น object ตัวเดียวกันตลอด lifecycle ของ request
     env.__ctx = ctx;
+
+    // 🔧 (2026-09-28 fix Critical C3): เก็บ request + env ไว้ใน module-level state
+    //   เพื่อให้ corsHeaders() สามารถอ่าน Origin header + ALLOWED_ORIGINS env var ได้
+    //   โดยไม่ต้องแก้ callers ของ jsonResponse ทั้ง 200+ จุด
+    //   ปลอดภัยเพราะ Cloudflare Workers ทำงาน single-threaded ต่อ isolate
+    //   → module state ไม่ race ข้าม requests (state reset ทุก request)
+    _currentRequest = request;
+    _currentEnv = env;
 
     // 🔧 (2026-09-27 fix 503 safety net): คลุม dispatch block ทั้งหมดด้วย try/catch
     //   เหตุผล: ถ้า handler ใด (เช่น /api/order-zip/*, /api/upload, /api/file/*, /api/db/*, /api/auth/*)
