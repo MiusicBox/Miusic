@@ -28,6 +28,17 @@
   //   กัน URL ถาวรรั่ว → ถ้ารั่ว ใช้ได้แค่ 24 ชม. แล้วหาย
   //   ดู handler ที่ worker/index.js → async scheduled(event, env, ctx)
   "triggers": {
-    "crons": ["0 */6 * * *"]
+    // 🔒 (2026-09-21 auto-cleanup ZIP): รันทุก 6 ชม.
+    //   ลบ ZIP เก่า > 24 ชม. + cleanup audit_log + download_tokens + stuck ZIP jobs
+    //   ดู handler ที่ worker/index.js → async scheduled(event, env, ctx)
+    //
+    // 🔄 (2026-09-28 fix Sequential Queue): รันทุก 1 นาที
+    //   Safety net สำหรับ ZIP queue — ถ้า finalize ไม่ได้ trigger order ถัดไป
+    //   (เช่น Worker timeout) → cron จะ trigger ให้
+    //   Free plan: cron รันได้สูงสุด 5 crons
+    "crons": [
+      "0 */6 * * *",       // ทุก 6 ชม. — ZIP cleanup + audit_log + tokens + stuck jobs
+      "* * * * *"          // ทุก 1 นาที — ZIP queue safety net
+    ]
   }
 }
