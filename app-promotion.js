@@ -268,33 +268,36 @@ function findApplicableTier(tiers, playlistCount) {
 }
 
 // ---------------- คำนวณ promotion ที่เข้าเงื่อนไขและเลือกอันที่ลดมากที่สุด ----------------
+// 🚀 (2026-09-29 STACK): เปลี่ยนนโยบายจาก "best-wins" → "scope-stack"
+//   - แบ่ง promotions ออกเป็น scope "playlist" (applies_to=playlist) และ scope "song" (applies_to=all/category)
+//   - ภายในแต่ละ scope ยังเลือกอันเดียวที่ลดมากสุด (best within scope)
+//   - แล้ว "บวก" ส่วนลดของทั้งสอง scope เข้าด้วยกัน (stack)
+//   - กัน double dip: items ที่มี item-level discount จะถูก exclude ทุกกรณี
+//   - กัน over-discount: ผลรวม promo discount ≤ discountSubtotal (cap ที่ subtotal)
 export function computeBestPromotion(items, promotions, options) {
-  // 🚀 (2026-09-28 fix H-7): รับ options.orderType เพื่อ filter โปรโมชันตาม order_type
-  //   (เช่น playlist_tiered_percent ใช้ได้เฉพาะ order_type="playlist" หรือ "mixed")
   const orderType = options?.orderType || null;
   if (!Array.isArray(items) || items.length === 0 || !Array.isArray(promotions) || promotions.length === 0) {
     const subtotal = (items || []).reduce((s, it) => s + (Number(it.price) || 0), 0);
     return { bestPromotion: null, eligibleCount: 0, discountAmount: 0, subtotal, appliedTier: null };
   }
   const subtotal = items.reduce((s, it) => s + (Number(it.price) || 0), 0);
-  let bestDiscount = 0;
-  let bestEligibleCount = 0;
-  let bestPromoObj = null;
-  let bestTier = null;
+
+  // 🚀 (STACK): เก็บผลลัพธ์แยกตาม scope เพื่อจะ stack ที่หลัง
+  //   - playlistScope: โปรโมชั่นที่ applies_to="playlist" (ปัจจุบัน = playlist_tiered_percent เท่านั้น)
+  //   - songScope: โปรโมชั่นที่ applies_to="all" หรือ "category" (cart_percent, cart_fixed, buy_x_get_y_percent)
+  //   - โปรโมชั่นที่ไม่ตรง scope ใด (เช่น playlist_tiered_percent กับ order_type=single) → skip
+  let playlistScopeBest = null; // { promo, eligibleItems, discount, tier }
+  let songScopeBest = null;
+
   for (const promo of promotions) {
-    // 🚀 (H-7): กรองโปรโมชันตาม order_type ถ้ามี orderType
-    //   - playlist_tiered_percent ใช้ได้เฉพาะ order_type="playlist" หรือ "mixed"
-    //   - ถ้าไม่มี orderType ให้ผ่าน (backward compat — ไม่กระทบ caller เดิม)
+    // 🚀 (H-7): กรอง playlist_tiered_percent ตาม order_type
     if (promo.type === "playlist_tiered_percent" && orderType && orderType !== "playlist" && orderType !== "mixed") {
       continue;
     }
     const eligibleItems = items.filter(it => {
       if (it._hadDiscount) return false;
-      // 🚀 (H-7): ปรับ guard — อนุญาต playlist items สำหรับ type ที่ applies_to="playlist"
       if (it.kind === "playlist") {
-        // โปรโมชันที่ applies_to="playlist" → อนุญาต playlist items
         if ((promo.applies_to || "all") === "playlist") return true;
-        // โปรโมชันอื่น ๆ → ไม่อนุญาต playlist items (เหมือนเดิม)
         return false;
       }
       return isItemInPromotionScope(it, promo);
@@ -315,33 +318,100 @@ export function computeBestPromotion(items, promotions, options) {
       const pct = Math.max(0, Math.min(100, Number(promo.discount_value) || 0));
       promoDiscount = Math.round(eligibleSubtotal * pct / 100);
     } else if (promo.type === "playlist_tiered_percent") {
-      // 🚀 (H-7): Tiered discount สำหรับซื้อยกเพลย์ลิสต์
-      //   - นับเพลย์ลิสต์ใน eligibleItems (kind="playlist")
-      //   - หา tier ที่ min_quantity ≤ playlistCount
-      //   - ลด % ตาม tier นั้น ของยอด eligibleSubtotal
       const playlistCount = eligibleItems.filter(it => it.kind === "playlist").length;
       if (playlistCount === 0) continue;
       const tier = findApplicableTier(promo.tiers, playlistCount);
-      if (!tier) continue; // ไม่มี tier ที่ผ่าน
+      if (!tier) continue;
       const pct = Math.max(0, Math.min(100, tier.discount_percent));
       promoDiscount = Math.round(eligibleSubtotal * pct / 100);
       appliedTier = tier;
     } else {
       continue;
     }
-    if (promoDiscount > bestDiscount) {
-      bestDiscount = promoDiscount;
-      bestEligibleCount = eligibleCount;
-      bestPromoObj = promo;
-      bestTier = appliedTier;
+    // 🚀 (STACK): แยก scope เพื่อ stack ที่หลัง — best within scope ยังเลือกอันเดียวที่ลดมากสุด
+    const scopeBucket = (promo.applies_to === "playlist") ? "playlist" : "song";
+    const candidate = { promo, eligibleItems, eligibleCount, discount: promoDiscount, tier: appliedTier };
+    if (scopeBucket === "playlist") {
+      if (!playlistScopeBest || promoDiscount > playlistScopeBest.discount) {
+        playlistScopeBest = candidate;
+      }
+    } else {
+      if (!songScopeBest || promoDiscount > songScopeBest.discount) {
+        songScopeBest = candidate;
+      }
     }
   }
+
+  // 🚀 (STACK): รวมส่วนลดของทั้งสอง scope แล้ว cap ที่ subtotal (กัน over-discount)
+  let totalPromoDiscount = 0;
+  let appliedPromosList = []; // array ของ { id, name, type, ... } — เก็บไว้บันทึกใน order
+  let totalEligibleCount = 0;
+
+  if (playlistScopeBest && playlistScopeBest.discount > 0) {
+    totalPromoDiscount += playlistScopeBest.discount;
+    totalEligibleCount += playlistScopeBest.eligibleCount;
+    appliedPromosList.push({
+      id: playlistScopeBest.promo.id,
+      name: playlistScopeBest.promo.name || "",
+      type: playlistScopeBest.promo.type || "",
+      discount_value: Number(playlistScopeBest.promo.discount_value) || 0,
+      applies_to: playlistScopeBest.promo.applies_to || "all",
+      category_id: playlistScopeBest.promo.category_id || null,
+      scope: "playlist",
+      eligible_count: playlistScopeBest.eligibleCount,
+      discount_amount: playlistScopeBest.discount,
+      tier_applied: playlistScopeBest.tier || null,
+    });
+  }
+  if (songScopeBest && songScopeBest.discount > 0) {
+    totalPromoDiscount += songScopeBest.discount;
+    totalEligibleCount += songScopeBest.eligibleCount;
+    appliedPromosList.push({
+      id: songScopeBest.promo.id,
+      name: songScopeBest.promo.name || "",
+      type: songScopeBest.promo.type || "",
+      discount_value: Number(songScopeBest.promo.discount_value) || 0,
+      applies_to: songScopeBest.promo.applies_to || "all",
+      category_id: songScopeBest.promo.category_id || null,
+      scope: "song",
+      eligible_count: songScopeBest.eligibleCount,
+      discount_amount: songScopeBest.discount,
+      tier_applied: null,
+    });
+  }
+
+  // 🛡️ Cap: ส่วนลดรวมจาก promo ต้องไม่เกิน subtotal
+  if (totalPromoDiscount > subtotal) {
+    totalPromoDiscount = subtotal;
+  }
+
+  // 🚀 (STACK): bestPromotion ยังคงเป็น "อันหลัก" เพื่อ backward-compat กับ caller เดิม
+  //   - เลือกอันที่ให้ discount มากสุดเป็น bestPromotion
+  //   - appliedTier ตาม bestPromotion
+  //   - ค่าใหม่ promotionsApplied (array) ใช้ตอนบันทึก order จริง ๆ
+  let bestPromotion = null;
+  let bestTier = null;
+  let bestDiscount = 0;
+  for (const p of appliedPromosList) {
+    if (p.discount_amount > bestDiscount) {
+      bestDiscount = p.discount_amount;
+      bestPromotion = {
+        id: p.id, name: p.name, type: p.type,
+        discount_value: p.discount_value, applies_to: p.applies_to,
+        category_id: p.category_id,
+      };
+      bestTier = p.tier_applied;
+    }
+  }
+
   return {
-    bestPromotion: bestPromoObj,
-    eligibleCount: bestEligibleCount,
-    discountAmount: bestDiscount,
+    bestPromotion,
+    eligibleCount: totalEligibleCount,
+    discountAmount: totalPromoDiscount,
     subtotal,
-    appliedTier: bestTier
+    appliedTier: bestTier,
+    // 🚀 (STACK): ฟิลด์ใหม่ — array ของทุก promo ที่ apply (อาจมี 0, 1, หรือ 2 ตัว)
+    promotionsApplied: appliedPromosList,
   };
 }
 
@@ -349,11 +419,15 @@ export function computeBestPromotion(items, promotions, options) {
 export function computeCartPricing(cartItems, discounts, promotions, options) {
   // 🚀 (2026-09-28 fix H-7): รับ options.orderType → ส่งให้ computeBestPromotion
   //   (เพื่อ filter โปรโมชัน playlist_tiered_percent เฉพาะ order_type="playlist" / "mixed")
+  // 🚀 (2026-09-29 STACK): รองรับการ stack 2 โปร (playlist-scope + song-scope)
+  //   - promotionsApplied เป็น array ของทุก promo ที่ apply (0, 1, หรือ 2 ตัว)
+  //   - promotionApplied (singular) ยังคงไว้เพื่อ backward-compat กับ caller เดิม
+  //     — เลือกอันที่ให้ discount_amount มากสุด
   const orderType = options?.orderType || null;
   const dList = discounts || _discountsCache || [];
   const pList = promotions || _promotionsCache || [];
   if (!Array.isArray(cartItems) || cartItems.length === 0) {
-    return { subtotal: 0, discountSubtotal: 0, itemDiscountAmount: 0, promoDiscountAmount: 0, discountAmount: 0, promotionApplied: null, finalTotal: 0, items: [] };
+    return { subtotal: 0, discountSubtotal: 0, itemDiscountAmount: 0, promoDiscountAmount: 0, discountAmount: 0, promotionApplied: null, promotionsApplied: [], finalTotal: 0, items: [] };
   }
   const itemsWithDiscount = cartItems.map(it => {
     const originalPrice = Number(it.price) || 0;
@@ -378,28 +452,49 @@ export function computeCartPricing(cartItems, discounts, promotions, options) {
   const itemDiscountAmount = subtotal - discountSubtotal;
   const promoInput = itemsWithDiscount.map(it => ({ ...it, price: it.discount_price }));
   // 🚀 (H-7): ส่ง orderType เข้า computeBestPromotion
-  const { bestPromotion, eligibleCount, discountAmount: promoDiscountAmount, appliedTier } = computeBestPromotion(promoInput, pList, { orderType });
-  const finalTotal = Math.max(0, discountSubtotal - promoDiscountAmount);
-  const discountAmount = itemDiscountAmount + promoDiscountAmount;
-  let promotionApplied = null;
-  if (bestPromotion) {
-    promotionApplied = {
-      id: bestPromotion.id,
-      name: bestPromotion.name || "",
-      type: bestPromotion.type || "",
-      discount_value: Number(bestPromotion.discount_value) || 0,
-      applies_to: bestPromotion.applies_to || "all",
-      category_id: bestPromotion.category_id || null,
-      eligible_count: eligibleCount,
-      discount_amount: promoDiscountAmount,
-      // 🚀 (H-7): เก็บ tier ที่ใช้ (สำหรับ playlist_tiered_percent)
-      tier_applied: appliedTier || null,
-      snapshot_at: new Date().toISOString()
-    };
+  // 🚀 (STACK): รับ promotionsApplied (array) และ bestPromotion (object, backward-compat)
+  const computeResult = computeBestPromotion(promoInput, pList, { orderType });
+  const promoDiscountAmount = computeResult.discountAmount;
+  const promotionsApplied = Array.isArray(computeResult.promotionsApplied) ? computeResult.promotionsApplied.map(p => ({
+    ...p,
+    snapshot_at: new Date().toISOString()
+  })) : [];
+
+  // 🛡️ Cap: promo discount ต้องไม่เกิน discountSubtotal (กัน finalTotal เป็นลบ)
+  let cappedPromoDiscount = promoDiscountAmount;
+  if (cappedPromoDiscount > discountSubtotal) {
+    cappedPromoDiscount = discountSubtotal;
   }
+
+  const finalTotal = Math.max(0, discountSubtotal - cappedPromoDiscount);
+  const discountAmount = itemDiscountAmount + cappedPromoDiscount;
+
+  // 🚀 (STACK): promotionApplied (singular) — เลือกอันที่ให้ discount_amount มากสุด (backward-compat)
+  //   ถ้ามี 2 โปร stack → promotionApplied จะเป็น "อันที่ลดมากสุด"
+  //   แต่ promotionsApplied (พหูพจน์) จะเก็บครบทั้งคู่
+  let promotionApplied = null;
+  let maxDiscountSeen = 0;
+  for (const p of promotionsApplied) {
+    if (p.discount_amount > maxDiscountSeen) {
+      maxDiscountSeen = p.discount_amount;
+      promotionApplied = {
+        id: p.id,
+        name: p.name || "",
+        type: p.type || "",
+        discount_value: Number(p.discount_value) || 0,
+        applies_to: p.applies_to || "all",
+        category_id: p.category_id || null,
+        eligible_count: p.eligible_count,
+        discount_amount: p.discount_amount,
+        tier_applied: p.tier_applied || null,
+        snapshot_at: p.snapshot_at,
+      };
+    }
+  }
+
   return {
-    subtotal, discountSubtotal, itemDiscountAmount, promoDiscountAmount,
-    discountAmount, promotionApplied, finalTotal, items: itemsWithDiscount
+    subtotal, discountSubtotal, itemDiscountAmount, promoDiscountAmount: cappedPromoDiscount,
+    discountAmount, promotionApplied, promotionsApplied, finalTotal, items: itemsWithDiscount
   };
 }
 
@@ -1678,7 +1773,32 @@ function renderOneOrderCard(order) {
   const finalTotal = (order.final_total != null) ? Number(order.final_total) : Number(order.total || 0);
   const subtotal = (order.subtotal != null) ? Number(order.subtotal) : finalTotal;
   const discountAmount = Number(order.discount_amount || 0);
-  const promotionApplied = order.promotion_applied;
+  // 🚀 (2026-09-29 STACK): รองรับหลาย promo — อ่านจาก promotions_applied ก่อน ถ้าไม่มีใช้ promotion_applied
+  const promosAppliedList = (() => {
+    if (Array.isArray(order.promotions_applied)) {
+      return order.promotions_applied.filter(p => p && p.id && Number(p.discount_amount) > 0);
+    }
+    if (order.promotion_applied && typeof order.promotion_applied === "object" && order.promotion_applied.id) {
+      const p = order.promotion_applied;
+      if (Number(p.discount_amount) > 0) {
+        return [{
+          id: p.id,
+          name: p.name || "",
+          type: p.type || "",
+          discount_value: Number(p.discount_value) || 0,
+          applies_to: p.applies_to || "all",
+          category_id: p.category_id || null,
+          scope: (p.applies_to === "playlist") ? "playlist" : "song",
+          eligible_count: p.eligible_count || 0,
+          discount_amount: Number(p.discount_amount) || 0,
+          tier_applied: p.tier_applied || null,
+          snapshot_at: p.snapshot_at || null,
+        }];
+      }
+    }
+    return [];
+  })();
+  const totalPromoDiscount = promosAppliedList.reduce((s, p) => s + (Number(p.discount_amount) || 0), 0);
 
   const isExpanded = MY_ORDERS_STATE.expandedOrderIds.has(orderId);
 
@@ -1689,9 +1809,12 @@ function renderOneOrderCard(order) {
   let discountBadge = "";
   if (discountAmount > 0) {
     const parts = [];
-    if (promotionApplied && promotionApplied.name) parts.push(`🎁 ${myOrders_escapeHtml(promotionApplied.name)}`);
-    const promoAmount = promotionApplied?.discount_amount || 0;
-    const itemDiscount = discountAmount - promoAmount;
+    // 🚀 (STACK): แสดงทุกชื่อ promo คั่นด้วย " + "
+    if (promosAppliedList.length > 0) {
+      const promoLabels = promosAppliedList.map(p => `🎁 ${myOrders_escapeHtml(p.name)}`);
+      parts.push(promoLabels.join(" + "));
+    }
+    const itemDiscount = discountAmount - totalPromoDiscount;
     if (itemDiscount > 0) parts.push(`🏷️ ลดราคาปกติ`);
     discountBadge = `<div class="my-order-discount-badge" style="color:var(--accent-2,#ec4899);font-size:12px;margin-top:4px;">⚡ ${parts.join(" + ")} · ลด ${myOrders_formatPrice(discountAmount)}</div>`;
   }
@@ -1722,15 +1845,15 @@ function renderOneOrderCard(order) {
     if (subtotal !== finalTotal && subtotal > 0) {
       discountRows += `<div class="my-order-item-row" style="border-top:1px dashed var(--border);margin-top:6px;padding-top:6px;"><span style="color:var(--text-dim);">ยอดรวมก่อนลด</span><span>${myOrders_formatPrice(subtotal)}</span></div>`;
     }
-    if (promotionApplied && promotionApplied.name) {
-      const promoAmount = promotionApplied.discount_amount || 0;
-      if (promoAmount > 0) {
-        discountRows += `<div class="my-order-item-row" style="color:var(--success);"><span>🎁 ${myOrders_escapeHtml(promotionApplied.name)}</span><span>-${myOrders_formatPrice(promoAmount)}</span></div>`;
+    // 🚀 (STACK): แสดงแต่ละ promo แยกบรรทัด (ถ้ามี 2 โปร → 2 บรรทัด)
+    for (const p of promosAppliedList) {
+      const promoAmount = Number(p.discount_amount) || 0;
+      if (promoAmount > 0 && p.name) {
+        discountRows += `<div class="my-order-item-row" style="color:var(--success);"><span>🎁 ${myOrders_escapeHtml(p.name)}</span><span>-${myOrders_formatPrice(promoAmount)}</span></div>`;
       }
     }
     if (discountAmount > 0) {
-      const promoAmount = promotionApplied?.discount_amount || 0;
-      const itemDiscount = discountAmount - promoAmount;
+      const itemDiscount = discountAmount - totalPromoDiscount;
       if (itemDiscount > 0) {
         discountRows += `<div class="my-order-item-row" style="color:var(--accent-2,#ec4899);"><span>🏷️ ส่วนลดจากราคาปกติ</span><span>-${myOrders_formatPrice(itemDiscount)}</span></div>`;
       }

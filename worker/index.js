@@ -1885,10 +1885,8 @@ async function handleDb(request, env, url) {
                 return null;
               };
 
-              let bestPromoObj = null;
-              let bestEligibleCount = 0;
-              let bestPromoDiscount = 0;
-              let bestTier = null;
+              let playlistScopeBest = null; // { promo, eligibleItems, eligibleCount, discount, tier }
+              let songScopeBest = null;
               for (const promo of activePromotions) {
                 // 🚀 (H-7): กรอง playlist_tiered_percent ตาม order_type
                 if (promo.type === "playlist_tiered_percent" && orderType && orderType !== "playlist" && orderType !== "mixed") {
@@ -1930,41 +1928,104 @@ async function handleDb(request, env, url) {
                 } else {
                   continue;
                 }
-                if (promoDiscount > bestPromoDiscount) {
-                  bestPromoDiscount = promoDiscount;
-                  bestEligibleCount = eligibleCount;
-                  bestPromoObj = promo;
-                  bestTier = appliedTier;
+                // 🚀 (STACK): แยก scope และเลือก best within scope (ไม่ best across all อีกต่อไป)
+                const scopeBucket = (promo.applies_to === "playlist") ? "playlist" : "song";
+                const candidate = { promo, eligibleItems, eligibleCount, discount: promoDiscount, tier: appliedTier };
+                if (scopeBucket === "playlist") {
+                  if (!playlistScopeBest || promoDiscount > playlistScopeBest.discount) {
+                    playlistScopeBest = candidate;
+                  }
+                } else {
+                  if (!songScopeBest || promoDiscount > songScopeBest.discount) {
+                    songScopeBest = candidate;
+                  }
                 }
               }
 
-              // 6. Validate promotion_applied ของลูกค้า (ถ้ามี) — ต้องเป็น promotion ที่ active จริงใน DB
-              //    ถ้าลูกค้าส่ง promotion_applied.id ปลอม หรือ promotion หมดอายุ → ใช้ค่าที่ server คำนวณ
-              //    ไม่ reject ออเดอร์ (admin ตรวจอีกที) แต่ discount field ปลอดภัยจากการ tampering
-              const customerPromoId = filteredData.promotion_applied
-                && typeof filteredData.promotion_applied === "object"
-                && filteredData.promotion_applied.id ? filteredData.promotion_applied.id : null;
-              // ถ้าลูกค้าส่ง promotion_applied.id แต่ไม่ตรงกับที่ server คำนวณว่าดีที่สุด
-              //   → ใช้ค่า server เสมอ (defense-in-depth — ไม่เชื่อลูกค้า)
-              let validatedPromotionApplied = null;
-              if (bestPromoObj) {
-                validatedPromotionApplied = {
-                  id: bestPromoObj.id,
-                  name: bestPromoObj.name || "",
-                  type: bestPromoObj.type || "",
-                  discount_value: Number(bestPromoObj.discount_value) || 0,
-                  applies_to: bestPromoObj.applies_to || "all",
-                  category_id: bestPromoObj.category_id || null,
-                  eligible_count: bestEligibleCount,
-                  discount_amount: bestPromoDiscount,
-                  // 🚀 (H-7): เก็บ tier ที่ใช้
-                  tier_applied: bestTier || null,
+              // 🚀 (STACK): รวมส่วนลดของทั้งสอง scope (playlist-scope + song-scope)
+              //   ภายใน scope ยังเลือกอันเดียวที่ลดมากสุด — แต่ข้าม scope stack กันได้
+              let totalPromoDiscount = 0;
+              let serverPromotionsApplied = []; // array ของ { id, name, ... } — snapshot ใน order
+              if (playlistScopeBest && playlistScopeBest.discount > 0) {
+                totalPromoDiscount += playlistScopeBest.discount;
+                serverPromotionsApplied.push({
+                  id: playlistScopeBest.promo.id,
+                  name: playlistScopeBest.promo.name || "",
+                  type: playlistScopeBest.promo.type || "",
+                  discount_value: Number(playlistScopeBest.promo.discount_value) || 0,
+                  applies_to: playlistScopeBest.promo.applies_to || "all",
+                  category_id: playlistScopeBest.promo.category_id || null,
+                  scope: "playlist",
+                  eligible_count: playlistScopeBest.eligibleCount,
+                  discount_amount: playlistScopeBest.discount,
+                  tier_applied: playlistScopeBest.tier || null,
                   snapshot_at: new Date().toISOString()
-                };
+                });
               }
-              // log เตือนถ้าลูกค้าส่ง promotion_applied ที่ไม่ตรงกับ DB (เพื่อ audit)
-              if (customerPromoId && customerPromoId !== (bestPromoObj && bestPromoObj.id)) {
-                console.warn(`[discount-validate] customer promotion_applied.id=${customerPromoId} mismatch with server-computed best=${bestPromoObj && bestPromoObj.id} — using server value`);
+              if (songScopeBest && songScopeBest.discount > 0) {
+                totalPromoDiscount += songScopeBest.discount;
+                serverPromotionsApplied.push({
+                  id: songScopeBest.promo.id,
+                  name: songScopeBest.promo.name || "",
+                  type: songScopeBest.promo.type || "",
+                  discount_value: Number(songScopeBest.promo.discount_value) || 0,
+                  applies_to: songScopeBest.promo.applies_to || "all",
+                  category_id: songScopeBest.promo.category_id || null,
+                  scope: "song",
+                  eligible_count: songScopeBest.eligibleCount,
+                  discount_amount: songScopeBest.discount,
+                  tier_applied: null,
+                  snapshot_at: new Date().toISOString()
+                });
+              }
+
+              // 🛡️ Cap: ส่วนลดรวมต้องไม่เกิน discountSubtotal (กัน finalTotal เป็นลบ)
+              let bestPromoDiscount = totalPromoDiscount;
+              // (ใช้ serverSubtotal เป็น cap เบื้องต้น ก่อนคำนวณ final total ด้านล่าง)
+              if (bestPromoDiscount > serverSubtotal) {
+                bestPromoDiscount = serverSubtotal;
+              }
+
+              // 🚀 (STACK): validatedPromotionApplied (singular) — เลือกอันที่ให้ discount_amount มากสุด (backward-compat)
+              //   และ promotionsApplied (พหูพจน์) — เก็บครบทุก promo ที่ apply
+              let validatedPromotionApplied = null;
+              let maxDiscountSeen = 0;
+              for (const p of serverPromotionsApplied) {
+                if (p.discount_amount > maxDiscountSeen) {
+                  maxDiscountSeen = p.discount_amount;
+                  validatedPromotionApplied = {
+                    id: p.id,
+                    name: p.name || "",
+                    type: p.type || "",
+                    discount_value: Number(p.discount_value) || 0,
+                    applies_to: p.applies_to || "all",
+                    category_id: p.category_id || null,
+                    eligible_count: p.eligible_count,
+                    discount_amount: p.discount_amount,
+                    tier_applied: p.tier_applied || null,
+                    snapshot_at: p.snapshot_at,
+                  };
+                }
+              }
+
+              // 🚀 (STACK): ตรวจ promotion_applied ของลูกค้าที่ส่งมา (รองรับทั้ง object เก่า + array ใหม่)
+              //   - ถ้าเป็น array → ตรวจทุก id ที่ส่งมา
+              //   - ถ้าเป็น object → ตรวจ id เดียว (backward-compat)
+              //   - ถ้า id ลูกค้าส่งไม่อยู่ใน server-computed promotions → log warning (audit)
+              const customerPromoInput = filteredData.promotion_applied;
+              let customerPromoIds = [];
+              if (Array.isArray(customerPromoInput)) {
+                customerPromoIds = customerPromoInput
+                  .map(p => (p && typeof p === "object" && p.id) ? p.id : null)
+                  .filter(id => id);
+              } else if (customerPromoInput && typeof customerPromoInput === "object" && customerPromoInput.id) {
+                customerPromoIds = [customerPromoInput.id];
+              }
+              const serverPromoIds = serverPromotionsApplied.map(p => p.id);
+              for (const cid of customerPromoIds) {
+                if (!serverPromoIds.includes(cid)) {
+                  console.warn(`[discount-validate] customer promotion_applied.id=${cid} mismatch with server-computed=[${serverPromoIds.join(",")}] — using server value`);
+                }
               }
 
               // 7. Compute final totals และ override ค่าที่ลูกค้าส่งมา
@@ -1974,12 +2035,21 @@ async function handleDb(request, env, url) {
               const discountSubtotal = itemsWithDiscount.reduce(
                 (s, it) => s + (Number(it.discount_price) || 0), 0
               );
-              const serverDiscountAmount = itemDiscountAmount + bestPromoDiscount;
-              const serverTotal = Math.max(0, discountSubtotal - bestPromoDiscount);
+              // 🛡️ Cap (final): bestPromoDiscount ต้องไม่เกิน discountSubtotal (กัน finalTotal เป็นลบ)
+              let finalPromoDiscount = bestPromoDiscount;
+              if (finalPromoDiscount > discountSubtotal) {
+                finalPromoDiscount = discountSubtotal;
+              }
+              const serverDiscountAmount = itemDiscountAmount + finalPromoDiscount;
+              const serverTotal = Math.max(0, discountSubtotal - finalPromoDiscount);
               // Override ราคาที่ลูกค้าส่งมาด้วยราคาที่ server คำนวณเอง
               filteredData.subtotal = serverSubtotal;
               filteredData.discount_amount = serverDiscountAmount;
+              // 🚀 (STACK): เก็บทั้ง object เก่า (promotion_applied) และ array ใหม่ (promotions_applied)
+              //   - promotion_applied (singular) — backward-compat กับ orders.js เดิมที่ยังอ่าน object
+              //   - promotions_applied (พหูพจน์) — array ของทุก promo ที่ apply (อาจมี 0, 1, 2 ตัว)
               filteredData.promotion_applied = validatedPromotionApplied;
+              filteredData.promotions_applied = serverPromotionsApplied;
               filteredData.total = serverTotal;
               filteredData.final_total = serverTotal;
               // อัปเดต price ของแต่ละ item ด้วย (กันลูกค้าส่ง price=0)

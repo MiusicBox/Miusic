@@ -37,7 +37,7 @@ import {
   initMyOrdersView, cleanupMyOrdersView,
   // 🎁 (2026-09-20) เพิ่มใหม่: formatDateTime ใช้สำหรับแสดงวันที่ในหน้าโปรโมชั่นพรีวิว (เรียกจาก app-promotion.js ที่มีอยู่แล้ว)
   formatDateTime
-} from "./app-promotion.js?v=20261101-promo1";
+} from "./app-promotion.js?v=20260929-stack-promo";
 
 const STATE = {
   songs: [], categories: [], djs: [], playlists: [], settings: {},

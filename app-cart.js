@@ -31,7 +31,7 @@ import {
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่) — import มาจาก app-promotion.js กลาง (รวมไฟล์เดียว) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, computeCartPricing, clearPricingCache
-} from "./app-promotion.js?v=20261101-promo1";
+} from "./app-promotion.js?v=20260929-stack-promo";
 
 const CART_STORAGE_KEY = "music_store_cart_v1";
 const CHECKOUT_ORDER_KEY = "music_store_checkout_order_v1";
@@ -46,6 +46,46 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   let submitting = false;
   let activeOrderId = null;
   let activeOrderKey = null;
+
+  // 🚀 (2026-09-29 STACK): helper อ่าน promotions ที่ apply จาก order snapshot
+  //   รองรับทั้ง:
+  //   - รูปแบบใหม่: order.promotions_applied = [{ id, name, discount_amount, scope, ... }, ...]
+  //   - รูปแบบเก่า: order.promotion_applied = { id, name, discount_amount, ... } (object เดียว)
+  //   - ไม่มี: return []
+  //   คืน array เสมอ → caller ไม่ต้อง handle ทั้งสองรูปแบบ
+  function getAppliedPromotionsArray(order) {
+    if (!order) return [];
+    // รูปแบบใหม่: promotions_applied (array)
+    if (Array.isArray(order.promotions_applied)) {
+      return order.promotions_applied.filter(p => p && p.id && Number(p.discount_amount) > 0);
+    }
+    // รูปแบบเก่า: promotion_applied (object เดียว)
+    if (order.promotion_applied && typeof order.promotion_applied === "object" && order.promotion_applied.id) {
+      const p = order.promotion_applied;
+      if (Number(p.discount_amount) > 0) {
+        return [{
+          id: p.id,
+          name: p.name || "",
+          type: p.type || "",
+          discount_value: Number(p.discount_value) || 0,
+          applies_to: p.applies_to || "all",
+          category_id: p.category_id || null,
+          scope: (p.applies_to === "playlist") ? "playlist" : "song",
+          eligible_count: p.eligible_count || 0,
+          discount_amount: Number(p.discount_amount) || 0,
+          tier_applied: p.tier_applied || null,
+          snapshot_at: p.snapshot_at || null,
+        }];
+      }
+    }
+    return [];
+  }
+
+  // 🚀 (STACK): helper — รวม discount_amount ของทุก promo ที่ apply
+  function sumPromoDiscount(promos) {
+    if (!Array.isArray(promos)) return 0;
+    return promos.reduce((s, p) => s + (Number(p.discount_amount) || 0), 0);
+  }
 
   function loadCart() {
     try {
@@ -249,12 +289,17 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     const finalTotal = approxPricing?.finalTotal ?? baseTotal;
     const itemDiscount = approxPricing?.itemDiscountAmount || 0;
     const promoDiscount = approxPricing?.promoDiscountAmount || 0;
-    const promoApplied = approxPricing?.promotionApplied;
+    // 🚀 (STACK): รองรับหลาย promo — ใช้ promotionsApplied (array) แทน promotionApplied (object)
+    const promosAppliedList = Array.isArray(approxPricing?.promotionsApplied)
+      ? approxPricing.promotionsApplied.filter(p => Number(p.discount_amount) > 0)
+      : (approxPricing?.promotionApplied && Number(approxPricing.promotionApplied.discount_amount) > 0
+          ? [approxPricing.promotionApplied] : []);
     const totalDiscount = itemDiscount + promoDiscount;
 
     if (priceEl) priceEl.textContent = formatPrice(finalTotal);
 
     // เพิ่มใหม่: แสดงแถวสรุปส่วนลด/โปรโมชั่น (โครงเดียวกับ renderCheckoutSummary ด้านล่าง)
+    // 🚀 (STACK): แสดงทุก promo แยกบรรทัดกัน (ถ้ามี 2 โปร → 2 บรรทัด)
     if (discountRowsEl) {
       if (totalDiscount > 0 && finalTotal < baseTotal) {
         let rows = `
@@ -269,12 +314,15 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
               <strong style="color:var(--accent-2,#ec4899);">-${formatPrice(itemDiscount)}</strong>
             </div>`;
         }
-        if (promoApplied && promoDiscount > 0) {
-          rows += `
-            <div class="cart-summary-row">
-              <span style="color:var(--danger);">🎁 ${escapeHtml(promoApplied.name || 'โปรโมชั่น')}</span>
-              <strong style="color:var(--danger);">-${formatPrice(promoDiscount)}</strong>
-            </div>`;
+        // 🚀 (STACK): แสดงแต่ละ promo แยกบรรทัด
+        for (const p of promosAppliedList) {
+          if (Number(p.discount_amount) > 0) {
+            rows += `
+              <div class="cart-summary-row">
+                <span style="color:var(--danger);">🎁 ${escapeHtml(p.name || 'โปรโมชั่น')}</span>
+                <strong style="color:var(--danger);">-${formatPrice(Number(p.discount_amount))}</strong>
+              </div>`;
+          }
         }
         discountRowsEl.innerHTML = rows;
       } else {
@@ -304,7 +352,11 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     // คำนวณ approximate ส่วนลด/โปรโมชั่นแบบ sync (ใช้ cache ที่โหลดไว้ใน app-user.js)
     // ค่าที่แสดงตรงนี้เป็น "โดยประมาณ" — ระบบจะคำนวณใหม่ทั้งหมดตอนกดยืนยันสั่งซื้อ
     const approxPricing = computeApproxPricingForDisplay();
-    const promoApplied = approxPricing?.promotionApplied;
+    // 🚀 (STACK): รองรับหลาย promo
+    const promosAppliedList = Array.isArray(approxPricing?.promotionsApplied)
+      ? approxPricing.promotionsApplied.filter(p => Number(p.discount_amount) > 0)
+      : (approxPricing?.promotionApplied && Number(approxPricing.promotionApplied.discount_amount) > 0
+          ? [approxPricing.promotionApplied] : []);
     const itemDiscount = approxPricing?.itemDiscountAmount || 0;
     const promoDiscount = approxPricing?.promoDiscountAmount || 0;
     const totalDiscount = itemDiscount + promoDiscount;
@@ -330,12 +382,15 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
             <strong style="color:var(--accent-2,#ec4899);">-${formatPrice(itemDiscount)}</strong>
           </div>`;
       }
-      if (promoApplied && promoDiscount > 0) {
-        rows += `
-          <div class="cart-summary-row">
-            <span style="color:var(--danger);">🎁 ${escapeHtml(promoApplied.name || 'โปรโมชั่น')}</span>
-            <strong style="color:var(--danger);">-${formatPrice(promoDiscount)}</strong>
-          </div>`;
+      // 🚀 (STACK): แสดงแต่ละ promo แยกบรรทัด
+      for (const p of promosAppliedList) {
+        if (Number(p.discount_amount) > 0) {
+          rows += `
+            <div class="cart-summary-row">
+              <span style="color:var(--danger);">🎁 ${escapeHtml(p.name || 'โปรโมชั่น')}</span>
+              <strong style="color:var(--danger);">-${formatPrice(Number(p.discount_amount))}</strong>
+            </div>`;
+        }
       }
       rows += `
         <div class="cart-summary-row">
@@ -687,6 +742,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       // คำนวณ discount + promotion (ถ้ามี)
       const cartItems = [{ kind: "playlist", playlist_id: playlist.id, price: Number(playlist.price) }];
       // 🚀 (2026-09-28 fix H-7): ส่ง orderType="playlist" ให้ computeCartPricing
+      // 🚀 (2026-09-29 STACK): ส่ง promotionsApplied ด้วย (array ของทุก promo ที่ apply)
       const pricing = computeCartPricing(cartItems, activeDiscounts, activePromotions, { orderType: "playlist" });
       return {
         items: songs.map(s => ({ song_id: s.song_id, title: s.title, price: s.price, quantity: 1 })),
@@ -695,6 +751,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         discountSubtotal: pricing.discountSubtotal,
         discountAmount: pricing.discountAmount,
         promotionApplied: pricing.promotionApplied,
+        promotionsApplied: pricing.promotionsApplied || [],
         finalTotal: pricing.finalTotal,
         orderType: "playlist",
         playlist,
@@ -720,6 +777,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         };
       });
       // 🚀 (H-7): ส่ง orderType="single"
+      // 🚀 (STACK): ส่ง promotionsApplied ด้วย
       const pricing = computeCartPricing(cartItems, activeDiscounts, activePromotions, { orderType: "single" });
       return {
         items: singleSongItems,
@@ -728,6 +786,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         discountSubtotal: pricing.discountSubtotal,
         discountAmount: pricing.discountAmount,
         promotionApplied: pricing.promotionApplied,
+        promotionsApplied: pricing.promotionsApplied || [],
         finalTotal: pricing.finalTotal,
         orderType: "single",
         playlist: null,
@@ -781,6 +840,8 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       discountSubtotal: pricing.discountSubtotal,
       discountAmount: pricing.discountAmount,
       promotionApplied: pricing.promotionApplied,
+      // 🚀 (STACK): ส่ง promotionsApplied (array ของทุก promo ที่ apply)
+      promotionsApplied: pricing.promotionsApplied || [],
       finalTotal: pricing.finalTotal,
       orderType: "mixed",
       playlist: null,
@@ -1071,32 +1132,35 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   // ===== เพิ่มใหม่: สร้างแถวส่วนลด/โปรโมชั่นสำหรับใบเสร็จ =====
   // อ่านจาก order.subtotal, order.discount_amount, order.promotion_applied (snapshot ตอนสั่ง)
   // ถ้า order เก่าไม่มี field เหล่านี้ → ไม่แสดงแถวพิเศษ (back-compat)
+  // 🚀 (2026-09-29 STACK): รองรับหลาย promo (อ่านจาก order.promotions_applied ก่อน ถ้าไม่มีใช้ promotion_applied)
   function buildReceiptDiscountRows(order) {
     const subtotal = order.subtotal;
     const discountAmount = order.discount_amount;
-    const promotionApplied = order.promotion_applied;
     const finalTotal = order.final_total ?? order.total;
+    // 🚀 (STACK): ใช้ helper ใหม่ — รองรับทั้ง promotions_applied (array) และ promotion_applied (object)
+    const promosAppliedList = getAppliedPromotionsArray(order);
+    const totalPromoDiscount = sumPromoDiscount(promosAppliedList);
     // ถ้าไม่มีข้อมูลส่วนลดเลย → ไม่แสดงแถวพิเศษ (order เก่าก่อน deploy ระบบใหม่)
-    if (subtotal == null && discountAmount == null && !promotionApplied) return "";
+    if (subtotal == null && discountAmount == null && totalPromoDiscount === 0) return "";
     // ถ้าส่วนลดเป็น 0 และไม่มี promotion → ไม่แสดง
-    const hasDiscount = (discountAmount && discountAmount > 0) || (promotionApplied && promotionApplied.discount_amount > 0);
+    const hasDiscount = (discountAmount && discountAmount > 0) || totalPromoDiscount > 0;
     if (!hasDiscount) return "";
 
     let rows = "";
-    if (subtotal != null && subtotal !== finalTotal) {
-      rows += `<div class="receipt-line receipt-discount-row"><span>ยอดรวมก่อนลด</span><span>${formatPrice(subtotal)}</span></div>`;
+    if (subtotal != null && Number(subtotal) !== Number(finalTotal)) {
+      rows += `<div class="receipt-line receipt-discount-row"><span>ยอดรวมก่อนลด</span><span>${formatPrice(Number(subtotal))}</span></div>`;
     }
-    if (promotionApplied && promotionApplied.name) {
-      const promoAmount = promotionApplied.discount_amount || 0;
-      if (promoAmount > 0) {
-        rows += `<div class="receipt-line receipt-promo-row"><span>🎁 โปรโมชั่น: ${escapeHtml(promotionApplied.name)}</span><span>-${formatPrice(promoAmount)}</span></div>`;
+    // 🚀 (STACK): แสดงแต่ละ promo แยกบรรทัด (ถ้ามี 2 โปร → 2 บรรทัด)
+    for (const p of promosAppliedList) {
+      const amt = Number(p.discount_amount) || 0;
+      if (amt > 0 && p.name) {
+        rows += `<div class="receipt-line receipt-promo-row"><span>🎁 โปรโมชั่น: ${escapeHtml(p.name)}</span><span>-${formatPrice(amt)}</span></div>`;
       }
     }
     if (discountAmount && discountAmount > 0) {
-      // ถ้า promotionApplied มี discount_amount แล้ว → discountAmount รวม item-level + promo
-      // ถ้ามี promotionApplied อยู่ → แสดงเฉพาะส่วนต่างของ item-level (ถ้ามี)
-      const promoAmount = promotionApplied?.discount_amount || 0;
-      const itemDiscount = discountAmount - promoAmount;
+      // ถ้ามี promotions → discountAmount รวม item-level + ทุก promo
+      // แสดงเฉพาะส่วน item-level (ส่วนต่าง) ถ้ามี
+      const itemDiscount = Number(discountAmount) - totalPromoDiscount;
       if (itemDiscount > 0) {
         rows += `<div class="receipt-line receipt-discount-row"><span>ส่วนลดจากราคาปกติ</span><span>-${formatPrice(itemDiscount)}</span></div>`;
       }
@@ -1819,7 +1883,11 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
           // เก็บไว้ให้ order เก่าไม่เปลี่ยนราคาแม้ admin แก้ promotion ภายหลัง (เพราะเป็น snapshot)
           subtotal: resolved.subtotal ?? resolved.total,
           discount_amount: resolved.discountAmount ?? 0,
+          // 🚀 (STACK): เก็บทั้ง object เก่า (promotion_applied) และ array ใหม่ (promotions_applied)
+          //   - promotion_applied (singular) — backward-compat กับ orders.js เดิมที่ยังอ่าน object
+          //   - promotions_applied (พหูพจน์) — array ของทุก promo ที่ apply (อาจมี 0, 1, 2 ตัว)
           promotion_applied: resolved.promotionApplied ?? null,
+          promotions_applied: Array.isArray(resolved.promotionsApplied) ? resolved.promotionsApplied : [],
           final_total: resolved.finalTotal ?? resolved.total
         };
         // playlist_ids เป็นฟิลด์เสริมสำหรับ Order แบบผสม (เพลง+เพลย์ลิสต์ หรือหลายเพลย์ลิสต์) เท่านั้น

@@ -14,7 +14,45 @@ import { sortSongsByThaiName } from "./thai-sort.js";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่) — import มาจาก app-promotion.js กลาง (รวมไฟล์เดียว) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, computeCartPricing
-} from "./app-promotion.js?v=20261101-promo1";
+} from "./app-promotion.js?v=20260929-stack-promo";
+
+// 🚀 (2026-09-29 STACK): helper อ่าน promotions ที่ apply จาก order snapshot
+//   รองรับทั้ง:
+//   - รูปแบบใหม่: order.promotions_applied = [{ id, name, discount_amount, scope, ... }, ...]
+//   - รูปแบบเก่า: order.promotion_applied = { id, name, discount_amount, ... } (object เดียว)
+//   - ไม่มี: return []
+//   คืน array เสมอ → caller ไม่ต้อง handle ทั้งสองรูปแบบ
+function getAppliedPromotionsArray(order) {
+  if (!order) return [];
+  if (Array.isArray(order.promotions_applied)) {
+    return order.promotions_applied.filter(p => p && p.id && Number(p.discount_amount) > 0);
+  }
+  if (order.promotion_applied && typeof order.promotion_applied === "object" && order.promotion_applied.id) {
+    const p = order.promotion_applied;
+    if (Number(p.discount_amount) > 0) {
+      return [{
+        id: p.id,
+        name: p.name || "",
+        type: p.type || "",
+        discount_value: Number(p.discount_value) || 0,
+        applies_to: p.applies_to || "all",
+        category_id: p.category_id || null,
+        scope: (p.applies_to === "playlist") ? "playlist" : "song",
+        eligible_count: p.eligible_count || 0,
+        discount_amount: Number(p.discount_amount) || 0,
+        tier_applied: p.tier_applied || null,
+        snapshot_at: p.snapshot_at || null,
+      }];
+    }
+  }
+  return [];
+}
+
+// 🚀 (STACK): helper — รวม discount_amount ของทุก promo ที่ apply
+function sumPromoDiscount(promos) {
+  if (!Array.isArray(promos)) return 0;
+  return promos.reduce((s, p) => s + (Number(p.discount_amount) || 0), 0);
+}
 
 /* ---------------- สถานะออเดอร์ (4 สถานะ) ---------------- */
 const STATUS_ORDER = ["pending_verify", "processing", "completed", "cancelled"];
@@ -1456,6 +1494,7 @@ function renderCart() {
 
 // ===== เพิ่มใหม่: อัปเดต hint ของ admin cart ให้แสดงยอดหลังลดแบบ approximate =====
 // ทำงาน async เพื่อไม่ให้ renderCart รอ — ใช้ cache ของ pricing.js (ถ้ามี)
+// 🚀 (2026-09-29 STACK): รองรับหลาย promo — แสดงทุกชื่อ promo คั่นด้วย " + "
 async function updateApproxPricingHint(cartEntries, hintEl) {
   if (!hintEl || !cartEntries || cartEntries.length === 0) return;
   try {
@@ -1467,8 +1506,15 @@ async function updateApproxPricingHint(cartEntries, hintEl) {
     const totalDiscount = itemDiscount + promoDiscount;
     if (totalDiscount > 0 && finalTotal < baseTotal) {
       let msg = `ยอดก่อนลด: ${formatLAK(baseTotal)} → หลังลด: ${formatLAK(finalTotal)} (ลด ${formatLAK(totalDiscount)})`;
-      if (pricing.promotionApplied) {
-        msg += ` · 🎁 ${pricing.promotionApplied.name}`;
+      // 🚀 (STACK): อ่าน promotions จาก array ใหม่ก่อน ถ้าไม่มีใช้ object เก่า
+      const promosApplied = Array.isArray(pricing.promotionsApplied) && pricing.promotionsApplied.length > 0
+        ? pricing.promotionsApplied
+        : (pricing.promotionApplied ? [pricing.promotionApplied] : []);
+      const promoNames = promosApplied
+        .filter(p => Number(p.discount_amount) > 0 && p.name)
+        .map(p => p.name);
+      if (promoNames.length > 0) {
+        msg += ` · 🎁 ${promoNames.join(" + ")}`;
       }
       hintEl.textContent = msg;
       hintEl.style.color = "var(--accent-2)";
@@ -1659,24 +1705,27 @@ function handleHistorySearchInput(e) {
 
 /* ---------------- Render: ประวัติออเดอร์ ---------------- */
 // ===== เพิ่มใหม่: badge ส่วนลด/โปรโมชั่น สำหรับรายการ history (ฝั่งแอดมิน) =====
-// อ่านจาก snapshot ใน order (subtotal/discount_amount/promotion_applied/final_total)
+// อ่านจาก snapshot ใน order (subtotal/discount_amount/promotion_applied/promotions_applied/final_total)
 // ถ้า order เก่าไม่มี snapshot → ไม่แสดง badge (back-compat)
+// 🚀 (2026-09-29 STACK): รองรับหลาย promo — อ่านจาก promotions_applied ก่อน ถ้าไม่มีใช้ promotion_applied
 function buildAdminHistoryDiscountBadge(order) {
   const subtotal = order.subtotal;
   const discountAmount = order.discount_amount;
-  const promotionApplied = order.promotion_applied;
   const finalTotal = (order.final_total != null) ? Number(order.final_total) : Number(order.total);
-  if (subtotal == null && discountAmount == null && !promotionApplied) return "";
+  const promosAppliedList = getAppliedPromotionsArray(order);
+  const totalPromoDiscount = sumPromoDiscount(promosAppliedList);
+  if (subtotal == null && discountAmount == null && totalPromoDiscount === 0) return "";
   const totalDiscount = (Number(discountAmount) || 0);
-  if (totalDiscount <= 0) return "";
+  if (totalDiscount <= 0 && totalPromoDiscount <= 0) return "";
 
+  // 🚀 (STACK): สร้าง label รวม — ถ้ามีหลาย promo ให้แสดงทุกชื่อคั่นด้วย " + "
   const parts = [];
-  if (promotionApplied && promotionApplied.name) {
-    parts.push(`🎁 ${escapeHtml(promotionApplied.name)}`);
+  if (promosAppliedList.length > 0) {
+    const promoLabels = promosAppliedList.map(p => `🎁 ${escapeHtml(p.name)}`);
+    parts.push(promoLabels.join(" + "));
   }
   // ถ้ามี item-level discount ด้วย ให้แสดงเป็น "ลดราคาปกติ"
-  const promoAmount = promotionApplied?.discount_amount || 0;
-  const itemDiscount = totalDiscount - promoAmount;
+  const itemDiscount = totalDiscount - totalPromoDiscount;
   if (itemDiscount > 0) {
     parts.push(`🏷️ ลดราคาปกติ`);
   }
@@ -2017,30 +2066,34 @@ async function buildReceiptItemRows(order, total) {
 }
 
 // ===== เพิ่มใหม่: แถวส่วนลด/โปรโมชั่นสำหรับใบเสร็จฝั่งแอดมิน =====
-// อ่านจาก order.subtotal, order.discount_amount, order.promotion_applied (snapshot ตอนสั่ง)
+// อ่านจาก order.subtotal, order.discount_amount, order.promotion_applied/promotions_applied (snapshot ตอนสั่ง)
 // ถ้า order เก่าไม่มี field เหล่านี้ → ไม่แสดงแถวพิเศษ (back-compat)
+// 🚀 (2026-09-29 STACK): รองรับหลาย promo — แสดงแต่ละ promo แยกบรรทัด
 function buildAdminReceiptDiscountRows(order) {
   const subtotal = order.subtotal;
   const discountAmount = order.discount_amount;
-  const promotionApplied = order.promotion_applied;
   const finalTotal = (order.final_total != null) ? Number(order.final_total) : Number(order.total);
-  if (subtotal == null && discountAmount == null && !promotionApplied) return "";
-  const hasDiscount = (discountAmount && discountAmount > 0) || (promotionApplied && promotionApplied.discount_amount > 0);
+  const promosAppliedList = getAppliedPromotionsArray(order);
+  const totalPromoDiscount = sumPromoDiscount(promosAppliedList);
+  if (subtotal == null && discountAmount == null && totalPromoDiscount === 0) return "";
+  const hasDiscount = (discountAmount && discountAmount > 0) || totalPromoDiscount > 0;
   if (!hasDiscount) return "";
 
   let rows = "";
   if (subtotal != null && Number(subtotal) !== finalTotal) {
     rows += `<div class="receipt-line receipt-discount-row"><span>ยอดรวมก่อนลด</span><span>${formatLAK(Number(subtotal))}</span></div>`;
   }
-  if (promotionApplied && promotionApplied.name) {
-    const promoAmount = promotionApplied.discount_amount || 0;
-    if (promoAmount > 0) {
-      rows += `<div class="receipt-line receipt-promo-row"><span>🎁 โปรโมชั่น: ${escapeHtml(promotionApplied.name)}</span><span>-${formatLAK(promoAmount)}</span></div>`;
+  // 🚀 (STACK): แสดงแต่ละ promo แยกบรรทัด (ถ้ามี 2 โปร → 2 บรรทัด)
+  for (const p of promosAppliedList) {
+    const amt = Number(p.discount_amount) || 0;
+    if (amt > 0 && p.name) {
+      rows += `<div class="receipt-line receipt-promo-row"><span>🎁 โปรโมชั่น: ${escapeHtml(p.name)}</span><span>-${formatLAK(amt)}</span></div>`;
     }
   }
   if (discountAmount && discountAmount > 0) {
-    const promoAmount = promotionApplied?.discount_amount || 0;
-    const itemDiscount = Number(discountAmount) - promoAmount;
+    // ถ้ามี promotions → discountAmount รวม item-level + ทุก promo
+    // แสดงเฉพาะส่วน item-level (ส่วนต่าง) ถ้ามี
+    const itemDiscount = Number(discountAmount) - totalPromoDiscount;
     if (itemDiscount > 0) {
       rows += `<div class="receipt-line receipt-discount-row"><span>ส่วนลดจากราคาปกติ</span><span>-${formatLAK(itemDiscount)}</span></div>`;
     }
@@ -3030,10 +3083,12 @@ async function handleUpdateOrder() {
   // เหตุผล: ถ้า admin แก้ items ใน order → ส่วนลดต้องคำนวณใหม่ด้วย
   // แต่ถ้า admin แค่เปลี่ยนชื่อลูกค้า/เบอร์ → ส่วนลดเดิมควรคงไว้
   // ใน v1: กระทำการ "คำนวณใหม่เสมอ" เพราะง่ายและปลอดภัย (snapshot ใหม่ = ส่วนลดใหม่ที่ถูกต้องตาม items ปัจจุบัน)
+  // 🚀 (2026-09-29 STACK): รองรับหลาย promo — ส่ง promotions_applied (array) ด้วย
   const pricingResult = await computeAdminPricing(state.editCartEntries);
   const subtotal = pricingResult.subtotal ?? total;
   const discountAmount = pricingResult.discountAmount ?? 0;
   const promotionApplied = pricingResult.promotionApplied ?? null;
+  const promotionsApplied = Array.isArray(pricingResult.promotionsApplied) ? pricingResult.promotionsApplied : [];
   const finalTotal = pricingResult.finalTotal ?? total;
 
   const updatedData = {
@@ -3055,7 +3110,9 @@ async function handleUpdateOrder() {
     // ===== ฟิลด์ใหม่: snapshot ใหม่ ตาม items ปัจจุบัน =====
     subtotal,
     discount_amount: discountAmount,
+    // 🚀 (STACK): เก็บทั้ง object เก่า + array ใหม่ (กัน break orders.js ที่ยังอ่าน object)
     promotion_applied: promotionApplied,
+    promotions_applied: promotionsApplied,
     final_total: finalTotal,
   };
 
@@ -3234,6 +3291,8 @@ async function handleSubmitOrder() {
   const subtotal = pricingResult.subtotal ?? total;
   const discountAmount = pricingResult.discountAmount ?? 0;
   const promotionApplied = pricingResult.promotionApplied ?? null;
+  // 🚀 (STACK): รองรับหลาย promo — ส่ง promotions_applied (array)
+  const promotionsApplied = Array.isArray(pricingResult.promotionsApplied) ? pricingResult.promotionsApplied : [];
   const finalTotal = pricingResult.finalTotal ?? total;
 
   const order = {
@@ -3251,7 +3310,9 @@ async function handleSubmitOrder() {
     // ===== ฟิลด์ใหม่: snapshot การคำนวณส่วนลด ณ เวลาสั่ง =====
     subtotal,
     discount_amount: discountAmount,
+    // 🚀 (STACK): เก็บทั้ง object เก่า + array ใหม่
     promotion_applied: promotionApplied,
+    promotions_applied: promotionsApplied,
     final_total: finalTotal,
     // 🔧 (2026-09-20 admin audit): บันทึกว่าแอดมินคนไหนสร้างออเดอร์นี้
     ...buildCreatedByAudit(),
@@ -3339,6 +3400,7 @@ async function computeAdminPricing(cartEntries) {
   } catch (e) {
     console.warn("computeAdminPricing error:", e);
     // fallback: ไม่มี discount/promo
+    // 🚀 (STACK): ส่ง promotionsApplied: [] ด้วย เพื่อให้ caller ใช้ array ได้เสมอ
     const subtotal = cartEntries.reduce((s, e) => s + (Number(e.price) || 0), 0);
     return {
       subtotal,
@@ -3347,6 +3409,7 @@ async function computeAdminPricing(cartEntries) {
       promoDiscountAmount: 0,
       discountAmount: 0,
       promotionApplied: null,
+      promotionsApplied: [],
       finalTotal: subtotal
     };
   }

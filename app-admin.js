@@ -16,7 +16,7 @@ import {
   analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS
 } from "./song-analyzer.js?v=20260908-previewrange1";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
-import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261101-promo1";
+import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20260929-stack-promo";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
 import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js";
 
