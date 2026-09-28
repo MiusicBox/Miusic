@@ -22,6 +22,10 @@
   ],
   "vars": {
     "R2_PUBLIC_BASE_URL": "https://pub-1c69acdb5ecc47469099f274456c724f.r2.dev"
+    // ⚠️ (2026-09-28 fix CPU limit): WORKER_URL ต้องตั้งผ่าน `wrangler secret put WORKER_URL`
+    //   ค่าที่ใช้: https://<worker-name>.<your-subdomain>.workers.dev (ดูจาก Cloudflare Dashboard)
+    //   ใช้สำหรับ: cron trigger fetch self-invoke (Worker invocation ใหม่ มี CPU time 30s ของตัวเอง)
+    //   ถ้าไม่ตั้ง → cron ไม่สามารถ trigger queue ได้ → admin ต้องกด "ยืนยันโอนแล้ว" เอง
   },
   // 🔒 (2026-09-21 auto-cleanup ZIP): Cron Trigger — รันทุก 6 ชม.
   //   ค้นหา ZIP ที่สร้างเกิน 24 ชม. → ลบออกจาก R2 + update order zip_status='expired'

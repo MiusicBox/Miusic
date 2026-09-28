@@ -1,0 +1,38 @@
+-- ============================================================
+-- Recovery Script (2026-09-28): Reset stuck queue + zip jobs
+-- ============================================================
+-- ปัญหา: Worker Free plan ถูก kill ที่ 30s ก่อนสร้าง ZIP เสร็จ
+--   → order_zip_queue มี row status='processing' แต่ order_zip_jobs ไม่มี row
+--   → ออเดอร์ค้างตลอด → UI แสดง "กำลังสร้าง ZIP..." ตลอด
+--
+-- วิธีกู้: reset status ให้กลับเป็น 'queued' เพื่อให้ cron รอบถัดไป trigger ใหม่
+--
+-- รัน statement ทีละบรรทัดใน D1 Console:
+-- ============================================================
+
+-- Step 1: ตรวจสถานะก่อน (ดูผลลัพธ์)
+SELECT id, order_id, queued_at, status FROM order_zip_queue;
+
+-- Step 2: reset ทุก row ที่ status='processing' กลับเป็น 'queued'
+--   เหตุผล: 'processing' แปลว่า Worker trigger แล้ว แต่ไม่มี row ใน order_zip_jobs
+--   = Worker ถูก kill ก่อน → reset ให้กลับ 'queued' เพื่อให้ cron trigger ใหม่
+UPDATE order_zip_queue SET status = 'queued' WHERE status = 'processing';
+
+-- Step 3: ตรวจผลหลัง reset
+SELECT id, order_id, queued_at, status FROM order_zip_queue;
+
+-- Step 4 (optional): ถ้ามี row ใน order_zip_jobs ที่ status='preparing' เก่า ๆ
+--   (อาจเกิดจาก Worker ก่อนหน้า) → ลบออก (R2 multipart upload จะ abort เอง)
+--   คำเตือน: ถ้ามี ZIP กำลังสร้างจริง การลบจะทำให้ abort
+SELECT job_id, order_id, status, updated_at FROM order_zip_jobs WHERE status = 'preparing';
+
+-- Step 5 (optional): ลบ stuck jobs (รันเฉพาะถ้า Step 4 มี rows ที่ updated_at เก่า > 5 นาที)
+DELETE FROM order_zip_jobs WHERE status = 'preparing' AND datetime(updated_at) < datetime('now', '-5 minutes');
+
+-- ============================================================
+-- หลักรัน Recovery script:
+--   - ออเดอร์ที่ค้างจะกลับเป็น 'queued'
+--   - cron รอบถัดไป (≤ 1 นาที) จะ trigger ใหม่อัตโนมัติ
+--   - แต่! ถ้า Worker ยังถูก kill ที่ 30s → ปัญหาจะเกิดซ้ำ
+--   → ต้อง deploy fix ใหม่ (self-invoke fetch) ก่อน ถึงจะกู้ถาวร
+-- ============================================================

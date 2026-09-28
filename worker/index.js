@@ -2238,7 +2238,17 @@ async function enqueueZipOrder(env, orderId, adminId, request) {
 }
 
 // processNextZipInQueue: trigger order ถัดไปใน queue (เรียกจาก finalize หลังเสร็จ)
-async function processNextZipInQueue(env, request) {
+// 🚀 (2026-09-28 fix CPU limit): เปลี่ยนจาก await handleOrderZipStart(...) เป็น fetch(self_url, ...)
+//   เหตุผล: Worker Free plan จำกัด CPU time 30s ต่อ invocation
+//   - เดิม: await handleOrderZipStart(...) → ใช้ CPU time ของ Worker invocation ปัจจุบัน
+//          → ถ้า finalize ใช้เวลานาน → trigger ถัดไปไม่ทัน → Worker ถูก kill ที่ 30s
+//   - ใหม่: fetch(self_url, { method: POST, body: { orderId } }) → fire-and-forget
+//          → Worker invocation ใหม่ที่มี CPU time 30s ของตัวเอง
+//          → ไม่กระทบ lifecycle ของ Worker ปัจจุบัน
+//   ผลกระทบระบบเดิม: 0% — ถ้า fetch ล้ม → คืน status='queued' ให้ cron ลองใหม่
+//   ข้อสังเกต: ใช้ ctx.waitUntil(fetch(...)) เพื่อไม่ block response ของ finalize
+//              แต่ fetch จะทำงานต่อใน invocation ใหม่ (มี lifecycle ของตัวเอง)
+async function processNextZipInQueue(env, request, ctx) {
   if (!env.DB || !env.BUCKET) return;
 
   try {
@@ -2261,43 +2271,64 @@ async function processNextZipInQueue(env, request) {
       ).bind(nextOrderId).run();
     } catch (_) {}
 
-    // สร้าง mock Request สำหรับ handleOrderZipStart (เหมือนที่ admin ยิงผ่าน fetch)
-    // — ส่ง Cookie header จาก request ปัจจุบัน (ถ้ามี) เพื่อ auth
-    const cookieHeader = request?.headers?.get?.("Cookie") || "";
-    const internalRequest = new Request(
-      new URL("/api/order-zip/start", request.url).toString(),
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Cookie": cookieHeader,
-        },
-        body: JSON.stringify({ orderId: nextOrderId }),
-      }
-    );
+    // 🚀 (2026-09-28 fix CPU limit): Trigger ผ่าน fetch self-invoke
+    //   ไม่ใช้ await handleOrderZipStart โดยตรง (ใช้ CPU time ของ invocation ปัจจุบัน)
+    //   แต่ใช้ fetch(self_url) → Worker invocation ใหม่ที่มี CPU time 30s ของตัวเอง
+    //
+    //   URL ที่ใช้: ถ้ามี request → ใช้ request.url เป็น base
+    //              ถ้าไม่มี request (cron) → ใช้ env.WORKER_URL หรือ fallback ไม่ trigger
+    const selfUrl = request?.url
+      ? new URL("/api/order-zip/start", request.url).toString()
+      : (env.WORKER_URL ? new URL("/api/order-zip/start", env.WORKER_URL).toString() : null);
 
-    // Trigger ใน sync (ไม่ใช้ waitUntil — เพราะ ctx อาจไม่มีใน finalize)
-    // finalize อยู่ใน Worker request lifecycle → สามารถ await ได้
-    try {
-      const result = await handleOrderZipStart(internalRequest, env);
-      console.log(`[queue] Triggered createOrderZip for next order ${nextOrderId}: ${result.status}`);
-      if (!result.ok) {
-        // ถ้า trigger ล้ม → คืน status='queued' ให้ cron ลองใหม่รอบถัดไป
-        try {
-          await env.DB.prepare(
-            "UPDATE order_zip_queue SET status = 'queued' WHERE order_id = ?"
-          ).bind(nextOrderId).run();
-        } catch (_) {}
-        console.warn(`[queue] Triggered createOrderZip failed for ${nextOrderId}:`, await result.text().catch(() => ""));
-      }
-    } catch (triggerErr) {
-      console.error(`[queue] Failed to trigger createOrderZip for ${nextOrderId}:`, triggerErr?.message || triggerErr);
-      // คืน status='queued' ให้ cron ลองใหม่
+    if (!selfUrl) {
+      // ไม่มี URL ที่จะ trigger (cron ที่ไม่มี request) → คืน status='queued' ให้ cron รอบถัดไปลองใหม่
+      console.warn(`[queue] Cannot determine self URL for ${nextOrderId} — leaving as queued`);
       try {
         await env.DB.prepare(
           "UPDATE order_zip_queue SET status = 'queued' WHERE order_id = ?"
         ).bind(nextOrderId).run();
       } catch (_) {}
+      return;
+    }
+
+    // ส่ง Cookie header จาก request ปัจจุบัน (ถ้ามี) เพื่อ auth
+    const cookieHeader = request?.headers?.get?.("Cookie") || "";
+    const triggerPromise = fetch(selfUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(cookieHeader ? { "Cookie": cookieHeader } : {}),
+      },
+      body: JSON.stringify({ orderId: nextOrderId }),
+    }).then(async (res) => {
+      console.log(`[queue] Triggered createOrderZip for next order ${nextOrderId}: ${res.status}`);
+      if (!res.ok) {
+        // ถ้า trigger ล้ม → คืน status='queued' ให้ cron ลองใหม่รอบถัดไป
+        try {
+          await env.DB.prepare(
+            "UPDATE order_zip_queue SET status = 'queued' WHERE order_id = ? AND status = 'processing'"
+          ).bind(nextOrderId).run();
+        } catch (_) {}
+        const errText = await res.text().catch(() => "");
+        console.warn(`[queue] Triggered createOrderZip failed for ${nextOrderId}:`, errText);
+      }
+    }).catch(async (fetchErr) => {
+      console.error(`[queue] Failed to fetch trigger for ${nextOrderId}:`, fetchErr?.message || fetchErr);
+      // คืน status='queued' ให้ cron ลองใหม่
+      try {
+        await env.DB.prepare(
+          "UPDATE order_zip_queue SET status = 'queued' WHERE order_id = ? AND status = 'processing'"
+        ).bind(nextOrderId).run();
+      } catch (_) {}
+    });
+
+    // ใช้ ctx.waitUntil ถ้ามี ctx → ไม่ block response ของ finalize
+    // ถ้าไม่มี ctx (cron) → await (sync) เพราะ cron มี CPU time 30s พอ
+    if (ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(triggerPromise);
+    } else {
+      await triggerPromise;
     }
   } catch (err) {
     console.error("[processNextZipInQueue] failed:", err?.message || err);
@@ -3226,8 +3257,10 @@ async function handleOrderZipFinalize(request, env) {
   // 🔄 (2026-09-28 fix Sequential Queue): ลบ order จาก queue + trigger ถัดไป
   //   finalize เสร็จ → ลบจาก queue → trigger order ถัดไปถ้ามี
   //   ผลกระทบระบบเดิม: 0% — ถ้า queue table ไม่มี → ไม่ทำอะไร (fallback)
+  //   ข้อสังเกต: ใช้ env.__ctx (เก็บ ctx จาก fetch handler) ถ้ามี → ใช้ ctx.waitUntil (fire-and-forget)
+  //              ถ้าไม่มี ctx → await sync (block response เล็กน้อย 1-2 วิ รอ fetch trigger)
   await removeOrderFromQueue(env, jobRow.order_id);
-  await processNextZipInQueue(env, request);
+  await processNextZipInQueue(env, request, env.__ctx);
 
   return jsonResponse({
     ok: true,
@@ -3851,8 +3884,10 @@ async function handleOrderZipFinalizeCompose(request, env) {
   // 🔄 (2026-09-28 fix Sequential Queue): ลบ order จาก queue + trigger ถัดไป
   //   finalize-compose เสร็จ → ลบจาก queue → trigger order ถัดไปถ้ามี
   //   ผลกระทบระบบเดิม: 0% — ถ้า queue table ไม่มี → ไม่ทำอะไร (fallback)
+  //   ข้อสังเกต: ใช้ env.__ctx (เก็บ ctx จาก fetch handler) ถ้ามี → ใช้ ctx.waitUntil (fire-and-forget)
+  //              ถ้าไม่มี ctx → await sync (block response เล็กน้อย 1-2 วิ รอ fetch trigger)
   await removeOrderFromQueue(env, jobRow.order_id);
-  await processNextZipInQueue(env, request);
+  await processNextZipInQueue(env, request, env.__ctx);
 
   return jsonResponse({
     ok: true,
@@ -5004,7 +5039,7 @@ export default {
         }
       }
 
-      // 🚀 (2026-09-28 fix Sequential Queue): auto-trigger createOrderZip ผ่าน QUEUE
+      // 🚀 (2026-09-28 fix Sequential Queue + CPU limit): auto-trigger createOrderZip ผ่าน QUEUE
       //   เดิม (H1 v1): Worker trigger createOrderZip ทันทีใน ctx.waitUntil → parallel
       //   ใหม่ (H1 v2): Worker enqueue order ลง queue + trigger ถ้าไม่มี job กำลังทำอยู่
       //   → ทำงาน sequential (ทีละออเดอร์) → ปลอดภัยกว่า Free plan CPU limit 30s
@@ -5014,43 +5049,42 @@ export default {
         try {
           queueInfo = await enqueueZipOrder(env, orderId, admin.id, request);
 
-          // ถ้า enqueue สำเร็จ + เป็น order แรกใน queue → trigger ทันที
+          // 🚀 (2026-09-28 fix CPU limit): ถ้า enqueue สำเร็จ + เป็น order แรก → trigger ผ่าน fetch self-invoke
+          //   ไม่ใช้ handleOrderZipStart โดยตรง (ใช้ CPU time ของ Worker ปัจจุบัน)
+          //   แต่ใช้ fetch(self_url) → Worker invocation ใหม่ที่มี CPU time 30s ของตัวเอง
+          //   → ป้องกัน Worker ปัจจุบันถูก kill ที่ 30s ก่อน ZIP เสร็จ
           if (queueInfo.queued && queueInfo.triggeredNow) {
-            // สร้าง mock Request สำหรับ handleOrderZipStart
-            const internalRequest = new Request(
-              new URL("/api/order-zip/start", request.url).toString(),
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "Cookie": request.headers.get("Cookie") || "",
-                },
-                body: JSON.stringify({ orderId }),
-              }
-            );
-            ctx.waitUntil((async () => {
-              try {
-                const result = await handleOrderZipStart(internalRequest, env);
-                console.log(`[H1 queue] createOrderZip started for order ${orderId}: ${result.status}`);
-                if (!result.ok) {
-                  // ถ้า trigger ล้ม → คืน status='queued' ให้ cron ลองใหม่รอบถัดไป
-                  try {
-                    await env.DB.prepare(
-                      "UPDATE order_zip_queue SET status = 'queued' WHERE order_id = ? AND status = 'processing'"
-                    ).bind(orderId).run();
-                  } catch (_) {}
-                  console.warn(`[H1 queue] createOrderZip failed for order ${orderId}:`, await result.text().catch(() => ""));
-                }
-              } catch (autoZipErr) {
-                console.error(`[H1 queue] createOrderZip exception for order ${orderId}:`, autoZipErr?.message || autoZipErr);
-                // คืน status='queued' ให้ cron ลองใหม่
+            const selfUrl = new URL("/api/order-zip/start", request.url).toString();
+            const cookieHeader = request.headers.get("Cookie") || "";
+            const triggerPromise = fetch(selfUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Cookie": cookieHeader,
+              },
+              body: JSON.stringify({ orderId }),
+            }).then(async (res) => {
+              console.log(`[H1 queue] createOrderZip started for order ${orderId}: ${res.status}`);
+              if (!res.ok) {
+                // ถ้า trigger ล้ม → คืน status='queued' ให้ cron ลองใหม่รอบถัดไป
                 try {
                   await env.DB.prepare(
-                    "UPDATE order_zip_queue SET status = 'queued' WHERE order_id = ?"
+                    "UPDATE order_zip_queue SET status = 'queued' WHERE order_id = ? AND status = 'processing'"
                   ).bind(orderId).run();
                 } catch (_) {}
+                const errText = await res.text().catch(() => "");
+                console.warn(`[H1 queue] createOrderZip failed for order ${orderId}:`, errText);
               }
-            })());
+            }).catch(async (fetchErr) => {
+              console.error(`[H1 queue] fetch trigger failed for order ${orderId}:`, fetchErr?.message || fetchErr);
+              // คืน status='queued' ให้ cron ลองใหม่
+              try {
+                await env.DB.prepare(
+                  "UPDATE order_zip_queue SET status = 'queued' WHERE order_id = ?"
+                ).bind(orderId).run();
+              } catch (_) {}
+            });
+            ctx.waitUntil(triggerPromise);
           }
           // ถ้า queueInfo.queued && !triggeredNow → รอ finalize ของ order ก่อนหน้าจะ trigger ถัดไป
         } catch (triggerErr) {
@@ -5165,12 +5199,23 @@ export default {
         if (queuedCount > 0 && activeCount === 0) {
           // มี order รอ + ไม่มี job กำลังทำ → trigger order แรก
           console.log(`[cron queue] Found ${queuedCount} queued orders, 0 active — triggering next`);
-          // สร้าง mock Request สำหรับ processNextZipInQueue (cron ไม่มี request จริง)
-          const mockRequest = new Request("https://internal.miusic.app/api/order-zip/start", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-          });
-          await processNextZipInQueue(env, mockRequest);
+          // 🚀 (2026-09-28 fix CPU limit): cron ใช้ fetch self-invoke (เหมือน verify-payment + finalize)
+          //   ต้องมี WORKER_URL env var ตั้งไว้ (เช่น https://miusic-store.<user>.workers.dev)
+          //   ถ้าไม่มี → log + รอ cron รอบถัดไป (cron รอบถัดไปจะ trigger ผ่าน fetch ได้ถ้ามี URL)
+          //   ข้อสังเกต: cron ไม่มี request → ต้องใช้ env.WORKER_URL แทน request.url
+          if (env.WORKER_URL) {
+            const mockRequest = new Request(
+              new URL("/api/order-zip/start", env.WORKER_URL).toString(),
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+              }
+            );
+            // ส่ง ctx ของ cron (cron มี ctx ที่รับจาก Cloudflare)
+            await processNextZipInQueue(env, mockRequest, ctx);
+          } else {
+            console.warn("[cron queue] WORKER_URL not set — cannot trigger. Set env.WORKER_URL via `wrangler secret put WORKER_URL`");
+          }
         } else if (queuedCount > 0) {
           // มี order รอ + มี job กำลังทำ → ปล่อยให้ finalize trigger ถัดไป
           console.log(`[cron queue] ${queuedCount} queued, ${activeCount} active — wait for finalize`);
