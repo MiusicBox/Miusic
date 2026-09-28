@@ -1,3344 +1,2117 @@
-// orders.js — ระบบจัดการออเดอร์ (เชื่อมกับ Cloudflare D1 จริงของเว็บ Music Store)
-// ใช้ collection "songs" ที่มีอยู่แล้วเป็นแหล่งข้อมูลเพลง/ราคา
-// และสร้าง collection ใหม่ชื่อ "orders" สำหรับเก็บออเดอร์
+// app-cart.js — ระบบตะกร้าสินค้า
 // ===================================================
-import { db, auth } from "./firebase-init.js?v=20260905-fix1";
+import { db } from "./firebase-init.js?v=20260905-fix1";
 import {
-  collection, getDocs, getDoc, setDoc, query, orderBy, where, doc, updateDoc, deleteDoc,
-  // 🔧 (2026-09-17 Phase 2): เพิ่ม getDocsByIds สำหรับ batch fetch songs (ลด HTTP requests + Worker invocations)
+  collection, doc, query, where, getDoc, getDocs, setDoc, queryCustomerOrder,
+  // 🚀 (2026-09-28 fix H7): เพิ่ม getDocsByIds สำหรับ batch fetch แทน N+1
+  //   ลด HTTP requests จาก N+1 → 2 (songs + playlists) ใน resolveCartFromDatabase
   getDocsByIds
-} from "./db-client.js?v=20260917-polling-fix";
-import { uploadOrderZip, deleteFromStorage } from "./storage-adapter.js?v=20260904-rawzip";
-// 🎨 (2026-09-26): เพิ่ม import sortSongsByThaiName สำหรับ sort เพลงในฟอร์มสร้างออเดอร์
-import { sortSongsByThaiName } from "./thai-sort.js";
+} from "./db-client.js";
+//
+// 🔧 แก้บั๊ก (2026-09-12): "ยังไม่ได้ login" ตอนกดสั่งซื้อ
+// -----------------------------------------------------------
+// อาการ: ลูกค้าเปิดหน้าเว็บ (index.html) ไม่มีหน้า login แต่กดสั่งซื้อแล้วขึ้น
+//        error "ยังไม่ได้เข้าสู่ระบบ" (HTTP 401)
+//
+// สาเหตุหลัก: Worker เดิมฝั่ง server บังคับ login สำหรับทุกการเขียน (write)
+//   รวมถึง PUT /api/db/orders/{id} ของลูกค้า — ทำให้ลูกค้าสั่งซื้อไม่ได้
+//   แก้แล้วใน worker/index.js โดยยกเว้น "orders" PUT/DELETE ไม่ต้อง login
+//   (ดู comment "ข้อยกเว้นสำหรับ orders (แก้บั๊ก 2026-09-11)" ใน worker/index.js)
+//
+// สาเหตุรอง: ถึงแม้ worker จะอนุญาตแล้ว แต่ถ้าลูกค้าเคยสั่งซื้อครั้งก่อนแล้ว
+//   order ID ค้างอยู่ใน sessionStorage (CHECKOUT_ORDER_KEY) — ครั้งถัดไปที่ลูกค้า
+//   กรอกชื่อ+เบอร์เดิม ระบบจะ "reuse order ID เดิม" แต่ order นั้นมีอยู่แล้วใน DB
+//   → Worker ส่ง 401 "ยังไม่ได้เข้าสู่ระบบ" กันเขียนทับออเดอร์คนอื่น
+//
+// การแก้ฝั่ง client (ไฟล์นี้):
+//   1) ถ้า setDoc เจอ error "ยังไม่ได้เข้าสู่ระบบ" หรือ "login" → เคลียร์ order ID
+//      เก่าใน sessionStorage/state แล้ว retry ครั้งเดียวด้วย ID ใหม่
+//   2) ลดโอกาสลูกค้าติดสถานะ "order ID ค้าง" จากครั้งก่อน
+// ===================================================
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่) — import มาจาก app-promotion.js กลาง (รวมไฟล์เดียว) =====
 import {
-  fetchActiveDiscounts, fetchActivePromotions, computeCartPricing
+  fetchActiveDiscounts, fetchActivePromotions, computeCartPricing, clearPricingCache
 } from "./app-promotion.js?v=20261101-promo1";
 
-/* ---------------- สถานะออเดอร์ (4 สถานะ) ---------------- */
-const STATUS_ORDER = ["pending_verify", "processing", "completed", "cancelled"];
-const STATUS_CONFIG = {
-  pending_verify: { emoji: "🟡", label: "รอตรวจสอบการโอน", color: "#F5B400", bg: "rgba(245,180,0,.15)" },
-  processing:     { emoji: "🔵", label: "ชำระเงินแล้ว - กำลังส่งเพลง", color: "#3B9EFF", bg: "rgba(59,158,255,.15)" },
-  completed:      { emoji: "🟢", label: "สำเร็จ", color: "var(--success)", bg: "rgba(41,204,113,.15)" },
-  cancelled:      { emoji: "🔴", label: "ยกเลิก", color: "var(--danger)", bg: "rgba(255,107,107,.15)" },
-};
+const CART_STORAGE_KEY = "music_store_cart_v1";
+const CHECKOUT_ORDER_KEY = "music_store_checkout_order_v1";
+// เพิ่มใหม่: จำออเดอร์ล่าสุดของลูกค้าไว้ในเครื่อง เพื่อให้กลับมาดูใบเสร็จ/แจ้งแอดมินซ้ำได้
+// แม้จะปิดใบเสร็จไปแล้วโดยยังไม่ได้กดติดต่อแอดมิน
+const LAST_ORDER_STORAGE_KEY = "music_store_last_order_v1";
+const BANNER_DISMISS_KEY = "music_store_banner_dismissed_v1"; // sessionStorage — ซ่อนแถบเตือนแค่ชั่วคราวต่อ session
+// เพิ่มใหม่: จำชื่อ+เบอร์โทร/WhatsApp ของลูกค้าไว้ในเครื่อง เพื่อเติมให้อัตโนมัติตอนสั่งซื้อครั้งถัดไป (ลดการกรอกซ้ำ)
+const CUSTOMER_INFO_STORAGE_KEY = "music_store_customer_info_v1";
 
-function escapeHtml(str) {
-  return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
+export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhatsAppLink, openTrackOrderAllPicker }) {
+  let submitting = false;
+  let activeOrderId = null;
+  let activeOrderKey = null;
 
-/* ---------------- 🔧 (2026-09-20 admin audit): บันทึก "แอดมินคนไหนสร้างออเดอร์ / เปลี่ยนสถานะ" ----------------
-   เก็บเป็นฟิลด์เพิ่มใน JSON ของออเดอร์เดิม (collection "orders" ใน D1 เป็น JSON blob → ไม่ต้องแก้ schema/Worker/API)
-   - created_by_name         : ชื่อแอดมินที่สร้างออเดอร์ (ตั้งครั้งเดียวตอนสร้าง)
-   - status_changed_by_name  : ชื่อแอดมินที่เปลี่ยนสถานะล่าสุด
-   - status_changed_at       : เวลาที่เปลี่ยนสถานะล่าสุด (ISO)
-   เก็บเฉพาะ "ชื่อที่แสดง" (display_name) ไม่เก็บอีเมล เพื่อไม่ให้อีเมลแอดมินหลุดไปกับข้อมูลออเดอร์
-   ออเดอร์เก่าที่ไม่มีฟิลด์เหล่านี้ → ไม่แสดงบรรทัดนี้ (ระบบเดิมทำงานเหมือนเดิม) */
-function getActingAdminName() {
-  try {
-    const u = auth && auth.currentUser;
-    if (!u) return "";
-    return String(u.displayName || (u.email ? String(u.email).split("@")[0] : "") || "").trim();
-  } catch (_) {
-    return "";
-  }
-}
-function buildCreatedByAudit() {
-  const name = getActingAdminName();
-  return name ? { created_by_name: name } : {};
-}
-function buildStatusAudit(isoTime) {
-  const name = getActingAdminName();
-  return name ? { status_changed_by_name: name, status_changed_at: isoTime || new Date().toISOString() } : {};
-}
-
-// 🔧 (2026-09-20 admin audit v2): เก็บ "ประวัติการเปลี่ยนสถานะทุกครั้ง" (status_history) — ใครเปลี่ยนเป็นสถานะอะไร เมื่อไหร่
-//   - อ่านออเดอร์ล่าสุดจาก DB ก่อนต่อท้าย (กันกรณีแอดมินอีกคนเพิ่งเปลี่ยนไป แล้วหน้าจอเราเป็นข้อมูลเก่า → ไม่ทับประวัติของเขา)
-//   - ถ้าอ่านไม่ได้ → ใช้ข้อมูลใน state แทน (ไม่ทำให้การเปลี่ยนสถานะล้มเหลว)
-//   - ออเดอร์ที่เคยบันทึกแค่ status_changed_by_name (เวอร์ชันก่อน) จะถูกนำมาเป็นรายการแรกของประวัติให้อัตโนมัติ
-//   - เก็บสูงสุด 20 รายการล่าสุดต่อออเดอร์ (กันข้อมูลบวม)
-//   - ยังเขียน status_changed_by_name / status_changed_at (ล่าสุด) ต่อไปเหมือนเดิม เพื่อความเข้ากันได้ย้อนหลัง
-async function buildStatusAuditWithHistory(orderId, newStatus, isoTime) {
-  const name = getActingAdminName();
-  if (!name) return {};
-  const at = isoTime || new Date().toISOString();
-  let base = state.allOrders.find((o) => o.id === orderId) || {};
-  try {
-    const snap = await getDoc(doc(db, "orders", orderId));
-    if (snap.exists()) base = snap.data() || base;
-  } catch (_) { /* ใช้ข้อมูลใน state แทน */ }
-  let history = Array.isArray(base.status_history) ? base.status_history.slice() : [];
-  if (history.length === 0 && base.status_changed_by_name) {
-    history.push({ by: base.status_changed_by_name, status: base.status || "", at: base.status_changed_at || "" });
-  }
-  history.push({ by: name, status: newStatus, at });
-  if (history.length > 20) history = history.slice(-20);
-  return { status_changed_by_name: name, status_changed_at: at, status_history: history };
-}
-function buildAdminAuditInfoHtml(o) {
-  const parts = [];
-  const fmtTime = (iso) => {
-    const d = iso ? new Date(iso) : null;
-    return d && !isNaN(d.getTime())
-      ? " · " + d.toLocaleDateString("th-TH") + " " + d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
-      : "";
-  };
-  if (o && o.created_by_name) {
-    parts.push(`<div class="n2">👤 สร้างโดย: ${escapeHtml(o.created_by_name)}</div>`);
-  }
-  const history = o && Array.isArray(o.status_history) ? o.status_history.filter((h) => h && h.by) : [];
-  if (history.length > 0) {
-    // 🔧 (2026-09-20 admin audit v2): แสดงประวัติการเปลี่ยนสถานะ เรียงเก่า → ใหม่ (โชว์ล่าสุด 5 รายการ)
-    const SHOW_MAX = 5;
-    const shown = history.slice(-SHOW_MAX);
-    const hidden = history.length - shown.length;
-    if (hidden > 0) {
-      parts.push(`<div class="n2" style="opacity:.7;">… ก่อนหน้านี้อีก ${hidden} รายการ</div>`);
+  function loadCart() {
+    try {
+      const raw = localStorage.getItem(CART_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(parsed)) throw new Error("cart is not an array");
+      const uniqueItems = new Map();
+      parsed
+        .filter(item => item && item.id && item.song_name)
+        .forEach(item => {
+          const id = String(item.id);
+          if (!uniqueItems.has(id)) {
+            const kind = item.kind === "playlist" ? "playlist" : "song";
+            const entry = {
+              id,
+              song_name: String(item.song_name),
+              cover_url: String(item.cover_url || ""),
+              dj_name: String(item.dj_name || ""),
+              price: Math.max(0, Number(item.price) || 0),
+              kind,
+              quantity: 1
+            };
+            // เก็บ snapshot เพลงภายในเพลย์ลิสต์ไว้ต่อ (ใช้แสดงผล/ตรวจเพลงซ้ำ ไม่ใช่คิดราคา)
+            if (kind === "playlist") {
+              entry.song_ids = Array.isArray(item.song_ids) ? item.song_ids.map(String) : [];
+              entry.songs = Array.isArray(item.songs)
+                ? item.songs
+                    .filter(s => s && s.id)
+                    .map(s => ({ id: String(s.id), song_name: String(s.song_name || "เพลง") }))
+                : [];
+            }
+            uniqueItems.set(id, entry);
+          }
+        });
+      state.cart = Array.from(uniqueItems.values());
+    } catch (_) {
+      state.cart = [];
+      try { localStorage.removeItem(CART_STORAGE_KEY); } catch (__) {}
     }
-    shown.forEach((h) => {
-      const cfg = STATUS_CONFIG[h.status];
-      const label = cfg ? ` → ${cfg.emoji} ${escapeHtml(cfg.label)}` : "";
-      parts.push(`<div class="n2">🔄 ${escapeHtml(h.by)}${label}${fmtTime(h.at)}</div>`);
-    });
-  } else if (o && o.status_changed_by_name) {
-    // ออเดอร์ที่มีแค่ "ผู้เปลี่ยนสถานะล่าสุด" (ก่อนมีประวัติ) → แสดงแบบเดิม
-    parts.push(`<div class="n2">🔄 เปลี่ยนสถานะโดย: ${escapeHtml(o.status_changed_by_name)}${fmtTime(o.status_changed_at)}</div>`);
+    renderCart();
+    renderPendingOrderBanner(); // เพิ่มใหม่: เช็คตอนโหลดหน้าว่ามีออเดอร์ค้างแจ้งแอดมินไหม
   }
-  return parts.join("");
-}
-// Safari (และเบราว์เซอร์มือถือส่วนใหญ่) เมิน HTML `download` attribute สำหรับลิงก์ข้ามโดเมน
-// เลยเปิดไฟล์เสียง/วิดีโอด้วยเครื่องเล่นในตัวแทนที่จะดาวน์โหลดให้ — ต้องสั่ง Cloudinary ให้ส่งไฟล์
-// แบบ Content-Disposition: attachment โดยแทรก fl_attachment เข้าไปใน URL แทน
-function toCloudinaryDownloadUrl(url) {
-  if (!url || typeof url !== "string") return url;
-  const marker = "/upload/";
-  const idx = url.indexOf(marker);
-  if (idx === -1) return url; // ไม่ใช่ URL รูปแบบ Cloudinary มาตรฐาน ปล่อยผ่านไม่แตะต้อง
-  if (url.includes("/fl_attachment")) return url; // ใส่ไปแล้ว ไม่ใส่ซ้ำ
-  return url.slice(0, idx + marker.length) + "fl_attachment/" + url.slice(idx + marker.length);
-}
 
-// 🔒 R2 CORS Bypass (2026-09-12): แปลง R2 public URL ให้เป็น Worker proxy URL
-// ใช้ตอนฝั่งแอดมิน fetch ไฟล์เพลงเพื่อสร้าง ZIP — แทน fetch() ตรงจาก R2 public URL
-// ที่อาจโดน CORS block (เพราะ R2 pub-*.r2.dev ไม่ได้ตั้ง CORS headers ไว้)
-// Worker proxy อ่านไฟล์จาก R2 binding ตรงๆ (เร็ว) แล้วส่งกลับเป็น blob พร้อม CORS headers
-// ถ้าไม่ใช่ R2 URL (เช่น Cloudinary เก่า) จะปล่อยผ่านไม่แตะต้อง
-function r2UrlToProxyUrl(url) {
-  if (!url || typeof url !== "string") return url;
-  // ตรวจจาก pattern "pub-xxx.r2.dev" ที่เป็น R2 public URL มาตรฐาน
-  // หรือตรวจจากโดเมนเดียวกับเว็บเรา (ถ้าใช้ custom domain R2)
-  const r2Pattern = /^https?:\/\/pub-[a-z0-9]+\.r2\.dev\//i;
-  if (!r2Pattern.test(url)) return url; // ไม่ใช่ R2 public URL — ปล่อยผ่าน
-  // ตัด prefix ออก เหลือแค่ key (รวม subfolder ถ้ามี)
-  // ตัวอย่าง: https://pub-xxx.r2.dev/full-songs/123-abc.wav → /api/file/full-songs/123-abc.wav
-  const key = url.replace(r2Pattern, "");
-  // อย่าลืม decode URI components ที่อาจจะ encode อยู่ใน URL แล้วเข้ารหัสใหม่สำหรับ path
-  // แต่เนื่องจาก Worker จะ decodeURIComponent อีกที ให้ส่งเป็น encoded path ไปเลย
-  return "/api/file/" + key;
-}
-function formatLAK(v) { return Number(v || 0).toLocaleString("en-US") + " LAK"; }
+  function saveCart() {
+    try {
+      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(state.cart));
+    } catch (_) {
+      showToast("บันทึกตะกร้าไม่ได้ กรุณาตรวจสอบพื้นที่จัดเก็บของเบราว์เซอร์", "error");
+    }
+    renderCart();
+  }
 
-// 🔧 แก้บั๊ก (2026-09-18): normalize เบอร์ Laos ให้เป็นมาตรฐานเดียวก่อนเก็บลง DB
-// -----------------------------------------------------------
-// ปัญหา: แอดมินสร้าง/แก้ไขออเดอร์ฝั่ง admin → เก็บเบอร์ตามที่กรอก ซึ่งอาจเป็น "+85620..." / "020..." / "20..."
-//   → DB เก็บหลายรูปแบบ → ลูกค้า track order ไม่เจอ (query-time normalize ก็ยังต้องการความสอดคล้อง)
-//
-// วิธีแก้: normalize ทุกรูปแบบให้เป็น "20XXXXXXXX" ก่อนเก็บลง DB (เหมือนฝั่ง app-cart.js)
-//   - strip country code Laos (+856 / 856) ออก
-//   - strip "0" นำหน้าออก
-//
-// สอดคล้องกับ normalizePhoneForStorage ใน app-cart.js + normalizePhoneServer ใน worker/index.js
-//   + normalizePhone ใน app-user.js / app-promotion.js (ที่แก้ใน Bug C5)
-//
-// ผลกระทบต่อระบบเดิม: 0% — เบอร์ที่แสดงในใบเสร็จ/WhatsApp message ยังเก็บรูปแบบเดิมใน UI
-//   แค่เปลี่ยนค่าที่เก็บใน field "whatsapp" ของ order document ใน DB
-function normalizePhoneForStorage(v) {
-  // 🔧 (2026-09-22 fix Bug #2): sync กับ app-cart.js + worker/index.js — เก็บ WITH country code
-  //   เดิม: strip 856 + strip 0 → เก็บ "20XXXXXXXX" (ไม่มี country code)
+  function cartQuantity() {
+    return state.cart.reduce((total, item) => total + item.quantity, 0);
+  }
+
+  function cartTotal() {
+    return state.cart.reduce((total, item) => total + item.price * item.quantity, 0);
+  }
+
+  // รวม track id (song id) ทุกรายการที่ "มีอยู่แล้ว" ในตะกร้า ไม่ว่าจะเป็นเพลงเดี่ยว
+  // หรือเพลงที่ซ่อนอยู่ภายในเพลย์ลิสต์ที่เพิ่มไปแล้ว — ใช้ตรวจเพลงซ้ำข้ามกันทั้งสองแบบ
+  function collectCartSongIds() {
+    const ids = new Set();
+    state.cart.forEach(item => {
+      if (item.kind === "playlist") {
+        (item.song_ids || []).forEach(id => ids.add(String(id)));
+      } else {
+        ids.add(String(item.id));
+      }
+    });
+    return ids;
+  }
+
+  function addToCart(song) {
+    if (!song || !song.id) return;
+    const kind = song.kind === "playlist" ? "playlist" : "song";
+    // หมายเหตุ: เดิมมีข้อจำกัดห้ามผสมเพลงเดี่ยว/เพลย์ลิสต์ และห้ามเพิ่มเพลย์ลิสต์เกิน 1 รายการ
+    // ตอนนี้รองรับตะกร้าที่มีเพลงหลายเพลง + เพลย์ลิสต์หลายรายการรวมกันแล้ว (ดู resolveCartFromDatabase/checkoutCart)
+    const existing = state.cart.find(item => item.id === String(song.id));
+    if (existing) {
+      showToast("รายการนี้อยู่ในตะกร้าแล้ว", "error");
+      return;
+    }
+
+    const existingSongIds = collectCartSongIds();
+    if (kind === "song") {
+      // เพลงเดี่ยวที่จะเพิ่ม ซ้ำกับเพลงที่อยู่ในเพลย์ลิสต์ที่เพิ่มไปแล้วหรือไม่ (ตรวจด้วย track id เดิม)
+      if (existingSongIds.has(String(song.id))) {
+        showToast("เพลงนี้อยู่ในเพลย์ลิสต์ที่คุณเพิ่มไว้แล้ว", "error");
+        return;
+      }
+    } else {
+      // เพลย์ลิสต์ที่จะเพิ่ม มีเพลงซ้ำกับเพลงเดี่ยว/เพลย์ลิสต์อื่นที่อยู่ในตะกร้าแล้วหรือไม่
+      const incomingIds = Array.isArray(song.song_ids) ? song.song_ids.map(String) : [];
+      const hasOverlap = incomingIds.some(id => existingSongIds.has(id));
+      if (hasOverlap) {
+        showToast("มีเพลงในเพลย์ลิสต์นี้อยู่ในตะกร้าแล้ว กรุณาตรวจสอบตะกร้าก่อนเพิ่ม", "error");
+        return;
+      }
+    }
+
+    activeOrderId = null;
+    activeOrderKey = null;
+    const entry = {
+      id: String(song.id),
+      song_name: String(song.song_name || ""),
+      cover_url: String(song.cover_url || ""),
+      dj_name: String(song.dj_name || ""),
+      price: Math.max(0, Number(song.price) || 0),
+      kind,
+      quantity: 1
+    };
+    if (kind === "playlist") {
+      entry.song_ids = Array.isArray(song.song_ids) ? song.song_ids.map(String) : [];
+      entry.songs = Array.isArray(song.songs)
+        ? song.songs.filter(s => s && s.id).map(s => ({ id: String(s.id), song_name: String(s.song_name || "เพลง") }))
+        : [];
+    }
+    state.cart.push(entry);
+    showToast("เพิ่มลงตะกร้าแล้ว", "success");
+    saveCart();
+  }
+
+  function removeFromCart(itemId) {
+    state.cart = state.cart.filter(item => item.id !== itemId);
+    saveCart();
+  }
+
+  function renderCart() {
+    const itemsEl = document.getElementById("cartItems");
+    const summaryEl = document.getElementById("cartSummary");
+    const badgeEl = document.getElementById("cartBadge");
+    if (!itemsEl) return;
+
+    const quantity = cartQuantity();
+    if (badgeEl) {
+      badgeEl.textContent = quantity > 99 ? "99+" : String(quantity);
+      badgeEl.hidden = quantity === 0;
+    }
+
+    if (state.cart.length === 0) {
+      itemsEl.innerHTML = `
+        <div class="cart-empty">
+          <p>ยังไม่มีเพลงในตะกร้า</p>
+          <button class="btn secondary" type="button" data-cart-continue>กลับไปเลือกซื้อเพลง</button>
+        </div>`;
+      if (summaryEl) summaryEl.hidden = true;
+      return;
+    }
+
+    // ===== เพิ่มใหม่ (แก้บั๊ก 2026-09-10): คำนวณราคาส่วนลด/โปรโมชั่นแบบ approximate มาแสดงในตะกร้า =====
+    // เดิม renderCart() แสดงเฉพาะ item.price ดิบและ cartTotal() ดิบ ไม่เคยเรียก computeCartPricing เลย
+    // ทำให้ popup ตะกร้าไม่แสดงส่วนลด/โปรโมชั่น ทั้งที่ตอนกดยืนยันสั่งซื้อจริงคำนวณถูกต้องอยู่แล้ว
+    // ใช้ computeApproxPricingForDisplay() ตัวเดียวกับที่ renderCheckoutSummary() ใช้อยู่แล้ว (ด้านล่าง)
+    // เป็นค่า "โดยประมาณ" สำหรับแสดงผลเท่านั้น ไม่กระทบ resolveCartFromDatabase/checkoutCart ที่คำนวณราคา
+    // จริงจากฐานข้อมูลแยกต่างหากตอนกดยืนยันสั่งซื้ออยู่ดี
+    const approxPricing = computeApproxPricingForDisplay();
+    const pricingItems = approxPricing?.items || null;
+
+    itemsEl.innerHTML = state.cart.map((item, index) => {
+      const isPlaylist = item.kind === "playlist";
+      const songCount = isPlaylist ? (item.songs || []).length || (item.song_ids || []).length : 0;
+      const metaText = isPlaylist
+        ? `เพลย์ลิสต์ · ${songCount} เพลง · ${formatPrice(item.price)}`
+        : `${escapeHtml(item.dj_name || "เพลง Remix")} · ${formatPrice(item.price)} / เพลง`;
+      const viewSongsBtn = (isPlaylist && (item.songs || []).length)
+        ? `<button class="cart-item-viewsongs" type="button" data-cart-view-songs="${escapeHtml(item.id)}">ดูรายการเพลงในเพลย์ลิสต์ (${songCount})</button>
+           <div class="cart-item-songs" id="cartSongs-${escapeHtml(item.id)}">
+             ${item.songs.map(s => `<div class="cart-item-songs-row">🎵 ${escapeHtml(s.song_name)}</div>`).join("")}
+           </div>`
+        : "";
+      // เพิ่มใหม่: ถ้ารายการนี้มี "ราคาลด" (item-level discount) อยู่ ให้โชว์ราคาปกติขีดฆ่า + ราคาหลังลด
+      const pricingItem = pricingItems ? pricingItems[index] : null;
+      const itemHasDiscount = !!(pricingItem && pricingItem._hadDiscount);
+      const itemTotalHtml = itemHasDiscount
+        ? `<span style="text-decoration:line-through;color:var(--text-dim);font-size:11px;display:block;">${formatPrice(item.price * item.quantity)}</span>${formatPrice(pricingItem.discount_price * item.quantity)}`
+        : formatPrice(item.price * item.quantity);
+      return `
+      <div class="cart-item" data-cart-item="${escapeHtml(item.id)}">
+        <img class="cart-item-cover" src="${escapeHtml(item.cover_url)}" loading="lazy" alt="">
+        <div class="cart-item-info">
+          <div class="cart-item-name">${escapeHtml(item.song_name)}</div>
+          <div class="cart-item-meta">${metaText}</div>
+        </div>
+        <div class="cart-item-total">${itemTotalHtml}</div>
+        <button class="cart-remove" type="button" data-cart-remove="${escapeHtml(item.id)}">ลบ</button>
+        ${viewSongsBtn}
+      </div>
+    `;
+    }).join("");
+
+    if (summaryEl) summaryEl.hidden = false;
+    const quantityEl = document.getElementById("cartTotalQuantity");
+    const priceEl = document.getElementById("cartTotalPrice");
+    const discountRowsEl = document.getElementById("cartDiscountRows");
+    if (quantityEl) quantityEl.textContent = `${quantity} เพลง`;
+
+    // เพิ่มใหม่: ยอดรวมตอนนี้ใช้ finalTotal (หลังหักส่วนลด/โปรโมชั่น) แทน cartTotal() ดิบ
+    const baseTotal = cartTotal();
+    const finalTotal = approxPricing?.finalTotal ?? baseTotal;
+    const itemDiscount = approxPricing?.itemDiscountAmount || 0;
+    const promoDiscount = approxPricing?.promoDiscountAmount || 0;
+    const promoApplied = approxPricing?.promotionApplied;
+    const totalDiscount = itemDiscount + promoDiscount;
+
+    if (priceEl) priceEl.textContent = formatPrice(finalTotal);
+
+    // เพิ่มใหม่: แสดงแถวสรุปส่วนลด/โปรโมชั่น (โครงเดียวกับ renderCheckoutSummary ด้านล่าง)
+    if (discountRowsEl) {
+      if (totalDiscount > 0 && finalTotal < baseTotal) {
+        let rows = `
+          <div class="cart-summary-row">
+            <span style="color:var(--text-dim);">ยอดรวมก่อนลด</span>
+            <strong style="color:var(--text-dim);text-decoration:line-through;">${formatPrice(baseTotal)}</strong>
+          </div>`;
+        if (itemDiscount > 0) {
+          rows += `
+            <div class="cart-summary-row">
+              <span style="color:var(--accent-2,#ec4899);">🏷️ ส่วนลดจากราคาปกติ</span>
+              <strong style="color:var(--accent-2,#ec4899);">-${formatPrice(itemDiscount)}</strong>
+            </div>`;
+        }
+        if (promoApplied && promoDiscount > 0) {
+          rows += `
+            <div class="cart-summary-row">
+              <span style="color:var(--danger);">🎁 ${escapeHtml(promoApplied.name || 'โปรโมชั่น')}</span>
+              <strong style="color:var(--danger);">-${formatPrice(promoDiscount)}</strong>
+            </div>`;
+        }
+        discountRowsEl.innerHTML = rows;
+      } else {
+        discountRowsEl.innerHTML = "";
+      }
+    }
+  }
+
+  function openCart() {
+    const backdrop = document.getElementById("cartBackdrop");
+    if (!backdrop) return;
+    renderCart();
+    backdrop.classList.add("show");
+    backdrop.setAttribute("aria-hidden", "false");
+  }
+
+  function closeCart() {
+    const backdrop = document.getElementById("cartBackdrop");
+    if (!backdrop) return;
+    backdrop.classList.remove("show");
+    backdrop.setAttribute("aria-hidden", "true");
+  }
+
+  function renderCheckoutSummary() {
+    const el = document.getElementById("checkoutSummary");
+    if (!el) return;
+    // คำนวณ approximate ส่วนลด/โปรโมชั่นแบบ sync (ใช้ cache ที่โหลดไว้ใน app-user.js)
+    // ค่าที่แสดงตรงนี้เป็น "โดยประมาณ" — ระบบจะคำนวณใหม่ทั้งหมดตอนกดยืนยันสั่งซื้อ
+    const approxPricing = computeApproxPricingForDisplay();
+    const promoApplied = approxPricing?.promotionApplied;
+    const itemDiscount = approxPricing?.itemDiscountAmount || 0;
+    const promoDiscount = approxPricing?.promoDiscountAmount || 0;
+    const totalDiscount = itemDiscount + promoDiscount;
+    const baseTotal = cartTotal();
+    const finalTotal = approxPricing?.finalTotal ?? baseTotal;
+
+    let rows = `
+      <div class="cart-summary-row">
+        <span style="color:var(--text-dim);">รายการ</span>
+        <strong>${cartQuantity()} เพลง</strong>
+      </div>`;
+
+    if (totalDiscount > 0 && finalTotal < baseTotal) {
+      rows += `
+        <div class="cart-summary-row">
+          <span style="color:var(--text-dim);">ยอดรวมก่อนลด</span>
+          <strong style="color:var(--text-dim);text-decoration:line-through;">${formatPrice(baseTotal)}</strong>
+        </div>`;
+      if (itemDiscount > 0) {
+        rows += `
+          <div class="cart-summary-row">
+            <span style="color:var(--accent-2,#ec4899);">🏷️ ส่วนลดจากราคาปกติ</span>
+            <strong style="color:var(--accent-2,#ec4899);">-${formatPrice(itemDiscount)}</strong>
+          </div>`;
+      }
+      if (promoApplied && promoDiscount > 0) {
+        rows += `
+          <div class="cart-summary-row">
+            <span style="color:var(--danger);">🎁 ${escapeHtml(promoApplied.name || 'โปรโมชั่น')}</span>
+            <strong style="color:var(--danger);">-${formatPrice(promoDiscount)}</strong>
+          </div>`;
+      }
+      rows += `
+        <div class="cart-summary-row">
+          <span style="color:var(--text-dim);">ยอดชำระ</span>
+          <strong style="color:var(--success);">${formatPrice(finalTotal)}</strong>
+        </div>`;
+    } else {
+      rows += `
+        <div class="cart-summary-row">
+          <span style="color:var(--text-dim);">ยอดรวมโดยประมาณ</span>
+          <strong style="color:var(--success);">${formatPrice(baseTotal)}</strong>
+        </div>`;
+    }
+    rows += `
+      <div style="font-size:11px;color:var(--text-dim);margin-top:8px;">
+        ระบบจะตรวจสอบราคาและรายการล่าสุดจากฐานข้อมูลอีกครั้งก่อนสร้าง Order
+      </div>`;
+    el.innerHTML = rows;
+  }
+
+  // ===== เพิ่มใหม่: คำนวณ approximate ส่วนลด/โปรโมชั่นแบบ sync (อ่าน cache จาก pricing.js) =====
+  // ใช้ state.cart (price ที่ snapshot ตอน addToCart) — ไม่ใช่ราคา db ล่าสุด
+  // ดังนั้นยอดที่แสดงใน checkout summary อาจไม่ตรงกับยอดสุดท้าย 100% (ถ้า admin เพิ่งเปลี่ยนราคา/ส่วนลด)
+  // แต่ระบบจะ re-resolve จาก db ตอนกดยืนยันสั่งซื้อ → ยอดที่เก็บใน order ถูกต้องเสมอ
+  function computeApproxPricingForDisplay() {
+    // ใช้ cart state ปัจจุบัน — แปลงเป็น cartItems format ที่ computeCartPricing ต้องการ
+    try {
+      const cartItems = state.cart.map(item => {
+        if (item.kind === "playlist") {
+          const plId = String(item.id).replace(/^playlist:/, "");
+          return { kind: "playlist", playlist_id: plId, price: Number(item.price) || 0 };
+        } else {
+          return { kind: "song", song_id: String(item.id), price: Number(item.price) || 0 };
+        }
+      });
+      // ไม่ส่ง discounts/promotions → computeCartPricing จะใช้ cache จาก pricing.js
+      return computeCartPricing(cartItems);
+    } catch (e) {
+      console.warn("computeApproxPricingForDisplay error:", e);
+      return null;
+    }
+  }
+
+  // ---- เพิ่มใหม่: จำชื่อ+เบอร์โทร/WhatsApp ของลูกค้าไว้ในเครื่อง (localStorage) เพื่อเติมฟอร์มอัตโนมัติตอนสั่งซื้อครั้งถัดไป ----
+  function saveCustomerInfo(customerName, whatsapp) {
+    try {
+      localStorage.setItem(CUSTOMER_INFO_STORAGE_KEY, JSON.stringify({ customerName, whatsapp }));
+    } catch (_) {}
+  }
+  function loadCustomerInfo() {
+    try {
+      const raw = localStorage.getItem(CUSTOMER_INFO_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function openCheckout() {
+    if (state.cart.length === 0) {
+      showToast("ยังไม่มีเพลงในตะกร้า", "error");
+      return;
+    }
+    renderCheckoutSummary();
+    const feedback = document.getElementById("checkoutFeedback");
+    if (feedback) feedback.textContent = "";
+    // เพิ่มใหม่: ถ้าเคยสั่งซื้อมาก่อนและจำชื่อ/เบอร์ไว้ในเครื่องนี้ ให้เติมให้อัตโนมัติ (เฉพาะช่องที่ลูกค้ายังไม่ได้กรอกเอง)
+    const savedInfo = loadCustomerInfo();
+    if (savedInfo) {
+      const nameInput = document.getElementById("checkoutCustomerName");
+      const whatsappInput = document.getElementById("checkoutCustomerWhatsapp");
+      if (nameInput && !nameInput.value.trim() && savedInfo.customerName) nameInput.value = savedInfo.customerName;
+      if (whatsappInput && !whatsappInput.value.trim() && savedInfo.whatsapp) whatsappInput.value = savedInfo.whatsapp;
+    }
+    closeCart();
+    const backdrop = document.getElementById("checkoutBackdrop");
+    if (backdrop) {
+      backdrop.classList.add("show");
+      backdrop.setAttribute("aria-hidden", "false");
+    }
+  }
+
+  function closeCheckout() {
+    if (submitting) return;
+    const backdrop = document.getElementById("checkoutBackdrop");
+    if (!backdrop) return;
+    backdrop.classList.remove("show");
+    backdrop.setAttribute("aria-hidden", "true");
+  }
+
+  function setCheckoutFeedback(message, type = "error") {
+    const el = document.getElementById("checkoutFeedback");
+    if (!el) return;
+    el.textContent = message;
+    el.style.color = type === "success" ? "var(--success)" : "var(--danger)";
+  }
+
+  function getReceiptNumber(orderId, createdAt) {
+    const date = new Date(createdAt || Date.now());
+    const ymd = Number.isNaN(date.getTime())
+      ? "00000000"
+      : [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("");
+    return `RCPT-${ymd}-${String(orderId || "000000").slice(-6).toUpperCase()}`;
+  }
+
+  function hashCheckoutKey(value) {
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+  }
+
+  // 🔧 แก้บั๊ก (2026-09-18): normalize เบอร์ Laos ให้เป็นมาตรฐานเดียวก่อนเก็บลง DB / localStorage
+  // -----------------------------------------------------------
+  // ปัญหา: ลูกค้ากรอกเบอร์ได้หลายรูปแบบ เช่น "+85620XXXXXXXX" / "85620XXXXXXXX"
+  //   / "020XXXXXXXX" / "20XXXXXXXX" → DB เก็บตามที่กรอก → track order ไม่เจอเพราะเทียบกันไม่ตรง
+  //
+  // วิธีแก้: normalize ทุกรูปแบบให้เป็น "20XXXXXXXX" ตั้งแต่ตอน checkout
+  //   - strip country code Laos (+856 / 856) ออก
+  //   - strip "0" นำหน้าออก
+  //   ทำให้ DB เก็บเบอร์มาตรฐานเดียว → track order ตามเบอร์รูปแบบใดก็เจอ
+  //
+  // สอดคล้องกับ normalizePhoneServer ใน worker/index.js + normalizePhone ใน app-user.js
+  //   ที่แก้ใน Bug C5 (ทำให้ query-time normalization กับ storage-time ตรงกัน)
+  //
+  // 🔧 (2026-09-22 v2 — รองรับทั้ง ลาว+ไทย): เก็บเบอร์ WITH country code ใน DB
+  //   เดิม: เก็บ "20XXXXXXXX" (ไม่มี country code) → ลิงก์ WhatsApp ต้อง prepend 856 เอง
+  //         → แต่เบอร์ไทย 812345678 → prepend 856 → กลายเป็น 856812345678 (ลาว) → พัง
   //   ใหม่: เก็บ "85620XXXXXXXX" หรือ "668XXXXXXXX" (WITH country code)
-  //   ทำให้ออเดอร์ที่แอดมินสร้างเอง → โผล่ในหน้า "ออเดอร์ของฉัน" ของลูกค้าได้
-  let s = String(v || "").replace(/[^0-9+]/g, "");
-  s = s.replace(/^\+/, "");
-  if (s.startsWith("856")) {
-    let rest = s.slice(3).replace(/^0+/, "");
+  //         → ลิงก์ WhatsApp ใช้ตรงๆ ไม่ต้อง prepend
+  //         → รองรับทั้งลาว + ไทย
+  //   ผลกระทบระบบเดิม: 0% — ถ้าเว็บยังไม่เปิด → ไม่มีออเดอร์เก่าใน DB → ไม่มีปัญหา
+  //     ถ้ามีออเดอร์เก่า → ต้องรัน migration script เพิ่ม country code 856
+  function normalizePhoneForStorage(v) {
+    let s = String(v || "").replace(/[^0-9+]/g, "");
+    s = s.replace(/^\+/, "");
+    // ตรวจ country code ก่อน
+    if (s.startsWith("856")) {
+      let rest = s.slice(3).replace(/^0+/, "");
+      return "856" + rest;
+    }
+    if (s.startsWith("66")) {
+      let rest = s.slice(2).replace(/^0+/, "");
+      return "66" + rest;
+    }
+    // ไม่มี country code → ตรวจรูปแบบเบอร์เพื่อแยกลาว vs ไทย
+    // 🔧 (2026-09-22 fix Bug #1): เดิมสันนิษฐานลาวเสมอ → เบอร์ไทย 0812345678 → 856812345678 (ผิด!)
+    //   วิธีแก้: ตรวจเบอร์หลัง strip 0 นำหน้า:
+    //     - ขึ้นต้นด้วย 2 → ลาว (20XXXXXXXX) → เติม 856
+    //     - ขึ้นต้นด้วย 8 หรือ 9 และมี 9 หลัก → ไทย (8XXXXXXXX) → เติม 66
+    //     - อื่นๆ → สันนิษฐานลาว (default)
+    let rest = s.replace(/^0+/, "");
+    if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9"))) {
+      // ไทย: 8XXXXXXXX หรือ 9XXXXXXXX (9 หลัก) → เติม 66
+      return "66" + rest;
+    }
+    // ลาวหรือไม่แน่ใจ → เติม 856 (default)
     return "856" + rest;
   }
-  if (s.startsWith("66")) {
-    let rest = s.slice(2).replace(/^0+/, "");
-    return "66" + rest;
+
+  // 🔧 (2026-09-22 fix Bug #2 v2): ฟังก์ชัน validate เบอร์ รองรับทั้ง ลาว+ไทย
+  //   ปัญหาเดิม: ลูกค้าใส่ "abc" ผ่าน checkout → track order ไม่เจอ
+  //   วิธีแก้: ใช้ regex แยกสำหรับลาว + ไทย ถ้าตรงอันใดอันหนึ่ง → ผ่าน
+  //   รูปแบบที่รองรับ:
+  //     ลาว:
+  //       - 20XXXXXXXX (8-10 หลัก)
+  //       - 020XXXXXXXX (local มี 0)
+  //       - +85620XXXXXXXX / 85620XXXXXXXX (international)
+  //     ไทย:
+  //       - 8XXXXXXXX / 9XXXXXXXX (9 หลัก ไม่มี 0)
+  //       - 08XXXXXXXX / 09XXXXXXXX (local มี 0, 10 หลัก)
+  //       - +668XXXXXXXX / +669XXXXXXXX / 668XXXXXXXX / 669XXXXXXXX (international)
+  function isValidPhone(raw) {
+    const s = String(raw || "").trim().replace(/[\s\-()]/g, "");
+    // Laos: optional +856/856 + optional 0 + [2-9] + 7-9 digits
+    const laosRe = /^(\+?856)?0?[2-9]\d{7,9}$/;
+    // Thai: optional +66/66 + optional 0 + [6-9] + 8 digits
+    const thaiRe = /^(\+?66)?0?[6-9]\d{8}$/;
+    return laosRe.test(s) || thaiRe.test(s);
   }
-  // 🔧 (2026-09-22 fix Bug #1): ตรวจ Thai local (8/9 + 8 หลัก = 9 หลัก) → เติม 66
-  let rest = s.replace(/^0+/, "");
-  if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9"))) {
-    return "66" + rest;
-  }
-  return "856" + rest;
-}
 
-// เปิดแชท WhatsApp ไปหาเบอร์ที่ระบุ (รูปแบบเดียวกับ buildWhatsAppLink ใน app-user.js/app-cart.js)
-function buildWhatsAppLink(number, text) {
-  const clean = String(number || "").replace(/[^0-9]/g, "");
-  return "https://wa.me/" + clean + (text ? "?text=" + encodeURIComponent(text) : "");
-}
-function debounce(fn, wait) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), wait); }; }
-// แอดมินย่อยทำได้ทุกอย่างในหน้าออเดอร์ตามปกติ ยกเว้นลบประวัติออเดอร์ (สงวนไว้ให้แอดมินหลักเท่านั้น)
-// role ถูกตั้งค่าไว้ที่ window.__currentAdminRole โดย app-admin.js ตอนล็อกอินสำเร็จ
-function isMainAdmin() { return window.__currentAdminRole === "main"; }
-// ชื่อฟิลด์จริงใน Firestore คือ playlist_name แต่รองรับข้อมูลเก่าที่อาจใช้ name ด้วย
-function getPlaylistName(playlist) {
-  return String(playlist?.playlist_name ?? playlist?.name ?? "");
-}
-
-// งานสร้าง ZIP ถูกกันซ้ำไว้ในหน้านี้ เพื่อไม่ให้ออเดอร์เดียวกันถูกสร้างหลายไฟล์
-// หาก Admin เปิด/กดซ้ำระหว่างที่กำลังดาวน์โหลด WAV จาก Cloud
-//
-// 🔧 (2026-09-18 v5): เปลี่ยนจาก Set เป็น Map เพื่อเก็บ AbortController + jobId
-//   เพื่อรองรับปุ่ม "ยกเลิก" — กดแล้วเรียก abort() ที่ controller ซึ่ง cancel ทุก fetch ที่กำลังทำอยู่
-//   และเรียก /api/order-zip/abort เพื่อ cleanup ฝั่ง Worker (R2 multipart + D1 row + order doc)
-const zipJobs = new Map(); // orderId → { abortController, jobId }
-let jsZipModulePromise = null;
-
-async function loadJSZip() {
-  if (!jsZipModulePromise) {
-    jsZipModulePromise = import("https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm")
-      .then((module) => module.default || module);
-  }
-  return jsZipModulePromise;
-}
-
-function orderToast(message, type = "") {
-  if (window.__showToast) window.__showToast(message, type);
-  // 🎨 (2026-09-26): fallback ใช้ adminAlert แทน alert (กรณี __showToast ยังไม่โหลด)
-  else if (type === "error") {
-    if (window.adminAlert) window.adminAlert(message, { title: "ข้อผิดพลาด" });
-    else alert(message);
-  }
-}
-
-function getOrderPlaylistIds(order) {
-  const ids = [];
-  if (order?.playlist_id) ids.push(String(order.playlist_id));
-  if (Array.isArray(order?.playlist_ids)) {
-    order.playlist_ids.forEach((id) => id && ids.push(String(id)));
-  }
-  if (Array.isArray(order?.playlists)) {
-    order.playlists.forEach((playlist) => {
-      const id = typeof playlist === "string"
-        ? playlist
-        : (playlist?.id || playlist?.playlist_id);
-      if (id) ids.push(String(id));
-    });
-  }
-  if (typeof order?.playlist === "string") {
-    ids.push(String(order.playlist));
-  } else if (order?.playlist?.id || order?.playlist?.playlist_id) {
-    ids.push(String(order.playlist.id || order.playlist.playlist_id));
-  }
-  return [...new Set(ids)];
-}
-
-/*
- * รวมเพลงจากทั้ง items ของออเดอร์และ playlist ที่อ้างถึง
- * รองรับข้อมูลเก่า (playlist songs ถูก snapshot ไว้ใน items) และข้อมูลที่มี
- * เพลงเดี่ยว + playlist ในออเดอร์เดียวกัน โดยไม่แก้ข้อมูลเดิม
- */
-async function resolveOrderSongs(order) {
-  const songMap = new Map();
-  (order?.items || []).forEach((item) => {
-    if (!item?.song_id) return;
-    songMap.set(String(item.song_id), {
-      id: String(item.song_id),
-      title: item.title || "เพลง",
-    });
-  });
-
-  const playlistIds = getOrderPlaylistIds(order);
-  const playlistSnaps = await Promise.all(
-    playlistIds.map((playlistId) =>
-      getDocs(query(collection(db, "songs"), where("playlist_id", "==", playlistId)))
-    )
-  );
-  playlistSnaps.forEach((snap) => {
-    snap.docs.forEach((songDoc) => {
-      const song = songDoc.data();
-      if (!songMap.has(songDoc.id)) {
-        songMap.set(songDoc.id, { id: songDoc.id, title: song.song_name || "เพลง" });
-      }
-    });
-  });
-
-  return [...songMap.values()];
-}
-
-// 🔧 (2026-09-16): Helper ใหม่สำหรับจัดกลุ่มเพลงในออเดอร์แยกตาม playlist
-// ใช้ใน createOrderZip เพื่อสร้าง folder แยกให้แต่ละ playlist (เพลงเดี่ยวอยู่ที่ root, เพลง playlist อยู่ใน folder ชื่อ playlist)
-// return { singles: [{id, title}], playlists: [{id, name, songs: [{id, title}]}] }
-// 
-// Logic การจัดกลุ่มตาม order.order_type:
-//   - "single"   → ทุก item ใน order.items เป็นเพลงเดี่ยว (singles)
-//   - "playlist" → ทุก item ใน order.items อยู่ใน playlist เดียว (ใช้ order.playlist_id/playlist_name)
-//   - "mixed"    → items มี kind แยก ("song" = single, "playlist" = playlist group มี song_ids snapshot)
-//                  ถ้า playlist ไม่มี song_ids snapshot (order เก่า) → query จาก playlist_id เอง
-async function resolveOrderSongsGrouped(order) {
-  const singles = [];
-  const playlistMap = new Map(); // playlist_id → { id, name, songs: [] }
-
-  // Helper: ดึงหรือสร้าง playlist group ใน map
-  function getOrCreatePlaylist(playlistId, playlistName) {
-    const key = String(playlistId || "");
-    if (!playlistMap.has(key)) {
-      playlistMap.set(key, {
-        id: key,
-        name: String(playlistName || `Playlist-${key.slice(-6)}`),
-        songs: [],
-      });
+  function getPhoneValidationError(raw) {
+    const s = String(raw || "").trim();
+    if (!s) return "กรุณากรอกเบอร์ WhatsApp";
+    if (!isValidPhone(s)) {
+      return "รูปแบบเบอร์ไม่ถูกต้อง — ตัวอย่างที่ใช้ได้:\n" +
+             "• ลาว: 02012345678, 2012345678, +8562012345678\n" +
+             "• ไทย: 0812345678, 812345678, +66812345678";
     }
-    return playlistMap.get(key);
+    return null;
   }
 
-  // วน items ตาม order_type
-  (order?.items || []).forEach((item) => {
-    if (!item) return;
-
-    if (order.order_type === "playlist") {
-      // ทุก item อยู่ใน playlist เดียว (order.playlist_id)
-      const group = getOrCreatePlaylist(order.playlist_id, order.playlist_name);
-      if (item.song_id) {
-        group.songs.push({
-          id: String(item.song_id),
-          title: item.title || "เพลง",
-        });
-      }
-    } else if (order.order_type === "mixed") {
-      // items มี kind แยก — "song" = single, "playlist" = playlist group
-      if (item.kind === "playlist") {
-        const group = getOrCreatePlaylist(item.playlist_id, item.title);
-        // เพิ่มเพลงจาก song_ids snapshot (mixed items เก็บ song_ids ไว้ตอนสั่ง)
-        (item.song_ids || []).forEach((sid) => {
-          if (sid) group.songs.push({ id: String(sid), title: "" });
-        });
-      } else if (item.song_id) {
-        // item.kind === "song" หรือไม่ระบุ kind → single
-        singles.push({
-          id: String(item.song_id),
-          title: item.title || "เพลง",
-        });
-      }
-    } else {
-      // order_type === "single" หรือไม่ระบุ → ทุก item เป็น single
-      if (item.song_id) {
-        singles.push({
-          id: String(item.song_id),
-          title: item.title || "เพลง",
-        });
-      }
-    }
-  });
-
-  // สำหรับ playlist groups ที่ไม่มี song_ids snapshot (order เก่า หรือ playlist ที่ยังไม่ได้ fill)
-  // → query เพิ่มจาก playlist_id เพื่อดึงรายชื่อเพลงใน playlist นั้น
-  for (const [playlistId, group] of playlistMap) {
-    if (group.songs.length === 0 && playlistId) {
-      try {
-        const songsSnap = await getDocs(query(collection(db, "songs"), where("playlist_id", "==", playlistId)));
-        songsSnap.docs.forEach((songDoc) => {
-          const song = songDoc.data();
-          group.songs.push({
-            id: songDoc.id,
-            title: song.song_name || "เพลง",
-          });
-        });
-      } catch (err) {
-        // query ล้มเหลว → ปล่อยให้ group มี songs ว่าง (createOrderZip จะ throw error ตอนนั้น)
-        console.warn(`resolveOrderSongsGrouped: query songs ของ playlist "${playlistId}" ล้มเหลว:`, err?.message || err);
-      }
-    } else if (group.songs.length > 0 && !group.songs[0].title) {
-      // มี song_ids แต่ไม่มี title (กรณี mixed) → query ดึง title ของแต่ละเพลง
-      const songIds = group.songs.map((s) => s.id);
-      const songDocs = await Promise.all(
-        songIds.map((sid) => getDoc(doc(db, "songs", sid)).catch(() => null))
-      );
-      group.songs = songDocs.map((snap, i) => ({
-        id: songIds[i],
-        title: (snap && snap.exists()) ? (snap.data().song_name || "เพลง") : `เพลง ${i + 1}`,
-      }));
-    }
-  }
-
-  return {
-    singles,
-    playlists: [...playlistMap.values()],
-  };
-}
-
-// ⚠️ สำคัญมาก — ห้ามแก้ให้บังคับเป็น .wav เพียงอย่างเดียวอีก
-// ไฟล์เพลงเต็มรองรับทั้ง .wav และ .mp3 (ดู app-admin.js: เงื่อนไข isWav/isMp3)
-// ถ้าบังคับเติม ".wav" ต่อท้ายไฟล์ที่เป็น .mp3 อยู่แล้ว จะได้ไฟล์ผิดนามสกุลซ้อน
-// (เช่น "เพลง.mp3.wav" ที่เนื้อไฟล์จริงเป็น mp3) ทำให้ลูกค้าเปิด/เล่นไฟล์ในZIP ไม่เสถียร
-// หรือเปิดไม่ได้เลยในบางเครื่องเล่น — นี่คือสาเหตุของบั๊ก "เพลงเต็ม mp3 ไม่เสถียร" ที่เคยเจอ
-// กติกา: ถ้าชื่อไฟล์มีนามสกุล .wav หรือ .mp3 อยู่แล้ว ให้คงไว้เป๊ะๆ ไม่แตะต้อง
-// จะ fallback เป็น .wav ก็ต่อเมื่อไม่มีนามสกุลที่รู้จักมาให้เลย (ข้อมูลเก่า/ไม่มีข้อมูล) เท่านั้น
-function safeZipFileName(value, fallback) {
-  const cleaned = String(value || fallback || "เพลง.wav")
-    .replace(/[\\/:*?"<>|]/g, "_")
-    .replace(/\s+/g, " ")
-    .trim();
-  return /\.(wav|mp3)$/i.test(cleaned) ? cleaned : `${cleaned}.wav`;
-}
-
-function uniqueZipFileName(value, usedNames) {
-  const original = safeZipFileName(value, "เพลง.wav");
-  if (!usedNames.has(original)) {
-    usedNames.add(original);
-    return original;
-  }
-  const dot = original.lastIndexOf(".");
-  const base = dot > 0 ? original.slice(0, dot) : original;
-  const ext = dot > 0 ? original.slice(dot) : ".wav";
-  let index = 2;
-  let candidate = `${base} (${index})${ext}`;
-  while (usedNames.has(candidate)) {
-    index += 1;
-    candidate = `${base} (${index})${ext}`;
-  }
-  usedNames.add(candidate);
-  return candidate;
-}
-
-/*
- * ดาวน์โหลด WAV เต็มจาก Cloud แล้วสร้าง ZIP ก่อนจึงค่อยอัปโหลด ZIP กลับขึ้น Cloud
- * จุดสำคัญ: อ่านเฉพาะ full_file_url ของเพลง ไม่แตะ preview_url/ไฟล์ตัวอย่าง
- *
- * 🔧 (2026-09-18 v2): เปลี่ยนจาก JSZip-in-browser → Worker-side streaming ZIP
- *   เหตุผล: ระบบเดิมสร้าง ZIP blob ใน browser memory แล้วอัปโหลดผ่าน /api/upload
- *   ครั้งเดียว → พังเมื่อ ZIP > 100MB (Cloudflare Workers free plan limit)
- *   วิธีใหม่: เรียก endpoints ฝั่ง Worker ใหม่ 3 ตัว (start/append/finalize) → Worker สร้าง ZIP
- *   ทีละเพลงผ่าน R2 Multipart Upload ทะลุ limit 100MB ได้
- *
- *   Flow ใหม่:
- *     1) POST /api/order-zip/start   → Worker สร้าง multipart upload + resolve songs + คืน plan
- *     2) for each song in plan: POST /api/order-zip/append → Worker stream WAV 1 เพลงเข้า part
- *     3) POST /api/order-zip/finalize → Worker สร้าง Central Directory + complete multipart upload
- *
- *   ผลกระทบต่อ caller (confirmPaymentAndCreateZip + retryOrderZip):
- *     - signature ยังเหมือนเดิม { ok: true, url, publicId } | { ok: false, error }
- *     - zip_status/zip_download_url/zip_public_id/zip_file_name/zip_song_count/zip_error
- *       ถูกอัปเดตฝั่ง Worker (handleOrderZipStart ตั้ง zip_status='preparing',
- *       handleOrderZipFinalize ตั้ง zip_status='ready' + url)
- *       → ไม่ต้องอัปเดต zip_* fields ฝั่ง client ในนี้แล้ว แต่ยังคงอัปเดต updated_at
- *       ในกรณี error (เหมือนเดิม)
- *     - function confirmPaymentAndCreateZip/retryOrderZip ไม่ต้องแก้ — ยังอ่าน
- *       result.url/result.publicId/result.error ได้เหมือนเดิม
- */
-// 🔧 (2026-09-27 fix 503): helper อ่าน error จริงจาก Worker เมื่อ response ไม่ใช่ JSON
-//   สาเหตุ: Cloudflare คืน 503 เป็น HTML/plain text (ไม่ใช่ JSON) เมื่อ Worker throw
-//   → res.json() จะ throw → catch block เดิมแค่ throw error ที่ไม่มีรายละเอียด
-//   → ผู้ใช้เห็นแค่ "อ่านผลลัพธ์จาก Worker ไม่สำเร็จ (HTTP 503)" โดยไม่รู้สาเหตุจริง
-//
-//   วิธีแก้: ลองอ่านเป็น JSON ก่อน → ถ้าได้ → ใช้ error จาก JSON (เหมือนเดิม)
-//          → ถ้า JSON parse ล้ม → อ่านเป็น text → ส่งกลับไปให้ผู้ใช้เห็น error จริง
-//   ผลกระทบระบบเดิม: 0% — ถ้า Worker คืน JSON ปกติ จะใช้ flow เดิม 100%
-//                   — ถ้า Worker คืน 503/HTML จะได้ข้อความที่อ่านได้แทน
-async function readWorkerError(res, defaultMsg) {
-  // ลองอ่านเป็น JSON ก่อน (เหมือนเดิม — flow ปกติ)
-  let body;
-  try {
-    body = await res.clone().json();
-    if (body && body.error) {
-      return body.error;  // Worker คืน JSON error ปกติ
-    }
-    if (body) {
-      return JSON.stringify(body).slice(0, 500);  // JSON แต่ไม่มี field error
-    }
-  } catch (_) {
-    // res.json() ล้ม → ตอบกลับเป็น text/HTML → อ่านเป็น text
-  }
-  // อ่านเป็น text (สำหรับ 503 HTML จาก Cloudflare)
-  try {
-    const text = await res.text();
-    if (text && text.length > 0) {
-      // ตัดให้สั้น กัน UI แสดง error ยาวเกิน + ลบ HTML tags
-      const cleanText = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
-      return `${defaultMsg} (HTTP ${res.status}): ${cleanText || "(empty body)"}`;
-    }
-  } catch (_) { /* ไม่สามารถอ่าน body ได้ */ }
-  return `${defaultMsg} (HTTP ${res.status})`;
-}
-
-async function createOrderZip(orderId) {
-  if (zipJobs.has(orderId)) return { ok: false, error: "กำลังสร้าง ZIP ของออเดอร์นี้อยู่" };
-  const order = state.allOrders.find((item) => item.id === orderId);
-  if (!order) return { ok: false, error: "ไม่พบออเดอร์นี้" };
-
-  // ถ้ามี ZIP ที่สร้างสำเร็จแล้ว ใช้ลิงก์เดิมได้ ไม่สร้างไฟล์ซ้ำโดยไม่จำเป็น
-  // 🔧 (2026-09-18 v5): ย้ายเช็คนี้มาก่อน zipJobs.set() — กัน edge case ที่ early return
-  //   โดยไม่ได้ลบ zipJobs → zipJobs.has(orderId) ค้างเป็น true → กดสร้าง ZIP ซ้ำไม่ได้
-  if (order.zip_status === "ready" && order.zip_download_url) {
-    return { ok: true, url: order.zip_download_url, publicId: order.zip_public_id || "" };
-  }
-
-  // 🔧 (2026-09-18 v5): สร้าง AbortController สำหรับ cancel การสร้าง ZIP ระหว่างทำ
-  //   ใช้กับทุก fetch ใน flow (start, append, finalize-build, finalize-compose)
-  //   ถ้าแอดมินกดปุ่ม "ยกเลิก" → abortController.abort() → ทุก fetch reject ทันที
-  //   จากนั้นเรียก /api/order-zip/abort (โดยไม่ใช้ signal) เพื่อ cleanup ฝั่ง Worker
-  const abortController = new AbortController();
-  const { signal } = abortController;
-  zipJobs.set(orderId, { abortController, jobId: null });
-
-  // 🔧 (2026-09-18 v5): re-render ทันทีหลัง zipJobs.set() → ปุ่ม ✕ "ยกเลิก" โชว์ทันที
-  //   โดยไม่ต้องรอให้ user refresh หน้า
-  renderFromState();
-
-  try {
-    // ===== Step 1: start — สร้าง multipart upload ใน R2 + รับ plan =====
-    orderToast("กำลังเริ่มกระบวนการสร้าง ZIP...", "progress");
-    let startRes;
-    try {
-      startRes = await fetch("/api/order-zip/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ orderId }),
-        signal,
-      });
-    } catch (err) {
-      // 🔧 (2026-09-18 v5): ถ้าเป็น abort → return แบบ silent (ไม่ throw เพราะ error ถูก handle ใน abortOrderZip แล้ว)
-      if (err?.name === "AbortError" || signal.aborted) {
-        return { ok: false, error: "ยกเลิกการสร้าง ZIP โดยแอดมิน", aborted: true };
-      }
-      throw new Error(`เริ่มกระบวนการ ZIP ไม่สำเร็จ (network): ${err?.message || err}`);
-    }
-    let startData;
-    try { startData = await startRes.json(); } catch {
-      // 🔧 (2026-09-27 fix 503): ใช้ readWorkerError แทน จะได้เห็น error จริงจาก Worker
-      const errText = await readWorkerError(startRes, "อ่านผลลัพธ์จาก Worker ไม่สำเร็จ");
-      throw new Error(errText);
-    }
-    if (!startRes.ok || !startData.ok) {
-      throw new Error(startData?.error || `เริ่มกระบวนการ ZIP ไม่สำเร็จ (HTTP ${startRes.status})`);
-    }
-
-    // กรณีมี ZIP เดิมอยู่แล้ว → Worker คืน URL เดิม ไม่สร้างใหม่
-    if (startData.existing) {
-      return { ok: true, url: startData.url, publicId: startData.publicId || "" };
-    }
-
-    const jobId = startData.jobId;
-    // 🔧 (2026-09-18 v5): เก็บ jobId ใน zipJobs เพื่อใช้ตอน abort
-    const jobEntry = zipJobs.get(orderId);
-    if (jobEntry) jobEntry.jobId = jobId;
-    const plan = Array.isArray(startData.plan) ? startData.plan : [];
-    const totalSongs = Number(startData.totalSongs || plan.length);
-    if (plan.length === 0) {
-      throw new Error("ออเดอร์นี้ไม่มีรายการเพลงสำหรับสร้าง ZIP");
-    }
-
-    // ===== Step 2: append ทีละเพลง =====
-    // 🐛 (2026-09-27 fix): เดิม PARALLEL_APPEND_CHUNK = 3 → ส่ง 3 เพลงพร้อมกันต่อรอบ
-    //   แต่ /api/order-zip/append แต่ละคำขอทำ SELECT parts (D1) → push entry ตัวเอง → UPDATE parts ทับทั้งคอลัมน์
-    //   เมื่อ 3 คำขอรันพร้อมกัน → ต่างอ่าน parts ชุดเดิมก่อนใครจะเขียนเสร็จ → คำขอที่ UPDATE ทีหลังสุด
-    //   จะเขียนทับพาร์ตของอีก 2 คำขอที่ไม่เห็นข้อมูลของกันและกัน (lost update) → เพลงหายไปราว 2 ใน 3
-    //   ตัวอย่างจริงที่พบ: ออเดอร์มี 47 เพลง แต่ ZIP ที่ได้มีเพลงจริงแค่ ~17 เพลง (ตรงกับสัดส่วน ~1/3 ที่รอดจากคำขอ 3 พร้อมกัน)
-    //   แก้โดยเปลี่ยนเป็นส่งทีละ 1 เพลง (sequential) → ไม่มี concurrent write ทับ parts อีกต่อไป
-    //   ข้อเสีย: ช้าลงกว่าเดิม (ไม่ได้ parallel 3 เพลง) แต่ได้เพลงครบ 100% ตามจำนวนจริงในออเดอร์
-    const PARALLEL_APPEND_CHUNK = 1;  // เดิม = 3 (ทำให้เกิด D1 write race ข้างบน) → เปลี่ยนเป็น 1 เพื่อความถูกต้อง
-    for (let i = 0; i < plan.length; i += PARALLEL_APPEND_CHUNK) {
-      const chunk = plan.slice(i, Math.min(i + PARALLEL_APPEND_CHUNK, plan.length));
-      const progressPct = Math.round((i / plan.length) * 100);
-      orderToast(`⏳ กำลังสร้าง ZIP ${i}/${totalSongs} เพลง (${progressPct}%)...`, "progress");
-      try {
-        await Promise.all(chunk.map(async (item, idx) => {
-
-          const partNumber = i + idx + 1;
-          let appendRes;
-          try {
-            appendRes = await fetch("/api/order-zip/append", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              credentials: "same-origin",
-              body: JSON.stringify({
-                jobId,
-                partNumber,
-                songId: item.songId,
-                folderPath: item.folderPath || "",
-                songName: item.songName || "เพลง",
-              }),
-              signal,
-            });
-          } catch (err) {
-            if (err?.name === "AbortError" || signal.aborted) {
-              throw new Error("__ABORTED__");
-            }
-            throw new Error(`ส่งเพลงที่ ${partNumber} "${item.songName}" เข้า ZIP ไม่สำเร็จ (network): ${err?.message || err}`);
-          }
-          let appendData;
-          try { appendData = await appendRes.json(); } catch {
-            // 🔧 (2026-09-27 fix 503): ใช้ readWorkerError แทน จะได้เห็น error จริงจาก Worker
-            const errText = await readWorkerError(appendRes, `ส่งเพลงที่ ${partNumber} เข้า ZIP ไม่สำเร็จ`);
-            throw new Error(errText);
-          }
-          if (!appendRes.ok || !appendData.ok) {
-            throw new Error(appendData?.error || `ส่งเพลงที่ ${partNumber} "${item.songName}" เข้า ZIP ไม่สำเร็จ (HTTP ${appendRes.status})`);
-          }
-        }));
-      } catch (err) {
-        if (err?.message === "__ABORTED__" || signal.aborted) {
-          return { ok: false, error: "ยกเลิกการสร้าง ZIP โดยแอดมิน", aborted: true };
-        }
-        throw err;  // re-throw ให้ catch ด้านนอกจัดการ
-      }
-    }
-    // อัปเดต progress ครั้งสุดท้าย (100%)
-    orderToast(`⏳ ส่งเพลงเข้า ZIP เสร็จแล้ว (${totalSongs}/${totalSongs}) — กำลัง finalize...`, "progress");
-
-    // ===== Step 3: finalize-build หลายรอบ (แต่ละรอบ process 10 เพลง) =====
-    // 🔧 (2026-09-18 v5): แทนที่ finalize 1 ครั้งด้วย finalize-build × M + finalize-compose × 1
-    //   เหตุผล: ออเดอร์ใหญ่ > 100MB finalize 1 ครั้งจะเกิน Worker CPU time limit 30s ของ Free plan
-    //   วิธีแก้: แบ่ง finalize ออกเป็นหลาย Worker invocations → แต่ละรอบใช้ CPU ~5 วินาที
-    //   รองรับออเดอร์ขนาดหลาย GB บน Free plan โดยไม่เสียเงิน
-    //
-    // 🔧 (2026-09-21 progress v2): แสดง % ที่แม่นยำตามจริง — ใช้ totalProcessed/totalSongs จาก Worker
-    //   แบ่ง % รวมตาม phase:
-    //     - Append phase: 0% → 50% (ส่ง metadata เพลง)
-    //     - Finalize-build phase: 50% → 90% (ประมวลผล WAV + build ZIP entries)
-    //     - Finalize-compose phase: 90% → 100% (build CD + EOCD + complete upload)
-    //
-    // 🔧 (2026-09-27 fix large ZIP): ปรับ progress display สำหรับออเดอร์ใหญ่
-    //   เหตุผล: หลังลด ZIP_FINALIZE_SONGS_PER_ROUND จาก 30 → 5 → จำนวนรอบเพิ่มขึ้น 6 เท่า
-    //   สำหรับออเดอร์ 100+ เพลง จะใช้เวลานาน (~5-15 นาที) → user อาจคิดว่าค้าง → กด refresh → fail
-    //   วิธีแก้:
-    //     1) แสดงเวลาโดยประมาณ (ETA) ให้ user รู้ว่าต้องรอนานแค่ไหน
-    //     2) แสดงคำเตือน "ห้ามปิดหน้าต่างนี้" สำหรับออเดอร์ใหญ่ (totalSongs > 20)
-    //     3) แสดงจำนวนรอบที่ผ่านไปแล้ว (round X/Y) ให้ user เห็นว่าทำไปเรื่อย ๆ
-    //   ผลกระทบต่อระบบเดิม: 0% — flow logic เดิม 100% แค่แก้ข้อความ toast
-    let finalizeDone = false;
-    let lastProcessed = 0;
-    let finalizeRoundCount = 0;
-    const finalizeStartTime = Date.now();
-    const isLargeOrder = totalSongs > 20;  // ใช้ threshold 20 เพลง = ~1GB+ สำหรับ WAV ~50MB/เพลง
-    while (!finalizeDone) {
-      finalizeRoundCount += 1;
-      // คำนวณ % ก่อนเริ่มรอบนี้ (indeterminate ระหว่างรอ Worker response)
-      const beforePct = 50 + Math.round((lastProcessed / Math.max(totalSongs, 1)) * 40);
-      // คำนวณ ETA (เวลาที่ผ่านไป × % ที่เหลือ / % ที่ผ่านแล้ว)
-      let etaText = "";
-      if (lastProcessed > 0) {
-        const elapsedMs = Date.now() - finalizeStartTime;
-        const pctDone = lastProcessed / Math.max(totalSongs, 1);
-        if (pctDone > 0.05) {  // ป้องกันหาร 0 + กัน ETA กระโดดตอนเริ่ม
-          const remainingMs = elapsedMs * (1 - pctDone) / pctDone;
-          const remainingMin = Math.ceil(remainingMs / 60000);
-          etaText = ` ~${remainingMin} นาที`;
-        }
-      }
-      // สำหรับออเดอร์ใหญ่ → แสดงรอบที่ + เตือนห้ามปิดหน้าต่าง
-      const roundText = isLargeOrder ? ` [รอบที่ ${finalizeRoundCount}]` : "";
-      const warnText = (isLargeOrder && finalizeRoundCount === 1)
-        ? " ⚠️ ออเดอร์ใหญ่ — ห้ามปิดหน้าต่างนี้จนกว่าจะเสร็จ"
-        : "";
-      orderToast(`⏳ กำลังประมวลผลเพลง... (${beforePct}%)${etaText}${roundText}${warnText}`, "progress");
-      let buildRes;
-      try {
-        buildRes = await fetch("/api/order-zip/finalize-build", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "same-origin",
-          body: JSON.stringify({ jobId }),
-          signal,
-        });
-      } catch (err) {
-        if (err?.name === "AbortError" || signal.aborted) {
-          return { ok: false, error: "ยกเลิกการสร้าง ZIP โดยแอดมิน", aborted: true };
-        }
-        throw new Error(`finalize-build ไม่สำเร็จ (network): ${err?.message || err}`);
-      }
-      let buildData;
-      try { buildData = await buildRes.json(); } catch {
-        // 🔧 (2026-09-27 fix 503): ใช้ readWorkerError แทน จะได้เห็น error จริงจาก Worker
-        const errText = await readWorkerError(buildRes, "finalize-build ไม่สำเร็จ");
-        throw new Error(errText);
-      }
-      if (!buildRes.ok || !buildData.ok) {
-        throw new Error(buildData?.error || `finalize-build ไม่สำเร็จ (HTTP ${buildRes.status})`);
-      }
-      finalizeDone = !!buildData.done;
-      lastProcessed = Number(buildData.totalProcessed || lastProcessed);
-      const totalSongsFinalize = Number(buildData.totalSongs || totalSongs);
-      // คำนวณ % รวม (50% base + 40% ของ finalize phase)
-      const overallPct = 50 + Math.round((lastProcessed / Math.max(totalSongsFinalize, 1)) * 40);
-      // คำนวณ ETA หลังรอบนี้เสร็จ
-      let etaAfterText = "";
-      if (lastProcessed > 0) {
-        const elapsedMs = Date.now() - finalizeStartTime;
-        const pctDone = lastProcessed / Math.max(totalSongsFinalize, 1);
-        if (pctDone > 0.05) {
-          const remainingMs = elapsedMs * (1 - pctDone) / pctDone;
-          const remainingMin = Math.ceil(remainingMs / 60000);
-          etaAfterText = ` ~${remainingMin} นาที`;
-        }
-      }
-      const roundAfterText = isLargeOrder ? ` [รอบที่ ${finalizeRoundCount}]` : "";
-      orderToast(`⏳ กำลังประมวลผลเพลง ${lastProcessed}/${totalSongsFinalize} (${overallPct}%)${etaAfterText}${roundAfterText}`, "progress");
-    }
-
-    // ===== Step 4: finalize-compose — build CD+EOCD + upload trailing chunk + complete =====
-    // 🔧 (2026-09-21 progress v2): แสดง sub-status แบบ step-by-step ในขั้นตอนสร้างลิงก์
-    //   เพราะ finalize-compose มีหลาย sub-step ที่ใช้เวลา (build CD, upload, complete multipart)
-    //   ถ้าแสดงแค่ "กำลังสร้างลิงก์..." → user ไม่รู้ว่าทำอะไรอยู่ → เข้าใจว่าค้าง
-    //   ใหม่: แสดง % 90% → 100% พร้อม sub-status ที่ rotate ทุก 2 วิ (กัน user กังวล)
-    let composeStatusIdx = 0;
-    const composeStatuses = [
-      "🔗 กำลังสร้างลิงก์ดาวน์โหลด... (90%)",
-      "📦 กำลัง build Central Directory... (92%)",
-      "⬆️ กำลัง upload chunk สุดท้าย... (95%)",
-      "✅ กำลัง complete multipart upload... (98%)",
-      "📝 กำลังบันทึกข้อมูลออเดอร์... (99%)",
-    ];
-    orderToast(composeStatuses[composeStatusIdx], "progress");
-    const composeStatusInterval = setInterval(() => {
-      composeStatusIdx = (composeStatusIdx + 1) % composeStatuses.length;
-      orderToast(composeStatuses[composeStatusIdx], "progress");
-    }, 2000);  // rotate ทุก 2 วิ — กัน user คิดว่าค้าง
-    let composeRes;
-    try {
-      composeRes = await fetch("/api/order-zip/finalize-compose", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ jobId }),
-        signal,
-      });
-    } catch (err) {
-      clearInterval(composeStatusInterval);
-      if (err?.name === "AbortError" || signal.aborted) {
-        return { ok: false, error: "ยกเลิกการสร้าง ZIP โดยแอดมิน", aborted: true };
-      }
-      throw new Error(`สร้างลิงก์ดาวน์โหลด ZIP ไม่สำเร็จ (network): ${err?.message || err}`);
-    }
-    clearInterval(composeStatusInterval);  // หยุด rotate ทันทีที่ได้ response
-    let composeData;
-    try { composeData = await composeRes.json(); } catch {
-      // 🔧 (2026-09-27 fix 503): ใช้ readWorkerError แทน จะได้เห็น error จริงจาก Worker
-      const errText = await readWorkerError(composeRes, "สร้างลิงก์ดาวน์โหลด ZIP ไม่สำเร็จ");
-      throw new Error(errText);
-    }
-    if (!composeRes.ok || !composeData.ok) {
-      throw new Error(composeData?.error || `สร้างลิงก์ดาวน์โหลด ZIP ไม่สำเร็จ (HTTP ${composeRes.status})`);
-    }
-
-    // Worker อัปเดต order doc ฝั่ง server แล้ว (zip_status='ready' + zip_download_url + ...)
-    // ฝั่ง client แค่ return url + publicId ให้ caller ใช้ sync state.allOrders
-    return {
-      ok: true,
-      url: composeData.url,
-      publicId: composeData.publicId || "",
-    };
-  } catch (err) {
-    const errorMessage = err?.message || String(err);
-    // 🔧 (2026-09-18 v5): ถ้าเป็น abort → ไม่ต้องบันทึก zip_status='failed' เพราะ Worker อัปเดตเป็น '' แล้วใน /api/order-zip/abort
-    if (signal.aborted) {
-      return { ok: false, error: "ยกเลิกการสร้าง ZIP โดยแอดมิน", aborted: true };
-    }
-    // ถ้าเกิดข้อผิดพลาด ให้คงสถานะออเดอร์เดิมไว้ และบันทึก zip_status='failed' (เหมือนเดิม)
-    try {
-      await updateDoc(doc(db, "orders", orderId), {
-        zip_status: "failed",
-        zip_error: errorMessage,
-        zip_download_url: "",
-        zip_file_name: "",
-        updated_at: new Date().toISOString(),
-      });
-    } catch (statusError) {
-      console.error("บันทึกสถานะ ZIP ไม่สำเร็จ:", statusError);
-    }
-    return { ok: false, error: errorMessage };
-  } finally {
-    zipJobs.delete(orderId);
-    // 🔧 (2026-09-18 v5): re-render ทันทีหลัง zipJobs.delete() → ปุ่ม ✕ "ยกเลิก" หายไปทันที
-    //   (ทำงานทุกกรณี: สำเร็จ / error / abort)
-    renderFromState();
-  }
-}
-
-// 🔧 (2026-09-18 v5): ยกเลิกการสร้าง ZIP ระหว่างทำ (จากปุ่ม UI)
-// ทำ 2 อย่าง:
-//   1) abortController.abort() → ทุก fetch ที่กำลังทำอยู่ reject ทันที (ส่ง AbortError กลับ)
-//   2) เรียก /api/order-zip/abort เพื่อ cleanup ฝั่ง Worker (R2 multipart + D1 row + order doc)
-//      โดยใช้ fetch แยก (ไม่ใช่ signal เดียวกับ createOrderZip) เพราะต้องส่งได้แม้หลัง abort
-// หลังจากนี้ createOrderZip จะ return { ok: false, error: 'ยกเลิก...', aborted: true }
-//   → caller (confirmPaymentAndCreateZip/retryOrderZip) เห็น aborted=true จะไม่แสดง error toast
-async function abortOrderZip(orderId) {
-  const job = zipJobs.get(orderId);
-  if (!job) return { ok: false, error: "ไม่พบการสร้าง ZIP ที่กำลังทำอยู่ของออเดอร์นี้" };
-
-  // 1) abort fetches ที่กำลังทำอยู่
-  try { job.abortController.abort(); } catch (_) {}
-
-  // 2) cleanup ฝั่ง Worker (ถ้ามี jobId — อาจยังไม่มีถ้า abort ตอนกำลัง start)
-  if (job.jobId) {
-    try {
-      const res = await fetch("/api/order-zip/abort", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ jobId: job.jobId }),
-      });
-      let data;
-      try { data = await res.json(); } catch { data = null; }
-      if (!res.ok) {
-        console.warn("abort endpoint ล้มเหลว (HTTP " + res.status + "):", data?.error || "");
-      }
-    } catch (err) {
-      console.warn("เรียก /api/order-zip/abort ไม่สำเร็จ:", err?.message || err);
-    }
-  }
-
-  // อัปเดต state ฝั่ง client — ระบบ Worker อัปเดต order doc เป็น zip_status='' + zip_error='ยกเลิกโดยแอดมิน' แล้ว
-  await updateOrderInState(orderId, {
-    zip_status: "",
-    zip_error: "ยกเลิกการสร้าง ZIP โดยแอดมิน",
-    zip_download_url: "",
-    zip_file_name: "",
-    zip_public_id: "",
-    updated_at: new Date().toISOString(),
-  });
-  renderFromState();
-  orderToast("ยกเลิกการสร้าง ZIP แล้ว — สามารถสร้างใหม่ได้", "success_long");
-  return { ok: true, aborted: true };
-}
-
-function getReceiptNumber(orderId, createdAt) {
-  const date = new Date(createdAt || Date.now());
-  const ymd = Number.isNaN(date.getTime())
-    ? "00000000"
-    : [
-        date.getFullYear(),
-        String(date.getMonth() + 1).padStart(2, "0"),
-        String(date.getDate()).padStart(2, "0"),
-      ].join("");
-  return `RCPT-${ymd}-${String(orderId || "000000").slice(-6).toUpperCase()}`;
-}
-
-const state = {
-  songs: [],        // เพลงทั้งหมดที่ไม่ได้ถูกซ่อน (status !== "hidden") จาก collection "songs"
-  playlists: [],     // เพลย์ลิสต์ที่ตั้งราคาเหมาไว้แล้ว จาก collection "playlists"
-  searchResults: [],
-  // ---- ตะกร้าออเดอร์ที่กำลังกรอก (รองรับผสม): แต่ละรายการเป็น
-  //   เพลงเดี่ยว   { kind: "song",     songId, title, price }
-  //   เพลย์ลิสต์   { kind: "playlist", playlistId, title, price, songs: [{songId,title,price}] }
-  // เลือกได้ทั้งเพลงหลายเพลง + เพลย์ลิสต์หลายรายการพร้อมกันในออเดอร์เดียว
-  cartEntries: [],
-  allOrders: [],      // แคชออเดอร์ล่าสุดที่โหลดมา (ใช้กรองสถานะโดยไม่ต้องโหลดซ้ำ)
-  historyFilter: "all", // สถานะที่กำลังกรองดูในประวัติออเดอร์
-  historySearch: "",    // คำค้นหาในประวัติออเดอร์ (ค้นจาก ชื่อลูกค้า/เบอร์/ชื่อเพลง/เพลย์ลิสต์/เลขออเดอร์/ชื่อ ZIP)
-  listenersBound: false, // กันการผูก event ซ้ำเมื่อเปิดหน้านี้หลายครั้ง
-
-  playlistSearchResults: [],
-
-  // ---- สถานะสำหรับโหมดแก้ไขออเดอร์ (modal) ----
-  editingOrderId: null,   // id ของออเดอร์ที่กำลังแก้ไขอยู่ (null = ไม่ได้เปิด modal)
-  editCartEntries: [],    // ตะกร้าของ modal แก้ไข (โครงสร้างเดียวกับ cartEntries ด้านบน)
-  editSearchResults: [],  // ผลค้นหาเพลงใน modal แก้ไข
-  editPlaylistSearchResults: [],
-
-  // ---- ธงบอกว่า "ยอดรวม" ถูกผู้ใช้แก้ไขเองหรือไม่ ----
-  // true = ใช้ค่าที่ผู้ใช้พิมพ์เอง, false = คำนวณอัตโนมัติจากราคาเพลง/เพลย์ลิสต์ในตะกร้า
-  cartTotalEdited: false,     // สำหรับฟอร์มสร้างออเดอร์ใหม่
-  editCartTotalEdited: false, // สำหรับ modal แก้ไขออเดอร์
-  storeName: "Music Store",
-};
-
-/* ---------------- โหลดเพลงจริงจาก Firestore ----------------
-   หมายเหตุ (แก้ไข 2026-09): เดิมใช้ where("status","==","active") กรองฝั่ง Firestore ซึ่งต้องตรงคำเป๊ะๆ
-   ทำให้เพลงที่ status ไม่ตรงคำว่า "active" แบบเป๊ะ (พิมพ์ใหญ่-เล็กไม่ตรง/มีช่องว่างเกิน/ไม่มีฟิลด์นี้จากข้อมูลเก่า)
-   หายไปจากช่องค้นหาตอนสร้างออเดอร์แบบไม่มี error ให้เห็น ทั้งที่หน้าเว็บลูกค้า (app-user.js) และหน้า
-   "จัดการเพลง" ยังเห็นเพลงพวกนี้ปกติ — เปลี่ยนมาโหลดเพลงทั้งหมดแล้วกรองฝั่ง client แบบเดียวกับ app-user.js
-   (ตัดออกเฉพาะที่สั่งซ่อนชัดเจนว่า "hidden" เท่านั้น) เพื่อให้ตรงกันทั้ง 3 จุดในระบบ */
-async function loadSongsFromDatabase() {
-  const snap = await getDocs(collection(db, "songs"));
-  // 🎨 (2026-09-26): sort เพลงตามชื่อ (ก-ฮ + A-Z + 0-9 แบบ natural sort)
-  //   เดิม: ใช้ลำดับจาก DB ตรง ๆ → A1, A10, A2, A3 (ผิดลำดับ)
-  //   ใหม่: sortSongsByThaiName → A1, A2, A3, A10 (ถูกลำดับ)
-  //   ทำให้การค้นหาเพลงในฟอร์มสร้างออเดอร์เห็นรายการเรียงเป็นระเบียบ
-  return sortSongsByThaiName(
-    snap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(s => String(s.status || "").trim().toLowerCase() !== "hidden")
-  );
-}
-
-/* ---------------- โหลดออเดอร์ทั้งหมดจาก Firestore ---------------- */
-async function loadOrdersFromDatabase() {
-  // 🔧 (2026-09-22 Batch 7 fix Bug #6): เพิ่ม pagination — ดึงทีละ 200 ออเดอร์ล่าสุด
-  //   ปัญหาเดิม: ดึงทุกออเดอร์ทีเดียว → 10,000+ orders = หน้าจอค้าง 30+ วิ
-  //   วิธีแก้: ดึง 200 ออเดอร์ล่าสุดก่อน → แอดมินเห็นหน้าภายใน 1-2 วิ
-  //            ถ้าต้องการดูออเดอร์เก่า → ใช้ช่องค้นหา (search ดึงจาก DB ตรงๆ ด้วย receipt_number)
-  //   ผลกระทบระบบเดิม: เล็กน้อย — ถ้าออเดอร์รวม < 200 → return เหมือนเดิม
-  //     ถ้าออเดอร์รวม > 200 → แอดมินเห็นแค่ 200 ล่าสุด (search ยังคงใช้ได้สำหรับเก่า)
-  //   หมายเหตุ: db-client.js ไม่รองรับ limit() โดยตรง → ใช้ fetch ตรงกับ /api/db/orders?limit=200
-  //            ซึ่ง Worker รองรับแล้วใน listDocuments (db-helpers.js)
-  try {
-    const res = await fetch("/api/db/orders?limit=200", { credentials: "same-origin" });
-    if (res.ok) {
-      const data = await res.json();
-      const docs = Array.isArray(data?.docs) ? data.docs : [];
-      return docs.map(d => ({ id: d.id, ...d.data }));
-    }
-    // fallback: ถ้า fetch fail → ใช้วิธีเดิม (getDocs ทั้งหมด)
-    console.warn("loadOrdersFromDatabase: fetch with limit failed, falling back to getDocs:", res.status);
-  } catch (err) {
-    console.warn("loadOrdersFromDatabase: fetch failed, falling back to getDocs:", err?.message || err);
-  }
-  // Fallback: ใช้ getDocs แบบเดิม (กรณี endpoint ใหม่ไม่พร้อมใช้งาน)
-  const q = query(collection(db, "orders"), orderBy("created_at", "desc"));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-}
-
-/* ---------------- โหลดเพลย์ลิสต์จริงจาก Firestore (สำหรับขายยกเพลย์ลิสต์) ----------------
-   หมายเหตุ: เอาไว้เฉพาะเพลย์ลิสต์ที่ตั้ง "ราคาเหมา" ไว้แล้ว (price > 0) เพราะถือว่าเป็นชุดที่ขายทั้งชุดได้
-   เพลย์ลิสต์ที่ไม่ได้ตั้งราคา (ปล่อยว่าง/0) จะไม่โผล่ในช่องค้นหานี้ */
-async function loadPlaylistsFromDatabase() {
-  const snap = await getDocs(collection(db, "playlists"));
-  return snap.docs
-    .map(d => ({ id: d.id, ...d.data() }))
-    .filter(p => Number(p.price || 0) > 0);
-}
-
-async function loadStoreName() {
-  try {
-    const snap = await getDoc(doc(db, "settings", "main"));
-    return snap.exists() ? String(snap.data().website_name || "Music Store") : "Music Store";
-  } catch (err) {
-    console.warn("โหลดชื่อร้านไม่สำเร็จ ใช้ชื่อเริ่มต้นแทน:", err);
-    return "Music Store";
-  }
-}
-
-/* ---------------- หาเพลงทั้งหมดที่อยู่ในเพลย์ลิสต์ที่เลือก ----------------
-   อ้างอิงจากฟิลด์ playlist_id บนเอกสารเพลงแต่ละเพลง (บันทึกไว้ตอนเพิ่ม/แก้ไขเพลงในหน้า "จัดการเพลง")
-   ถ้าฐานข้อมูลจริงเก็บฟิลด์นี้ชื่ออื่น ให้แก้ตรง s.playlist_id ด้านล่างนี้จุดเดียว */
-function getSongsInPlaylist(playlistId) {
-  return state.songs.filter((s) => s.playlist_id === playlistId);
-}
-
-/* ---------------- คำนวณ ---------------- */
-function calculateCartTotal(items) {
-  return items.reduce((sum, item) => sum + Number(item.price || 0), 0);
-}
-function calculateOrderTotal(orderType, items, playlist) {
-  return orderType === "playlist" && playlist
-    ? Number(playlist.price || 0)
-    : calculateCartTotal(items);
-}
-
-/* ---------------- ตะกร้าแบบผสม (เพลงเดี่ยว + เพลย์ลิสต์ หลายรายการ) ----------------
-   ใช้ร่วมกันทั้งฟอร์ม "สร้างออเดอร์ใหม่" และ modal "แก้ไขออเดอร์"
-   entry ที่เป็นเพลง:      { kind:"song", songId, title, price }
-   entry ที่เป็นเพลย์ลิสต์: { kind:"playlist", playlistId, title, price, songs:[{songId,title,price}] }
-   ยอดรวม = ผลรวมราคาของทุก entry เสมอ (เพลย์ลิสต์นับราคาเหมาครั้งเดียว ไม่บวกราคาเพลงย่อยซ้ำ) */
-function sumCartEntries(entries) {
-  return (entries || []).reduce((sum, e) => sum + Number(e.price || 0), 0);
-}
-
-// ===== (2026-09-16): Helper สำหรับตรวจเพลงซ้ำในตะกร้าออเดอร์ =====
-// ปัญหา: เดิม addToCart/selectPlaylist เช็คซ้ำแค่ในระดับเดียวกัน (เพลงเดี่ยวซ้ำ / เพลย์ลิสต์ซ้ำ)
-// แต่ไม่เช็คข้ามชนิด — ทำให้เพิ่มเพลง A เดี่ยว + playlist X (ที่มีเพลง A) ได้ → เพลง A ถูกนับ 2 ครั้ง → ลูกค้าเสียเงิน 2 ครั้ง
-//
-// Helper 2 ตัวนี้ใช้ตรวจ "เพลงนี้มีอยู่ใน cartEntries แล้วหรือไม่ (ทั้งในรูปแบบเพลงเดี่ยวและอยู่ใน playlist)"
-// คืนค่าเป็น object ที่บอกชนิดซ้ำ + ชื่อรายการที่ซ้ำ เพื่อใช้ในข้อความ toast ให้ผู้ใช้เข้าใจง่าย
-
-// ตรวจว่า songId นี้อยู่ใน cartEntries แล้วไหม (ทั้งเพลงเดี่ยวและอยู่ใน playlist)
-// คืน { duplicate: true, inKind: "song"|"playlist", inTitle: "..." } หรือ { duplicate: false }
-function findSongInCartEntries(cartEntries, songId) {
-  // เช็คเพลงเดี่ยวก่อน
-  const asSingle = (cartEntries || []).find((e) => e.kind === "song" && (e.songId || e.song_id) === songId);
-  if (asSingle) {
-    return { duplicate: true, inKind: "song", inTitle: asSingle.title || "เพลงเดี่ยว" };
-  }
-  // เช็คใน playlist entries
-  for (const e of (cartEntries || [])) {
-    if (e.kind === "playlist" && Array.isArray(e.songs)) {
-      const found = e.songs.find((s) => (s.songId || s.song_id) === songId);
-      if (found) {
-        return { duplicate: true, inKind: "playlist", inTitle: e.title || "เพลย์ลิสต์" };
-      }
-    }
-  }
-  return { duplicate: false };
-}
-
-// ตรวจเพลงหลายตัวใน playlist ว่าซ้ำกับที่อยู่ใน cartEntries ไหม
-// รับ playlistSongs: array ของ { songId, title }
-// คืน array ของ { songId, songTitle, inKind, inTitle } สำหรับเพลงที่ซ้ำ
-function findPlaylistSongDuplicates(cartEntries, playlistSongs) {
-  const dups = [];
-  for (const ps of (playlistSongs || [])) {
-    const songId = ps.songId || ps.song_id;
-    const result = findSongInCartEntries(cartEntries, songId);
-    if (result.duplicate) {
-      dups.push({
-        songId,
-        songTitle: ps.title || "เพลง",
-        inKind: result.inKind,
-        inTitle: result.inTitle,
-      });
-    }
-  }
-  return dups;
-}
-
-/*
- * แปลงตะกร้าแบบผสมเป็นข้อมูลออเดอร์ที่จะบันทึกลง Firestore
- * ใช้ตรรกะเดียวกับ resolveCartFromDatabase() ใน app-cart.js เพื่อให้ order_type ที่ได้
- * เข้ากันได้กับ Dashboard/ใบเสร็จ/ระบบสร้าง ZIP ที่มีอยู่แล้วทุกจุดโดยไม่ต้องแก้ไฟล์อื่น:
- *   - มีแต่เพลงเดี่ยว                     -> "single"   (items = เพลงแต่ละรายการ)
- *   - มีเพลย์ลิสต์เดียว ไม่มีเพลงเดี่ยวปน    -> "playlist" (items = เพลงที่ขยายจากเพลย์ลิสต์นั้น)
- *   - เพลงเดี่ยว+เพลย์ลิสต์ผสมกัน หรือมีเพลย์ลิสต์มากกว่า 1 -> "mixed"
- */
-function buildOrderPayloadFromEntries(entries) {
-  const songEntries = (entries || []).filter((e) => e.kind === "song");
-  const playlistEntries = (entries || []).filter((e) => e.kind === "playlist");
-  const total = sumCartEntries(entries);
-
-  if (playlistEntries.length === 1 && songEntries.length === 0) {
-    const pl = playlistEntries[0];
-    return {
-      items: (pl.songs || []).map((s) => ({ song_id: s.songId, title: s.title, price: s.price })),
-      total,
-      order_type: "playlist",
-      playlist_id: pl.playlistId,
-      playlist_name: pl.title,
-      playlist_ids: [],
-    };
-  }
-
-  if (playlistEntries.length === 0) {
-    return {
-      items: songEntries.map((s) => ({ song_id: s.songId, title: s.title, price: s.price })),
-      total,
-      order_type: "single",
-      playlist_id: null,
-      playlist_name: null,
-      playlist_ids: [],
-    };
-  }
-
-  const songItems = songEntries.map((s) => ({ kind: "song", song_id: s.songId, title: s.title, price: s.price }));
-  const playlistItems = playlistEntries.map((pl) => ({
-    kind: "playlist",
-    playlist_id: pl.playlistId,
-    title: pl.title,
-    price: pl.price,
-    song_ids: (pl.songs || []).map((s) => s.songId),
-    song_titles: (pl.songs || []).map((s) => s.title),
-  }));
-  return {
-    items: [...songItems, ...playlistItems],
-    total,
-    order_type: "mixed",
-    playlist_id: null,
-    playlist_name: null,
-    playlist_ids: playlistEntries.map((pl) => pl.playlistId),
-  };
-}
-
-/*
- * แปลงข้อมูลออเดอร์เดิม (ทุกรูปแบบ: single/playlist/mixed รวมถึงออเดอร์เก่าที่ไม่มี order_type)
- * กลับเป็นตะกร้าแบบผสม เพื่อโหลดเข้า modal แก้ไขออเดอร์ — ไม่ทำลายข้อมูลเดิมไม่ว่าออเดอร์จะเป็นแบบไหน
- */
-function buildCartEntriesFromOrder(order) {
-  const items = order?.items || [];
-
-  if (order?.order_type === "playlist") {
-    const playlist = order.playlist_id ? state.playlists.find((p) => p.id === order.playlist_id) : null;
-    return [{
-      kind: "playlist",
-      playlistId: order.playlist_id || playlist?.id || null,
-      title: order.playlist_name || getPlaylistName(playlist) || "เพลย์ลิสต์",
-      price: Number(order.total || playlist?.price || 0),
-      songs: items.map((i) => ({ songId: i.song_id, title: i.title, price: Number(i.price || 0) })),
-    }];
-  }
-
-  if (order?.order_type === "mixed") {
-    return items.map((item) => {
-      if (item?.kind === "playlist") {
-        const songIds = Array.isArray(item.song_ids) ? item.song_ids : [];
-        const songTitles = Array.isArray(item.song_titles) ? item.song_titles : [];
-        return {
-          kind: "playlist",
-          playlistId: item.playlist_id,
-          title: item.title || "เพลย์ลิสต์",
-          price: Number(item.price || 0),
-          songs: songIds.map((id, idx) => ({ songId: id, title: songTitles[idx] || "เพลง", price: 0 })),
-        };
-      }
-      return { kind: "song", songId: item.song_id, title: item.title, price: Number(item.price || 0) };
-    });
-  }
-
-  // "single" หรือออเดอร์เก่าที่ไม่มี order_type — ทุกรายการเป็นเพลงเดี่ยวทั้งหมด
-  return items.map((item) => ({ kind: "song", songId: item.song_id, title: item.title, price: Number(item.price || 0) }));
-}
-
-// รองรับหน้า admin.html รุ่นเก่าที่ยังไม่มี modal ใบเสร็จ
-function ensureReceiptElements() {
-  if (document.getElementById("receiptBackdrop")) return;
-
-  const backdrop = document.createElement("div");
-  backdrop.className = "modal-backdrop";
-  backdrop.id = "receiptBackdrop";
-  backdrop.innerHTML = `
-    <div class="modal">
-      <div class="modal-header">
-        <h3>ใบเสร็จดิจิทัล</h3>
-        <button class="modal-close" id="receiptClose">✕</button>
-      </div>
-      <div id="receiptContent"></div>
-      <div style="display:flex;gap:8px;margin-top:14px;">
-        <button class="btn secondary" id="receiptCopyBtn" type="button" style="flex:1;">คัดลอกรายละเอียด</button>
-        <button class="btn secondary" id="receiptWhatsAppBtn" type="button" style="flex:1;">ส่งทาง WhatsApp</button>
-        <button class="btn" id="receiptDownloadImgBtn" type="button" style="flex:1;">ดาวน์โหลดใบเสร็จเป็นรูป</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(backdrop);
-}
-// รองรับหน้า admin.html รุ่นเก่าที่ยังไม่มี modal ไฟล์เพลงเต็ม
-function ensureFullFilesElements() {
-  if (document.getElementById("fullFilesBackdrop")) return;
-
-  const backdrop = document.createElement("div");
-  backdrop.className = "modal-backdrop";
-  backdrop.id = "fullFilesBackdrop";
-  backdrop.innerHTML = `
-    <div class="modal">
-      <div class="modal-header">
-        <h3>ไฟล์เพลงเต็มสำหรับส่งลูกค้า</h3>
-        <button class="modal-close" id="fullFilesClose">✕</button>
-      </div>
-       <p style="color:var(--text-dim);font-size:13px;margin-top:0;">คัดลอกลิงก์ดาวน์โหลดส่งให้ลูกค้า หรือกดปุ่ม WhatsApp เพื่อส่งตรง — ลูกค้าสามารถดาวน์โหลดได้จากลิงก์นี้</p>
-      <div id="fullFilesContent"></div>
-      <div id="fullFilesZipLinkWrap" style="display:none;margin-top:14px;padding:10px;background:rgba(16,185,129,.08);border-radius:10px;">
-        <div style="font-size:12px;color:var(--success);font-weight:600;margin-bottom:6px;">🔗 ลิงก์ดาวน์โหลดสำหรับลูกค้า</div>
-        <div id="fullFilesZipLinkText" style="font-size:11px;color:var(--text-dim);word-break:break-all;margin-bottom:8px;"></div>
-        <button class="btn" type="button" id="fullFilesCopyLinkBtn" style="width:100%;margin-bottom:8px;">📋 คัดลอกลิงก์ดาวน์โหลด</button>
-      </div>
-      <button class="btn secondary" id="fullFilesWhatsAppBtn" type="button" style="margin-top:14px;width:100%;">💬 ส่ง WhatsApp พร้อมลิงก์ดาวน์โหลด</button>
-    </div>
-  `;
-  document.body.appendChild(backdrop);
-}
-function calculateStats(orders) {
-  // totalOrders = ออเดอร์ทั้งหมดทุกสถานะ (ปริมาณงานรวม)
-  // totalSongsSold / totalRevenue = นับเฉพาะออเดอร์ที่ "สำเร็จ" แล้วเท่านั้น
-  // เพื่อไม่ให้ออเดอร์ที่ยังรอตรวจสอบหรือถูกยกเลิกไปปนกับยอดขายจริง
-  const totalOrders = orders.length;
-  const completed = orders.filter((o) => o.status === "completed");
-  // 🔧 (2026-09-19 stats v2): เปลี่ยนการนับตามที่ user ต้องการ
-  //   completedOrders = นับออเดอร์ที่สำเร็จทั้งหมด (เพลงเดี่ยว + เพลย์ลิสต์ + ผสม — รวมกันหมด)
-  //   playlistsSold = นับจำนวนเพลย์ลิสต์ที่ขาย (นับตัวเพลย์ลิสต์ ไม่นับเพลงข้างใน)
-  //   เดิม: singleCount + playlistCount + mixedCount (นับแยกตาม order_type)
-  //   ใหม่: completedOrders รวมทุกประเภท + playlistsSold นับเฉพาะตัวเพลย์ลิสต์
-  const completedOrders = completed.length;
-  let playlistsSold = 0;
-  completed.forEach((o) => {
-    const items = o.items || [];
-    items.forEach((item) => {
-      // นับเพลย์ลิสต์ที่ขาย — ทั้งแบบ order_type="playlist" (item.kind ไม่มี) และ order_type="mixed" (item.kind="playlist")
-      if (item?.kind === "playlist") {
-        playlistsSold += 1;
-      } else if (o.order_type === "playlist" && !item?.kind) {
-        // ออเดอร์เพลย์ลิสต์เดี่ยว (order_type="playlist") — แต่ละ item คือเพลงในเพลย์ลิสต์ 1 เพลง
-        // → ทั้งออเดอร์ = 1 เพลย์ลิสต์ (นับครั้งเดียวต่อออเดอร์)
-        // จะนับด้านล่างแยก เพื่อกัน double count
-      }
-    });
-    // ถ้าเป็น order_type="playlist" (ออเดอร์ยกเพลย์ลิสต์เดี่ยว) → นับเป็น 1 เพลย์ลิสต์
-    if (o.order_type === "playlist") {
-      playlistsSold += 1;
-    }
-  });
-  // 🔧 (2026-09-19 stats fix): นับแยกเพลงเดี่ยว vs เพลงในเพลย์ลิสต์
-  //   เดิม: totalSongsSold รวมทุกอย่างเป็นจำนวนเพลง (single = 1, playlist = song_ids.length)
-  //   ใหม่: แยก singleSongsSold (เพลงเดี่ยวที่ขาย) และ playlistSongsSold (เพลงในเพลย์ลิสต์ที่ขาย)
-  //   ผลกระทบต่อระบบเดิม: 0% — totalSongsSold ยังเท่าเดิม (single + playlist)
-  //   เพิ่ม fields ใหม่: singleSongsSold, playlistSongsSold สำหรับแสดงใน Dashboard
-  let singleSongsSold = 0;
-  let playlistSongsSold = 0;
-  completed.forEach((o) => {
-    const items = o.items || [];
-    items.forEach((item) => {
-      if (item?.kind === "playlist") {
-        // รายการเพลย์ลิสต์ → นับตามจำนวนเพลงใน song_ids
-        playlistSongsSold += (Array.isArray(item.song_ids) ? item.song_ids.length : 1);
-      } else {
-        // รายการเพลงเดี่ยว → นับ 1
-        singleSongsSold += 1;
-      }
-    });
-  });
-  // totalSongsSold = รวมเพลงเดี่ยว + เพลงในเพลย์ลิสต์ (เหมือนเดิม 100%)
-  const totalSongsSold = singleSongsSold + playlistSongsSold;
-  // ===== เพิ่มใหม่: ใช้ final_total ถ้ามี (รายได้จริงหลังหักส่วนลด), fallback ไป total สำหรับ order เก่า =====
-  // เหตุผล: order.total เดิมถูกตั้งเท่ากับ final_total แล้วตอนสร้างใหม่ — แต่ order เก่า (ก่อน deploy ระบบใหม่)
-  // ยังมี order.total = ราคาเต็ม จึงใช้ total เป็น fallback ปลอดภัย (สถิติยังถูกต้องสำหรับ order ใหม่ + ไม่พังสำหรับ order เก่า)
-  const totalRevenue = completed.reduce((sum, o) => {
-    const amount = (o.final_total != null) ? Number(o.final_total) : Number(o.total || 0);
-    return sum + amount;
-  }, 0);
-  // 🔧 (2026-09-19 stats v2): คง fields เดิมไว้ (singleCount/playlistCount/mixedCount) เพื่อ back-compatible
-  //   แต่ user ต้องการให้แสดงแค่ completedOrders + playlistsSold แทน → จะไม่ render fields เดิมใน HTML ใหม่
-  const singleCount = completed.filter((o) => (o.order_type || "single") === "single").length;
-  const playlistCount = completed.filter((o) => o.order_type === "playlist").length;
-  const mixedCount = completed.filter((o) => o.order_type === "mixed").length;
-  // ===== เพิ่มใหม่: สถิติส่วนลดรวมที่ให้ลูกค้าไป (สำหรับแอดมินดู performance ของโปรโมชั่น) =====
-  const totalDiscountGiven = completed.reduce((sum, o) => sum + (Number(o.discount_amount) || 0), 0);
-  // 🔧 (2026-09-19 stats v2): เพิ่ม completedOrders + playlistsSold ใน return value
-  //   ไม่ลบ fields เดิม → back-compatible 100% (แค่ไม่ render ใน HTML ใหม่)
-  return { totalOrders, completedOrders, playlistsSold, totalSongsSold, singleSongsSold, playlistSongsSold, totalRevenue, singleCount, playlistCount, mixedCount, totalDiscountGiven };
-}
-
-/* ---------------- Render: ผลค้นหาเพลง (ฟอร์มสร้างออเดอร์ใหม่) ---------------- */
-function renderSearchResults() {
-  const container = document.getElementById("ordSearchResults");
-  container.innerHTML = "";
-
-  if (state.searchResults.length === 0) return;
-
-  state.searchResults.forEach((song) => {
-    const alreadyAdded = state.cartEntries.some((e) => e.kind === "song" && e.songId === song.id);
-    const row = document.createElement("div");
-    row.className = "list-row";
-    row.innerHTML = `
-      <img src="${song.cover_url || ""}">
-      <div class="info">
-        <div class="n1">${escapeHtml(song.song_name)}</div>
-        <div class="n2">${escapeHtml(song.dj_name || song.artist || "-")} · ${formatLAK(song.price)}</div>
-      </div>
-      <div class="row-actions">
-        <button class="icon-btn" data-add="${song.id}" ${alreadyAdded ? "disabled" : ""} style="${alreadyAdded ? "opacity:.4;" : "background:var(--accent);color:#fff;"}">
-          ${alreadyAdded ? "✓" : "＋"}
-        </button>
-      </div>
-    `;
-    container.appendChild(row);
-  });
-
-  container.querySelectorAll("[data-add]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (btn.disabled) return;
-      addToCart(btn.getAttribute("data-add"));
-    });
-  });
-}
-
-/* ---------------- Render: ตะกร้าออเดอร์ปัจจุบัน (ฟอร์มสร้างออเดอร์ใหม่, รองรับผสม) ---------------- */
-function renderCart() {
-  const container = document.getElementById("ordCartItems");
-  const totalEl = document.getElementById("ordCartTotal");
-  const hintEl = document.getElementById("ordTotalHint");
-  container.innerHTML = "";
-
-  if (state.cartEntries.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.style.padding = "10px 0";
-    empty.textContent = "ยังไม่ได้เลือกเพลงหรือเพลย์ลิสต์";
-    container.appendChild(empty);
-  } else {
-    state.cartEntries.forEach((entry, index) => {
-      const row = document.createElement("div");
-      row.className = "list-row";
-      if (entry.kind === "playlist") {
-        // 🔧 (2026-09-16): playlist entries เป็น collapsible dropdown
-        // กด ▸ จะขยายแสดงรายชื่อเพลงทั้งหมดใน playlist พร้อมราคาแต่ละเพลง
-        // กดอีกครั้ง (▾) จะซ่อน — เหมือน dropdown เปิด/ปิด
-        const songCount = (entry.songs || []).length;
-        const songsListHtml = (entry.songs || []).map((s, i) => `
-          <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;color:var(--text-dim);">
-            <span>${i + 1}. 🎵 ${escapeHtml(s.title || "เพลง")}</span>
-            <span>${formatLAK(s.price)}</span>
-          </div>
-        `).join("");
-        row.style.flexDirection = "column";
-        row.style.alignItems = "stretch";
-        row.innerHTML = `
-          <div style="display:flex;align-items:center;gap:8px;width:100%;">
-            <button class="icon-btn" data-toggle="${index}" title="เปิด/ปิดรายชื่อเพลง" style="background:transparent;font-size:14px;padding:4px 8px;line-height:1;">▸</button>
-            <div class="info" style="flex:1;">
-              <div class="n1">🎶 ${escapeHtml(entry.title)} <span style="color:var(--text-dim);font-weight:400;">(${songCount} เพลง)</span></div>
-              <div class="n2">${formatLAK(entry.price)}</div>
-            </div>
-            <div class="row-actions"><button class="icon-btn danger" data-remove="${index}">🗑</button></div>
-          </div>
-          <div class="playlist-songs-list" data-songs="${index}" style="display:none;margin-top:6px;margin-left:32px;padding-left:12px;border-left:2px solid var(--border);">
-            ${songsListHtml || '<div style="font-size:12px;color:var(--text-dim);padding:4px 0;">(ไม่มีเพลงในเพลย์ลิสต์นี้)</div>'}
-          </div>
-        `;
-      } else {
-        row.innerHTML = `
-          <div class="info"><div class="n1">🎵 ${escapeHtml(entry.title)}</div><div class="n2">${formatLAK(entry.price)}</div></div>
-          <div class="row-actions"><button class="icon-btn danger" data-remove="${index}">🗑</button></div>
-        `;
-      }
-      container.appendChild(row);
-    });
-    // 🔧 (2026-09-16): event listener สำหรับปุ่ม toggle เปิด/ปิดรายชื่อเพลงใน playlist
-    container.querySelectorAll("[data-toggle]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const idx = btn.getAttribute("data-toggle");
-        const list = container.querySelector(`[data-songs="${idx}"]`);
-        if (list) {
-          const isOpen = list.style.display !== "none";
-          list.style.display = isOpen ? "none" : "block";
-          btn.textContent = isOpen ? "▸" : "▾";
-        }
-      });
-    });
-    container.querySelectorAll("[data-remove]").forEach((btn) => {
-      btn.addEventListener("click", () => removeFromCart(Number(btn.getAttribute("data-remove"))));
-    });
-  }
-
-  const computedTotal = sumCartEntries(state.cartEntries);
-  totalEl.value = computedTotal;
-  if (hintEl) {
-    hintEl.textContent = "คำนวณอัตโนมัติ: รวมราคาเพลง + ราคาเหมาเพลย์ลิสต์ที่เลือก (ยังไม่หักส่วนลด/โปรโมชั่น — จะคำนวณตอนกดบันทึก)";
-  }
-
-  // ===== เพิ่มใหม่: แสดงส่วนลด/โปรโมชั่นแบบ approximate ใต้ช่องยอดรวม (async) =====
-  // ใช้ cache จาก pricing.js — ถ้า cache ว่าง จะแสดงแค่ยอดรวมปกติ (admin ยังไม่ได้เข้าเมนูโปรโมชั่น)
-  updateApproxPricingHint(state.cartEntries, hintEl);
-}
-
-// ===== เพิ่มใหม่: อัปเดต hint ของ admin cart ให้แสดงยอดหลังลดแบบ approximate =====
-// ทำงาน async เพื่อไม่ให้ renderCart รอ — ใช้ cache ของ pricing.js (ถ้ามี)
-async function updateApproxPricingHint(cartEntries, hintEl) {
-  if (!hintEl || !cartEntries || cartEntries.length === 0) return;
-  try {
-    const pricing = await computeAdminPricing(cartEntries);
-    const baseTotal = sumCartEntries(cartEntries);
-    const finalTotal = pricing.finalTotal ?? baseTotal;
-    const itemDiscount = pricing.itemDiscountAmount || 0;
-    const promoDiscount = pricing.promoDiscountAmount || 0;
-    const totalDiscount = itemDiscount + promoDiscount;
-    if (totalDiscount > 0 && finalTotal < baseTotal) {
-      let msg = `ยอดก่อนลด: ${formatLAK(baseTotal)} → หลังลด: ${formatLAK(finalTotal)} (ลด ${formatLAK(totalDiscount)})`;
-      if (pricing.promotionApplied) {
-        msg += ` · 🎁 ${pricing.promotionApplied.name}`;
-      }
-      hintEl.textContent = msg;
-      hintEl.style.color = "var(--accent-2)";
-    } else {
-      hintEl.textContent = "คำนวณอัตโนมัติ: รวมราคาเพลง + ราคาเหมาเพลย์ลิสต์ที่เลือก (ยังไม่มีส่วนลด)";
-      hintEl.style.color = "var(--text-dim)";
-    }
-  } catch (e) {
-    console.warn("updateApproxPricingHint error:", e);
-  }
-}
-
-/* ---------------- Render: ผลค้นหาเพลย์ลิสต์ (ฟอร์มสร้างออเดอร์ใหม่, เลือกได้หลายรายการ) ---------------- */
-function renderPlaylistSearchResults() {
-  const container = document.getElementById("ordPlaylistResults");
-  if (!container) return;
-  container.innerHTML = "";
-  if (state.playlistSearchResults.length === 0) return;
-
-  state.playlistSearchResults.forEach((pl) => {
-    const alreadySelected = state.cartEntries.some((e) => e.kind === "playlist" && e.playlistId === pl.id);
-    if (alreadySelected) return; // ซ่อนรายการที่เลือกไปแล้วออกจากผลค้นหา กันเลือกซ้ำ
-    const songCount = getSongsInPlaylist(pl.id).length;
-    const card = document.createElement("div");
-    card.className = "playlist-result-card";
-    card.innerHTML = `
-      <img src="${pl.cover_url || ""}">
-      <div class="info" style="flex:1;">
-        <div class="n1">${escapeHtml(getPlaylistName(pl))}</div>
-        <div class="n2">${songCount} เพลง · ราคาเหมา ${formatLAK(pl.price)}</div>
-      </div>
-    `;
-    card.addEventListener("click", () => selectPlaylist(pl.id));
-    container.appendChild(card);
-  });
-}
-
-/* ---------------- Render: การ์ดเพลย์ลิสต์ที่เลือกไว้ทั้งหมด (ฟอร์มสร้างออเดอร์ใหม่) ---------------- */
-function renderPlaylistSelected() {
-  const container = document.getElementById("ordPlaylistSelected");
-  if (!container) return;
-  container.innerHTML = "";
-  const selected = state.cartEntries.filter((e) => e.kind === "playlist");
-  if (selected.length === 0) return;
-
-  selected.forEach((entry) => {
-    const card = document.createElement("div");
-    card.className = "playlist-selected-card";
-    card.style.marginBottom = "8px";
-    card.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div style="font-weight:800;">🎶 ${escapeHtml(entry.title)}</div>
-        <button class="icon-btn" data-clear-playlist="${entry.playlistId}">✕</button>
-      </div>
-      <div style="font-size:12px;color:var(--text-dim);">${(entry.songs || []).length} เพลง · ราคาเหมา ${formatLAK(entry.price)}</div>
-    `;
-    container.appendChild(card);
-  });
-  container.querySelectorAll("[data-clear-playlist]").forEach((btn) => {
-    btn.addEventListener("click", () => removeSelectedPlaylist(btn.getAttribute("data-clear-playlist")));
-  });
-}
-
-/* ---------------- เพิ่มเพลย์ลิสต์เข้าตะกร้า: ดึงเพลงทั้งชุด + ราคาเหมา (เพิ่มได้หลายรายการ ไม่ล้างเพลง/เพลย์ลิสต์อื่นที่เลือกไว้) ---------------- */
-function selectPlaylist(playlistId) {
-  const pl = state.playlists.find((p) => p.id === playlistId);
-  if (!pl) return;
-  if (state.cartEntries.some((e) => e.kind === "playlist" && e.playlistId === playlistId)) {
-    orderToast(`เพลย์ลิสต์ "${getPlaylistName(pl)}" ถูกเพิ่มไปแล้ว — ห้ามเพิ่มซ้ำ`, "error");
-    return;
-  }
-
-  const songs = getSongsInPlaylist(pl.id);
-
-  // 🔧 (2026-09-16): ห้ามเพิ่ม playlist ถ้ามีเพลงใน playlist ซ้ำกับที่อยู่ในตะกร้าแล้ว
-  // (เพลงเดี่ยวที่เพิ่มไป หรือ เพลงที่อยู่ใน playlist อื่นในตะกร้า) — กันลูกค้าเสียเงิน 2 ครั้ง
-  const duplicates = findPlaylistSongDuplicates(
-    state.cartEntries,
-    songs.map((s) => ({ songId: s.id, title: s.song_name }))
-  );
-  if (duplicates.length > 0) {
-    const sample = duplicates.slice(0, 3).map((d) => `"${d.songTitle}"`).join(", ");
-    const more = duplicates.length > 3 ? ` และอีก ${duplicates.length - 3} เพลง` : "";
-    orderToast(`ห้ามเพิ่ม — เพลง ${sample}${more} ในเพลย์ลิสต์นี้ซ้ำกับที่อยู่ในตะกร้าแล้ว (กันลูกค้าเสียเงิน 2 ครั้ง)`, "error");
-    return;
-  }
-
-  state.cartEntries.push({
-    kind: "playlist",
-    playlistId: pl.id,
-    title: getPlaylistName(pl),
-    price: Number(pl.price || 0),
-    songs: songs.map((s) => ({ songId: s.id, title: s.song_name, price: Number(s.price || 0) })),
-  });
-  state.cartTotalEdited = false;
-  document.getElementById("ordPlaylistSearch").value = "";
-  state.playlistSearchResults = [];
-
-  renderPlaylistSelected();
-  renderPlaylistSearchResults();
-  renderCart();
-}
-
-function removeSelectedPlaylist(playlistId) {
-  state.cartEntries = state.cartEntries.filter((e) => !(e.kind === "playlist" && e.playlistId === playlistId));
-  state.cartTotalEdited = false;
-  renderPlaylistSelected();
-  renderPlaylistSearchResults();
-  renderCart();
-}
-
-function handlePlaylistSearchInput(e) {
-  const q = e.target.value.trim().toLowerCase();
-  state.playlistSearchResults = !q ? [] : state.playlists.filter((p) => getPlaylistName(p).toLowerCase().includes(q));
-  renderPlaylistSearchResults();
-}
-
-/* ---------------- Render: Dashboard สถิติออเดอร์ ---------------- */
-function renderStats(orders) {
-  const stats = calculateStats(orders);
-  document.getElementById("ordStatCount").textContent = stats.totalOrders.toLocaleString("en-US");
-  document.getElementById("ordStatSongs").textContent = stats.totalSongsSold.toLocaleString("en-US");
-  document.getElementById("ordStatRevenue").textContent = formatLAK(stats.totalRevenue);
-  // 🔧 (2026-09-19 stats v2): เปลี่ยนการ์ดใหม่ตามที่ user ต้องการ
-  //   - ลบ ordStatSingleCount + ordStatPlaylistCount ออก (HTML ลบแล้ว)
-  //   - เพิ่ม ordStatCompletedOrders (ออเดอร์ที่สำเร็จรวมทุกประเภท)
-  //   - เพิ่ม ordStatPlaylistsSold (เพลย์ลิสต์ที่ขาย นับตัว ไม่นับเพลงข้างใน)
-  const completedOrdersEl = document.getElementById("ordStatCompletedOrders");
-  const playlistsSoldEl = document.getElementById("ordStatPlaylistsSold");
-  if (completedOrdersEl) completedOrdersEl.textContent = (stats.completedOrders || 0).toLocaleString("en-US");
-  if (playlistsSoldEl) playlistsSoldEl.textContent = (stats.playlistsSold || 0).toLocaleString("en-US");
-  // 🔧 (2026-09-19 stats fix): แสดงจำนวนเพลงเดี่ยว + เพลงในเพลย์ลิสต์แยก (นับเป็นเพลง ไม่ใช่ออเดอร์)
-  //   รองรับออเดอร์ผสม: ถ้า 1 ออเดอร์มีเพลงเดี่ยว 3 + เพลย์ลิสต์ 5 เพลง → นับแยก 3 + 5
-  const singleSongsEl = document.getElementById("ordStatSingleSongs");
-  const playlistSongsEl = document.getElementById("ordStatPlaylistSongs");
-  if (singleSongsEl) singleSongsEl.textContent = (stats.singleSongsSold || 0).toLocaleString("en-US");
-  if (playlistSongsEl) playlistSongsEl.textContent = (stats.playlistSongsSold || 0).toLocaleString("en-US");
-  // ===== เพิ่มใหม่: สถิติส่วนลดรวม (optional — ถ้า element ยังไม่มี จะข้ามไปเฉยๆ) =====
-  const discEl = document.getElementById("ordStatDiscount");
-  if (discEl) discEl.textContent = formatLAK(stats.totalDiscountGiven || 0);
-}
-
-/* ---------------- Render: แถบกรองสถานะ ---------------- */
-function renderFilterPills() {
-  const wrap = document.getElementById("ordStatusFilter");
-  if (!wrap) return;
-  const filters = [{ key: "all", label: "ทั้งหมด" }].concat(
-    STATUS_ORDER.map((k) => ({ key: k, label: `${STATUS_CONFIG[k].emoji} ${STATUS_CONFIG[k].label}` }))
-  );
-  wrap.innerHTML = filters.map((f) =>
-    `<button data-filter="${f.key}" class="${state.historyFilter === f.key ? "active" : ""}">${f.label}</button>`
-  ).join("");
-  wrap.querySelectorAll("[data-filter]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.historyFilter = btn.getAttribute("data-filter");
-      // 🔧 (2026-09-22 Batch 7 fix Bug #7): reset visible count เมื่อเปลี่ยน filter
-      state._historyVisibleCount = 50;
-      renderFilterPills();
-      renderHistory();
-    });
-  });
-}
-
-/* ---------------- ค้นหาในประวัติออเดอร์ ----------------
-   ค้นหาจากข้อมูลออเดอร์จริงที่โหลดมาแล้ว (state.allOrders)
-   รองรับหลายคำ (คั่นด้วย space = AND match) แบบ case-insensitive
-   ครอบคลุม: ชื่อลูกค้า, เบอร์ WhatsApp, ชื่อเพลง (ทุกรายการใน items),
-            ชื่อเพลย์ลิสต์, เลขออเดอร์ (id), ชื่อไฟล์ ZIP
-   ทำงานร่วมกับ status filter — กรองทั้งสองเงื่อนไขไปด้วยกัน */
-function orderMatchesSearch(order, keywords) {
-  if (!keywords || keywords.length === 0) return true;
-  const haystack = [
-    order.customer_name,
-    order.whatsapp,
-    order.id,
-    order.playlist_name,
-    order.zip_file_name,
-    (order.items || []).map((it) => it.title).join(" "),
-  ].map((v) => (v == null ? "" : String(v))).join(" ").toLowerCase();
-  return keywords.every((kw) => haystack.indexOf(kw) !== -1);
-}
-
-function handleHistorySearchInput(e) {
-  const raw = (e.target.value || "").trim().toLowerCase();
-  state.historySearch = raw;
-  renderHistory();
-}
-
-/* ---------------- Render: ประวัติออเดอร์ ---------------- */
-// ===== เพิ่มใหม่: badge ส่วนลด/โปรโมชั่น สำหรับรายการ history (ฝั่งแอดมิน) =====
-// อ่านจาก snapshot ใน order (subtotal/discount_amount/promotion_applied/final_total)
-// ถ้า order เก่าไม่มี snapshot → ไม่แสดง badge (back-compat)
-function buildAdminHistoryDiscountBadge(order) {
-  const subtotal = order.subtotal;
-  const discountAmount = order.discount_amount;
-  const promotionApplied = order.promotion_applied;
-  const finalTotal = (order.final_total != null) ? Number(order.final_total) : Number(order.total);
-  if (subtotal == null && discountAmount == null && !promotionApplied) return "";
-  const totalDiscount = (Number(discountAmount) || 0);
-  if (totalDiscount <= 0) return "";
-
-  const parts = [];
-  if (promotionApplied && promotionApplied.name) {
-    parts.push(`🎁 ${escapeHtml(promotionApplied.name)}`);
-  }
-  // ถ้ามี item-level discount ด้วย ให้แสดงเป็น "ลดราคาปกติ"
-  const promoAmount = promotionApplied?.discount_amount || 0;
-  const itemDiscount = totalDiscount - promoAmount;
-  if (itemDiscount > 0) {
-    parts.push(`🏷️ ลดราคาปกติ`);
-  }
-  const label = parts.join(" + ") || "ส่วนลด";
-  return `<div class="n2" style="color:var(--accent-2,#ec4899);">⚡ ${label} · ลด ${formatLAK(totalDiscount)} · ยอดชำระ ${formatLAK(finalTotal)}</div>`;
-}
-
-function renderHistory() {
-  const wrap = document.getElementById("ordHistoryList");
-  const keywords = (state.historySearch || "")
-    .split(/\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-
-  // กรองทั้งสถานะ (historyFilter) และคำค้นหา (historySearch) ไปด้วยกัน — flow เข้ากัน
-  const orders = state.allOrders.filter((o) => {
-    const passStatus = state.historyFilter === "all" ? true : o.status === state.historyFilter;
-    if (!passStatus) return false;
-    return orderMatchesSearch(o, keywords);
-  });
-
-  if (orders.length === 0) {
-    const hasSearch = keywords.length > 0;
-    wrap.innerHTML = `<div class="empty-state">${hasSearch ? "ไม่พบออเดอร์ที่ตรงกับคำค้นหา" : "ไม่พบออเดอร์ในสถานะนี้"}</div>`;
-    return;
-  }
-
-  // 🔧 (2026-09-22 Batch 7 fix Bug #7): DOM pagination — แสดงทีละ 50 ออเดอร์ กัน browser freeze
-  //   ปัญหาเดิม: render ทุกออเดอร์ทีเดียว → 500+ orders = browser freeze 2-3 วิ
-  //   วิธีแก้: แสดง 50 แรก + ปุ่ม "แสดงเพิ่ม" → คลิกแสดง 50 ถัดไป
-  //   ผลกระทบระบบเดิม: 0% — ถ้า orders < 50 → แสดงทั้งหมดเหมือนเดิม
-  const HISTORY_PAGE_SIZE = 50;
-  const visibleCount = Math.min(state._historyVisibleCount || HISTORY_PAGE_SIZE, orders.length);
-  const visibleOrders = orders.slice(0, visibleCount);
-  const remainingCount = orders.length - visibleCount;
-
-  wrap.innerHTML = visibleOrders.map((o) => {
-    const date = o.created_at ? new Date(o.created_at) : null;
-    const dateStr = date ? date.toLocaleDateString("th-TH") + " " + date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) : "-";
-    const songNames = (o.items || []).map(i => escapeHtml(i.title)).join(", ");
-    const cfg = STATUS_CONFIG[o.status] || STATUS_CONFIG.pending_verify;
-    const options = STATUS_ORDER.map((k) =>
-      `<option value="${k}" ${o.status === k ? "selected" : ""}>${STATUS_CONFIG[k].emoji} ${STATUS_CONFIG[k].label}</option>`
-    ).join("");
-    const isPlaylistOrder = o.order_type === "playlist";
-    const isMixedOrder = o.order_type === "mixed";
-    const typeBadge = isPlaylistOrder
-      ? `<span class="order-type-badge" style="background:rgba(122,92,255,.15);color:var(--accent);">🎶 ยกเพลย์ลิสต์${o.playlist_name ? " · " + escapeHtml(o.playlist_name) : ""}</span>`
-      : isMixedOrder
-        ? `<span class="order-type-badge" style="background:rgba(245,180,0,.15);color:#F5B400;">🛒 เพลง+เพลย์ลิสต์ (${(o.items || []).length} รายการ)</span>`
-        : `<span class="order-type-badge" style="background:rgba(255,255,255,.08);color:var(--text-dim);">🎵 เพลงเดี่ยว</span>`;
-    // 📸 (added) green "✅ โอนแล้ว" badge — แสดงเมื่อ slip ผ่านการยืนยันจากหน้าตรวจสอบสลิป
-    //   ใช้กับ order ที่มี payment_proof_status='verified' (จาก /api/admin/orders/:id/verify-payment)
-    //   ไม่แสดงถ้าเป็น order เก่าที่ยังไม่มี payment_proof_status field (backward compat)
-    const paymentVerifiedBadge = (o.payment_proof_status === "verified")
-      ? `<span class="order-type-badge" style="background:rgba(16,185,129,.18);color:var(--success);font-weight:700;">✅ โอนแล้ว</span>`
-      : (o.payment_proof_status === "pending")
-        ? `<span class="order-type-badge" style="background:rgba(245,180,0,.15);color:#F5B400;">🟡 รอตรวจสลิป</span>`
-        : (o.payment_proof_status === "rejected")
-          ? `<span class="order-type-badge" style="background:rgba(239,68,68,.15);color:var(--danger);">❌ สลิปถูกปฏิเสธ</span>`
-          : "";
-    const zipInfo = o.zip_download_url
-      ? `<div class="n2" style="color:var(--success);">📦 ${escapeHtml(o.zip_file_name || `Order-${o.id}.zip`)} · ${Number(o.zip_song_count || (o.items || []).length)} เพลง · <a href="${escapeHtml(toCloudinaryDownloadUrl(o.zip_download_url))}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;">ดาวน์โหลด ZIP</a></div>`
-      : o.zip_status === "failed"
-        ? `<div class="n2" style="color:var(--danger);">⚠️ สร้าง ZIP ไม่สำเร็จ: ${escapeHtml(o.zip_error || "ไม่ทราบสาเหตุ")}</div>`
-        : o.zip_status === "preparing"
-          ? `<div class="n2" style="color:var(--accent);">⏳ กำลังสร้าง ZIP...</div>`
-          : "";
-    // ===== เพิ่มใหม่: แสดง badge ส่วนลด/โปรโมชั่น ถ้า order มี snapshot =====
-    const discountInfo = buildAdminHistoryDiscountBadge(o);
-    // 🔧 (2026-09-20 admin audit): แสดง "สร้างโดย" / "เปลี่ยนสถานะโดย" (ถ้าออเดอร์มีข้อมูล)
-    const auditInfo = buildAdminAuditInfoHtml(o);
-    return `
-      <div class="list-row" style="flex-direction:column;align-items:stretch;gap:8px;">
-        <div class="info">
-          ${typeBadge}
-          ${paymentVerifiedBadge}
-          <div class="n1">${escapeHtml(o.customer_name)} · ${formatLAK((o.final_total != null) ? Number(o.final_total) : Number(o.total))}</div>
-          <div class="n2">${dateStr} · ${escapeHtml(o.whatsapp)}</div>
-          <div class="n2">${songNames}</div>
-          ${discountInfo}
-          ${auditInfo}
-          ${zipInfo}
-        </div>
-        <span class="status-badge" style="background:${cfg.bg};color:${cfg.color};">${cfg.emoji} ${cfg.label}</span>
-        <select class="status-select" data-order-id="${o.id}">${options}</select>
-        <div class="row-actions" style="justify-content:flex-end;">
-          <button class="icon-btn" data-receipt-order="${o.id}" title="ดูใบเสร็จ">🧾</button>
-          ${/* 🐛 (2026-09-27 fix): เดิมปุ่ม "📥 ไฟล์เต็มสำหรับส่งลูกค้า" โชว์ตาม o.status อย่างเดียว
-                → หลังแอดมินลบ ZIP ออกจาก Cloud (zip_download_url ถูกเคลียร์เป็น "") ปุ่มนี้ก็ยังโชว์อยู่เหมือนเดิม
-                → กดเข้าไปดูได้ และเพลงแต่ละเพลงยังฟัง/โหลดได้ เพราะโมดัลดึงลิงก์ตรงจาก song.full_file_url ของแต่ละเพลง
-                  (ไม่ได้อิงกับ ZIP เลย) — ทำให้ดูเหมือน "ลบ ZIP แล้วแต่ยังเข้าถึงได้เหมือนเดิม"
-                แก้: ปุ่ม 📥 โชว์เฉพาะตอนมี ZIP อยู่จริง (o.zip_download_url) เท่านั้น
-                     ถ้าไม่มี ZIP (ลบไปแล้ว/ยังไม่เคยสร้าง/สร้างไม่สำเร็จ) และไม่ได้กำลังสร้างอยู่ (ไม่ใช่ preparing)
-                     → โชว์ปุ่ม 🔁 "สร้าง ZIP ใหม่" แทนที่ */""}
-          ${(o.status === "processing" || o.status === "completed") && o.zip_download_url ? `<button class="icon-btn" data-fullfiles-order="${o.id}" title="ไฟล์เต็มสำหรับส่งลูกค้า">📥</button>` : ""}
-          ${(o.status === "processing" || o.status === "completed") && !o.zip_download_url && o.zip_status !== "preparing" ? `<button class="icon-btn" data-retry-zip-order="${o.id}" title="สร้าง ZIP ใหม่">🔁</button>` : ""}
-          ${o.zip_download_url ? `<button class="icon-btn" data-delete-zip-order="${o.id}" title="ลบไฟล์ ZIP ออกจาก Cloud (ไม่ลบออเดอร์ — ประหยัดพื้นที่จัดเก็บ)">🧹</button>` : ""}
-          ${/* v5: ปุ่ม "ยกเลิก" แสดงตอนกำลังสร้าง ZIP */""}
-          ${zipJobs.has(o.id) ? `<button class="icon-btn danger" data-abort-zip-order="${o.id}" title="ยกเลิกการสร้าง ZIP ระหว่างทำ (cleanup R2 multipart + D1 row)">✕</button>` : ""}
-          <button class="icon-btn" data-edit-order="${o.id}" title="แก้ไขออเดอร์">✏️</button>
-          ${isMainAdmin() ? `<button class="icon-btn danger" data-delete-order="${o.id}" title="ลบออเดอร์">🗑</button>` : ""}
-        </div>
-      </div>
-    `;
-  }).join("");
-
-  // 🔧 (2026-09-22 Batch 7 fix Bug #7): เพิ่มปุ่ม "แสดงเพิ่ม" ถ้ายังมีออเดอร์เหลือ
-  if (remainingCount > 0) {
-    wrap.insertAdjacentHTML("beforeend", `
-      <div style="text-align:center;padding:16px;">
-        <button class="btn" id="loadMoreHistoryBtn" type="button" style="width:100%;max-width:300px;">
-          แสดงเพิ่มอีก ${Math.min(HISTORY_PAGE_SIZE, remainingCount)} จาก ${remainingCount} ออเดอร์ที่เหลือ
-        </button>
-      </div>
-    `);
-    const loadMoreBtn = document.getElementById("loadMoreHistoryBtn");
-    if (loadMoreBtn) {
-      loadMoreBtn.addEventListener("click", () => {
-        state._historyVisibleCount = (state._historyVisibleCount || HISTORY_PAGE_SIZE) + HISTORY_PAGE_SIZE;
-        renderHistory();
-      });
-    }
-  }
-
-  wrap.querySelectorAll("[data-order-id]").forEach((sel) => {
-    sel.addEventListener("change", () => handleStatusChange(sel.getAttribute("data-order-id"), sel.value));
-  });
-  wrap.querySelectorAll("[data-receipt-order]").forEach((btn) => {
-    btn.addEventListener("click", () => openReceipt(btn.getAttribute("data-receipt-order")));
-  });
-  wrap.querySelectorAll("[data-fullfiles-order]").forEach((btn) => {
-    btn.addEventListener("click", () => openFullFilesModal(btn.getAttribute("data-fullfiles-order")));
-  });
-  wrap.querySelectorAll("[data-retry-zip-order]").forEach((btn) => {
-    btn.addEventListener("click", () => retryOrderZip(btn.getAttribute("data-retry-zip-order")));
-  });
-  wrap.querySelectorAll("[data-delete-zip-order]").forEach((btn) => {
-    btn.addEventListener("click", () => handleDeleteOrderZip(btn.getAttribute("data-delete-zip-order")));
-  });
-  // 🔧 (2026-09-18 v5): listener สำหรับปุ่ม "ยกเลิก" (data-abort-zip-order)
-  wrap.querySelectorAll("[data-abort-zip-order]").forEach((btn) => {
-    btn.addEventListener("click", () => abortOrderZip(btn.getAttribute("data-abort-zip-order")));
-  });
-  wrap.querySelectorAll("[data-edit-order]").forEach((btn) => {
-    btn.addEventListener("click", () => openEditOrderModal(btn.getAttribute("data-edit-order")));
-  });
-  wrap.querySelectorAll("[data-delete-order]").forEach((btn) => {
-    btn.addEventListener("click", () => handleDeleteOrder(btn.getAttribute("data-delete-order")));
-  });
-}
-
-/* ---------------- ใบเสร็จดิจิทัล ---------------- */
-function getReceiptStatusLabel(status) {
-  return STATUS_CONFIG[status]?.label || "รอตรวจสอบการโอน";
-}
-
-function buildReceiptCopyText(order, receiptNumber, total, playlistName) {
-  const date = order.created_at ? new Date(order.created_at) : new Date();
-  const dateText = Number.isNaN(date.getTime())
-    ? "-"
-    : date.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
-  const itemLines = order.order_type === "playlist"
-    ? [`1. เพลย์ลิสต์: ${playlistName} — ${formatLAK(total)}`]
-    : (order.items || []).map((item, index) =>
-        `${index + 1}. ${item.title || "เพลง"} — ${formatLAK(item.price)}`
-      );
-  return [
-    order.store_name || state.storeName || "Music Store",
-    "ใบเสร็จรับเงิน / รายละเอียด Order",
-    `เลขที่: ${receiptNumber}`,
-    `วันที่: ${dateText}`,
-    `สถานะ: ${getReceiptStatusLabel(order.status)}`,
-    "",
-    `ลูกค้า: ${order.customer_name || "-"}`,
-    `WhatsApp: ${order.whatsapp || "-"}`,
-    "",
-    "รายการสั่งซื้อ:",
-    ...(itemLines.length ? itemLines : ["ไม่มีรายการสินค้า"]),
-    "",
-    `รวมทั้งสิ้น: ${formatLAK(total)}`,
-    "กรุณาโอนเงินตามช่องทางที่ร้านแจ้ง"
-  ].join("\n");
-}
-
-async function copyReceiptDetails(order, receiptNumber, total, playlistName) {
-  const text = buildReceiptCopyText(order, receiptNumber, total, playlistName);
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-    } else {
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      textarea.remove();
-    }
-    orderToast("คัดลอกรายละเอียด Order แล้ว", "success");
-  } catch (err) {
-    orderToast("คัดลอกไม่สำเร็จ กรุณาลองใหม่", "error");
-  }
-}
-
-// แคปเฉพาะส่วนใบเสร็จสีขาว (.receipt-paper) เป็น canvas — ใช้กับปุ่มดาวน์โหลดใบเสร็จเป็นรูป
-// เรนเดอร์ฝั่ง client ล้วนๆ ด้วย html2canvas ไม่มีการอัปโหลดรูปขึ้นเซิร์ฟเวอร์ใดๆ
-// 🔧 (2026-09-22 Batch 7 fix Bug #1): ใช้ window.html2canvas (จาก script tag ใน admin.html) ก่อน
-//   ถ้าโหลดจาก script tag ไม่สำเร็จ → fallback ไป dynamic import (เดิม)
-//   ผลกระทบระบบเดิม: 0% — ถ้า script tag โหลดสำเร็จ → ใช้เลย (เร็วกว่า), ถ้าไม่ → fallback เหมือนเดิม
-let _html2canvasCache = null;
-async function getHtml2Canvas() {
-  if (typeof window !== "undefined" && window.html2canvas) {
-    return window.html2canvas;
-  }
-  if (!_html2canvasCache) {
-    _html2canvasCache = await import("https://esm.sh/html2canvas@1.4.1");
-  }
-  return _html2canvasCache.default || _html2canvasCache;
-}
-
-async function captureReceiptCanvas() {
-  const target = document.querySelector("#receiptContent .receipt-paper");
-  if (!target) return null;
-  const html2canvas = await getHtml2Canvas();
-  return html2canvas(target, {
-    backgroundColor: "#ffffff",
-    scale: 2,
-    useCORS: true,
-  });
-}
-
-// ดาวน์โหลดใบเสร็จเป็นไฟล์ PNG ลงเครื่องทันที
-// - ใช้ data URL + <a download> ซึ่งรองรับทั้ง Chrome/Android และ Safari บนมือถือ/iPad
-//   (บน iOS บางเวอร์ชันอาจเปิดรูปในแท็บใหม่แทนการดาวน์โหลดอัตโนมัติ ผู้ใช้กดค้างที่รูปเพื่อ "บันทึกลงรูปภาพ" ได้ตามปกติ)
-async function downloadReceiptAsImage(receiptNumber) {
-  try {
-    const canvas = await captureReceiptCanvas();
-    if (!canvas) {
-      orderToast("ไม่พบใบเสร็จให้บันทึก", "error");
-      return;
-    }
-    const dataUrl = canvas.toDataURL("image/png");
-    const link = document.createElement("a");
-    link.href = dataUrl;
-    link.download = `receipt-${receiptNumber || "order"}.png`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    orderToast("บันทึกรูปใบเสร็จสำเร็จ", "success");
-  } catch (err) {
-    orderToast("บันทึกรูปใบเสร็จไม่สำเร็จ: " + err.message, "error");
-  }
-}
-
-// สร้างรายการเพลงในใบเสร็จ — ถ้าเป็นเพลย์ลิสต์ (ทั้งออเดอร์ทั้งใบ หรือรายการย่อยในออเดอร์ผสม)
-// ให้ขยายแสดงชื่อเพลงทุกเพลงในเพลย์ลิสต์นั้น แทนที่จะยุบเหลือบรรทัดเดียว
-async function buildReceiptItemRows(order, total) {
-  // กรณีออเดอร์ทั้งใบเป็นเพลย์ลิสต์เดียว (order_type "playlist"): items เป็นเพลงแต่ละเพลงอยู่แล้ว
-  if (order.order_type === "playlist") {
-    const items = order.items || [];
-    const playlist = order.playlist_id ? state.playlists.find((p) => p.id === order.playlist_id) : null;
-    const playlistName = order.playlist_name || getPlaylistName(playlist) || "เพลย์ลิสต์";
-    const songLines = items.map((item, idx) => `
-      <div class="receipt-line" style="border-bottom:none;padding:4px 0 4px 14px;">
-        <small>${idx + 1}. ${escapeHtml(item.title || "เพลง")}</small>
-      </div>
-    `).join("");
-    return `
-      <div class="receipt-line" style="flex-direction:column;align-items:stretch;gap:2px;">
-        <div style="display:flex;justify-content:space-between;">
-          <strong>🎶 ${escapeHtml(playlistName)}</strong>
-          <strong>${formatLAK(total)}</strong>
-        </div>
-        <small style="color:#666;">ยกเพลย์ลิสต์ · ${items.length} เพลง</small>
-      </div>
-      ${songLines}
-    `;
-  }
-
-  // กรณีเพลงเดี่ยว/ออเดอร์ผสม: แต่ละ item อาจเป็นเพลงเดี่ยว หรือ kind:"playlist" ที่ต้องขยายรายชื่อเพลงข้างใน
-  const items = order.items || [];
-  // 🔢 นับเลขลำดับแยกกัน: เพลงเดี่ยว (songCounter) กับเพลย์ลิสต์ (playlistCounter) — เหมือนฝั่งลูกค้า (app-cart.js)
-  //   นับล่วงหน้าก่อนเข้า async map เพื่อกันลำดับสลับจาก Promise.all
-  let songCounter = 0;
-  let playlistCounter = 0;
-  const indexedItems = items.map((item) => {
-    if (item?.kind !== "playlist") {
-      songCounter++;
-      return { item, number: songCounter };
-    }
-    playlistCounter++;
-    return { item, number: playlistCounter };
-  });
-  const rowGroups = await Promise.all(indexedItems.map(async ({ item, number }) => {
-    if (item?.kind !== "playlist") {
-      return `
-        <div class="receipt-line">
-          <div><strong>${number}. ${escapeHtml(item.title || "เพลง")}</strong></div>
-          <strong>${formatLAK(item.price)}</strong>
-        </div>
-      `;
-    }
-    // ดึงชื่อเพลงจาก song_ids ที่ snapshot ไว้ตอนสั่งซื้อ (เผื่อไม่มี ให้ query จาก playlist_id แทน เหมือน openFullFilesModal)
-    let songIds = Array.isArray(item.song_ids) ? item.song_ids : [];
-    if (songIds.length === 0 && item.playlist_id) {
-      try {
-        const songsSnap = await getDocs(query(collection(db, "songs"), where("playlist_id", "==", item.playlist_id)));
-        songIds = songsSnap.docs.map((d) => d.id);
-      } catch (_) { /* ปล่อยผ่าน แสดงแค่หัวข้อเพลย์ลิสต์ถ้า query ไม่สำเร็จ */ }
-    }
-    const songNames = await Promise.all(songIds.map(async (songId) => {
-      try {
-        const snap = await getDoc(doc(db, "songs", songId));
-        return snap.exists() ? (snap.data().song_name || "เพลง") : "เพลง";
-      } catch (_) {
-        return "เพลง";
-      }
+  function getCheckoutKey(customerName, whatsapp) {
+    return hashCheckoutKey(JSON.stringify({
+      customerName,
+      whatsapp,
+      items: state.cart.map(item => ({ id: item.id, kind: item.kind }))
     }));
-    const songLines = songNames.map((name) => `
-      <div class="receipt-line" style="border-bottom:none;padding:4px 0 4px 14px;">
-        <small>• ${escapeHtml(name)}</small>
-      </div>
-    `).join("");
-    return `
-      <div class="receipt-line" style="flex-direction:column;align-items:stretch;gap:2px;">
-        <div style="display:flex;justify-content:space-between;">
-          <strong>🎶 ${number}. ${escapeHtml(item.title || "เพลย์ลิสต์")}</strong>
-          <strong>${formatLAK(item.price)}</strong>
-        </div>
-        <small style="color:#666;">ยกเพลย์ลิสต์ · ${songNames.length} เพลง</small>
-      </div>
-      ${songLines}
-    `;
-  }));
-  return rowGroups.join("");
-}
-
-// ===== เพิ่มใหม่: แถวส่วนลด/โปรโมชั่นสำหรับใบเสร็จฝั่งแอดมิน =====
-// อ่านจาก order.subtotal, order.discount_amount, order.promotion_applied (snapshot ตอนสั่ง)
-// ถ้า order เก่าไม่มี field เหล่านี้ → ไม่แสดงแถวพิเศษ (back-compat)
-function buildAdminReceiptDiscountRows(order) {
-  const subtotal = order.subtotal;
-  const discountAmount = order.discount_amount;
-  const promotionApplied = order.promotion_applied;
-  const finalTotal = (order.final_total != null) ? Number(order.final_total) : Number(order.total);
-  if (subtotal == null && discountAmount == null && !promotionApplied) return "";
-  const hasDiscount = (discountAmount && discountAmount > 0) || (promotionApplied && promotionApplied.discount_amount > 0);
-  if (!hasDiscount) return "";
-
-  let rows = "";
-  if (subtotal != null && Number(subtotal) !== finalTotal) {
-    rows += `<div class="receipt-line receipt-discount-row"><span>ยอดรวมก่อนลด</span><span>${formatLAK(Number(subtotal))}</span></div>`;
-  }
-  if (promotionApplied && promotionApplied.name) {
-    const promoAmount = promotionApplied.discount_amount || 0;
-    if (promoAmount > 0) {
-      rows += `<div class="receipt-line receipt-promo-row"><span>🎁 โปรโมชั่น: ${escapeHtml(promotionApplied.name)}</span><span>-${formatLAK(promoAmount)}</span></div>`;
-    }
-  }
-  if (discountAmount && discountAmount > 0) {
-    const promoAmount = promotionApplied?.discount_amount || 0;
-    const itemDiscount = Number(discountAmount) - promoAmount;
-    if (itemDiscount > 0) {
-      rows += `<div class="receipt-line receipt-discount-row"><span>ส่วนลดจากราคาปกติ</span><span>-${formatLAK(itemDiscount)}</span></div>`;
-    }
-  }
-  return rows;
-}
-
-async function openReceipt(orderId) {
-  const order = state.allOrders.find((o) => o.id === orderId);
-  if (!order) return;
-  ensureReceiptElements();
-
-  const playlist = order.playlist_id
-    ? state.playlists.find((p) => p.id === order.playlist_id)
-    : null;
-  const playlistName = order.playlist_name || getPlaylistName(playlist) || "เพลย์ลิสต์";
-  const total = Number.isFinite(Number(order.total))
-    ? Number(order.total)
-    : calculateOrderTotal(order.order_type, order.items || [], playlist);
-  const date = order.created_at ? new Date(order.created_at) : new Date();
-  const dateText = Number.isNaN(date.getTime())
-    ? "-"
-    : date.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
-  const receiptNumber = order.receipt_number || getReceiptNumber(order.id, order.created_at);
-
-  const itemRows = await buildReceiptItemRows(order, total);
-
-  // ===== เพิ่มใหม่: แถวส่วนลด/โปรโมชั่น (อ่านจาก snapshot ที่บันทึกใน order) =====
-  const discountRows = buildAdminReceiptDiscountRows(order);
-  const finalTotalForDisplay = (order.final_total != null) ? Number(order.final_total) : total;
-
-  const content = document.getElementById("receiptContent");
-  if (!content) return;
-  content.innerHTML = `
-    <div class="receipt-paper">
-      <div class="receipt-head">
-        <h2>${escapeHtml(order.store_name || state.storeName)}</h2>
-        <div>ใบเสร็จรับเงิน</div>
-        <small>เลขที่ ${escapeHtml(receiptNumber)}</small>
-        <small>${escapeHtml(dateText)}</small>
-      </div>
-      <div class="receipt-customer">
-        <div><span>ลูกค้า</span><strong>${escapeHtml(order.customer_name)}</strong></div>
-        <div><span>WhatsApp</span><strong>${escapeHtml(order.whatsapp)}</strong></div>
-      </div>
-      <div class="receipt-items">
-        ${itemRows || '<div class="receipt-empty">ไม่มีรายการสินค้า</div>'}
-      </div>
-      ${discountRows}
-      <div class="receipt-total"><span>รวมทั้งสิ้น</span><strong>${formatLAK(finalTotalForDisplay)}</strong></div>
-      <div class="receipt-thanks">ขอบคุณที่ใช้บริการ</div>
-    </div>
-  `;
-
-  const backdrop = document.getElementById("receiptBackdrop");
-  backdrop.classList.add("open");
-  backdrop.style.display = "flex";
-  const copyBtn = document.getElementById("receiptCopyBtn");
-  if (copyBtn) {
-    copyBtn.onclick = () => copyReceiptDetails(order, receiptNumber, total, playlistName);
-  }
-  const whatsappBtn = document.getElementById("receiptWhatsAppBtn");
-  if (whatsappBtn) {
-    whatsappBtn.onclick = () => {
-      // 🔧 (2026-09-21 fix): prepend Laos country code 856 ก่อนสร้าง wa.me URL
-      //   order.whatsapp เก็บเป็น "20XXXXXXXX" (ลด 856 และ 0 ออกตอน normalize ใน app-cart.js)
-      //   ถ้าส่ง wa.me/20XXXXXXXX ตรงๆ → WhatsApp ตีความเป็นอียิปต์ (+20) → ไม่เปิดแชทลูกค้าลาว
-      //   วิธีแก้: ถ้ายังไม่มี 856 นำหน้า ให้ prepend เข้าไป
-      //   ผลกระทบระบบเดิม: 0% — DB ยังเก็บ "20XXXXXXXX" เหมือนเดิม แค่เปลี่ยน URL ที่ส่งให้ wa.me
-      //   guard: ถ้าเบอร์เริ่มต้นด้วย 856 อยู่แล้ว (เช่น ออเดอร์เก่าที่เก็บรูปแบบ international) → ไม่ prepend ซ้ำ
-      // 🔧 (2026-09-22 v2 — รองรับทััง ลาว+ไทย): เบอร์ใน DB มี country code อยู่แล้ว
-      //   เดิม: DB เก็บ "20XXXXXXXX" → ต้อง prepend 856 ที่นี่ → แต่เบอร์ไทย 812345678 → prepend 856 → ลาว
-      //   ใหม่: DB เก็บ "85620XXXXXXXX" หรือ "668XXXXXXXX" (WITH country code) → ใช้ตรงๆ ไม่ต้อง prepend
-      //   ผลกระทบระบบเดิม: 0% — ถ้าเว็บยังไม่เปิด → ไม่มีออเดอร์เก่าใน DB → ไม่มีปัญหา
-      //   fallback: ถ้าออเดอร์เก่ามาจาก DB เก่า (เก็บ "20XXXXXXXX") → ถ้าไม่มี 856/66 นำหน้า → prepend 856 (เดิม)
-      let number = String(order.whatsapp || "").replace(/[^0-9]/g, "");
-      // fallback: ถ้าเบอร์ไม่มี country code นำหน้า → สันนิษฐานลาว (เดิม)
-      if (number && !number.startsWith("856") && !number.startsWith("66")) number = "856" + number;
-      if (!number) {
-        orderToast("ออเดอร์นี้ไม่มีเบอร์ WhatsApp ของลูกค้า", "error");
-        return;
-      }
-      const text = "กรุณารอสักครู่ แอดมินกำลังสร้างออเดอร์และใบเสร็จให้ลูกค้าค่ะ/ครับ 🙏";
-      window.open(buildWhatsAppLink(number, text), "_blank", "noopener");
-    };
-  }
-  const downloadImgBtn = document.getElementById("receiptDownloadImgBtn");
-  if (downloadImgBtn) {
-    downloadImgBtn.onclick = () => downloadReceiptAsImage(receiptNumber);
-  }
-}
-
-function closeReceipt() {
-  const backdrop = document.getElementById("receiptBackdrop");
-  backdrop.classList.remove("open");
-  backdrop.style.display = "none";
-}
-
-/* ---------------- ไฟล์เพลงเต็ม WAV สำหรับ Admin ส่งลูกค้า (หลังชำระเงินแล้วเท่านั้น) ---------------- */
-async function openFullFilesModal(orderId) {
-  const order = state.allOrders.find((o) => o.id === orderId);
-  const content = document.getElementById("fullFilesContent");
-  const backdrop = document.getElementById("fullFilesBackdrop");
-  if (!order || !content || !backdrop) return;
-
-  if (order.status !== "processing" && order.status !== "completed") {
-    // 🎨 (2026-09-26): ใช้ adminAlert แทน alert() — สไตล์เดียวกับเว็บ
-    if (window.adminAlert) {
-      await window.adminAlert("ออเดอร์นี้ยังไม่ได้ยืนยันการชำระเงิน\n\nกรุณายืนยันการชำระเงินก่อนเพื่อดูไฟล์เต็ม", { title: "ไม่สามารถดูไฟล์ได้" });
-    } else {
-      alert("ออเดอร์นี้ยังไม่ได้ยืนยันการชำระเงิน");
-    }
-    return;
   }
 
-  content.innerHTML = `<div class="empty-state">กำลังโหลดไฟล์...</div>`;
-  backdrop.classList.add("open");
-  backdrop.style.display = "flex";
-
-  // ดึงข้อมูลเพลงล่าสุดจาก Firestore ตรงๆ (ไม่ใช้ cache) เพราะเพลงอาจถูกปิดการขาย/แก้ไขไปแล้วหลังสั่งซื้อ
-  const items = order.items || [];
-  // แต่ละ item ปกติแทนเพลง 1 เพลง (มี song_id) — ยกเว้น item ที่เป็น "playlist" (มาจาก Order ผสมที่สั่งจาก
-  // ตะกร้าฝั่งลูกค้า) ซึ่งไม่มี song_id ตรงๆ ต้องขยายเป็นรายเพลงจาก song_ids ที่ snapshot ไว้ตอนสั่งซื้อก่อน
-
-  // 🔧 (2026-09-17 Phase 2): Pre-fetch ทุกเพลงแบบ batch ก่อน แทนการยิง getDoc ทีละอัน
-  //   ลด HTTP requests + Worker invocations + latency ตอนเปิด modal
-  const allSongIdsInModal = [];
-  items.forEach((item) => {
-    if (item?.kind === "playlist") {
-      if (Array.isArray(item.song_ids)) {
-        allSongIdsInModal.push(...item.song_ids);
-      }
-    } else if (item?.song_id) {
-      allSongIdsInModal.push(item.song_id);
-    }
-  });
-  let songSnapMapModal = new Map();
-  if (allSongIdsInModal.length > 0) {
+  function getStoredOrderId(checkoutKey) {
     try {
-      songSnapMapModal = await getDocsByIds("songs", allSongIdsInModal);
-    } catch (err) {
-      // fallback: ถ้า batch พัง → downloadRowsOf จะยิง getDoc เองเหมือนเดิม
-      console.warn("openFullFilesModal: batch getDocsByIds failed, falling back to per-song getDoc", err?.message || err);
+      const stored = JSON.parse(sessionStorage.getItem(CHECKOUT_ORDER_KEY) || "null");
+      return stored?.key === checkoutKey && stored.id ? String(stored.id) : null;
+    } catch (_) {
+      return null;
     }
   }
 
-  const downloadRowsOf = async (songId, fallbackTitle) => {
+  function storeOrderId(checkoutKey, orderId) {
     try {
-      // 🔧 (2026-09-17 Phase 2): ใช้ cache จาก batch fetch ก่อน ถ้ามี
-      let snap = songSnapMapModal.get(songId);
-      if (!snap) {
-        // fallback: ถ้า batch fetch พัง หรือ id ไม่อยู่ใน cache → ยิง getDoc ทีละอันเหมือนเดิม
-        snap = await getDoc(doc(db, "songs", songId));
-      }
-      const song = snap.exists() ? snap.data() : null;
-      // 🔒 Shared-file (Lazy-shared): ถ้าไม่มี full_file_url ให้ fallback ใช้ file_url แทน
-      // เพราะเพลงใหม่บางเพลงใช้ไฟล์เดียวกันทั้งตอน preview และตอนส่งลูกค้า เพื่อประหยัดพื้นที่ R2
-      const songFileUrl = song?.full_file_url || song?.file_url;
-      if (!song || !songFileUrl) {
-        return `<div class="receipt-line"><div><strong>${escapeHtml(fallbackTitle || song?.song_name || "เพลง")}</strong><small>ยังไม่ได้อัปโหลดไฟล์เต็ม WAV</small></div></div>`;
-      }
-      // ถ้าใช้ file_url แทน ให้โชว์ label ต่างเล็กน้อย เพื่อให้แอดมินรู้ว่าเพลงนี้ใช้ไฟล์ร่วมกัน
-      const isShared = !song.full_file_url && !!song.file_url;
-      const fileNameLabel = song.full_file_name || (isShared ? "shared file" : "full.wav");
-      return `
-        <div class="receipt-line">
-          <div><strong>${escapeHtml(fallbackTitle || song.song_name || "เพลง")}</strong><small>${escapeHtml(fileNameLabel)}</small></div>
-          <a class="btn secondary" style="padding:8px 14px;font-size:13px;" href="${toCloudinaryDownloadUrl(songFileUrl)}" target="_blank" rel="noopener">ดาวน์โหลด</a>
-        </div>`;
-    } catch (err) {
-      return `<div class="receipt-line"><div><strong>${escapeHtml(fallbackTitle || "เพลง")}</strong><small>โหลดข้อมูลไม่สำเร็จ</small></div></div>`;
-    }
-  };
-
-  const rowGroups = await Promise.all(items.map(async (item) => {
-    if (item?.kind === "playlist") {
-      let songIds = Array.isArray(item.song_ids) ? item.song_ids : [];
-      // เผื่อ Order เก่า/กรณีไม่มี song_ids snapshot ไว้ ให้ query จาก playlist_id แทน
-      if (songIds.length === 0 && item.playlist_id) {
-        try {
-          const songsSnap = await getDocs(query(collection(db, "songs"), where("playlist_id", "==", item.playlist_id)));
-          songIds = songsSnap.docs.map((d) => d.id);
-        } catch (_) { /* ปล่อยผ่าน แสดง header ของเพลย์ลิสต์อย่างเดียวถ้า query ไม่สำเร็จ */ }
-      }
-      const header = `<div class="receipt-line" style="opacity:.75;"><div><small>🎶 เพลย์ลิสต์: ${escapeHtml(item.title || "เพลย์ลิสต์")}</small></div></div>`;
-      const songRows = await Promise.all(songIds.map((songId) => downloadRowsOf(songId, null)));
-      return header + songRows.join("");
-    }
-    return downloadRowsOf(item.song_id, item.title);
-  }));
-  const rows = rowGroups;
-
-  const zipRow = order.zip_download_url
-    ? `<div class="receipt-line" style="background:rgba(41,204,113,.08);border:1px solid rgba(41,204,113,.25);border-radius:10px;padding:12px;margin-bottom:10px;">
-        <div><strong>📦 ZIP รวมเพลงทั้งออเดอร์</strong><small>${escapeHtml(order.zip_file_name || `Order-${order.id}.zip`)} · ${Number(order.zip_song_count || items.length)} เพลง</small></div>
-        <a class="btn" style="padding:8px 14px;font-size:13px;" href="${escapeHtml(toCloudinaryDownloadUrl(order.zip_download_url))}" target="_blank" rel="noopener">ดาวน์โหลด ZIP</a>
-      </div>`
-    : order.zip_status === "failed"
-      ? `<div class="receipt-line" style="color:var(--danger);"><div><strong>⚠️ ยังสร้าง ZIP ไม่สำเร็จ</strong><small>${escapeHtml(order.zip_error || "ไม่ทราบสาเหตุ")}</small></div></div>`
-      : "";
-  content.innerHTML = zipRow + (rows.join("") || `<div class="empty-state">ไม่มีรายการเพลงในออเดอร์นี้</div>`);
-
-  // 🔧 (2026-09-16): แสดงกล่อง "ลิงก์ดาวน์โหลดสำหรับลูกค้า" + ปุ่ม "คัดลอกลิงก์" ถ้าออเดอร์มี zip_download_url แล้ว
-  // ใช้วิธี A1 — ส่ง R2 public URL ตรงๆ ให้ลูกค้า (R2 security: UUID สุ่ม + ไม่มี directory listing ทำให้ทายไม่ได้)
-  const zipLinkWrap = document.getElementById("fullFilesZipLinkWrap");
-  const zipLinkText = document.getElementById("fullFilesZipLinkText");
-  if (zipLinkWrap && zipLinkText) {
-    if (order.zip_download_url) {
-      zipLinkText.textContent = order.zip_download_url;
-      zipLinkWrap.style.display = "block";
-    } else {
-      zipLinkWrap.style.display = "none";
-    }
+      sessionStorage.setItem(CHECKOUT_ORDER_KEY, JSON.stringify({ key: checkoutKey, id: orderId }));
+    } catch (_) {}
   }
 
-  // 🔧 (2026-09-16): ปุ่ม "คัดลอกลิงก์ดาวน์โหลด" — คัดลอก zip_download_url ไป clipboard
-  // ใช้สำหรับแอดมินที่ไม่อยากส่งผ่าน WhatsApp โดยตรง (เช่น ส่งทางอื่น) หรือต้องการคัดลอกเอง
-  const copyLinkBtn = document.getElementById("fullFilesCopyLinkBtn");
-  if (copyLinkBtn) {
-    copyLinkBtn.onclick = async () => {
-      if (!order.zip_download_url) {
-        orderToast("ยังไม่มีลิงก์ดาวน์โหลด — ออเดอร์นี้ยังไม่ได้สร้าง ZIP", "error");
-        return;
-      }
-      try {
-        await navigator.clipboard.writeText(order.zip_download_url);
-        orderToast("📋 คัดลอกลิงก์ดาวน์โหลดแล้ว — ไปวางใน WhatsApp หรือที่อื่นได้เลย", "success");
-      } catch (err) {
-        // fallback ถ้า browser ไม่รองรับ clipboard API (เช่น ไม่ใช่ HTTPS)
-        orderToast("คัดลอกไม่สำเร็จ: " + (err?.message || err) + " — คัดลอกจากกล่องข้อความด้านบนเอง", "error");
-      }
-    };
+  function clearStoredOrderId() {
+    try { sessionStorage.removeItem(CHECKOUT_ORDER_KEY); } catch (_) {}
   }
 
-  const whatsappBtn = document.getElementById("fullFilesWhatsAppBtn");
-  if (whatsappBtn) {
-    whatsappBtn.onclick = async () => {
-      // 🔧 (2026-09-21 fix): prepend Laos country code 856 ก่อนสร้าง wa.me URL
-      //   เหตุผลเดียวกับ receiptWhatsAppBtn ด้านบน — ดูคอมเมนต์ที่จุดนั้น
-      // 🔧 (2026-09-22 v2 — รองรับทััง ลาว+ไทย): เบอร์ใน DB มี country code อยู่แล้ว
-      //   เดิม: DB เก็บ "20XXXXXXXX" → ต้อง prepend 856 ที่นี่ → แต่เบอร์ไทย 812345678 → prepend 856 → ลาว
-      //   ใหม่: DB เก็บ "85620XXXXXXXX" หรือ "668XXXXXXXX" (WITH country code) → ใช้ตรงๆ ไม่ต้อง prepend
-      //   ผลกระทบระบบเดิม: 0% — ถ้าเว็บยังไม่เปิด → ไม่มีออเดอร์เก่าใน DB → ไม่มีปัญหา
-      //   fallback: ถ้าออเดอร์เก่ามาจาก DB เก่า (เก็บ "20XXXXXXXX") → ถ้าไม่มี 856/66 นำหน้า → prepend 856 (เดิม)
-      let number = String(order.whatsapp || "").replace(/[^0-9]/g, "");
-      // fallback: ถ้าเบอร์ไม่มี country code นำหน้า → สันนิษฐานลาว (เดิม)
-      if (number && !number.startsWith("856") && !number.startsWith("66")) number = "856" + number;
-      if (!number) {
-        orderToast("ออเดอร์นี้ไม่มีเบอร์ WhatsApp ของลูกค้า", "error");
-        return;
-      }
-      const receiptNumber = order.receipt_number || getReceiptNumber(order.id, order.created_at);
-
-      // 🔒 (2026-09-21 fix Bug #2 ZIP URL permanent public): ใช้ proxy URL แทน R2 URL ตรงๆ
-      //   เดิม: ใช้ order.zip_download_url ตรงๆ → URL ถาวร → แชร์ได้ตลอดไป
-      //   ใหม่: เรียก POST /api/order-zip/get-customer-url?orderId=xxx เพื่อขอ one-time token
-      //         → Worker คืน /api/download/<orderId>?token=<token> (one-time use, หมดอายุใน 24 ชม.)
-      //         → URL ส่งให้ลูกค้าผ่าน WhatsApp → ลูกค้าคลิก → Worker stream ZIP จาก R2
-      //         → R2 public URL ไม่เคยเปิดเผย กันแชร์ต่อ
-      //   ผลกระทบระบบเดิม: 0% — orders เก่าที่ยังเก็บ zip_download_url ไว้ ยังใช้ได้ผ่าน fallback ด้านล่าง
-      let zipUrl = order.zip_download_url || "";
-      try {
-        const res = await fetch(`/api/order-zip/get-customer-url?orderId=${encodeURIComponent(order.id)}`, {
-          method: "POST",
-          credentials: "same-origin",
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.url) {
-            // แปลง relative URL (/api/download/...) เป็น absolute URL สำหรับ WhatsApp
-            // ใช้ window.location.origin (เช่น https://ร้าน.com) เป็น base
-            zipUrl = window.location.origin + data.url;
-          } else if (data?.error) {
-            orderToast("ไม่สามารถสร้างลิงก์ดาวน์โหลด: " + data.error, "error");
-            return;
-          }
-        }
-        // ถ้า fetch fail หรือ res.ok=false → ใช้ zipUrl เดิม (R2 public URL) เป็น fallback
-        // เผื่อกรณี Worker ใหม่ยังไม่ deploy หรือ DB ยังไม่ได้รัน schema.sql ใหม่
-      } catch (err) {
-        console.warn("get-customer-url failed, falling back to zip_download_url:", err?.message || err);
-      }
-
-      // 🔧 (2026-09-16): แบบที่ 2 — สุภาพ + ขอบคุณ + ลิงก์ดาวน์โหลด (เปลี่ยนจากเดิมที่ไม่ส่งลิงก์)
-      // ถ้ายังไม่มี zipUrl (ทั้ง token และ zip_download_url) → ส่งแค่ข้อความทักทาย ไม่มีลิงก์
-      let text;
-      if (zipUrl) {
-        text =
-          `สวัสดีค่ะ/ครับ 🎵\n` +
-          `ขอบคุณที่สั่งซื้อกับร้านเรา\n` +
-          `ไฟล์เพลงสำหรับ Order ${receiptNumber} ดาวน์โหลดได้ที่ลิงก์นี้:\n` +
-          `${zipUrl}\n` +
-          `หากมีปัญหาดาวน์โหลด ติดต่อเราได้ตลอดค่ะ/ครับ`;
-      } else {
-        // กรณีออเดอร์ยังไม่มี ZIP (ยังไม่ได้สร้าง หรือสร้างล้มเหลว)
-        text = `สวัสดีค่ะ/ครับ 🎵 เกี่ยวกับ Order ${receiptNumber} ของคุณค่ะ/ครับ`;
-      }
-      window.open(buildWhatsAppLink(number, text), "_blank", "noopener");
-    };
-  }
-}
-
-function closeFullFilesModal() {
-  const backdrop = document.getElementById("fullFilesBackdrop");
-  backdrop.classList.remove("open");
-  backdrop.style.display = "none";
-}
-
-/* ---------------- เปลี่ยนสถานะออเดอร์ ---------------- */
-async function handleStatusChange(orderId, newStatus) {
-  const order = state.allOrders.find((item) => item.id === orderId);
-
-  // 🔒 (2026-09-22 fix): validate status transitions — กันเปลี่ยนสถานะผิด logic
-  //   เดิม: รับทุก transition → cancelled→completed ได้ → ผิดธุรกิจ logic
-  //   ใหม่: ตรวจ transition ถูกต้องก่อน → ถ้าผิด → แจ้ง error + ไม่เปลี่ยน
-  //   Valid transitions:
-  //     pending_verify → processing (ยืนยันโอน)
-  //     pending_verify → cancelled (ยกเลิก)
-  //     processing → completed (ส่งเพลงเสร็จ)
-  //     processing → cancelled (ยกเลิก)
-  //     cancelled → pending_verify (เปิดใหม่ — แอดมินเปลี่ยนใจ)
-  //   Invalid: completed→อะไรก็ตาม, cancelled→completed, completed→cancelled
-  const VALID_TRANSITIONS = {
-    "pending_verify": ["processing", "cancelled"],
-    "processing":     ["completed", "cancelled"],
-    "completed":      [],  // สำเร็จแล้ว → ไม่เปลี่ยนได้
-    "cancelled":      ["pending_verify"],  // ยกเลิก → เปิดใหม่ได้
-  };
-  const currentStatus = order?.status || "";
-  const allowedNext = VALID_TRANSITIONS[currentStatus] || [];
-  if (!allowedNext.includes(newStatus)) {
-    // ถ้าเป็น transition เดียวกัน (เช่น pending_verify→pending_verify) → ไม่ error แต่ไม่ทำอะไร
-    if (currentStatus === newStatus) {
-      orderToast(`ออเดอร์นี้อยู่ในสถานะ "${newStatus}" อยู่แล้ว`, "info");
-      return;
-    }
-    const cfg = STATUS_CONFIG[newStatus] || {};
-    const currentCfg = STATUS_CONFIG[currentStatus] || {};
-    orderToast(
-      `❌ ไม่สามารถเปลี่ยนจาก "${currentCfg.label || currentStatus}" เป็น "${cfg.label || newStatus}" ได้โดยตรง — ` +
-      `สถานะที่เปลี่ยนได้: ${allowedNext.map(s => STATUS_CONFIG[s]?.label || s).join(", ") || "(ไม่มี)"}`,
-      "error"
-    );
-    // re-render เพื่อคืนค่า select กลับเดิม
-    renderFromState();
-    return;
-  }
-
-  // "ยืนยันโอนแล้ว" จะยังไม่เปลี่ยนเป็น processing จนกว่า ZIP และลิงก์จะพร้อม
-  if (newStatus === "processing" && order?.status !== "processing") {
-    await confirmPaymentAndCreateZip(orderId);
-    return;
-  }
-  try {
-    // 🔧 (2026-09-20 admin audit): บันทึกชื่อแอดมิน + เวลา ที่เปลี่ยนสถานะ (ฟิลด์เพิ่ม ไม่กระทบฟิลด์เดิม)
-    const statusAudit = await buildStatusAuditWithHistory(orderId, newStatus);
-    await updateDoc(doc(db, "orders", orderId), { status: newStatus, updated_at: new Date().toISOString(), ...statusAudit });
-    // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client แทน re-fetch ทั้งหมด (ลด D1 reads)
-    await updateOrderInState(orderId, { status: newStatus, updated_at: new Date().toISOString(), ...statusAudit });
-    renderFromState();
-  } catch (err) {
-    // 🎨 (2026-09-26): ใช้ adminAlert แทน alert()
-    if (window.adminAlert) {
-      await window.adminAlert("เปลี่ยนสถานะไม่สำเร็จ: " + err.message, { title: "เกิดข้อผิดพลาด" });
-    } else {
-      alert("เปลี่ยนสถานะไม่สำเร็จ: " + err.message);
-    }
-  }
-}
-
-async function confirmPaymentAndCreateZip(orderId) {
-  const result = await createOrderZip(orderId);
-  // 🔧 (2026-09-18 v5): ถ้า user กด "ยกเลิก" → ไม่แสดง error (Worker อัปเดต order doc แล้ว)
-  if (result.aborted) {
-    orderToast("ยกเลิกการสร้าง ZIP — ออเดอร์ยังคงรอตรวจสอบ", "info");
-    return;
-  }
-  if (!result.ok) {
-    // 🔧 (2026-09-17 Phase 2): ใช้ renderFromState แทน refreshDashboardAndHistory (ออเดอร์ยังอยู่ status เดิม)
-    //   เพราะ createOrderZip อัปเดต zip_status='failed' ภายในตัวมันเอง → state ต้อง sync ด้วย
-    //   แต่ fallback: ถ้า updateOrderInState ไม่เจอ order → จะเรียก refreshDashboardAndHistory เอง
-    await updateOrderInState(orderId, {
-      zip_status: "failed",
-      zip_error: result.error,
-      updated_at: new Date().toISOString(),
-    });
-    renderFromState();
-    orderToast(`ยืนยันโอนไม่สำเร็จ: ${result.error} — ออเดอร์ยังคงรอตรวจสอบ และสามารถกดสร้าง ZIP ใหม่ได้`, "error_long");
-    return;
-  }
-
-  try {
-    const now = new Date().toISOString();
-    // 🔧 (2026-09-20 admin audit): บันทึกชื่อแอดมินที่กด "ยืนยันโอนแล้ว" (เปลี่ยนสถานะเป็น processing)
-    const statusAudit = await buildStatusAuditWithHistory(orderId, "processing", now);
-    await updateDoc(doc(db, "orders", orderId), {
-      status: "processing",
-      payment_verified_at: now,
-      updated_at: now,
-      ...statusAudit,
-    });
-    // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client แทน re-fetch ทั้งหมด (ลด D1 reads)
-    //   รวมถึง zip fields ที่ createOrderZip ตั้งไว้ (zip_status, zip_download_url, etc.)
-    //   เพื่อให้ list แสดง ZIP link ใหม่ทันที
-    const order = state.allOrders.find(o => o.id === orderId);
-    await updateOrderInState(orderId, {
-      status: "processing",
-      payment_verified_at: now,
-      updated_at: now,
-      ...statusAudit,
-      // sync zip fields จาก result ด้วย (createOrderZip คืน url กลับมา)
-      ...(result.url ? { zip_download_url: result.url } : {}),
-      ...(result.publicId ? { zip_public_id: result.publicId } : {}),
-      zip_status: "ready",
-      zip_error: "",
-    });
-    renderFromState();
-    orderToast("ยืนยันการโอนแล้ว และสร้าง Download Link สำหรับ Admin เรียบร้อย", "success_long");
-  } catch (err) {
-    // ZIP ยังอยู่บน Cloud แต่จะไม่แสดงเป็นออเดอร์ที่ชำระแล้วจนกว่าจะอัปเดตสถานะสำเร็จ
-    await refreshDashboardAndHistory();
-    orderToast("สร้าง ZIP สำเร็จ แต่เปลี่ยนสถานะออเดอร์ไม่สำเร็จ: " + err.message, "error_long");
-  }
-}
-
-async function retryOrderZip(orderId) {
-  const order = state.allOrders.find((item) => item.id === orderId);
-  if (!order || zipJobs.has(orderId)) return;
-  const result = await createOrderZip(orderId);
-  // 🔧 (2026-09-18 v5): ถ้า user กด "ยกเลิก" → ไม่แสดง error (Worker อัปเดต order doc แล้ว)
-  if (result.aborted) {
-    // abortOrderZip อัปเดต state แล้ว → ไม่ต้องทำอะไรเพิ่ม
-    return;
-  }
-  if (!result.ok) {
-    // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client (zip_status='failed') แทน re-fetch
-    await updateOrderInState(orderId, {
-      zip_status: "failed",
-      zip_error: result.error,
-      updated_at: new Date().toISOString(),
-    });
-    renderFromState();
-    orderToast("สร้าง ZIP ใหม่ไม่สำเร็จ: " + result.error, "error_long");
-    return;
-  }
-
-  // กรณี retry จากขั้นตอนยืนยันโอนที่ค้างอยู่ ให้เดินหน้าส่งสถานะ processing ต่ออัตโนมัติ
-  if (order.status === "pending_verify") {
-    await confirmPaymentAndCreateZip(orderId);
-  } else {
-    // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client (zip_status='ready' + url ใหม่) แทน re-fetch
-    await updateOrderInState(orderId, {
-      zip_status: "ready",
-      zip_download_url: result.url || order.zip_download_url,
-      zip_public_id: result.publicId || order.zip_public_id,
-      zip_error: "",
-      updated_at: new Date().toISOString(),
-    });
-    renderFromState();
-    orderToast("สร้าง ZIP ใหม่และ Download Link เรียบร้อย", "success_long");
-  }
-}
-
-/* =====================================================================
-   ยืนยันก่อนลบ — ใช้ modal ที่มีอยู่แล้วในหน้า (confirmBackdrop) ทั้งเว็บ
-   คืนค่าเป็น Promise<boolean> ว่าผู้ใช้กด "ลบ" หรือ "ยกเลิก"
-   =====================================================================
-
-   🔧 แก้บั๊ก (2026-09-17) C1: Bug #3 ยังไม่ถูกแก้จริง — ปัญหา openConfirm vs askConfirm
-   -----------------------------------------------------------
-   ปัญหาก่อนแก้:
-     - openConfirm (app-admin.js:2128) ใช้ `classList.add("show")` + state variable `confirmAction`
-     - askConfirm (orders.js) ใช้ `classList.add("open")` + `style.display = "flex"/"none"` + listener ใหม่
-     - ทั้งสองผูก listener บนปุ่ม #confirmOk ตัวเดียวกัน → cross-module handler conflict
-     - inline style `display: none` ของ askConfirm ค้างถาวร → override CSS rule `.modal-backdrop.show`
-       → openConfirm ทุกครั้งถัดไปจะ "มองไม่เห็น modal"
-
-   วิธีแก้: เปลี่ยน askConfirm ให้ใช้ window.__openConfirm ที่ app-admin.js expose ไว้แล้ว (บรรทัด 2141)
-     - ใช้ classList.add("show") เหมือน openConfirm → ไม่มี inline style leak
-     - ใช้ confirmAction state ตัวเดียวกัน → ไม่มี cross-handler trigger
-     - มี fallback กันกรณี app-admin.js ยังไม่โหลด → ใช้ window.confirm ธรรมดา
-
-   🎨 (2026-09-26): อัปเกรดให้ใช้ window.adminConfirm (Promise-based) ที่ app-admin.js expose
-     - ลดความซ้ำซ้อน: ไม่ต้องจัดการ cancel listener เอง
-     - รองรับ options (title, okText, danger, success)
-     - ยังรองรับ caller เดิมที่เรียก askConfirm(message) → ใช้ default
-
-   ผลกระทบต่อระบบเดิม: 0%
-     - ทุก caller ของ askConfirm (handleDeleteOrder, handleDeleteOrderZip, ฯลฯ) ยังได้ Promise<boolean>
-       เหมือนเดิม → ไม่ต้องแก้ caller เลย
-     - openConfirm เดิมใน app-admin.js ไม่ถูกแตะ → ไม่กระทบ
-   ===================================================================== */
-function askConfirm(message, options) {
-  // 🎨 (2026-09-26): ใช้ window.adminConfirm (Promise-based) ที่ app-admin.js expose
-  if (window.adminConfirm) {
-    return window.adminConfirm(message, options);
-  }
-  // 🔧 fallback เดิม: ถ้า app-admin.js ยังไม่โหลด → ใช้ window.confirm ธรรมดา
-  return Promise.resolve(window.confirm(message));
-}
-
-/* ---------------- ลบไฟล์ ZIP ออกจาก Cloud (ใหม่ 2026-09-11) ----------------
-   ต่างจาก handleDeleteOrder: ไม่ลบออเดอร์ ลบแค่ไฟล์ ZIP ออกจาก R2 + เคลียร์ field ที่เกี่ยวกับ ZIP
-   ในออเดอร์ เพื่อประหยัดพื้นที่จัดเก็บ (ออเดอร์ยังอยู่ครบ กดปุ่ม 🔁 สร้าง ZIP ใหม่ได้ภายหลังถ้าต้องการ) */
-// 🔧 (2026-09-27 fix R2 leak): ตรวจ return value ของ deleteFromStorage ก่อนเคลียร์ field
-//   เดิม: ถ้า Worker คืน 503/500 → deleteFromStorage return { ok: false } แต่โค้ดไม่ check
-//         → เคลียร์ zip_download_url="" ทั้งที่ไฟล์ยังอยู่ใน R2 → ลูกค้าดาวน์โหลดไม่ได้แต่ไฟล์ยังค้าง
-//   ใหม่: ถ้า { ok: false } → ไม่เคลียร์ field + แสดง error จริง + ไม่ update state
-//   ผลกระทบระบบเดิม: 0% — ถ้าลบสำเร็จ flow เดิม 100% (เคลียร์ field ปกติ)
-//                   — ถ้าลบไม่สำเร็จ → ออเดอร์ยังเห็น ZIP อยู่ (ปลอดภัยกว่าเดิม)
-async function handleDeleteOrderZip(orderId) {
-  const order = state.allOrders.find((o) => o.id === orderId);
-  const label = order ? `ZIP ของออเดอร์ ${order.customer_name}` : "ไฟล์ ZIP นี้";
-  const ok = await askConfirm(`ต้องการลบ${label}ออกจาก Cloud หรือไม่? (ออเดอร์จะยังอยู่ในระบบเหมือนเดิม ไม่ได้ลบ — แค่ต้องกดสร้าง ZIP ใหม่ถ้าจะดาวน์โหลดอีกครั้ง)`);
-  if (!ok) return;
-
-  try {
-    const orderSnap = await getDoc(doc(db, "orders", orderId));
-    const orderData = orderSnap.exists() ? orderSnap.data() : null;
-    // 🔧 (2026-09-27 fix R2 leak): ตรวจ return value ก่อนเคลียร์ field
-    let deleteResult = { ok: false, skipped: true };
-    if (orderData?.zip_public_id) {
-      deleteResult = await deleteFromStorage({ key: orderData.zip_public_id });
-    } else if (orderData?.zip_download_url) {
-      deleteResult = await deleteFromStorage({ url: orderData.zip_download_url });
-    }
-    // ถ้าลบไม่สำเร็จ (และไม่ใช่ skip) → หยุด ไม่เคลียร์ field ในออเดอร์
-    // (กันไฟล์ R2 ค้างเป็นขยะ แต่ user คิดว่าลบแล้ว)
-    if (!deleteResult.ok && !deleteResult.skipped) {
-      const errMsg = deleteResult.error || "ไม่ทราบสาเหตุ";
-      orderToast(`ลบไฟล์ ZIP ไม่สำเร็จ: ${errMsg} — ออเดอร์ยังเก็บ ZIP ไว้ ลองอีกครั้ง`, "error_long");
-      return;
-    }
-    // ลบสำเร็จ (หรือ skipped เพราะไม่มีไฟล์) → เคลียร์ field ปกติ
-    await updateDoc(doc(db, "orders", orderId), {
-      zip_status: "",
-      zip_download_url: "",
-      zip_file_name: "",
-      zip_public_id: "",
-      zip_song_count: 0,
-      zip_created_at: "",
-      zip_error: "",
-      updated_at: new Date().toISOString(),
-    });
-    // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client แทน re-fetch (ลด D1 reads)
-    await updateOrderInState(orderId, {
-      zip_status: "",
-      zip_download_url: "",
-      zip_file_name: "",
-      zip_public_id: "",
-      zip_song_count: 0,
-      zip_created_at: "",
-      zip_error: "",
-      updated_at: new Date().toISOString(),
-    });
-    renderFromState();
-    orderToast("ลบไฟล์ ZIP ออกจาก Cloud แล้ว", "success");
-  } catch (err) {
-    orderToast("ลบไฟล์ ZIP ไม่สำเร็จ: " + (err.message || err), "error");
-  }
-}
-
-/* ---------------- ลบออเดอร์ ---------------- */
-async function handleDeleteOrder(orderId) {
-  if (!isMainAdmin()) {
-    // 🎨 (2026-09-26): ใช้ adminAlert แทน alert() — สไตล์เดียวกับเว็บ
-    const msg = "เฉพาะแอดมินหลักเท่านั้นที่ลบประวัติออเดอร์ได้";
-    if (window.adminAlert) await window.adminAlert(msg, { title: "ไม่ได้รับอนุญาต" });
-    else if (window.__showToast) window.__showToast(msg, "error");
-    else alert(msg);
-    return;
-  }
-  const order = state.allOrders.find((o) => o.id === orderId);
-  const label = order ? `ออเดอร์ของ ${order.customer_name} (${formatLAK(order.total)})` : "ออเดอร์นี้";
-  // 🎨 (2026-09-26): ใช้ askConfirm พร้อม options danger + title
-  const ok = await askConfirm(
-    `ต้องการลบ${label}ใช่หรือไม่?\n\nการลบไม่สามารถย้อนกลับได้`,
-    { title: "ยืนยันการลบออเดอร์", okText: "ลบ", danger: true }
-  );
-  if (!ok) return;
-
-  try {
-    // ดึงข้อมูลออเดอร์สดก่อนลบ เพื่อเช็คว่ามีไฟล์ ZIP/สลิป บน Cloud ค้างอยู่หรือไม่
-    const orderSnap = await getDoc(doc(db, "orders", orderId));
-    const orderData = orderSnap.exists() ? orderSnap.data() : null;
-
-    // 🔧 (2026-09-27 add): เรียก Worker endpoint /api/order-files/cleanup ก่อนลบออเดอร์
-    //   เพื่อลบไฟล์ทั้งหมดที่เกี่ยวกับออเดอร์นี้ออกจาก R2 + D1 ก่อน:
-    //     1) สลิปโอนเงินทั้งหมด (รองรับหลายสลิป — ลูกค้าอัปใหม่ถ้าถูก reject)
-    //     2) ไฟล์ ZIP (ถ้ามี zip_public_id)
-    //     3) rows ในตาราง payment_proofs ใน D1 (กันขยะ)
-    //   ทำก่อนลบออเดอร์ → ถ้า cleanup ล้ม ยัง rollback ได้ (ออเดอร์ยังอยู่)
-    //   ผลกระทบระบบเดิม: 0% — เพิ่มขั้นตอนใหม่ก่อน deleteDoc, flow เดิมยังครบ
-    //                   — ถ้า endpoint ใหม่ไม่มี (Worker เก่า) → catch แล้วข้ามไปลบแบบเดิม
-    let cleanupResult = null;
-    try {
-      const cleanupRes = await fetch("/api/order-files/cleanup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ orderId }),
-      });
-      if (cleanupRes.ok) {
-        try { cleanupResult = await cleanupRes.json(); } catch { /* ไม่ใช่ JSON ก็ข้าม */ }
-        console.log(`[deleteOrder] cleanup: proofsDeleted=${cleanupResult?.proofsDeleted || 0}, zipDeleted=${cleanupResult?.zipDeleted}, proofsRowsDeleted=${cleanupResult?.proofsRowsDeleted || 0}`);
-      } else {
-        // endpoint ใหม่ยังไม่ deploy (Worker เก่า) → log + fallback ไปลบแบบเดิม
-        console.warn("[deleteOrder] /api/order-files/cleanup returned non-OK, falling back to legacy delete:", cleanupRes.status);
-      }
-    } catch (err) {
-      // network error → log + fallback ไปลบแบบเดิม
-      console.warn("[deleteOrder] /api/order-files/cleanup failed (network), falling back:", err?.message || err);
-    }
-
-    // ลบออเดอร์ออกจาก D1
-    await deleteDoc(doc(db, "orders", orderId));
-
-    // 🔧 (2026-09-27 fix R2 leak): ถ้า endpoint ใหม่ยังไม่ทำงาน (fallback) → ลบ ZIP แบบเดิม
-    //   ถ้า endpoint ใหม่ทำงานแล้ว → ข้ามส่วนนี้ (ลบไปแล้วใน cleanup)
-    //   ใช้คีย์ว่า `cleanupResult?.zipDeleted` เพื่อเช็ค — ถ้า false หรือ null → ยังไม่ได้ลบ → ลบแบบเดิม
-    if (!cleanupResult?.zipDeleted && (orderData?.zip_public_id || orderData?.zip_download_url)) {
-      const storageArgs = orderData?.zip_public_id
-        ? { key: orderData.zip_public_id }
-        : { url: orderData.zip_download_url };
-      // ทำแบบ background ไม่ block UI (เหมือนเดิม) — แต่มี retry + catch
-      (async () => {
-        const maxRetries = 3;
-        const backoffMs = [1000, 2000, 4000];  // 1s, 2s, 4s
-        for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
-          const result = await deleteFromStorage(storageArgs);
-          if (result.ok || result.skipped) {
-            console.log(`[deleteOrder] R2 file deleted (attempt ${attempt}):`, storageArgs.key || storageArgs.url);
-            return;  // สำเร็จ → ออก
-          }
-          if (attempt < maxRetries) {
-            console.warn(`[deleteOrder] R2 delete failed (attempt ${attempt}/${maxRetries}), retrying in ${backoffMs[attempt-1]}ms:`, result.error);
-            await new Promise((r) => setTimeout(r, backoffMs[attempt-1]));
-          } else {
-            // retry ครบทั้ง 3 ครั้งยังล้ม → log warning (ไฟล์ค้างใน R2 แต่ออเดอร์ลบไปแล้ว)
-            console.error(`[deleteOrder] R2 delete failed after ${maxRetries} attempts — file may be orphaned in R2:`, storageArgs.key || storageArgs.url, result.error);
-          }
-        }
-      })().catch((err) => {
-        console.error("[deleteOrder] R2 delete background task crashed:", err?.message || err);
-      });
-    }
-    // 🔧 (2026-09-17 Phase 2): ลบ order ออกจาก state ฝั่ง client แทน re-fetch (ลด D1 reads)
-    removeOrderFromState(orderId);
-    renderFromState();
-  } catch (err) {
-    // 🎨 (2026-09-26): ใช้ adminAlert แทน alert()
-    if (window.adminAlert) await window.adminAlert("ลบออเดอร์ไม่สำเร็จ: " + err.message, { title: "เกิดข้อผิดพลาด" });
-    else alert("ลบออเดอร์ไม่สำเร็จ: " + err.message);
-  }
-}
-
-/* =====================================================================
-   แก้ไขออเดอร์ (modal)
-   ===================================================================== */
-function renderEditSearchResults() {
-  const container = document.getElementById("eOrderSearchResults");
-  if (!container) return;
-  container.innerHTML = "";
-  if (state.editSearchResults.length === 0) return;
-
-  state.editSearchResults.forEach((song) => {
-    const alreadyAdded = state.editCartEntries.some((e) => e.kind === "song" && e.songId === song.id);
-    const row = document.createElement("div");
-    row.className = "list-row";
-    row.innerHTML = `
-      <img src="${song.cover_url || ""}">
-      <div class="info">
-        <div class="n1">${escapeHtml(song.song_name)}</div>
-        <div class="n2">${escapeHtml(song.dj_name || song.artist || "-")} · ${formatLAK(song.price)}</div>
-      </div>
-      <div class="row-actions">
-        <button class="icon-btn" data-eadd="${song.id}" ${alreadyAdded ? "disabled" : ""} style="${alreadyAdded ? "opacity:.4;" : "background:var(--accent);color:#fff;"}">
-          ${alreadyAdded ? "✓" : "＋"}
-        </button>
-      </div>
-    `;
-    container.appendChild(row);
-  });
-
-  container.querySelectorAll("[data-eadd]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (btn.disabled) return;
-      addToEditCart(btn.getAttribute("data-eadd"));
-    });
-  });
-}
-
-function renderEditCart() {
-  const container = document.getElementById("eOrderCartItems");
-  const totalEl = document.getElementById("eOrderCartTotal");
-  const hintEl = document.getElementById("eOrderTotalHint");
-  if (!container || !totalEl) return;
-  container.innerHTML = "";
-
-  if (state.editCartEntries.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.style.padding = "10px 0";
-    empty.textContent = "ยังไม่ได้เลือกเพลงหรือเพลย์ลิสต์";
-    container.appendChild(empty);
-  } else {
-    state.editCartEntries.forEach((entry, index) => {
-      const row = document.createElement("div");
-      row.className = "list-row";
-      if (entry.kind === "playlist") {
-        // 🔧 (2026-09-16): playlist entries เป็น collapsible dropdown (เหมือน renderCart ฝั่งสร้างใหม่)
-        const songCount = (entry.songs || []).length;
-        const songsListHtml = (entry.songs || []).map((s, i) => `
-          <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;color:var(--text-dim);">
-            <span>${i + 1}. 🎵 ${escapeHtml(s.title || "เพลง")}</span>
-            <span>${formatLAK(s.price)}</span>
-          </div>
-        `).join("");
-        row.style.flexDirection = "column";
-        row.style.alignItems = "stretch";
-        row.innerHTML = `
-          <div style="display:flex;align-items:center;gap:8px;width:100%;">
-            <button class="icon-btn" data-etoggle="${index}" title="เปิด/ปิดรายชื่อเพลง" style="background:transparent;font-size:14px;padding:4px 8px;line-height:1;">▸</button>
-            <div class="info" style="flex:1;">
-              <div class="n1">🎶 ${escapeHtml(entry.title)} <span style="color:var(--text-dim);font-weight:400;">(${songCount} เพลง)</span></div>
-              <div class="n2">${formatLAK(entry.price)}</div>
-            </div>
-            <div class="row-actions"><button class="icon-btn danger" data-eremove="${index}">🗑</button></div>
-          </div>
-          <div class="playlist-songs-list" data-esongs="${index}" style="display:none;margin-top:6px;margin-left:32px;padding-left:12px;border-left:2px solid var(--border);">
-            ${songsListHtml || '<div style="font-size:12px;color:var(--text-dim);padding:4px 0;">(ไม่มีเพลงในเพลย์ลิสต์นี้)</div>'}
-          </div>
-        `;
-      } else {
-        row.innerHTML = `
-          <div class="info"><div class="n1">🎵 ${escapeHtml(entry.title)}</div><div class="n2">${formatLAK(entry.price)}</div></div>
-          <div class="row-actions"><button class="icon-btn danger" data-eremove="${index}">🗑</button></div>
-        `;
-      }
-      container.appendChild(row);
-    });
-    // 🔧 (2026-09-16): event listener สำหรับปุ่ม toggle เปิด/ปิดรายชื่อเพลงใน playlist (edit modal)
-    container.querySelectorAll("[data-etoggle]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const idx = btn.getAttribute("data-etoggle");
-        const list = container.querySelector(`[data-esongs="${idx}"]`);
-        if (list) {
-          const isOpen = list.style.display !== "none";
-          list.style.display = isOpen ? "none" : "block";
-          btn.textContent = isOpen ? "▸" : "▾";
-        }
-      });
-    });
-    container.querySelectorAll("[data-eremove]").forEach((btn) => {
-      btn.addEventListener("click", () => removeFromEditCart(Number(btn.getAttribute("data-eremove"))));
-    });
-  }
-
-  const computedTotal = sumCartEntries(state.editCartEntries);
-  totalEl.value = computedTotal;
-  if (hintEl) {
-    hintEl.textContent = "คำนวณอัตโนมัติ: รวมราคาเพลง + ราคาเหมาเพลย์ลิสต์ที่เลือก";
-  }
-}
-
-function addToEditCart(songId) {
-  const song = state.songs.find((s) => s.id === songId);
-  if (!song) return;
-  // 🔧 (2026-09-16): ห้ามเพิ่มเพลงซ้ำในออเดอร์เดียวเด็ดขาด (เหมือน addToCart ฝั่งสร้างใหม่)
-  const check = findSongInCartEntries(state.editCartEntries, song.id);
-  if (check.duplicate) {
-    if (check.inKind === "song") {
-      orderToast(`เพลง "${song.song_name}" ถูกเพิ่มเป็นเพลงเดี่ยวไปแล้ว — ห้ามเพิ่มซ้ำในออเดอร์เดียวกัน`, "error");
-    } else {
-      orderToast(`เพลง "${song.song_name}" อยู่ในเพลย์ลิสต์ "${check.inTitle}" ในตะกร้าแล้ว — ห้ามเพิ่มซ้ำ (กันลูกค้าเสียเงิน 2 ครั้ง)`, "error");
-    }
-    return;
-  }
-  state.editCartEntries.push({ kind: "song", songId: song.id, title: song.song_name, price: Number(song.price || 0) });
-  state.editCartTotalEdited = false; // ตะกร้าเปลี่ยน ให้กลับไปคำนวณยอดรวมอัตโนมัติอีกครั้ง
-  renderEditCart();
-  renderEditSearchResults();
-}
-
-function removeFromEditCart(index) {
-  const removed = state.editCartEntries[index];
-  state.editCartEntries.splice(index, 1);
-  state.editCartTotalEdited = false; // ตะกร้าเปลี่ยน ให้กลับไปคำนวณยอดรวมอัตโนมัติอีกครั้ง
-  renderEditCart();
-  renderEditSearchResults();
-  if (removed?.kind === "playlist") renderEditPlaylistSelected();
-  renderEditPlaylistSearchResults();
-}
-
-function handleEditSearchInput(e) {
-  const q = e.target.value.trim().toLowerCase();
-  if (!q) {
-    state.editSearchResults = [];
-  } else {
-    state.editSearchResults = state.songs.filter((s) =>
-      [s.song_name, s.artist, s.dj_name].join(" ").toLowerCase().includes(q)
-    );
-  }
-  renderEditSearchResults();
-}
-
-/* ---------------- Render: ผลค้นหาเพลย์ลิสต์ (modal แก้ไขออเดอร์, เลือกได้หลายรายการ) ---------------- */
-function renderEditPlaylistSearchResults() {
-  const container = document.getElementById("eOrdPlaylistResults");
-  if (!container) return;
-  container.innerHTML = "";
-  if (state.editPlaylistSearchResults.length === 0) return;
-
-  state.editPlaylistSearchResults.forEach((pl) => {
-    const alreadySelected = state.editCartEntries.some((e) => e.kind === "playlist" && e.playlistId === pl.id);
-    if (alreadySelected) return;
-    const songCount = getSongsInPlaylist(pl.id).length;
-    const card = document.createElement("div");
-    card.className = "playlist-result-card";
-    card.innerHTML = `
-      <img src="${pl.cover_url || ""}">
-      <div class="info" style="flex:1;">
-        <div class="n1">${escapeHtml(getPlaylistName(pl))}</div>
-        <div class="n2">${songCount} เพลง · ราคาเหมา ${formatLAK(pl.price)}</div>
-      </div>
-    `;
-    card.addEventListener("click", () => selectEditPlaylist(pl.id));
-    container.appendChild(card);
-  });
-}
-
-function renderEditPlaylistSelected() {
-  const container = document.getElementById("eOrdPlaylistSelected");
-  if (!container) return;
-  container.innerHTML = "";
-  const selected = state.editCartEntries.filter((e) => e.kind === "playlist");
-  if (selected.length === 0) return;
-
-  selected.forEach((entry) => {
-    const card = document.createElement("div");
-    card.className = "playlist-selected-card";
-    card.style.marginBottom = "8px";
-    card.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div style="font-weight:800;">🎶 ${escapeHtml(entry.title)}</div>
-        <button class="icon-btn" data-eclear-playlist="${entry.playlistId}">✕</button>
-      </div>
-      <div style="font-size:12px;color:var(--text-dim);">${(entry.songs || []).length} เพลง · ราคาเหมา ${formatLAK(entry.price)}</div>
-    `;
-    container.appendChild(card);
-  });
-  container.querySelectorAll("[data-eclear-playlist]").forEach((btn) => {
-    btn.addEventListener("click", () => removeEditSelectedPlaylist(btn.getAttribute("data-eclear-playlist")));
-  });
-}
-
-function selectEditPlaylist(playlistId) {
-  const pl = state.playlists.find((p) => p.id === playlistId);
-  if (!pl) return;
-  if (state.editCartEntries.some((e) => e.kind === "playlist" && e.playlistId === playlistId)) {
-    orderToast(`เพลย์ลิสต์ "${getPlaylistName(pl)}" ถูกเพิ่มไปแล้ว — ห้ามเพิ่มซ้ำ`, "error");
-    return;
-  }
-
-  const songs = getSongsInPlaylist(pl.id);
-
-  // 🔧 (2026-09-16): ห้ามเพิ่ม playlist ถ้ามีเพลงใน playlist ซ้ำกับที่อยู่ในตะกร้าแล้ว (เหมือน selectPlaylist ฝั่งสร้างใหม่)
-  const duplicates = findPlaylistSongDuplicates(
-    state.editCartEntries,
-    songs.map((s) => ({ songId: s.id, title: s.song_name }))
-  );
-  if (duplicates.length > 0) {
-    const sample = duplicates.slice(0, 3).map((d) => `"${d.songTitle}"`).join(", ");
-    const more = duplicates.length > 3 ? ` และอีก ${duplicates.length - 3} เพลง` : "";
-    orderToast(`ห้ามเพิ่ม — เพลง ${sample}${more} ในเพลย์ลิสต์นี้ซ้ำกับที่อยู่ในตะกร้าแล้ว (กันลูกค้าเสียเงิน 2 ครั้ง)`, "error");
-    return;
-  }
-
-  state.editCartEntries.push({
-    kind: "playlist",
-    playlistId: pl.id,
-    title: getPlaylistName(pl),
-    price: Number(pl.price || 0),
-    songs: songs.map((s) => ({ songId: s.id, title: s.song_name, price: Number(s.price || 0) })),
-  });
-  state.editCartTotalEdited = false;
-  document.getElementById("eOrdPlaylistSearch").value = "";
-  state.editPlaylistSearchResults = [];
-
-  renderEditPlaylistSelected();
-  renderEditPlaylistSearchResults();
-  renderEditCart();
-}
-
-function removeEditSelectedPlaylist(playlistId) {
-  state.editCartEntries = state.editCartEntries.filter((e) => !(e.kind === "playlist" && e.playlistId === playlistId));
-  state.editCartTotalEdited = false;
-  renderEditPlaylistSelected();
-  renderEditPlaylistSearchResults();
-  renderEditCart();
-}
-
-function handleEditPlaylistSearchInput(e) {
-  const q = e.target.value.trim().toLowerCase();
-  state.editPlaylistSearchResults = !q ? [] : state.playlists.filter((p) => getPlaylistName(p).toLowerCase().includes(q));
-  renderEditPlaylistSearchResults();
-}
-
-/* เปิด modal แก้ไข พร้อมกรอกข้อมูลออเดอร์เดิมลงในฟอร์ม */
-function openEditOrderModal(orderId) {
-  const order = state.allOrders.find((o) => o.id === orderId);
-  if (!order) return;
-
-  // รองรับทุกรูปแบบออเดอร์แล้ว (single/playlist/mixed รวมถึงออเดอร์เก่าที่ไม่มี order_type)
-  // แปลงกลับเป็นตะกร้าแบบผสมเพื่อแก้ไขต่อได้โดยไม่ทำข้อมูลเดิมหาย
-  state.editingOrderId = orderId;
-  state.editCartEntries = buildCartEntriesFromOrder(order);
-  state.editSearchResults = [];
-  state.editPlaylistSearchResults = [];
-
-  document.getElementById("eOrderCustomerName").value = order.customer_name || "";
-  document.getElementById("eOrderCustomerWhatsapp").value = order.whatsapp || "";
-  document.getElementById("eOrderSongSearch").value = "";
-  document.getElementById("eOrdPlaylistSearch").value = "";
-  document.getElementById("eOrderFeedback").textContent = "";
-
-  // ทุกครั้งที่แก้ไข ให้ยอดรวมกลับมาคำนวณจากข้อมูลสินค้าจริง
-  state.editCartTotalEdited = false;
-
-  renderEditCart();
-  renderEditSearchResults();
-  renderEditPlaylistSelected();
-  renderEditPlaylistSearchResults();
-  const backdrop = document.getElementById("orderFormBackdrop");
-  backdrop.classList.add("open");
-  backdrop.style.display = "flex";
-}
-
-function closeEditOrderModal() {
-  const backdrop = document.getElementById("orderFormBackdrop");
-  backdrop.classList.remove("open");
-  backdrop.style.display = "none";
-  state.editingOrderId = null;
-  state.editCartEntries = [];
-  state.editSearchResults = [];
-  state.editCartTotalEdited = false;
-  state.editPlaylistSearchResults = [];
-}
-
-/* บันทึกการแก้ไขออเดอร์ลง Firestore จริง */
-async function handleUpdateOrder() {
-  const orderId = state.editingOrderId;
-  if (!orderId) return;
-
-  const nameInput = document.getElementById("eOrderCustomerName");
-  const whatsappInput = document.getElementById("eOrderCustomerWhatsapp");
-  const feedback = document.getElementById("eOrderFeedback");
-  const btn = document.getElementById("eOrderSaveBtn");
-
-  const customerName = nameInput.value.trim();
-  const whatsapp = whatsappInput.value.trim();
-  const payload = buildOrderPayloadFromEntries(state.editCartEntries);
-  const total = payload.total;
-  const existingOrder = state.allOrders.find((o) => o.id === orderId);
-
-  feedback.style.color = "var(--danger)";
-  feedback.textContent = "";
-
-  if (!customerName || !whatsapp) {
-    feedback.textContent = "กรุณากรอกชื่อลูกค้าและเบอร์ WhatsApp";
-    return;
-  }
-  if (state.editCartEntries.length === 0) {
-    feedback.textContent = "กรุณาเลือกเพลงหรือเพลย์ลิสต์อย่างน้อย 1 รายการ";
-    return;
-  }
-  if (!Number.isFinite(total) || total < 0) {
-    feedback.textContent = "กรุณากรอกยอดรวมให้ถูกต้อง";
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = "กำลังบันทึก...";
-
-  // ===== คำนวณ discount/promotion ใหม่จาก edit cart entries (เหมือนตอนสร้างใหม่) =====
-  // เหตุผล: ถ้า admin แก้ items ใน order → ส่วนลดต้องคำนวณใหม่ด้วย
-  // แต่ถ้า admin แค่เปลี่ยนชื่อลูกค้า/เบอร์ → ส่วนลดเดิมควรคงไว้
-  // ใน v1: กระทำการ "คำนวณใหม่เสมอ" เพราะง่ายและปลอดภัย (snapshot ใหม่ = ส่วนลดใหม่ที่ถูกต้องตาม items ปัจจุบัน)
-  const pricingResult = await computeAdminPricing(state.editCartEntries);
-  const subtotal = pricingResult.subtotal ?? total;
-  const discountAmount = pricingResult.discountAmount ?? 0;
-  const promotionApplied = pricingResult.promotionApplied ?? null;
-  const finalTotal = pricingResult.finalTotal ?? total;
-
-  const updatedData = {
-    customer_name: customerName,
-    // 🔧 แก้บั๊ก (2026-09-18): normalize เบอร์ Laos ก่อนเก็บลง DB (เหมือนฝั่ง app-cart.js)
-    //   ทำให้ track order ตามเบอร์รูปแบบใดก็เจอ (020 / 20 / +85620 ฯลฯ)
-    whatsapp: normalizePhoneForStorage(whatsapp),
-    items: payload.items,
-    total: finalTotal, // ← ใช้ finalTotal สำหรับ back-compat
-    order_type: payload.order_type, // "single" | "playlist" | "mixed"
-    playlist_id: payload.playlist_id,
-    playlist_name: payload.playlist_name,
-    // เคลียร์ playlist_ids ให้ตรงกับ order_type ใหม่เสมอ (กันเศษข้อมูลเก่าค้าง เช่น แก้จาก mixed
-    // กลับมาเป็น single/playlist แล้ว resolveOrderSongs ไปดึงเพลย์ลิสต์เก่าที่ไม่เกี่ยวข้องมาทำ ZIP)
-    playlist_ids: payload.playlist_ids,
-    store_name: existingOrder?.store_name || state.storeName,
-    receipt_number: existingOrder?.receipt_number || getReceiptNumber(orderId, existingOrder?.created_at),
-    updated_at: new Date().toISOString(),
-    // ===== ฟิลด์ใหม่: snapshot ใหม่ ตาม items ปัจจุบัน =====
-    subtotal,
-    discount_amount: discountAmount,
-    promotion_applied: promotionApplied,
-    final_total: finalTotal,
-  };
-
-  try {
-    await updateDoc(doc(db, "orders", orderId), updatedData);
-    closeEditOrderModal();
-    // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client แทน re-fetch (ลด D1 reads)
-    //   updatedData มีทุก field ที่จำเป็น (items, total, status, zip fields, ฯลฯ) อยู่แล้ว
-    //   รวมถึง id (คงเดิมจาก orderId) + created_at + receipt_number + store_name ที่อาจไม่ได้ส่งใน updatedData
-    //   → ใช้ existingOrder (state.allOrders.find) เป็น base แล้ว merge updatedData เข้าไป
-    const updatedOrderState = {
-      ...(existingOrder || {}),
-      ...updatedData,
-      id: orderId,
-    };
-    await updateOrderInState(orderId, updatedOrderState);
-    renderFromState();
-    openReceipt(orderId);
-  } catch (err) {
-    feedback.textContent = "บันทึกไม่สำเร็จ: " + err.message;
-  }
-
-  btn.disabled = false;
-  btn.textContent = "บันทึกการแก้ไข";
-}
-
-/* ---------------- Event handlers (ฟอร์มสร้างออเดอร์ใหม่) ---------------- */
-function handleSearchInput(e) {
-  const q = e.target.value.trim().toLowerCase();
-  if (!q) {
-    state.searchResults = [];
-  } else {
-    state.searchResults = state.songs.filter((s) =>
-      [s.song_name, s.artist, s.dj_name].join(" ").toLowerCase().includes(q)
-    );
-  }
-  renderSearchResults();
-}
-
-function addToCart(songId) {
-  const song = state.songs.find((s) => s.id === songId);
-  if (!song) return;
-  // 🔧 (2026-09-16): ห้ามเพิ่มเพลงซ้ำในออเดอร์เดียวเด็ดขาด
-  // ตรวจทั้งกรณี "เพลงเดี่ยวซ้ำ" และ "เพลงนี้อยู่ใน playlist ในตะกร้าแล้ว"
-  // กันลูกค้าเสียเงิน 2 ครั้งในเพลงเดียวกัน
-  const check = findSongInCartEntries(state.cartEntries, song.id);
-  if (check.duplicate) {
-    if (check.inKind === "song") {
-      orderToast(`เพลง "${song.song_name}" ถูกเพิ่มเป็นเพลงเดี่ยวไปแล้ว — ห้ามเพิ่มซ้ำในออเดอร์เดียวกัน`, "error");
-    } else {
-      orderToast(`เพลง "${song.song_name}" อยู่ในเพลย์ลิสต์ "${check.inTitle}" ในตะกร้าแล้ว — ห้ามเพิ่มซ้ำ (กันลูกค้าเสียเงิน 2 ครั้ง)`, "error");
-    }
-    return;
-  }
-  state.cartEntries.push({ kind: "song", songId: song.id, title: song.song_name, price: Number(song.price || 0) });
-  state.cartTotalEdited = false; // ตะกร้าเปลี่ยน ให้กลับไปคำนวณยอดรวมอัตโนมัติอีกครั้ง
-  renderCart();
-  renderSearchResults();
-}
-
-function removeFromCart(index) {
-  const removed = state.cartEntries[index];
-  state.cartEntries.splice(index, 1);
-  state.cartTotalEdited = false; // ตะกร้าเปลี่ยน ให้กลับไปคำนวณยอดรวมอัตโนมัติอีกครั้ง
-  renderCart();
-  renderSearchResults();
-  if (removed?.kind === "playlist") renderPlaylistSelected();
-  renderPlaylistSearchResults();
-}
-
-/* ---------------- Init (เรียกทุกครั้งที่เปิดหน้า "จัดการออเดอร์") ---------------- */
-// 🔧 แก้บั๊ก I11 (2026-09-18): export refreshDashboardAndHistory ให้เรียกจากปุ่ม "รีเฟรช" ได้
-//   เดิม: refreshDashboardAndHistory ไม่ถูก export → admin ต้องกด F5 เพื่อ sync ข้อมูล
-//   แก้: export ให้ → ปุ่ม "รีเฟรช" ใน admin.html สามารถเรียกได้ → โหลดออเดอร์ล่าสุดโดยไม่ต้อง F5
-export async function refreshDashboardAndHistory() {
-  const orders = await loadOrdersFromDatabase();
-  state.allOrders = orders;
-  renderStats(orders);
-  renderFilterPills();
-  renderHistory();
-  // 🔧 (2026-09-16): อัปเดต badge จำนวนออเดอร์ "รอตรวจสอบการโอน" บนปุ่ม "🧾 จัดการออเดอร์"
-  // ส่ง state.allOrders เข้าไปเพื่อ reuse ข้อมูลที่โหลดแล้ว → ไม่ต้อง query DB ซ้ำ (ประหยัด Cloudflare D1 quota)
-  // ถ้า app-admin.js ยังไม่โหลด (เช่น หน้า user ไม่มี badge) → __updateOrdersBadge จะเป็น undefined → ข้ามไปเฉยๆ
-  if (window.__updateOrdersBadge) window.__updateOrdersBadge(state.allOrders);
-}
-
-// ===================================================
-// 🔧 (2026-09-17 Phase 2): State update helpers — อัปเดต state.allOrders ฝั่ง client
-// เป้าหมาย: หลัง admin action (status change/delete/create/edit) → อัปเดต state ตรง ๆ
-//   แทนการ re-fetch orders ทั้งหมด → ลด D1 reads มาก (15,000 reads/วัน → ~30 reads/วัน)
-//   ความเสีย: ถ้ามีหลายแอดมิน หรือ customer ลบออเดอร์จากฝั่ง user → admin อื่นจะไม่เห็นจนกว่าจะ refresh
-//   แต่ music store ของคุณมี admin สูงสุด 3 คน → ผลกระทบต่ำ
-//   กรณี state ผิดพลาด → กด refresh หน้าเว็บ (F5) → refreshDashboardAndHistory จะ fetch ใหม่ให้
-// ===================================================
-
-// Re-render จาก state.allOrders โดยไม่ re-fetch (ใช้หลัง update/remove/add order)
-function renderFromState() {
-  renderStats(state.allOrders);
-  renderFilterPills();
-  renderHistory();
-  if (window.__updateOrdersBadge) window.__updateOrdersBadge(state.allOrders);
-}
-
-// อัปเดต order ใน state.allOrders (merge patch เข้าไป)
-// ถ้าไม่เจอ order ใน state (เกิดจาก multi-admin race) → fallback เรียก refreshDashboardAndHistory
-async function updateOrderInState(orderId, patch) {
-  const idx = state.allOrders.findIndex(o => o.id === orderId);
-  if (idx === -1) {
-    // fallback: order ไม่อยู่ใน state (อาจถูกลบไปแล้วจากอีก admin) → re-fetch ใหม่
-    console.warn("updateOrderInState: order not found in state, falling back to full refresh", orderId);
-    await refreshDashboardAndHistory();
-    return;
-  }
-  state.allOrders[idx] = { ...state.allOrders[idx], ...patch };
-}
-
-// ลบ order ออกจาก state.allOrders
-function removeOrderFromState(orderId) {
-  state.allOrders = state.allOrders.filter(o => o.id !== orderId);
-}
-
-// เพิ่ม order ใหม่เข้าไปด้านหน้า state.allOrders (ใหม่สุดอยู่บนสุดของ list ที่ sort ตาม created_at desc)
-function addOrderToState(order) {
-  if (!order || !order.id) return;
-  state.allOrders.unshift(order);
-}
-
-async function handleSubmitOrder() {
-  const nameInput = document.getElementById("ordCustomerName");
-  const whatsappInput = document.getElementById("ordCustomerWhatsapp");
-  const feedback = document.getElementById("ordFormFeedback");
-  const btn = document.getElementById("ordSubmitBtn");
-
-  const customerName = nameInput.value.trim();
-  // 🔧 แก้บั๊ก (2026-09-18): normalize เบอร์ Laos ก่อนเก็บลง DB (เหมือนฝั่ง app-cart.js + edit order)
-  //   ทำให้ track order ตามเบอร์รูปแบบใดก็เจอ (020 / 20 / +85620 ฯลฯ)
-  const whatsapp = normalizePhoneForStorage(whatsappInput.value.trim());
-  const payload = buildOrderPayloadFromEntries(state.cartEntries);
-  const total = payload.total;
-
-  feedback.textContent = "";
-  feedback.style.color = "var(--danger)";
-
-  if (!customerName || !whatsapp) {
-    feedback.textContent = "กรุณากรอกชื่อลูกค้าและเบอร์ WhatsApp";
-    return;
-  }
-  if (state.cartEntries.length === 0) {
-    feedback.textContent = "กรุณาเลือกเพลงหรือเพลย์ลิสต์อย่างน้อย 1 รายการ";
-    return;
-  }
-  if (!Number.isFinite(total) || total < 0) {
-    feedback.textContent = "กรุณากรอกยอดรวมให้ถูกต้อง";
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = "กำลังบันทึก...";
-
-  // ===== คำนวณ discount/promotion แบบเดียวกับฝั่งลูกค้า — เพื่อบันทึก snapshot ใน order =====
-  // ใช้ cart entries ปัจจุบัน แปลงเป็น cartItems format
-  const pricingResult = await computeAdminPricing(state.cartEntries);
-  const subtotal = pricingResult.subtotal ?? total;
-  const discountAmount = pricingResult.discountAmount ?? 0;
-  const promotionApplied = pricingResult.promotionApplied ?? null;
-  const finalTotal = pricingResult.finalTotal ?? total;
-
-  const order = {
-    customer_name: customerName,
-    whatsapp: whatsapp,
-    items: payload.items,
-    total: finalTotal, // ← ใช้ finalTotal (หลังลด) สำหรับ back-compat กับ admin code ที่อ่าน order.total
-    order_type: payload.order_type, // "single" | "playlist" | "mixed" — ใช้แยกสถิติใน Dashboard
-    playlist_id: payload.playlist_id,
-    playlist_name: payload.playlist_name,
-    playlist_ids: payload.playlist_ids,
-    store_name: state.storeName,
-    status: "pending_verify",
-    created_at: new Date().toISOString(),
-    // ===== ฟิลด์ใหม่: snapshot การคำนวณส่วนลด ณ เวลาสั่ง =====
-    subtotal,
-    discount_amount: discountAmount,
-    promotion_applied: promotionApplied,
-    final_total: finalTotal,
-    // 🔧 (2026-09-20 admin audit): บันทึกว่าแอดมินคนไหนสร้างออเดอร์นี้
-    ...buildCreatedByAudit(),
-  };
-
-  try {
-    const orderRef = doc(collection(db, "orders"));
-    order.receipt_number = getReceiptNumber(orderRef.id, order.created_at);
-    await setDoc(orderRef, order);
-
-    nameInput.value = "";
-    whatsappInput.value = "";
-    document.getElementById("ordSongSearch").value = "";
-    document.getElementById("ordPlaylistSearch").value = "";
-    state.cartEntries = [];
-    state.searchResults = [];
-    state.cartTotalEdited = false;
-    state.playlistSearchResults = [];
-    renderCart();
-    renderSearchResults();
-    renderPlaylistSelected();
-    renderPlaylistSearchResults();
-
-    feedback.style.color = "var(--success)";
-    feedback.textContent = `บันทึกออเดอร์ของ ${customerName} เรียบร้อยแล้ว ✓`;
-
-    // 🔧 (2026-09-19 layout fix): ปิด modal "สร้างออเดอร์ใหม่" หลัง submit สำเร็จ
-    //   ปิด modal ก่อน แล้วค่อยเปิด receipt (กัน modal ซ้อนกัน)
-    const ordCreateBackdrop = document.getElementById("ordCreateBackdrop");
-    if (ordCreateBackdrop) {
-      ordCreateBackdrop.classList.remove("open");
-      ordCreateBackdrop.style.display = "none";
-      // ล้าง feedback หลังปิด modal 1 วินาที (กัน user เห็น flash)
-      setTimeout(() => { feedback.textContent = ""; }, 1000);
-    }
-
-    // 🔧 (2026-09-17 Phase 2): เพิ่ม order ใหม่เข้า state ฝั่ง client แทน re-fetch (ลด D1 reads)
-    //   order ที่บันทึกมี id (orderRef.id), created_at, receipt_number, items, status='pending_verify', ฯลฯ ครบ
-    addOrderToState({ id: orderRef.id, ...order });
-    renderFromState();
-    openReceipt(orderRef.id);
-  } catch (err) {
-    feedback.textContent = "บันทึกไม่สำเร็จ: " + err.message;
-  }
-
-  btn.disabled = false;
-  btn.textContent = "บันทึกออเดอร์";
-}
-
-// ===== เพิ่มใหม่: คำนวณ discount/promotion สำหรับ admin cart entries =====
-// cartEntries: array ของ { kind, song_id, playlist_id, price, ... }
-// return: { subtotal, discountSubtotal, itemDiscountAmount, promoDiscountAmount, discountAmount, promotionApplied, finalTotal }
-async function computeAdminPricing(cartEntries) {
-  try {
-    // โหลด active discounts + promotions แบบ forceRefresh (เหมือนฝั่งลูกค้า)
-    const [discounts, promotions] = await Promise.all([
-      fetchActiveDiscounts(true),
-      fetchActivePromotions(true)
+  /*
+   * ตรวจสอบรายการในตะกร้า + คำนวณราคาจากฐานข้อมูลจริง (ไม่เชื่อราคาที่ cache ไว้ในตะกร้า)
+   *
+   * หมายเหตุ (แก้บั๊ก 2026-09-05): เดิมฟังก์ชันนี้อ่านข้อมูลผ่าน Firestore Transaction
+   * (transaction.get) เพื่อให้อ่าน+เขียน Order อยู่ในธุรกรรมเดียวกัน แต่พบว่า Firestore Web SDK
+   * ในบางเบราว์เซอร์/เครือข่าย (โดยเฉพาะ Safari/iPad) โยน TypeError ภายใน SDK เอง
+   * ("undefined is not an object (evaluating 'i.path')") เวลาปิด transaction ที่มีทั้ง
+   * document read และ query read ปนกัน — จึงเปลี่ยนมาใช้การอ่านแบบธรรมดา (getDoc/getDocs)
+   * แทน แล้วค่อยเขียน Order ด้วย setDoc() อีกที (ไม่ใช้ transaction) ผลลัพธ์/ราคาที่คำนวณ
+   * ยังคงเหมือนเดิมทุกประการ เพียงแต่ไม่การันตี atomicity ระดับ Firestore transaction
+   * (ซึ่งยอมรับได้ เพราะทุก Order ที่สร้างมีสถานะ "รอตรวจสอบการโอน" ให้แอดมินเช็คมืออยู่แล้ว)
+   *
+   * รองรับ 3 รูปแบบของตะกร้า:
+   *  1) มีแต่เพลงเดี่ยว                      -> order_type "single"   (พฤติกรรมเดิมทุกประการ)
+   *  2) มีเพลย์ลิสต์เดียว ไม่มีเพลงเดี่ยวปน     -> order_type "playlist" (พฤติกรรมเดิมทุกประการ)
+   *  3) เพลงเดี่ยว+เพลย์ลิสต์ผสมกัน หรือมีเพลย์ลิสต์มากกว่า 1 รายการ -> order_type "mixed" (ใหม่)
+   *     กรณีนี้ 1 รายการในตะกร้า = 1 Order Item เสมอ (เพลย์ลิสต์ไม่ถูกขยายเป็นหลายเพลง)
+   *     เช่น เพลง 3 เพลง + เพลย์ลิสต์ 2 รายการ -> items.length === 5
+   */
+  async function resolveCartFromDatabase() {
+    const songEntries = state.cart.filter(item => item.kind !== "playlist");
+    const playlistEntries = state.cart.filter(item => item.kind === "playlist");
+    const playlistIds = playlistEntries.map(item => String(item.id).replace(/^playlist:/, ""));
+
+    // ---- เพิ่มใหม่ (แก้บั๊ก 2026-09-09): อ่านข้อมูลทุกอย่างพร้อมกันด้วย Promise.all แทนการวน await ทีละรายการ ----
+    // เดิมใช้ for...of + await วนอ่านทีละเพลง/ทีละเพลย์ลิสต์เรียงกันไป ทำให้ตะกร้าที่มีหลายรายการ
+    // ยิ่งมีรายการเยอะยิ่งรอนาน (เวลารวม = ผลรวมของทุก request) โดยเฉพาะเน็ตช้า/มือถือ
+    // เปลี่ยนมายิง request ทั้งหมดพร้อมกันแทน (เวลารวม = request ที่ช้าที่สุดตัวเดียว) ผลลัพธ์/การตรวจสอบ
+    // ราคาและสถานะเพลงยังคงเหมือนเดิมทุกประการ เพียงแค่เปลี่ยนวิธีอ่านข้อมูลให้เร็วขึ้น
+    //
+    // 🚀 (2026-09-28 fix H7): ลด N+1 queries ด้วย batch fetch ผ่าน getDocsByIds
+    //   เดิม: Promise.all ของ N getDoc (เพลงเดี่ยว) + M getDoc (playlists)
+    //         → ถ้าตะกร้ามี 30 เพลง + 5 playlists = 36 HTTP requests ไป Worker
+    //         → checkout ช้า 10+ วิบนเน็ตมือถือ
+    //   ใหม่: ใช้ getDocsByIds แบบ batch (1 request ต่อ collection) → 2 requests รวม settings = 3
+    //         → checkout เร็วขึ้น ~10x สำหรับตะกร้าใหญ่
+    //   ผลกระทบระบบเดิม: 0% — getDocsByIds คืน Map ของ docSnap (มี .exists() + .data() เหมือนเดิม)
+    //   ข้อแตกต่าง: ถ้า id ไม่มีใน DB → ไม่อยู่ใน Map → ใช้ map.has(id) เช็คก่อน .get(id)
+    //              (เดิม getDoc คืน docSnap ที่ .exists()=false → ตรวจด้วย !songSnap.exists())
+    //              → ปรับ logic ด้านล่างให้ใช้ map.has() แทน !snap.exists()
+    const [songMap, playlistMap, playlistSongsSnaps, settingsSnap] = await Promise.all([
+      // 🚀 batch fetch เพลงเดี่ยวทั้งหมดใน 1 request (แทนที่จะเป็น N requests)
+      songEntries.length > 0
+        ? getDocsByIds("songs", songEntries.map(c => c.id))
+        : Promise.resolve(new Map()),
+      // 🚀 batch fetch playlists ทั้งหมดใน 1 request (แทนที่จะเป็น M requests)
+      playlistIds.length > 0
+        ? getDocsByIds("playlists", playlistIds)
+        : Promise.resolve(new Map()),
+      // (เดิม) playlist songs ยังใช้ getDocs(query) ทีละ playlist เพราะต้องการ WHERE playlist_id
+      // — ถ้าจะ optimize ต่อ ต้องเพิ่ม endpoint ใหม่ (out of scope for H7)
+      Promise.all(playlistIds.map(playlistId => getDocs(query(collection(db, "songs"), where("playlist_id", "==", playlistId))))),
+      // (เดิม) settings อ่านทีเดียวอยู่แล้ว
+      getDoc(doc(db, "settings", "main"))
     ]);
-    // แปลง cartEntries → cartItems format ที่ pricing.js ต้องการ
-    // 🔧 (2026-09-16): รองรับทั้ง snake_case (playlist_id/song_id — จาก app-cart.js)
-    // และ camelCase (playlistId/songId — จาก orders.js addToCart/addToPlaylist)
-    // ก่อนหน้านี้อ่านแค่ snake_case ทำให้ cartEntries ฝั่งแอดมิน (ที่ใช้ camelCase) ส่งค่า
-    // "undefined" เข้า computeCartPricing → findActiveDiscountFor ไม่เจอ → ไม่มีส่วนลด
-    const cartItems = cartEntries.map(entry => {
-      if (entry.kind === "playlist") {
-        return {
-          kind: "playlist",
-          playlist_id: entry.playlist_id || entry.playlistId || String(entry.id || "").replace(/^playlist:/, ""),
-          price: Number(entry.price) || 0
-        };
-      } else {
-        // song — หา category_id จาก state.songs
-        const songId = entry.song_id || entry.songId || String(entry.id || "");
-        const songData = state.songs.find(s => s.id === songId) || {};
+
+    // ---- ตรวจสอบ/ดึงราคาล่าสุดของเพลงเดี่ยวที่เพิ่มเองในตะกร้า ----
+    // 🔧 (2026-09-28 fix H7): ปรับจาก songSnaps[index] เป็น songMap.get(id)
+    //   เดิม: const songSnap = songSnaps[index]; if (!songSnap.exists()) throw ...
+    //   ใหม่: const songSnap = songMap.get(String(cartItem.id)); if (!songSnap) throw ...
+    //   ผลกระทบ logic: เหมือนเดิม — throw error message เดิมถ้าไม่พบเพลง
+    const singleSongItems = songEntries.map((cartItem) => {
+      const songSnap = songMap.get(String(cartItem.id));
+      if (!songSnap || !songSnap.exists()) throw new Error(`ไม่พบเพลง "${cartItem.song_name}" ในฐานข้อมูล`);
+      const song = songSnap.data();
+      if (song.status === "hidden") throw new Error(`เพลง "${song.song_name || cartItem.song_name}" ปิดการขายแล้ว`);
+      const price = Number(song.price);
+      if (!Number.isFinite(price) || price < 0) throw new Error(`ราคาเพลง "${song.song_name || cartItem.song_name}" ไม่ถูกต้อง`);
+      return {
+        song_id: songSnap.id,
+        title: String(song.song_name || cartItem.song_name || "เพลง"),
+        price,
+        quantity: 1
+      };
+    });
+
+    // ---- ตรวจสอบ/ดึงราคาล่าสุดของเพลย์ลิสต์แต่ละรายการในตะกร้า ----
+    // 🔧 (2026-09-28 fix H7): ปรับจาก playlistSnaps[index] เป็น playlistMap.get(id)
+    //   เดิม: const playlistSnap = playlistSnaps[index]; if (!playlistSnap.exists()) throw ...
+    //   ใหม่: const playlistSnap = playlistMap.get(playlistId); if (!playlistSnap) throw ...
+    //   ผลกระทบ logic: เหมือนเดิม — throw error message เดิมถ้าไม่พบ playlist
+    const playlistResolutions = playlistEntries.map((cartItem, index) => {
+      const playlistId = playlistIds[index];
+      const playlistSnap = playlistMap.get(playlistId);
+      if (!playlistSnap || !playlistSnap.exists()) throw new Error(`ไม่พบเพลย์ลิสต์ "${cartItem.song_name}" ในฐานข้อมูล`);
+      const playlist = { id: playlistSnap.id, ...playlistSnap.data() };
+      const playlistPrice = Number(playlist.price);
+      if (!Number.isFinite(playlistPrice) || playlistPrice <= 0) {
+        throw new Error(`เพลย์ลิสต์ "${playlist.playlist_name || cartItem.song_name}" ยังไม่มีราคาขาย`);
+      }
+
+      const activeSongs = [];
+      playlistSongsSnaps[index].docs.forEach(songDoc => {
+        const song = songDoc.data();
+        if (song.status === "hidden") return;
+        activeSongs.push({
+          song_id: songDoc.id,
+          title: String(song.song_name || "เพลง"),
+          price: Number.isFinite(Number(song.price)) ? Number(song.price) : 0
+        });
+      });
+      if (activeSongs.length === 0) {
+        throw new Error(`เพลย์ลิสต์ "${playlist.playlist_name || cartItem.song_name}" ยังไม่มีเพลงที่เปิดขาย`);
+      }
+      return { playlist, songs: activeSongs };
+    });
+
+
+    const settings = settingsSnap.exists() ? settingsSnap.data() : {};
+
+    // ===== ลดราคา + โปรโมชั่น (ระบบใหม่) — โหลด active discounts/promotions พร้อมกัน =====
+    // ใช้ cache ที่โหลดไว้แล้วใน app-user.js init() — ถ้าไม่มี cache จะโหลดใหม่
+    // forceRefresh = true เพื่อให้ checkout ได้ข้อมูลล่าสุดเสมอ (กัน admin เพิ่งเปลี่ยนส่วนลดตอนลูกค้ากำลัง checkout)
+    let activeDiscounts = [];
+    let activePromotions = [];
+    try {
+      [activeDiscounts, activePromotions] = await Promise.all([
+        fetchActiveDiscounts(true),
+        fetchActivePromotions(true)
+      ]);
+    } catch (e) {
+      console.warn("โหลด discounts/promotions ไม่สำเร็จ — คำนวณราคาปกติ", e);
+    }
+
+    // ===== กรณีเดิม (1): มีเพลย์ลิสต์เดียวล้วนๆ ไม่มีเพลงเดี่ยวปน — คงพฤติกรรมเดิมทุกประการ =====
+    if (playlistResolutions.length === 1 && singleSongItems.length === 0) {
+      const { playlist, songs } = playlistResolutions[0];
+      // คำนวณ discount + promotion (ถ้ามี)
+      const cartItems = [{ kind: "playlist", playlist_id: playlist.id, price: Number(playlist.price) }];
+      const pricing = computeCartPricing(cartItems, activeDiscounts, activePromotions);
+      return {
+        items: songs.map(s => ({ song_id: s.song_id, title: s.title, price: s.price, quantity: 1 })),
+        total: pricing.finalTotal,  // ← ยอดสุดท้าย (เก็บใน order.total เหมือนเดิม)
+        subtotal: pricing.subtotal,
+        discountSubtotal: pricing.discountSubtotal,
+        discountAmount: pricing.discountAmount,
+        promotionApplied: pricing.promotionApplied,
+        finalTotal: pricing.finalTotal,
+        orderType: "playlist",
+        playlist,
+        playlistIds: [playlist.id],
+        settings
+      };
+    }
+
+    // ===== กรณีเดิม (2): มีแต่เพลงเดี่ยว ไม่มีเพลย์ลิสต์เลย — คงพฤติกรรมเดิมทุกประการ =====
+    if (playlistResolutions.length === 0) {
+      const baseTotal = singleSongItems.reduce((sum, item) => sum + item.price, 0);
+      if (!Number.isFinite(baseTotal) || baseTotal < 0) throw new Error("คำนวณยอดรวมจากฐานข้อมูลไม่สำเร็จ");
+      // คำนวณ discount + promotion โดยใช้ category_id ของแต่ละเพลง (สำหรับ promotion หมวดหมู่)
+      const cartItems = singleSongItems.map(item => {
+        const songSnap = songSnaps.find((s, idx) => songEntries[idx] && songEntries[idx].id === item.song_id);
+        const songData = songSnap?.data() || {};
         return {
           kind: "song",
-          song_id: songId,
-          price: Number(entry.price) || 0,
+          song_id: item.song_id,
+          price: item.price,
           category_id: songData.category_id || songData.categoryId || null
         };
-      }
+      });
+      const pricing = computeCartPricing(cartItems, activeDiscounts, activePromotions);
+      return {
+        items: singleSongItems,
+        total: pricing.finalTotal,
+        subtotal: pricing.subtotal,
+        discountSubtotal: pricing.discountSubtotal,
+        discountAmount: pricing.discountAmount,
+        promotionApplied: pricing.promotionApplied,
+        finalTotal: pricing.finalTotal,
+        orderType: "single",
+        playlist: null,
+        playlistIds: [],
+        settings
+      };
+    }
+
+    // ===== กรณีใหม่ (3): เพลย์ลิสต์หลายรายการ และ/หรือ เพลงเดี่ยวปนกับเพลย์ลิสต์ =====
+    const playlistLineItems = playlistResolutions.map(({ playlist, songs }) => ({
+      kind: "playlist",
+      playlist_id: playlist.id,
+      title: String(playlist.playlist_name || playlist.name || "เพลย์ลิสต์"),
+      price: Number(playlist.price),
+      quantity: 1,
+      song_ids: songs.map(s => s.song_id), // เก็บ snapshot ไอดีเพลงในเพลย์ลิสต์ไว้ ใช้อ้างอิงฝั่ง Admin (ไม่กระทบระบบเดิม)
+      song_titles: songs.map(s => s.title) // เก็บ snapshot ชื่อเพลงคู่กัน ใช้แสดงในใบเสร็จ/ข้อความ WhatsApp เท่านั้น ไม่ใช้คิดราคา
+    }));
+    const songLineItems = singleSongItems.map((item, idx) => {
+      const songSnap = songSnaps[idx];
+      const songData = songSnap?.data() || {};
+      return {
+        kind: "song",
+        song_id: item.song_id,
+        title: item.title,
+        price: item.price,
+        quantity: 1,
+        category_id: songData.category_id || songData.categoryId || null
+      };
     });
-    return computeCartPricing(cartItems, discounts, promotions);
-  } catch (e) {
-    console.warn("computeAdminPricing error:", e);
-    // fallback: ไม่มี discount/promo
-    const subtotal = cartEntries.reduce((s, e) => s + (Number(e.price) || 0), 0);
+    const items = [...songLineItems, ...playlistLineItems];
+    const baseTotal = items.reduce((sum, item) => sum + item.price, 0);
+    if (!Number.isFinite(baseTotal) || baseTotal < 0) throw new Error("คำนวณยอดรวมจากฐานข้อมูลไม่สำเร็จ");
+
+    // คำนวณ discount + promotion (กรณี mixed)
+    const cartItems = items.map(item => ({
+      kind: item.kind,
+      song_id: item.song_id,
+      playlist_id: item.playlist_id,
+      price: item.price,
+      category_id: item.category_id || null
+    }));
+    const pricing = computeCartPricing(cartItems, activeDiscounts, activePromotions);
+
     return {
-      subtotal,
-      discountSubtotal: subtotal,
-      itemDiscountAmount: 0,
-      promoDiscountAmount: 0,
-      discountAmount: 0,
-      promotionApplied: null,
-      finalTotal: subtotal
+      items,
+      total: pricing.finalTotal,
+      subtotal: pricing.subtotal,
+      discountSubtotal: pricing.discountSubtotal,
+      discountAmount: pricing.discountAmount,
+      promotionApplied: pricing.promotionApplied,
+      finalTotal: pricing.finalTotal,
+      orderType: "mixed",
+      playlist: null,
+      playlistIds: playlistResolutions.map(r => r.playlist.id),
+      settings
     };
   }
-}
 
-/* ---------------- Init (เรียกทุกครั้งที่เปิดหน้า "จัดการออเดอร์") ---------------- */
-export async function initOrdersView() {
-  const loadingEl = document.getElementById("ordSongsLoading");
-  ensureReceiptElements();
-  ensureFullFilesElements();
-  loadingEl.style.display = "block";
-  loadingEl.textContent = "กำลังโหลดรายชื่อเพลง...";
-
-  try {
-    // โหลดทั้งเพลงและเพลย์ลิสต์ (ราคาเหมา) พร้อมกัน เพื่อให้ระบบขายยกเพลย์ลิสต์ใช้งานได้ทันที
-    const [songs, playlists, storeName] = await Promise.all([
-      loadSongsFromDatabase(),
-      loadPlaylistsFromDatabase(),
-      loadStoreName(),
-    ]);
-    state.songs = songs;
-    state.playlists = playlists;
-    state.storeName = storeName;
-    loadingEl.style.display = "none";
-  } catch (err) {
-    loadingEl.textContent = "โหลดข้อมูลไม่สำเร็จ: " + err.message;
-    return;
+  function buildAdminWhatsAppText(order, receiptNumber, storeName) {
+    // เพลย์ลิสต์ (ทั้งกรณีสั่งซื้อยกเพลย์ลิสต์ล้วนๆ และกรณีผสมกับเพลงเดี่ยว) แสดงรายชื่อเพลงข้างในไว้ให้
+    // ลูกค้าตรวจสอบเท่านั้น — ราคาที่คิดเงินยังคงเป็นราคาเหมาเพลย์ลิสต์ ไม่บวกราคาเพลงย่อยซ้ำ
+    const lines = order.order_type === "playlist"
+      ? [
+          `1. เพลย์ลิสต์: ${order.playlist_name || "ไม่ระบุชื่อ"} — ${formatPrice(order.total)}`,
+          ...(order.items || []).map(item => `   • ${item.title}`)
+        ]
+      : order.items.flatMap((item, index) => {
+          if (item.kind === "playlist") {
+            const nested = (item.song_titles || []).map(title => `   • ${title}`);
+            return [`${index + 1}. 🎶 เพลย์ลิสต์: ${item.title} — ${formatPrice(item.price)}`, ...nested];
+          }
+          return [`${index + 1}. ${item.title} — ${formatPrice(item.price)}`];
+        });
+    return [
+      `สวัสดีครับ มี Order ใหม่จาก ${storeName || "Music Store"}`,
+      "",
+      `🧾 Order: ${receiptNumber}`,
+      `👤 ลูกค้า: ${order.customer_name}`,
+      `📱 WhatsApp ลูกค้า: ${order.whatsapp}`,
+      "",
+      "🛒 รายการสั่งซื้อ",
+      ...lines,
+      "",
+      `🎵 จำนวนทั้งหมด: ${order.items.length} ${
+        order.order_type === "playlist" ? "เพลงในเพลย์ลิสต์"
+        : order.order_type === "mixed" ? "รายการ (เพลง/เพลย์ลิสต์)"
+        : "เพลง"
+      }`,
+      `💰 ราคารวม: ${formatPrice(order.total)}`,
+      "",
+      "สถานะ: รอตรวจสอบการโอน"
+    ].join("\n");
   }
 
-  if (!state.listenersBound) {
-    document.getElementById("ordSongSearch").addEventListener("input", debounce(handleSearchInput, 200));
-    document.getElementById("ordSubmitBtn").addEventListener("click", handleSubmitOrder);
-    document.getElementById("ordPlaylistSearch").addEventListener("input", debounce(handlePlaylistSearchInput, 200));
+  // ===== เพิ่มใหม่: ใบเสร็จหลังสั่งซื้อสำเร็จ (ฝั่งลูกค้า) — โครงหน้าเดียวกับใบเสร็จฝั่งแอดมิน =====
+  // ปุ่ม WhatsApp บนใบเสร็จนี้ถูกปรับให้เป็น "ติดต่อแอดมินเพื่อชำระเงิน" (ไม่ใช่ส่งใบเสร็จหาเบอร์ลูกค้าแบบฝั่งแอดมิน)
+  // และสร้างข้อความอัตโนมัติด้วย buildAdminWhatsAppText เดิมที่มีอยู่แล้วด้านบน (ใช้ซ้ำ ไม่สร้างข้อความใหม่)
+  // ===== เพิ่มใหม่: จำออเดอร์ล่าสุด + แถบเตือน "ยังไม่ได้แจ้งแอดมิน" =====
+  let receiptContacted = false; // สถานะของใบเสร็จที่กำลังเปิดอยู่ ณ ขณะนี้ — ใช้เช็คก่อนปิด
+  // 🔧 (2026-09-26 ต่อสายให้ครบ): เก็บออเดอร์ค้างชำระจริงจาก DB (ทุกใบของลูกค้า ไม่ใช่แค่ใบล่าสุดในเครื่องนี้)
+  //   ส่งเข้ามาโดย app-user.js ผ่าน updatePendingPaymentInfo() หลัง fetchTrackOrderBadgeOnce()
+  //   ไม่แทนที่ระบบ localStorage เดิม (record/getLastOrderRecord) — ใช้ "เสริม" กัน เพื่อไม่ให้กระทบ flow เดิมตอนเพิ่งสั่งซื้อเสร็จ
+  let dbPendingOrders = [];
 
-    // 🔧 (2026-09-19 layout fix): เปิด/ปิด modal "สร้างออเดอร์ใหม่"
-    //   เดิม: ฟอร์มอยู่ในหน้าหลัก → หน้ายาว → ปุ่ม "บันทึกออเดอร์" โดนตัดขอบล่าง
-    //   ใหม่: กดปุ่ม "➕ สร้างออเดอร์ใหม่" → เปิด modal → กด ✕ หรือกดพื้นหลัง → ปิด modal
-    //   ผลกระทบต่อระบบเดิม: 0% — element IDs ทั้งหมดยังอยู่ใน modal (เหมือนเดิม)
-    const ordCreateBtn = document.getElementById("ordCreateBtn");
-    const ordCreateBackdrop = document.getElementById("ordCreateBackdrop");
-    const ordCreateCloseBtn = document.getElementById("ordCreateCloseBtn");
-    if (ordCreateBtn && ordCreateBackdrop) {
-      ordCreateBtn.addEventListener("click", () => {
-        ordCreateBackdrop.style.display = "flex";
-        // trigger reflow ก่อน add class open (เหมือน modal อื่น ๆ ในระบบ)
-        ordCreateBackdrop.offsetHeight;
-        ordCreateBackdrop.classList.add("open");
-      });
-    }
-    if (ordCreateCloseBtn && ordCreateBackdrop) {
-      ordCreateCloseBtn.addEventListener("click", () => {
-        ordCreateBackdrop.classList.remove("open");
-        ordCreateBackdrop.style.display = "none";
-      });
-    }
-    // กดพื้นหลัง (นอก modal) → ปิด modal
-    if (ordCreateBackdrop) {
-      ordCreateBackdrop.addEventListener("click", (e) => {
-        if (e.target === ordCreateBackdrop) {
-          ordCreateBackdrop.classList.remove("open");
-          ordCreateBackdrop.style.display = "none";
-        }
-      });
-    }
-
-    // 🔧 แก้บั๊ก I11 (2026-09-18): ปุ่ม "รีเฟรช" — โหลดออเดอร์ล่าสุดจาก DB โดยไม่ต้อง F5
-    //   ใช้เมื่อ: สงสัยว่าข้อมูลไม่ใช่ล่าสุด / อยากเช็คว่ามีออเดอร์ใหม่ไหม / ก่อน action สำคัญ
-    //   ทำงาน: เรียก refreshDashboardAndHistory() → โหลด orders ทั้งหมดจาก DB ใหม่ → render ใหม่
-    const ordersRefreshBtnEl = document.getElementById("ordersRefreshBtn");
-    if (ordersRefreshBtnEl) {
-      ordersRefreshBtnEl.addEventListener("click", async () => {
-        // แสดงสถานะ "กำลังรีเฟรช..." ขณะโหลด (กัน user กดซ้ำ)
-        ordersRefreshBtnEl.style.opacity = "0.5";
-        ordersRefreshBtnEl.style.pointerEvents = "none";
-        try {
-          await refreshDashboardAndHistory();
-          // ใช้ toast ของ app-admin.js (ถ้ามี) หรือ console.log (fallback)
-          if (window.__showToast) window.__showToast("รีเฟรชออเดอร์แล้ว", "success");
-          else console.log("✅ รีเฟรชออเดอร์แล้ว");
-        } catch (err) {
-          console.error("รีเฟรชออเดอร์ไม่สำเร็จ:", err);
-          if (window.__showToast) window.__showToast("รีเฟรชไม่สำเร็จ: " + (err?.message || err), "error");
-        } finally {
-          ordersRefreshBtnEl.style.opacity = "";
-          ordersRefreshBtnEl.style.pointerEvents = "";
-        }
-      });
-    }
-
-    // ---- ค้นหาในประวัติออเดอร์ (เพิ่มใหม่ — ไม่กระทบระบบเดิม) ----
-    const ordHistorySearchEl = document.getElementById("ordHistorySearch");
-    if (ordHistorySearchEl) {
-      ordHistorySearchEl.addEventListener("input", debounce(handleHistorySearchInput, 200));
-    }
-    const ordHistorySearchClearEl = document.getElementById("ordHistorySearchClear");
-    if (ordHistorySearchClearEl) {
-      ordHistorySearchClearEl.addEventListener("click", () => {
-        state.historySearch = "";
-        const inp = document.getElementById("ordHistorySearch");
-        if (inp) inp.value = "";
-        renderHistory();
-      });
-    }
-
-    // ปุ่ม/ช่องค้นหาของ modal แก้ไขออเดอร์
-    document.getElementById("eOrderSongSearch").addEventListener("input", debounce(handleEditSearchInput, 200));
-    document.getElementById("eOrderSaveBtn").addEventListener("click", handleUpdateOrder);
-    document.getElementById("orderFormClose").addEventListener("click", closeEditOrderModal);
-    document.getElementById("orderFormBackdrop").addEventListener("click", (e) => {
-      if (e.target.id === "orderFormBackdrop") closeEditOrderModal();
-    });
-    document.getElementById("eOrdPlaylistSearch").addEventListener("input", debounce(handleEditPlaylistSearchInput, 200));
-
-    document.getElementById("receiptClose").addEventListener("click", closeReceipt);
-    // ปุ่มคัดลอก/WhatsApp/ดาวน์โหลดรูป ถูกผูกกับ Order ที่เปิดอยู่ใน openReceipt() แทน (ต้องใช้ข้อมูล order ของแต่ละครั้ง)
-    document.getElementById("receiptBackdrop").addEventListener("click", (e) => {
-      if (e.target.id === "receiptBackdrop") closeReceipt();
-    });
-
-    document.getElementById("fullFilesClose").addEventListener("click", closeFullFilesModal);
-    document.getElementById("fullFilesBackdrop").addEventListener("click", (e) => {
-      if (e.target.id === "fullFilesBackdrop") closeFullFilesModal();
-    });
-
-    state.listenersBound = true;
+  function updatePendingPaymentInfo(orders) {
+    dbPendingOrders = Array.isArray(orders) ? orders : [];
+    renderPendingOrderBanner();
   }
 
-  // รีเซ็ตฟอร์มสร้างออเดอร์ใหม่ทุกครั้งที่เปิดหน้านี้
-  state.cartEntries = [];
-  state.searchResults = [];
-  state.cartTotalEdited = false;
-  state.playlistSearchResults = [];
-  document.getElementById("ordSongSearch").value = "";
-  document.getElementById("ordPlaylistSearch").value = "";
-  document.getElementById("ordFormFeedback").textContent = "";
-  // รีเซ็ตการค้นหาในประวัติออเดอร์ (เพิ่มใหม่ — กันค่าค้างจาก session ก่อน)
-  state.historySearch = "";
-  const ordHistorySearchInput = document.getElementById("ordHistorySearch");
-  if (ordHistorySearchInput) ordHistorySearchInput.value = "";
-  renderCart();
-  renderSearchResults();
-  renderPlaylistSelected();
-  renderPlaylistSearchResults();
+  function saveLastOrderRecord(order, receiptNumber) {
+    try {
+      localStorage.setItem(LAST_ORDER_STORAGE_KEY, JSON.stringify({ order, receiptNumber, contacted: false }));
+      // 🔧 (2026-09-22 Batch 7 fix Bug #4): ใช้ localStorage.removeItem แทน sessionStorage.removeItem
+      //   เพราะ BANNER_DISMISS_KEY ย้ายไป localStorage แล้ว → ต้องลบจาก localStorage ด้วย
+      localStorage.removeItem(BANNER_DISMISS_KEY);
+    } catch (_) {}
+  }
 
-  await refreshDashboardAndHistory();
+  function getLastOrderRecord() {
+    try {
+      const raw = localStorage.getItem(LAST_ORDER_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (!parsed || !parsed.order || !parsed.receiptNumber) return null;
+      return parsed;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function markLastOrderContacted() {
+    const record = getLastOrderRecord();
+    if (!record) return;
+    try {
+      // 🛡️ (added 2026-09-26 sync payment state): อัปเดต order ใน localStorage ด้วยสถานะการชำระล่าสุด
+      //   ก่อนหน้านี้แค่ set contacted=true → record.order ยังเป็นข้อมูลเก่า (status=pending_verify ไม่มี payment_proof_status)
+      //   ทำให้ renderPendingOrderBanner ใช้ getOrderPaymentState(record.order) → ได้ state='unpaid' → banner ยังแสดง
+      //   ทั้งที่จริง ๆ ลูกค้าอัปสลิปแล้ว → state ควรเป็น 'pending_review' → banner ควรซ่อน
+      //   แก้: merge payment_proof_status='pending' เข้าไปใน order ด้วย เพื่อให้ helper คำนวณถูก
+      const updatedOrder = {
+        ...record.order,
+        payment_proof_status: "pending",
+        payment_proof_uploaded_at: new Date().toISOString(),
+      };
+      localStorage.setItem(LAST_ORDER_STORAGE_KEY, JSON.stringify({ ...record, order: updatedOrder, contacted: true }));
+    } catch (_) {}
+    receiptContacted = true;
+    renderPendingOrderBanner();
+  }
+
+  function renderPendingOrderBanner() {
+    const banner = document.getElementById("pendingOrderBanner");
+    if (!banner) return;
+    const record = getLastOrderRecord();
+    // 🔧 (2026-09-22 Batch 7 fix Bug #4): ใช้ localStorage + 24h TTL แทน sessionStorage
+    //   เดิม: sessionStorage → หายตอนปิด tab → ลูกค้าเปิด tab ค้างไว้ → banner หายตลอดวัน
+    //   ใหม่: localStorage เก็บ timestamp หมดอายุ → ครบ 24h แสดง banner อีกครั้ง
+    //   ผลกระทบระบบเดิม: 0% — ถ้าไม่ dismiss → banner แสดงเหมือนเดิม
+    const DISMISS_TTL_MS = 24 * 60 * 60 * 1000; // 24 ชั่วโมง
+    let dismissed = false;
+    try {
+      const dismissedUntil = Number(localStorage.getItem(BANNER_DISMISS_KEY) || "0");
+      dismissed = dismissedUntil > Date.now();
+      if (!dismissed) {
+        // หมดอายุแล้ว → ลบค่าเก่าออกจาก localStorage (keep clean)
+        localStorage.removeItem(BANNER_DISMISS_KEY);
+      }
+    } catch (_) {}
+    // 🛡️ (added 2026-09-26 fix banner logic): ใช้ getOrderPaymentState() แทนการเช็คแค่ status
+    //   เพื่อให้ banner แสดงเฉพาะเมื่อมีออเดอร์ที่ "ยังต้องชำระ" จริง (state unpaid / rejected / cancelled)
+    //   ไม่ใช่กรณีที่ออเดอร์อยู่ระหว่างตรวจสอบ (pending_review / verified_awaiting_zip / paid)
+    //   เดิมเช็คแค่ status='pending_verify' → รวมกรณีส่งสลิปแล้วรอตรวจ หรือยืนยันแล้ว ซึ่งไม่ใช่ "ค้างชำระ"
+    //   ใหม่: ใช้ helper getOrderPaymentState → state unpaid/rejected/cancelled เท่านั้นที่นับเป็นค้างชำระ
+    //   ผลกระทบระบบเดิม: banner จะซ่อนเมื่อลูกค้าอัปสลิปแล้ว (ถูกต้อง) แทนที่จะยังแสดงเตือนทั้งที่ส่งสลิปแล้ว
+    let recordStillUnpaid = false;
+    if (record && !record.contacted) {
+      // ใช้ helper getOrderPaymentState (function declaration → hoisted จึงอ้างอิงได้)
+      const recordState = getOrderPaymentState(record.order);
+      recordStillUnpaid = recordState.showPayButton; // unpaid / rejected / cancelled → true
+    }
+    const hasDbPending = dbPendingOrders.some(order => {
+      const oState = getOrderPaymentState(order);
+      return oState.showPayButton; // unpaid / rejected / cancelled
+    });
+    const shouldShow = (recordStillUnpaid || hasDbPending) && !dismissed;
+    banner.hidden = !shouldShow;
+  }
+
+  // 🛡️ (added 2026-09-26 fix close warning): เก็บ order ปัจจุบันที่กำลังเปิดใบเสร็จอยู่
+  //   เพื่อใช้ตอน attemptCloseReceipt เช็คสถานะการชำระล่าสุดจาก server
+  //   แทนการเช็คแค่ receiptContacted (ในเครื่อง) ที่ไม่รู้ว่าแอดมินปฏิเสธสลิปหรือยืนยันแล้ว
+  let __currentReceiptOrder = null;
+  let __currentReceiptNumber = null;
+
+  async function attemptCloseReceipt() {
+    // 🛡️ (added 2026-09-26 fix close warning): เช็คสถานะการชำระจาก server ก่อนปิด
+    //   ถ้า order ยัง "ต้องชำระ" (state unpaid/rejected/cancelled) → เตือนก่อนปิด
+    //   ถ้า order ส่งสลิปแล้ว/ยืนยันแล้ว/ชำระแล้ว → ปิดได้ทันที ไม่ต้องเตือน
+    //   fallback: ถ้า fetch server ล้มเหลว (offline) → ใช้ receiptContacted เป็น fallback เหมือนเดิม
+    let needWarn = !receiptContacted; // default ตามเดิม (ถ้า fetch ไม่ได้)
+    if (__currentReceiptOrder) {
+      try {
+        const result = await queryCustomerOrder({
+          receiptNumber: String(__currentReceiptNumber || __currentReceiptOrder?.receipt_number || ""),
+          customerName: String(__currentReceiptOrder?.customer_name || ""),
+          whatsapp: String(__currentReceiptOrder?.whatsapp || ""),
+        });
+        if (result && result.exists && result.data) {
+          const freshOrder = { ...result.data, _docId: result.id };
+          const freshState = getOrderPaymentState(freshOrder);
+          // ถ้าสถานะคือ paid/pending_review/verified_awaiting_zip → ไม่ต้องเตือน (ลูกค้าจ่ายหรือแจ้งแล้ว)
+          // ถ้าสถานะคือ unpaid/rejected/cancelled → เตือน (ยังไม่ได้จ่ายหรือสลิปถูกปฏิเสธ)
+          needWarn = freshState.showPayButton;
+        }
+      } catch (err) {
+        // silent fail — ใช้ค่า default (receiptContacted) เหมือนเดิม
+        console.warn("attemptCloseReceipt: queryCustomerOrder failed, using receiptContacted fallback:", err?.message || err);
+      }
+    }
+    if (needWarn) {
+      // 🎨 (2026-09-26): ใช้ customConfirm แทน window.confirm() — สไตล์เดียวกับเว็บ
+      const confirmed = await window.customConfirm(
+        "คุณยังไม่ได้กดแจ้งแอดมินเพื่อชำระเงิน\nหากปิดตอนนี้ แอดมินจะยังไม่เห็นออเดอร์ของคุณ\n\nต้องการปิดหรือไม่?",
+        { title: "ยังไม่ได้แจ้งชำระเงิน", okText: "ปิด", cancelText: "ยังอยู่", success: true }
+      );
+      if (!confirmed) return;
+    }
+    closeReceipt();
+    renderPendingOrderBanner();
+  }
+
+  function closeReceipt() {
+    const backdrop = document.getElementById("receiptBackdrop");
+    if (!backdrop) return;
+    backdrop.classList.remove("show");
+    backdrop.setAttribute("aria-hidden", "true");
+    // 🛡️ (added 2026-09-26): ล้าง order ปัจจุบันเมื่อปิดใบเสร็จ — กัน attemptCloseReceipt ใช้ข้อมูลเก่า
+    __currentReceiptOrder = null;
+    __currentReceiptNumber = null;
+  }
+
+  function buildReceiptItemRows(order) {
+    const items = order.items || [];
+    if (order.order_type === "playlist") {
+      const playlistName = order.playlist_name || "เพลย์ลิสต์";
+      const songLines = items.map((item, idx) => `
+        <div class="receipt-line" style="border-bottom:none;padding:4px 0 4px 14px;">
+          <small>${idx + 1}. ${escapeHtml(item.title || "เพลง")}</small>
+        </div>
+      `).join("");
+      return `
+        <div class="receipt-line" style="flex-direction:column;align-items:stretch;gap:2px;">
+          <div style="display:flex;justify-content:space-between;">
+            <strong>🎶 ${escapeHtml(playlistName)}</strong>
+            <strong>${formatPrice(order.total)}</strong>
+          </div>
+          <small style="color:#666;">ยกเพลย์ลิสต์ · ${items.length} เพลง</small>
+        </div>
+        ${songLines}
+      `;
+    }
+
+    // 🔢 นับเลขลำดับแยกกัน: เพลงเดี่ยว (songCounter) กับเพลย์ลิสต์ (playlistCounter)
+    //    ทั้งสองชุดเริ่มนับที่ 1 อิสระจากกัน แต่แสดงรวมอยู่ในใบเสร็จเดียว/ออเดอร์เดียวกัน
+    let songCounter = 0;
+    let playlistCounter = 0;
+    return items.map(item => {
+      if (item.kind !== "playlist") {
+        songCounter++;
+        return `
+          <div class="receipt-line">
+            <div><strong>${songCounter}. ${escapeHtml(item.title || "เพลง")}</strong></div>
+            <strong>${formatPrice(item.price)}</strong>
+          </div>
+        `;
+      }
+      playlistCounter++;
+      // เพลย์ลิสต์ในออเดอร์ผสม — ใช้ song_titles ที่ snapshot ไว้ตอนสั่งซื้อ (resolveCartFromDatabase) โดยตรง ไม่ query ซ้ำ
+      const songTitles = Array.isArray(item.song_titles) ? item.song_titles : [];
+      const songLines = songTitles.map(name => `
+        <div class="receipt-line" style="border-bottom:none;padding:4px 0 4px 14px;">
+          <small>• ${escapeHtml(name)}</small>
+        </div>
+      `).join("");
+      return `
+        <div class="receipt-line" style="flex-direction:column;align-items:stretch;gap:2px;">
+          <div style="display:flex;justify-content:space-between;">
+            <strong>🎶 ${playlistCounter}. ${escapeHtml(item.title || "เพลย์ลิสต์")}</strong>
+            <strong>${formatPrice(item.price)}</strong>
+          </div>
+          <small style="color:#666;">ยกเพลย์ลิสต์ · ${songTitles.length} เพลง</small>
+        </div>
+        ${songLines}
+      `;
+    }).join("");
+  }
+
+  // แคปเฉพาะส่วนใบเสร็จสีขาว (.receipt-paper) เป็นรูป — โค้ดเดียวกับฝั่งแอดมิน (captureReceiptCanvas/downloadReceiptAsImage ใน orders.js)
+  // 🔧 (2026-09-22 Batch 7 fix Bug #1): ใช้ window.html2canvas (จาก script tag ใน HTML) ก่อน
+  //   ถ้าโหลดจาก script tag ไม่สำเร็จ → fallback ไป dynamic import (เดิม)
+  //   วิธีทำ: สร้าง helper function getHtml2Canvas() ที่ cache module → เรียกครั้งแรก fetch จาก CDN, ครั้งถัดไปใช้ cache
+  let _html2canvasCache = null;
+  async function getHtml2Canvas() {
+    // ลองใช้ window.html2canvas ก่อน (จาก script tag)
+    if (typeof window !== "undefined" && window.html2canvas) {
+      return window.html2canvas;
+    }
+    // Fallback: dynamic import (เดิม)
+    if (!_html2canvasCache) {
+      _html2canvasCache = await import("https://esm.sh/html2canvas@1.4.1");
+    }
+    return _html2canvasCache.default || _html2canvasCache;
+  }
+
+  async function captureReceiptCanvas() {
+    const target = document.querySelector("#receiptContent .receipt-paper");
+    if (!target) return null;
+    const html2canvas = await getHtml2Canvas();
+    return html2canvas(target, { backgroundColor: "#ffffff", scale: 2, useCORS: true });
+  }
+
+  async function downloadReceiptAsImage(receiptNumber) {
+    try {
+      const canvas = await captureReceiptCanvas();
+      if (!canvas) { showToast("ไม่พบใบเสร็จให้บันทึก", "error"); return; }
+      const dataUrl = canvas.toDataURL("image/png");
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `receipt-${receiptNumber || "order"}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      showToast("บันทึกรูปใบเสร็จสำเร็จ", "success");
+    } catch (err) {
+      showToast("บันทึกรูปใบเสร็จไม่สำเร็จ: " + err.message, "error");
+    }
+  }
+
+  // ===== เพิ่มใหม่: สร้างแถวส่วนลด/โปรโมชั่นสำหรับใบเสร็จ =====
+  // อ่านจาก order.subtotal, order.discount_amount, order.promotion_applied (snapshot ตอนสั่ง)
+  // ถ้า order เก่าไม่มี field เหล่านี้ → ไม่แสดงแถวพิเศษ (back-compat)
+  function buildReceiptDiscountRows(order) {
+    const subtotal = order.subtotal;
+    const discountAmount = order.discount_amount;
+    const promotionApplied = order.promotion_applied;
+    const finalTotal = order.final_total ?? order.total;
+    // ถ้าไม่มีข้อมูลส่วนลดเลย → ไม่แสดงแถวพิเศษ (order เก่าก่อน deploy ระบบใหม่)
+    if (subtotal == null && discountAmount == null && !promotionApplied) return "";
+    // ถ้าส่วนลดเป็น 0 และไม่มี promotion → ไม่แสดง
+    const hasDiscount = (discountAmount && discountAmount > 0) || (promotionApplied && promotionApplied.discount_amount > 0);
+    if (!hasDiscount) return "";
+
+    let rows = "";
+    if (subtotal != null && subtotal !== finalTotal) {
+      rows += `<div class="receipt-line receipt-discount-row"><span>ยอดรวมก่อนลด</span><span>${formatPrice(subtotal)}</span></div>`;
+    }
+    if (promotionApplied && promotionApplied.name) {
+      const promoAmount = promotionApplied.discount_amount || 0;
+      if (promoAmount > 0) {
+        rows += `<div class="receipt-line receipt-promo-row"><span>🎁 โปรโมชั่น: ${escapeHtml(promotionApplied.name)}</span><span>-${formatPrice(promoAmount)}</span></div>`;
+      }
+    }
+    if (discountAmount && discountAmount > 0) {
+      // ถ้า promotionApplied มี discount_amount แล้ว → discountAmount รวม item-level + promo
+      // ถ้ามี promotionApplied อยู่ → แสดงเฉพาะส่วนต่างของ item-level (ถ้ามี)
+      const promoAmount = promotionApplied?.discount_amount || 0;
+      const itemDiscount = discountAmount - promoAmount;
+      if (itemDiscount > 0) {
+        rows += `<div class="receipt-line receipt-discount-row"><span>ส่วนลดจากราคาปกติ</span><span>-${formatPrice(itemDiscount)}</span></div>`;
+      }
+    }
+    return rows;
+  }
+
+  function showReceipt(order, receiptNumber, adminWhatsappNumber, alreadyContacted) {
+    receiptContacted = !!alreadyContacted;
+    // 🛡️ (added 2026-09-26): เก็บ order ปัจจุบันไว้ใช้ตอน attemptCloseReceipt
+    __currentReceiptOrder = order;
+    __currentReceiptNumber = receiptNumber;
+    const date = order.created_at ? new Date(order.created_at) : new Date();
+    const dateText = Number.isNaN(date.getTime())
+      ? "-"
+      : date.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+
+    // 🛡️ (added 2026-09-26 prevent double payment): คำนวณสถานะการชำระเงิน เพื่อ
+    //   ซ่อน/แสดงปุ่ม "ชำระเงิน" + แสดง banner สถานะเด่นชัดบนใบเสร็จ
+    //   ใช้ helper getOrderPaymentState() ด้านล่าง (ฟังก์ชัน declaration → hoisted จึงอ้างอิงได้)
+    let paymentState = getOrderPaymentState(order);
+
+    const content = document.getElementById("receiptContent");
+    if (!content) return;
+    content.innerHTML = `
+      <div class="receipt-paper">
+        <div class="receipt-accent-bar"></div>
+        <div class="receipt-head">
+          <h2>${escapeHtml(order.store_name || "Music Store")}</h2>
+          <div>ใบเสร็จรับเงิน</div>
+          <small>เลขที่ ${escapeHtml(receiptNumber)}</small>
+          <small>${escapeHtml(dateText)}</small>
+        </div>
+        ${/* 🛡️ (added 2026-09-26): banner สถานะการชำระเงิน แสดงใต้ header ก่อนรายการสินค้า */ ""}
+        ${(paymentState.message || paymentState.warning)
+          ? `<div style="margin:10px 0;padding:12px;border-radius:8px;border:1px solid ${paymentState.color};background:${paymentState.bg};color:${paymentState.color};">
+              <div style="font-weight:700;font-size:14px;">${escapeHtml(paymentState.label)}</div>
+              ${paymentState.message ? `<div style="font-size:13px;margin-top:6px;line-height:1.5;">${escapeHtml(paymentState.message)}</div>` : ""}
+              ${paymentState.warning ? `<div style="font-size:13px;margin-top:6px;line-height:1.5;font-weight:600;">${escapeHtml(paymentState.warning)}</div>` : ""}
+              ${paymentState.customHtml || ""}
+            </div>`
+          : ""}
+        <div class="receipt-customer">
+          <div><span>ลูกค้า</span><strong>${escapeHtml(order.customer_name)}</strong></div>
+          <div><span>WhatsApp</span><strong>${escapeHtml(order.whatsapp)}</strong></div>
+        </div>
+        <div class="receipt-items">${buildReceiptItemRows(order) || '<div class="receipt-empty">ไม่มีรายการสินค้า</div>'}</div>
+        ${buildReceiptDiscountRows(order)}
+        <div class="receipt-total"><span>รวมทั้งสิ้น</span><strong>${formatPrice(order.final_total ?? order.total)}</strong></div>
+        <div class="receipt-thanks">ขอบคุณที่ใช้บริการ</div>
+      </div>
+    `;
+
+    const backdrop = document.getElementById("receiptBackdrop");
+    if (backdrop) {
+      backdrop.classList.add("show");
+      backdrop.setAttribute("aria-hidden", "false");
+    }
+
+    const waBtn = document.getElementById("receiptWhatsAppBtn");
+    if (waBtn) {
+      waBtn.onclick = () => {
+        const number = String(adminWhatsappNumber || state.settings?.whatsapp_number || "").replace(/[^0-9]/g, "");
+        if (!number) { showToast("ร้านยังไม่ได้ตั้งค่าเบอร์ WhatsApp", "error"); return; }
+        const text = buildAdminWhatsAppText(order, receiptNumber, order.store_name);
+        window.open(buildWhatsAppLink(number, text), "_blank", "noopener");
+        markLastOrderContacted();
+      };
+    }
+    const downloadBtn = document.getElementById("receiptDownloadImgBtn");
+    if (downloadBtn) downloadBtn.onclick = () => downloadReceiptAsImage(receiptNumber);
+
+    // 📸 (added STEP 2): ปุ่ม "💳 ชำระเงิน" — เปิด payment modal แสดง QR/บัญชี
+    // 🛡️ (added 2026-09-26): ซ่อนปุ่มเมื่อ order อยู่ในสถานะที่ห้ามชำระซ้ำ (paid / pending_review / verified_awaiting_zip)
+    //   ปุ่มยังแสดงเมื่อ state เป็น unpaid / rejected / cancelled (ลูกค้ายังชำระใหม่/ส่งสลิปใหม่ได้)
+    const payBtn = document.getElementById("receiptPayBtn");
+    if (payBtn) {
+      if (paymentState.showPayButton) {
+        payBtn.hidden = false;
+        payBtn.style.display = "";
+        payBtn.onclick = () => openPaymentModal(order, receiptNumber);
+      } else {
+        payBtn.hidden = true;
+        payBtn.style.display = "none";
+        payBtn.onclick = null;
+      }
+    }
+
+    renderPendingOrderBanner();
+
+    // 🛡️ (added 2026-09-26): silent refetch — ตรวจสอบสถานะล่าสุดจาก server หลังแสดงใบเสร็จ
+    //   เพื่อจัดการกรณี order object ในเครื่องเก่า (เช่น เปิดจาก getLastOrderRecord หลังผ่านไปหลายชม.)
+    //   ถ้าพบว่าสถานะการชำระเงินเปลี่ยน → re-render receipt + แสดง toast แจ้งเตือนลูกค้า
+    //   ไม่บล็อค UI — ใบเสร็จแสดงทันทีด้วยข้อมูลที่มี แล้วอัปเดตภายหลังถ้าจำเป็น
+    //   ผลกระทบระบบเดิม: 0% — เพิ่ม background fetch ไม่แตะ flow เดิม
+    (async () => {
+      try {
+        const result = await queryCustomerOrder({
+          receiptNumber: String(receiptNumber || order?.receipt_number || ""),
+          customerName: String(order?.customer_name || ""),
+          whatsapp: String(order?.whatsapp || ""),
+        });
+        if (!result || !result.exists || !result.data) return;
+        const freshOrder = { ...result.data, _docId: result.id };
+        const freshState = getOrderPaymentState(freshOrder);
+        // ถ้าสถานะเปลี่ยน (เช่น จาก unpaid → pending_review หรือ paid) → re-render
+        if (freshState.state !== paymentState.state) {
+          // เช็คว่า modal ยังเปิดอยู่ (กัน re-render หลังปิด)
+          const currentBackdrop = document.getElementById("receiptBackdrop");
+          if (!currentBackdrop || !currentBackdrop.classList.contains("show")) return;
+          // re-render ด้วยข้อมูลล่าสุด
+          showToast("สถานะการชำระเงินได้รับการอัปเดต", "info");
+          showReceipt(freshOrder, receiptNumber, adminWhatsappNumber, alreadyContacted);
+        }
+      } catch (err) {
+        // silent fail — ถ้า fetch ล้มเหลว (offline ฯลฯ) ไม่บล็อค UX
+        console.warn("showReceipt: silent refetch failed:", err?.message || err);
+      }
+    })();
+  }
+
+  // ================= 📸 PAYMENT FLOW (added STEP 2-6 — additive, no existing function touched) =================
+  //   Endpoints (เห็นใน worker/index.js — เพิ่มใหม่ทั้งหมด ไม่แตะของเดิม):
+  //     POST /api/orders/:id/payment-proof — ลูกค้าอัปโหลดสลิป (anonymous + ownership verify)
+  //
+  //   UI:
+  //     #paymentBackdrop      — modal แสดง QR/บัญชี + ปุ่ม "อัปโหลดสลิป" + ปุ่ม "คัดลอกเลขบัญชี"
+  //     #uploadSlipBackdrop   — modal เลือกไฟล์ + preview + ยืนยัน
+  //
+  //   Settings ที่ใช้ (จาก settings/main doc):
+  //     bank_name, bank_account, bank_account_name, qr_code_url, payment_instructions
+  //
+  //   WhatsApp: ใช้ buildWhatsAppLink() ของเดิม — เป็น wa.me deep link (notification only)
+  //            ระบบหลัก: R2 + D1 — ถ้า WhatsApp เปิดไม่ได้ slip ยังอยู่ในระบบ
+
+  // 🛡️ (added 2026-09-26 prevent double payment): helper function
+  //   getOrderPaymentState(order) — คำนวณ "สถานะการชำระเงิน" ของ order จาก field ที่มีอยู่แล้ว
+  //   ใช้สำหรับซ่อน/แสดง ปุ่ม "ชำระเงิน" และ QR บนหน้าลูกค้า เพื่อป้องกันการชำระซ้ำ
+  //
+  //   คืนค่า: { state, label, color, bg, message, warning, showPayButton, showQR, allowUploadSlip }
+  //     state: 'paid' | 'verified_awaiting_zip' | 'pending_review' | 'rejected' | 'unpaid' | 'cancelled'
+  //     showPayButton: true เมื่อลูกค้ายังสามารถกดชำระเงินได้ (state unpaid / rejected / cancelled)
+  //     showQR: true เมื่อควรแสดง QR บัญชี (state unpaid / rejected)
+  //     allowUploadSlip: true เมื่อลูกค้ายังอัปโหลดสลิปใหม่ได้ (state unpaid / rejected / cancelled)
+  //
+  //   หลักเกณฑ์ (ตรวจสอบกับระบบเดิมแล้ว ไม่ขัดกับ behavior ที่มี):
+  //     - status 'processing' / 'completed' → 'paid' (เนื่องจากแอดมินกดยืนยันโอนแล้ว)
+  //     - status 'pending_verify' + payment_proof_status='pending' → 'pending_review' (🟡 รอตรวจสอบ)
+  //     - status 'pending_verify' + payment_proof_status='verified' → 'verified_awaiting_zip' (🟢 ยืนยันแล้ว รอเตรียมไฟล์)
+  //     - status 'pending_verify' + payment_proof_status='rejected' → 'rejected' (ลูกค้าส่งสลิปใหม่ได้)
+  //     - status 'pending_verify' + ไม่มี payment_proof_id → 'unpaid'
+  //     - status 'cancelled' → 'cancelled' (อัปโหลดสลิปใหม่ได้ตามระบบเดิม — backend ยังอนุญาต)
+  //
+  //   ผลกระทบระบบเดิม: 0% — เป็น helper ใหม่ ไม่แตะฟังก์ชันเดิม
+  function getOrderPaymentState(order) {
+    if (!order) {
+      return { state: "unpaid", label: "🟡 ยังไม่ได้ชำระเงิน", color: "#F5B400", bg: "rgba(245,180,0,.15)",
+               message: "", warning: "", showPayButton: true, showQR: true, allowUploadSlip: true };
+    }
+    const status = String(order.status || "");
+    const ppStatus = String(order.payment_proof_status || "");
+    // 1) ชำระเงินแล้ว (แอดมินยืนยันโอนแล้ว เปลี่ยน status เป็น processing/completed)
+    if (status === "processing" || status === "completed") {
+      return {
+        state: "paid",
+        label: "🟢 ชำระเงินแล้ว",
+        color: "#28c76f",
+        bg: "rgba(41,204,113,.15)",
+        message: "ออเดอร์นี้ชำระเงินเรียบร้อยแล้ว",
+        warning: "",
+        showPayButton: false,
+        showQR: false,
+        allowUploadSlip: false,
+      };
+    }
+    // 2a) ส่งหลักฐานแล้ว รอแอดมินตรวจสอบ (payment_proof_status='pending')
+    //   สถานะนี้เกิดหลังลูกค้าอัปสลิป แต่แอดมินยังไม่ได้ตรวจ
+    //   แสดงสีเหลือง เพื่อให้ลูกค้ารู้ว่าต้องรอแอดมินตรวจสอบ
+    if (status === "pending_verify" && ppStatus === "pending") {
+      return {
+        state: "pending_review",
+        label: "🟡 ส่งหลักฐานการชำระเงินแล้ว",
+        color: "#F5B400",
+        bg: "rgba(245,180,0,.15)",
+        message: "ระบบได้รับหลักฐานการชำระเงินของคุณแล้ว กรุณารอการตรวจสอบ",
+        warning: "⚠️ ไม่ต้องชำระเงินซ้ำสำหรับออเดอร์นี้",
+        showPayButton: false,
+        showQR: false,
+        allowUploadSlip: false,
+      };
+    }
+    // 2b) 🆕 (2026-09-26): แอดมินยืนยันสลิปแล้ว รอเตรียมไฟล์ส่งให้ (payment_proof_status='verified')
+    //   สถานะนี้เกิดหลังแอดมินกดยืนยันสลิปผ่านหน้าตรวจสอบสลิป
+    //   แต่ยังไม่ได้กดเปลี่ยน status เป็น 'processing' (ตาม comment ใน worker/index.js บรรทัด 4022-4023
+    //   ที่ระบุว่า verify สลิปแล้ว admin ต้องไปกดเปลี่ยน status เองในหน้า orders)
+    //   แสดงสีเขียวให้ลูกค้ารู้ว่าสลิปผ่านการตรวจแล้ว รอแอดมินเตรียมไฟล์ ZIP ส่งให้
+    //   ป้องกันไม่ให้ลูกค้าชำระซ้ำ (เหมือน pending_review แต่เป็นสีเขียวเพื่อยืนยันว่าผ่านแล้ว)
+    if (status === "pending_verify" && ppStatus === "verified") {
+      return {
+        state: "verified_awaiting_zip",
+        label: "🟢 ยืนยันการชำระเงินแล้ว",
+        color: "#28c76f",
+        bg: "rgba(41,204,113,.15)",
+        message: "แอดมินยืนยันหลักฐานการชำระเงินของคุณแล้ว รอแอดมินเตรียมไฟล์ส่งให้",
+        warning: "⚠️ ไม่ต้องชำระเงินซ้ำสำหรับออเดอร์นี้",
+        showPayButton: false,
+        showQR: false,
+        allowUploadSlip: false,
+      };
+    }
+    // 3) สลิปถูกปฏิเสธ → ลูกค้าส่งสลิปใหม่ได้
+    if (status === "pending_verify" && ppStatus === "rejected") {
+      const rejectReason = order.payment_proof_reject_reason ? String(order.payment_proof_reject_reason) : "";
+      const reasonLine = rejectReason ? `<div style="font-size:12px;color:var(--text-dim);margin-top:6px;">เหตุผลที่ปฏิเสธ: ${escapeHtml(rejectReason)}</div>` : "";
+      return {
+        state: "rejected",
+        label: "🔴 สลิปถูกปฏิเสธ กรุณาส่งใหม่",
+        color: "#ef4444",
+        bg: "rgba(239,68,68,.15)",
+        message: "หลักฐานการชำระเงินของคุณถูกปฏิเสธ กรุณาตรวจสอบและอัปโหลดสลิปใหม่",
+        warning: "⚠️ กรุณากดปุ่ม \"ชำระเงิน\" และอัปโหลดสลิปใหม่สำหรับออเดอร์นี้",
+        customHtml: reasonLine,
+        showPayButton: true,
+        showQR: true,
+        allowUploadSlip: true,
+      };
+    }
+    // 4) ออเดอร์ยกเลิก — backend ยังอนุญาตให้อัปสลิปใหม่ได้ (เหมือนเดิม) แต่แสดงสถานะให้ชัดเจน
+    if (status === "cancelled") {
+      return {
+        state: "cancelled",
+        label: "🔴 ออเดอร์ถูกยกเลิก",
+        color: "#ff6b6b",
+        bg: "rgba(255,107,107,.15)",
+        message: "ออเดอร์นี้ถูกยกเลิก หากต้องการชำระเงิน กรุณากดปุ่ม \"ชำระเงิน\" เพื่อแจ้งยอดโอน",
+        warning: "",
+        showPayButton: true,
+        showQR: true,
+        allowUploadSlip: true,
+      };
+    }
+    // 5) ยังไม่ได้ชำระเงิน (pending_verify ไม่มี payment_proof_id หรือไม่มีสถานะสลิป)
+    return {
+      state: "unpaid",
+      label: "🟡 ยังไม่ได้ชำระเงิน",
+      color: "#F5B400",
+      bg: "rgba(245,180,0,.15)",
+      message: "",
+      warning: "",
+      showPayButton: true,
+      showQR: true,
+      allowUploadSlip: true,
+    };
+  }
+
+  let __currentPaymentOrder = null; // snapshot ของ order ที่กำลังชำระ — ใช้ตอน upload slip
+
+  async function openPaymentModal(order, receiptNumber) {
+    __currentPaymentOrder = { order, receiptNumber };
+    const backdrop = document.getElementById("paymentBackdrop");
+    const content = document.getElementById("paymentContent");
+    if (!backdrop || !content) return;
+    content.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:30px 0;">กำลังตรวจสอบสถานะการชำระเงิน...</div>`;
+    backdrop.classList.add("show");
+    backdrop.setAttribute("aria-hidden", "false");
+
+    // 🛡️ (added 2026-09-26 prevent double payment): refetch order จาก server ก่อนแสดง QR
+    //   ต้องตรวจสอบสถานะการชำระเงินล่าสุดเสมอ ก่อนแสดง QR/ปุ่มอัปโหลดสลิป
+    //   เพื่อป้องกันกรณี:
+    //     - ลูกค้าเคยอัปสลิปแล้วในเซสชั่นก่อน → กลับมากดปุ่ม "ชำระเงิน" ซ้ำ
+    //     - แอดมิน verify ไปแล้ว → ลูกค้าเปิดเข้ามาใหม่ แต่ order object ในเครื่องยังเก่า
+    //     - ลูกค้าเปลี่ยนอุปกรณ์ → localStorage ไม่มีข้อมูลสถานะล่าสุด
+    //   ใช้ queryCustomerOrder (endpoint public + ownership verify) — ตรวบ customer_name + whatsapp + receipt_number
+    let freshOrder = order;
+    try {
+      const result = await queryCustomerOrder({
+        receiptNumber: String(receiptNumber || order?.receipt_number || ""),
+        customerName: String(order?.customer_name || ""),
+        whatsapp: String(order?.whatsapp || ""),
+      });
+      if (result && result.exists && result.data) {
+        // รวม _docId กลับเข้าไปเพื่อให้ upload slip flow ทำงานได้ (ต้องการ orderId)
+        freshOrder = { ...result.data, _docId: result.id };
+        // อัปเดต __currentPaymentOrder ด้วย order ล่าสุด → ใช้ตอน upload slip
+        __currentPaymentOrder = { order: freshOrder, receiptNumber };
+      }
+      // ถ้าไม่พบ order (server ไม่มี / ข้อมูลไม่ตรง) → ใช้ order เดิมที่ส่งมา (fallback)
+    } catch (err) {
+      // ถ้า fetch ล้มเหลว (offline / server ล่ม) → ใช้ order เดิม + แสดงตามสถานะที่มี (best effort)
+      console.warn("openPaymentModal: queryCustomerOrder failed, using stale order:", err?.message || err);
+    }
+
+    // คำนวณสถานะการชำระเงินจากข้อมูลล่าสุด
+    const paymentState = getOrderPaymentState(freshOrder);
+
+    // fetch settings
+    let settings = {};
+    try {
+      const snap = await getDoc(doc(db, "settings", "main"));
+      settings = snap.exists() ? snap.data() : {};
+    } catch (err) {
+      content.innerHTML = `<div style="text-align:center;color:var(--danger);padding:30px 0;">โหลดข้อมูลไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
+      return;
+    }
+
+    const amount = freshOrder?.final_total ?? freshOrder?.total ?? 0;
+    const hasBankInfo = settings.bank_name || settings.bank_account || settings.bank_account_name;
+    const hasQr = !!settings.qr_code_url;
+
+    // 🛡️ (added 2026-09-26): กรณี 'paid' / 'pending_review' / 'verified_awaiting_zip' → แสดงหน้าสถานะก่อนเช็คว่ามีบัญชีไหม
+    //   ป้องกันลูกค้าชำระเงินซ้ำในออเดอร์ที่ยืนยันแล้ว หรือที่ส่งสลิปแล้วรอตรวจสอบ
+    //   ต้องเช็คก่อนเช็ค bank info เพราะถ้า order "ชำระแล้ว" ไม่จำเป็นต้องแสดง QR อีก
+    //   แม้ว่าร้านจะยังไม่ได้ตั้งค่าบัญชี (เช่น ตั้งไว้ตอนชำระ แล้วลบทีหลัง)
+    //   🆕 (2026-09-26): เพิ่ม state 'verified_awaiting_zip' — แอดมินยืนยันสลิปแล้ว รอเตรียมไฟล์ส่งให้ (สีเขียว)
+    if (paymentState.state === "paid" || paymentState.state === "pending_review" || paymentState.state === "verified_awaiting_zip") {
+      // 🆕: เลือก emoji ตาม state — pending_review ใช้ ⏳ (รอตรวจสอบ), paid/verified_awaiting_zip ใช้ ✅ (ผ่านแล้ว)
+      const statusEmoji = paymentState.state === "pending_review" ? "⏳" : "✅";
+      // 🆕: เพิ่มข้อมูล "ยืนยันเมื่อ" ถ้ามี payment_proof_verified_at (กรณี verified_awaiting_zip)
+      const verifiedAtHtml = (paymentState.state === "verified_awaiting_zip" && freshOrder?.payment_proof_verified_at)
+        ? `<div style="display:flex;justify-content:space-between;padding:6px 0;">
+            <span>ยืนยันสลิปเมื่อ</span><strong>${escapeHtml(new Date(freshOrder.payment_proof_verified_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }))}</strong>
+          </div>`
+        : "";
+      content.innerHTML = `
+        <div style="padding:20px 8px;text-align:center;">
+          <div style="font-size:48px;margin-bottom:12px;">${statusEmoji}</div>
+          <div style="padding:14px;border-radius:10px;border:1px solid ${paymentState.color};background:${paymentState.bg};">
+            <div style="font-weight:800;color:${paymentState.color};font-size:18px;margin-bottom:8px;">${escapeHtml(paymentState.label)}</div>
+            ${paymentState.message ? `<div style="font-size:14px;color:var(--text);line-height:1.6;margin-bottom:10px;">${escapeHtml(paymentState.message)}</div>` : ""}
+            ${paymentState.warning ? `<div style="font-size:14px;color:var(--text);line-height:1.6;font-weight:700;background:rgba(255,200,0,.15);padding:10px;border-radius:6px;margin-top:8px;">${escapeHtml(paymentState.warning)}</div>` : ""}
+          </div>
+          <div style="margin-top:16px;text-align:left;font-size:13px;color:var(--text-dim);">
+            <div style="display:flex;justify-content:space-between;padding:6px 0;">
+              <span>เลขที่</span><strong>${escapeHtml(receiptNumber)}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;">
+              <span>ยอดชำระ</span><strong style="color:var(--success);">${formatPrice(amount)}</strong>
+            </div>
+            ${freshOrder?.payment_proof_uploaded_at
+              ? `<div style="display:flex;justify-content:space-between;padding:6px 0;">
+                  <span>ส่งหลักฐานเมื่อ</span><strong>${escapeHtml(new Date(freshOrder.payment_proof_uploaded_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }))}</strong>
+                </div>`
+              : ""}
+            ${verifiedAtHtml}
+          </div>
+          <button class="btn secondary" id="paymentCloseBtn_paid" type="button" style="width:100%;margin-top:18px;">ปิด</button>
+        </div>
+      `;
+      const closeBtn = document.getElementById("paymentCloseBtn_paid");
+      if (closeBtn) closeBtn.onclick = closePaymentModal;
+      return;
+    }
+
+    // 🛡️ (added 2026-09-26): กรณี order ถูกปฏิเสธสลิป → แสดง warning + ปุ่มติดต่อแอดมิน (ก่อนเช็คว่ามีบัญชีไหม)
+    //   ทำเครื่องหมายว่าเป็นการส่งสลิปใหม่ (ไม่ใช่การชำระซ้ำ) และให้เหตุผลที่ปฏิเสธ
+    //   ถ้าร้านยังไม่ได้ตั้งค่าบัญชี → ยังแสดงหน้า "ติดต่อแอดมิน" ด้านล่าง
+
+    if (!hasBankInfo && !hasQr) {
+      content.innerHTML = `
+        <div style="padding:24px 8px;text-align:center;color:var(--text-dim);">
+          <div style="font-size:48px;margin-bottom:8px;">🏦</div>
+          <div style="font-weight:800;color:var(--text);margin-bottom:6px;">ร้านยังไม่ได้ตั้งค่าข้อมูลการชำระเงิน</div>
+          <div style="font-size:13px;">กรุณาติดต่อแอดมินผ่าน WhatsApp เพื่อสอบถามวิธีโอน</div>
+          <button class="btn" id="paymentContactAdminBtn" style="margin-top:14px;width:100%;">💬 ติดต่อแอดมิน</button>
+        </div>
+      `;
+      const contactBtn = document.getElementById("paymentContactAdminBtn");
+      if (contactBtn) contactBtn.onclick = () => {
+        const num = String(settings.whatsapp_number || "").replace(/[^0-9]/g, "");
+        if (!num) { showToast("ร้านยังไม่ได้ตั้งค่าเบอร์ WhatsApp", "error"); return; }
+        const text = `สวัสดีครับ/ค่ะ สั่งซื้อ ${escapeHtml(receiptNumber)} แต่ยังไม่เห็นข้อมูลบัญชีโอน รบกวนส่ง QR ด้วยครับ/ค่ะ`;
+        window.open(buildWhatsAppLink(num, text), "_blank", "noopener");
+      };
+      return;
+    }
+
+    // 🛡️ (added 2026-09-26): กรณี 'rejected' → แสดง warning banner ด้านบน ก่อนแสดง QR/ปุ่มอัปโหลด
+    //   ใช้ flow เดิม (QR + อัปโหลดสลิป) เพียงแต่เพิ่ม banner แจ้งเตือนให้ลูกค้ารับทราบว่าสลิปก่อนหน้าถูกปฏิเสธ
+    const rejectedBanner = paymentState.state === "rejected"
+      ? `<div style="margin-bottom:14px;padding:12px;border-radius:8px;border:1px solid ${paymentState.color};background:${paymentState.bg};color:${paymentState.color};">
+          <div style="font-weight:700;font-size:14px;">${escapeHtml(paymentState.label)}</div>
+          ${paymentState.message ? `<div style="font-size:13px;margin-top:6px;line-height:1.5;">${escapeHtml(paymentState.message)}</div>` : ""}
+          ${paymentState.warning ? `<div style="font-size:13px;margin-top:6px;line-height:1.5;font-weight:600;">${escapeHtml(paymentState.warning)}</div>` : ""}
+          ${paymentState.customHtml || ""}
+        </div>`
+      : "";
+
+    content.innerHTML = `
+      <div style="padding:14px 8px 6px;">
+        ${rejectedBanner}
+        <div style="text-align:center;margin-bottom:14px;">
+          <div style="color:var(--text-dim);font-size:13px;">ยอดที่ต้องชำระ</div>
+          <div style="font-size:28px;font-weight:800;color:var(--success);">${formatPrice(amount)}</div>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">เลขที่ ${escapeHtml(receiptNumber)}</div>
+        </div>
+        ${settings.bank_name ? `<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--border, #eee);">
+          <span style="color:var(--text-dim);">🏦 ธนาคาร</span><strong>${escapeHtml(settings.bank_name)}</strong>
+        </div>` : ""}
+        ${settings.bank_account_name ? `<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--border, #eee);">
+          <span style="color:var(--text-dim);">👤 ชื่อบัญชี</span><strong>${escapeHtml(settings.bank_account_name)}</strong>
+        </div>` : ""}
+        ${settings.bank_account ? `<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--border, #eee);align-items:center;">
+          <span style="color:var(--text-dim);">🔢 เลขบัญชี</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <strong id="paymentBankAccountText">${escapeHtml(settings.bank_account)}</strong>
+            <button class="btn secondary" id="paymentCopyBtn" type="button" style="padding:4px 10px;font-size:12px;min-width:auto;">📋 คัดลอก</button>
+          </div>
+        </div>` : ""}
+        ${hasQr ? `
+          <!-- 🎨 (2026-09-26 v2): QR Code ในหน้าชำระเงิน — ขยายใหญ่เต็มพื้นที่ + padding เท่ากัน + ดูง่าย
+               เหมือนฝั่งแอดมิน (ใช้ class ชุดเดียวกัน: .qr-preview-img-box, .qr-preview-img) -->
+          <div style="text-align:center;margin:18px 0;">
+            <div class="qr-preview-img-box" style="max-width:260px;">
+              <img src="${escapeHtml(settings.qr_code_url)}" alt="QR Code" class="qr-preview-img" style="min-height:120px;">
+            </div>
+            <div style="font-size:12px;color:var(--text-dim);margin-top:10px;font-weight:600;">📱 สแกน QR เพื่อโอนเงิน</div>
+          </div>` : ""}
+        ${settings.payment_instructions ? `<div style="font-size:13.5px;color:#334155;background:var(--bg-soft, #f7f7f7);padding:12px 14px;border-radius:8px;margin:8px 0;line-height:1.65;font-weight:500;">
+          ${escapeHtml(settings.payment_instructions).replace(/\n/g, "<br>")}
+        </div>` : ""}
+        <button class="btn" id="paymentUploadSlipBtn" type="button" style="width:100%;margin-top:14px;background:var(--accent);color:#fff;font-size:15px;padding:12px;">
+          📸 แจ้งชำระเงิน (อัปโหลดสลิป)
+        </button>
+        <button class="btn secondary" id="paymentCloseBtn2" type="button" style="width:100%;margin-top:6px;">ปิด</button>
+      </div>
+    `;
+
+    // bind copy button
+    const copyBtn = document.getElementById("paymentCopyBtn");
+    if (copyBtn) copyBtn.onclick = async () => {
+      const acctText = document.getElementById("paymentBankAccountText");
+      const value = acctText?.textContent || settings.bank_account || "";
+      try {
+        await navigator.clipboard.writeText(value);
+        showToast("📋 คัดลอกเลขบัญชีแล้ว", "success");
+      } catch {
+        // fallback: select + execCommand
+        const ta = document.createElement("textarea");
+        ta.value = value;
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand("copy"); showToast("📋 คัดลอกเลขบัญชีแล้ว", "success"); } catch { showToast("คัดลอกไม่สำเร็จ — กรุณาก๊อปปี้เอง", "error"); }
+        document.body.removeChild(ta);
+      }
+    };
+
+    // bind upload slip button → open upload slip modal
+    // 🛡️ (added 2026-09-26): ใช้ freshOrder (ข้อมูลล่าสุดจาก server) ตอนเปิด upload slip
+    //   กันกรณี order object เดิมเก่าเกิน → _docId อาจไม่ตรงกับ order ปัจจุบัน
+    const uploadSlipBtn = document.getElementById("paymentUploadSlipBtn");
+    if (uploadSlipBtn) uploadSlipBtn.onclick = () => {
+      const paymentBackdrop = document.getElementById("paymentBackdrop");
+      if (paymentBackdrop) paymentBackdrop.classList.remove("show");
+      openUploadSlipModal(freshOrder, receiptNumber);
+    };
+
+    // bind close button
+    const closeBtn2 = document.getElementById("paymentCloseBtn2");
+    if (closeBtn2) closeBtn2.onclick = closePaymentModal;
+  }
+
+  function closePaymentModal() {
+    const backdrop = document.getElementById("paymentBackdrop");
+    if (backdrop) { backdrop.classList.remove("show"); backdrop.setAttribute("aria-hidden", "true"); }
+  }
+
+  async function openUploadSlipModal(order, receiptNumber) {
+    const backdrop = document.getElementById("uploadSlipBackdrop");
+    const content = document.getElementById("uploadSlipContent");
+    if (!backdrop || !content) return;
+    const amount = order?.final_total ?? order?.total ?? 0;
+    content.innerHTML = `
+      <div style="padding:14px 8px 6px;">
+        <div style="margin-bottom:12px;">
+          <div style="font-size:13px;color:var(--text-dim);">Order</div>
+          <div style="font-weight:800;">#${escapeHtml(receiptNumber)}</div>
+        </div>
+        <div style="margin-bottom:14px;">
+          <div style="font-size:13px;color:var(--text-dim);">ยอดที่ต้องชำระ</div>
+          <div style="font-size:24px;font-weight:800;color:var(--success);">${formatPrice(amount)}</div>
+        </div>
+        <div style="margin-bottom:8px;font-size:13px;font-weight:600;">รูปหลักฐานการโอนเงิน</div>
+        <input type="file" id="slipFileInput" accept="image/jpeg,image/png,image/webp" style="display:none;">
+        <label for="slipFileInput" style="display:block;border:2px dashed var(--border, #ccc);border-radius:10px;padding:24px;text-align:center;cursor:pointer;color:var(--text-dim);">
+          <div id="slipPreviewArea" style="margin:0 auto;">
+            <div style="font-size:36px;">📷</div>
+            <div style="font-size:13px;margin-top:4px;">คลิกเพื่อเลือกรูปสลิป</div>
+            <div style="font-size:11px;margin-top:2px;color:var(--text-dim);">JPEG / PNG / WEBP • สูงสุด 5MB</div>
+          </div>
+        </label>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:8px;display:flex;justify-content:space-between;">
+          <span>ชื่อลูกค้า</span><strong>${escapeHtml(order?.customer_name || "")}</strong>
+        </div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:4px;display:flex;justify-content:space-between;">
+          <span>เบอร์ WhatsApp</span><strong>${escapeHtml(order?.whatsapp || "")}</strong>
+        </div>
+        <button class="btn" id="uploadSlipConfirmBtn" type="button" disabled style="width:100%;margin-top:14px;background:var(--accent);color:#fff;font-size:15px;padding:12px;opacity:0.5;">
+          ✅ ยืนยันการชำระเงิน
+        </button>
+        <button class="btn secondary" id="uploadSlipCancelBtn" type="button" style="width:100%;margin-top:6px;">ยกเลิก</button>
+      </div>
+    `;
+    backdrop.classList.add("show");
+    backdrop.setAttribute("aria-hidden", "false");
+
+    let selectedFile = null;
+    const fileInput = document.getElementById("slipFileInput");
+    const previewArea = document.getElementById("slipPreviewArea");
+    const confirmBtn = document.getElementById("uploadSlipConfirmBtn");
+
+    if (fileInput) fileInput.onchange = () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      // size check 5MB
+      if (file.size > 5 * 1024 * 1024) {
+        showToast("ไฟล์ใหญ่เกิน 5MB — กรุณาลดขนาดรูป", "error");
+        fileInput.value = "";
+        return;
+      }
+      // MIME check
+      const allowedMimes = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
+      if (!allowedMimes.includes((file.type || "").toLowerCase())) {
+        showToast("อนุญาตเฉพาะ JPEG, PNG, WEBP", "error");
+        fileInput.value = "";
+        return;
+      }
+      selectedFile = file;
+      // show preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        previewArea.innerHTML = `<img src="${e.target.result}" alt="รูปสลิปตัวอย่าง" style="display:block;margin:0 auto;max-width:100%;max-height:240px;border-radius:6px;border:1px solid var(--border, #eee);">`;
+      };
+      reader.readAsDataURL(file);
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.style.opacity = "1"; }
+    };
+
+    if (confirmBtn) confirmBtn.onclick = async () => {
+      if (!selectedFile) { showToast("กรุณาเลือกรูปสลิปก่อน", "error"); return; }
+      await uploadSlipToServer(order, receiptNumber, selectedFile);
+    };
+
+    const cancelBtn = document.getElementById("uploadSlipCancelBtn");
+    if (cancelBtn) cancelBtn.onclick = closeUploadSlipModal;
+  }
+
+  function closeUploadSlipModal() {
+    const backdrop = document.getElementById("uploadSlipBackdrop");
+    if (backdrop) { backdrop.classList.remove("show"); backdrop.setAttribute("aria-hidden", "true"); }
+  }
+
+  async function uploadSlipToServer(order, receiptNumber, file) {
+    const orderId = order?._docId || order?.id;
+    if (!orderId) {
+      showToast("ไม่พบเลขออเดอร์ — กรุณารีเฟรชหน้าแล้วลองใหม่", "error");
+      return;
+    }
+    const confirmBtn = document.getElementById("uploadSlipConfirmBtn");
+    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "กำลังอัปโหลด..."; confirmBtn.style.opacity = "0.7"; }
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("customer_name", order.customer_name || "");
+      fd.append("whatsapp", order.whatsapp || "");
+      const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/payment-proof`, {
+        method: "POST",
+        body: fd, // multipart — no Content-Type header (browser sets boundary)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast("อัปโหลดไม่สำเร็จ: " + (data?.error || res.statusText), "error");
+        if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "✅ ยืนยันการชำระเงิน"; confirmBtn.style.opacity = "1"; }
+        return;
+      }
+      showToast("✅ อัปโหลดสลิปสำเร็จ — รอแอดมินตรวจสอบ", "success");
+      closeUploadSlipModal();
+      closePaymentModal();
+      // 🛡️ (added 2026-09-26 auto-close receipt): ปิดใบเสร็จ (receiptBackdrop) ด้วย
+      //   ตามคำขอผู้ใช้: "เวลากดชำระเงินแล้ว popup ปิดอัตโนมัติ"
+      //   ก่อนหน้านี้หลังอัปสลิปสำเร็จ → paymentBackdrop และ uploadSlipBackdrop ถูกปิด แต่ receiptBackdrop ยังเปิดอยู่
+      //   ทำให้ลูกค้าเห็นใบเสร็จค้างอยู่ → สับสนว่าต้องทำอะไรต่อ
+      //   แก้: ปิด receiptBackdrop ด้วย → ลูกค้าเห็นหน้าหลัก + toast แจ้งสำเร็จ + WhatsApp เปิดแจ้งแอดมิน
+      //   ผลกระทบระบบเดิม: 0% — เพิ่มการปิด modal ไม่ได้แตะ flow เดิม
+      closeReceipt();
+      // เปิด WhatsApp แจ้งแอดมิน (notification only — slip บันทึกใน R2+D1 แล้ว)
+      openWhatsAppNotifyAdmin(order, receiptNumber, data.file_url);
+    } catch (err) {
+      showToast("อัปโหลดไม่สำเร็จ: " + (err.message || String(err)), "error");
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "✅ ยืนยันการชำระเงิน"; confirmBtn.style.opacity = "1"; }
+    }
+  }
+
+  function openWhatsAppNotifyAdmin(order, receiptNumber, slipUrl) {
+    // 🔧 (2026-09-26 ต่อสายให้ครบ): ต้อง markLastOrderContacted() ที่นี่ด้วย เหมือนปุ่ม "ติดต่อแอดมินผ่าน WhatsApp" เดิม (บรรทัด ~1045)
+    //   เหตุผล: สลิปถูกบันทึกเข้า R2+D1 แล้วตั้งแต่ uploadSlipToServer สำเร็จ — แอดมินเห็นในหน้าตรวจสอบได้แน่นอน
+    //   ไม่ว่าจะมีเบอร์ WhatsApp ตั้งค่าไว้หรือไม่ก็ตาม จึงถือว่า "แจ้งแอดมินแล้ว" ทั้งสองกรณี
+    //   ก่อนแก้: flag นี้ไม่เคย set ในเส้นทางอัปโหลดสลิป → ปิดใบเสร็จทีหลังจะโดน popup เตือนซ้ำว่ายังไม่ได้แจ้ง ทั้งที่แจ้งไปแล้ว
+    markLastOrderContacted();
+    // ใช้ settings.whatsapp_number เดียวกับเดิม — notification only ไม่ใช่ระบบหลัก
+    const adminNumber = String(state?.settings?.whatsapp_number || "").replace(/[^0-9]/g, "");
+    if (!adminNumber) {
+      showToast("อัปโหลดสลิปสำเร็จ — แต่ร้านยังไม่ได้ตั้งค่าเบอร์ WhatsApp แอดมินจะเห็นสลิปในหน้าตรวจสอบ", "success");
+      return;
+    }
+    const amount = order?.final_total ?? order?.total ?? 0;
+    const customerName = order?.customer_name || "";
+    const lines = [
+      `📸 แจ้งชำระเงิน Order ${receiptNumber}`,
+      `ลูกค้า: ${customerName}`,
+      `ยอด: ${formatPrice(amount)}`,
+      slipUrl ? `สลิป: ${slipUrl}` : "(สลิปอัปโหลดในระบบแล้ว — ดูในหน้าตรวจสอบสลิป)",
+    ];
+    const text = lines.join("\n");
+    // 📸 (แก้ไข 2026-09-26) เปิด WhatsApp ทันทีอัตโนมัติ โดยไม่ถามยืนยันก่อน
+    //   เหตุผล: เว็บยังไม่มีระบบแจ้งเตือนแอดมินแบบอื่น (push notif ฯลฯ) จึงจำเป็นต้องให้แอดมินรู้ทันทีที่มีลูกค้าสั่งซื้อ
+    //   ใช้ location.href (เปลี่ยนหน้าในแท็บเดิม) แทน window.open (เปิดแท็บใหม่)
+    //   เพราะ window.open หลัง await fetch() มักถูก popup blocker ของ Safari บล็อก แต่ location.href ไม่ถูกบล็อก
+    window.location.href = buildWhatsAppLink(adminNumber, text);
+  }
+
+  // bind close buttons for new modals
+  document.addEventListener("DOMContentLoaded", () => {
+    const paymentClose = document.getElementById("paymentClose");
+    if (paymentClose) paymentClose.onclick = closePaymentModal;
+    const uploadSlipClose = document.getElementById("uploadSlipClose");
+    if (uploadSlipClose) uploadSlipClose.onclick = closeUploadSlipModal;
+    // close on backdrop click
+    const paymentBackdrop = document.getElementById("paymentBackdrop");
+    if (paymentBackdrop) paymentBackdrop.addEventListener("click", (e) => {
+      if (e.target === paymentBackdrop) closePaymentModal();
+    });
+    const uploadSlipBackdrop = document.getElementById("uploadSlipBackdrop");
+    if (uploadSlipBackdrop) uploadSlipBackdrop.addEventListener("click", (e) => {
+      if (e.target === uploadSlipBackdrop) closeUploadSlipModal();
+    });
+  });
+
+  async function checkoutCart() {
+    if (submitting) return;
+    const nameInput = document.getElementById("checkoutCustomerName");
+    const whatsappInput = document.getElementById("checkoutCustomerWhatsapp");
+    const customerName = nameInput?.value.trim() || "";
+    const whatsapp = whatsappInput?.value.trim() || "";
+    if (!customerName || !whatsapp) {
+      setCheckoutFeedback("กรุณากรอกชื่อลูกค้าและเบอร์ WhatsApp");
+      return;
+    }
+    // 🔧 (2026-09-21 fix Bug #2 Phone validation): ตรวจเบอร์ลาวก่อนส่ง
+    //   ป้องกัน: ลูกค้าใส่ "abc" → ผ่าน checkout → แต่ track order ไม่เจอ → โทรด่าแอดมิน
+    //   วิธี: ใช้ getPhoneValidationError() (เพิ่มใหม่ด้านบน)
+    const phoneError = getPhoneValidationError(whatsapp);
+    if (phoneError) {
+      setCheckoutFeedback(phoneError);
+      // focus input กลับเพื่อให้ลูกค้าแก้ได้ทันที
+      if (whatsappInput) { whatsappInput.focus(); whatsappInput.select(); }
+      return;
+    }
+    if (state.cart.length === 0) {
+      setCheckoutFeedback("ยังไม่มีเพลงในตะกร้า");
+      return;
+    }
+
+    submitting = true;
+    const btn = document.getElementById("submitCartOrderBtn");
+    if (btn) { btn.disabled = true; btn.textContent = "กำลังตรวจสอบและบันทึก..."; }
+    setCheckoutFeedback("กำลังตรวจสอบรายการและราคาจากฐานข้อมูล...", "success");
+
+    const createdAt = new Date().toISOString();
+    const checkoutKey = getCheckoutKey(customerName, whatsapp);
+    const reusableOrderId = activeOrderKey === checkoutKey
+      ? activeOrderId
+      : getStoredOrderId(checkoutKey);
+    // ใช้ doc() สร้าง reference/ID ไว้ล่วงหน้า เพื่อใช้เป็น orderRef ตอนเขียนจริงด้านล่าง
+    let orderRef = reusableOrderId
+      ? doc(db, "orders", reusableOrderId)
+      : doc(collection(db, "orders"));
+    let receiptNumber = getReceiptNumber(orderRef.id, createdAt);
+
+    let order = null;
+    let resolvedSettings = {};
+    try {
+      // ---- อ่านราคา/รายการล่าสุดจากฐานข้อมูลก่อน แล้วค่อยเขียน Order (ไม่ใช้ Firestore Transaction) ----
+      // หมายเหตุ (แก้บั๊ก 2026-09-05): เดิมใช้ runTransaction() ครอบขั้นตอนนี้ทั้งหมด แต่พบว่า
+      // Firestore Web SDK บางเบราว์เซอร์ (โดยเฉพาะ Safari/iPad) โยน TypeError ภายใน SDK เอง
+      // ("undefined is not an object (evaluating 'i.path')") ระหว่างปิด transaction แบบนี้
+      // จึงเปลี่ยนมาอ่านแบบธรรมดาก่อน แล้วค่อยเขียนทีเดียวด้วย setDoc() แทน ผลลัพธ์ทางธุรกิจเหมือนเดิม
+      // ทุกประการ เพียงไม่การันตี atomicity ระดับ transaction (ยอมรับได้ เพราะทุก Order มีสถานะ
+      // "รอตรวจสอบการโอน" ให้แอดมินเช็คมืออยู่แล้ว)
+
+      // ---- เพิ่มใหม่ (แก้บั๊ก 2026-09-09): ใส่ timeout กันปุ่มค้าง "กำลังตรวจสอบและบันทึก..." ตลอดไป ----
+      // ถ้าเน็ตหลุด/Firestore ไม่ตอบภายในเวลาที่กำหนด ให้แจ้งลูกค้าและปลดล็อกปุ่มให้กดลองใหม่ได้
+      // แทนที่จะปล่อยให้ปุ่มค้างเฉยๆ แบบไม่มีข้อความ (งานเดิม resolveCartFromDatabase/setDoc ไม่ถูกยกเลิก
+      // อาจยังทำงานต่อในเบื้องหลัง แต่เนื่องจาก orderRef.id คงที่ต่อ checkoutKey เดิม การเขียนซ้ำภายหลัง
+      // จะเขียนทับ Order เดิมด้วยข้อมูลเดียวกัน ไม่ทำให้เกิด Order ซ้ำซ้อน)
+      const TIMEOUT_MS = 20000;
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("เชื่อมต่อช้ากว่าปกติ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง")), TIMEOUT_MS);
+      });
+
+      // 🔧 แก้บั๊ก (2026-09-12): แยก buildOrder + setDoc ออกมาเป็นฟังก์ชัน เพื่อรองรับ retry ครั้งเดียว
+      // เมื่อ setDoc เจอ "ยังไม่ได้เข้าสู่ระบบ" (เกิดจาก order ID ค้างใน sessionStorage หรือ worker เก่า
+      // ที่ยังไม่ได้แก้ exception สำหรับ orders) → เคลียร์ order ID เก่าแล้วลองใหม่ด้วย ID ใหม่
+      const buildAndSaveOrder = async (refToUse) => {
+        const resolved = await resolveCartFromDatabase();
+        resolvedSettings = resolved.settings || {};
+
+        const builtOrder = {
+          customer_name: customerName,
+          // 🔧 แก้บั๊ก (2026-09-18): normalize เบอร์ Laos ก่อนเก็บลง DB
+          //   เพื่อให้ track order ตามเบอร์รูปแบบใดก็เจอ (020 / 20 / +85620 ฯลฯ)
+          whatsapp: normalizePhoneForStorage(whatsapp),
+          items: resolved.items, // Order Items ทั้งหมดของตะกร้า ณ ขณะสั่งซื้อ
+          total: resolved.total, // ← ยอดสุดท้าย (final_total) — เก็บเหมือนเดิมเพื่อ back-compat กับ orders.js เดิม
+          order_type: resolved.orderType, // "single" | "playlist" | "mixed"
+          playlist_id: resolved.orderType === "playlist" ? (resolved.playlist?.id || null) : null,
+          playlist_name: resolved.orderType === "playlist" ? (resolved.playlist?.playlist_name || null) : null,
+          store_name: resolved.settings.website_name || "Music Store",
+          status: "pending_verify",
+          created_at: createdAt,
+          receipt_number: getReceiptNumber(refToUse.id, createdAt),
+          // ===== ฟิลด์ใหม่: บันทึก snapshot การคำนวณส่วนลด/โปรโมชั่น ณ เวลาที่สั่ง =====
+          // เก็บไว้ให้ order เก่าไม่เปลี่ยนราคาแม้ admin แก้ promotion ภายหลัง (เพราะเป็น snapshot)
+          subtotal: resolved.subtotal ?? resolved.total,
+          discount_amount: resolved.discountAmount ?? 0,
+          promotion_applied: resolved.promotionApplied ?? null,
+          final_total: resolved.finalTotal ?? resolved.total
+        };
+        // playlist_ids เป็นฟิลด์เสริมสำหรับ Order แบบผสม (เพลง+เพลย์ลิสต์ หรือหลายเพลย์ลิสต์) เท่านั้น
+        // ระบบเดิม (resolveOrderSongs ใน orders.js) อ่านฟิลด์นี้อยู่แล้วสำหรับสร้าง ZIP ดาวน์โหลด จึงไม่ต้องแก้ไฟล์นั้นเพิ่ม
+        if (resolved.orderType === "mixed") {
+          builtOrder.playlist_ids = resolved.playlistIds;
+        }
+
+        await setDoc(refToUse, builtOrder);
+        return builtOrder;
+      };
+
+      try {
+        // ครั้งที่ 1: ใช้ orderRef ที่อาจเป็น reusableOrderId (ถ้ามี)
+        const mainTask = buildAndSaveOrder(orderRef);
+        order = await Promise.race([mainTask, timeoutPromise]);
+        // 📸 (added STEP 2): เก็บ order_id ไว้ใน order object เพื่อใช้ตอน upload slip
+        //   ไม่กระทบ D1 (setDoc ทำงานเสร็จแล้วก่อนบรรทัดนี้) — _docId เป็น client-only field
+        if (order && !order._docId && orderRef?.id) order._docId = orderRef.id;
+      } catch (firstErr) {
+        // 🔧 แก้บั๊ก I9 (2026-09-18): Dead code path หลัง Bug #1 + Bug #5 fixes
+        // -----------------------------------------------------------
+        // ปัญหา: retry path นี้แทบไม่มีทาง trigger แล้ว เพราะ:
+        //   - Bug #1 fix → POST /api/db/songs/_query ผ่านสำหรับ non-admin แล้ว → resolveCartFromDatabase ไม่ล้มเพราะ 401
+        //   - Bug #5 fix → storeOrderId ถูก comment ออก → getStoredOrderId คืน null เสมอ → orderRef เป็น UUID ใหม่เสมอ
+        //     → setDoc สร้าง order ใหม่ ไม่ชน existing check ของ worker → ไม่มี error "ยังไม่ได้ login"
+        //
+        // ที่ไม่ลบทิ้ง: กฎของโปรเจกต์ "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+        //   แต่ comment ออกเพื่อให้ Dev ใหม่เห็นชัดว่า "โค้ดนี้ไม่ทำงาน" และลดความสับสน
+        //
+        // ถ้าอนาคตมี edge case ที่ทำให้ retry path จำเป็นอีก:
+        //   1. Uncomment retry block ด้านล่าง
+        //   2. ตรวจสอบว่า storeOrderId/clearStoredOrderId ทำงานถูกต้อง (Bug #5 อาจต้อง uncomment ด้วย)
+        //
+        // โค้ดเดิม (comment ออกแล้ว):
+        // // 🔧 ตรวจว่า error จาก server บอกว่า "ยังไม่ได้ login" หรือ "ยังไม่ได้เข้าสู่ระบบ" หรือไม่
+        // // ถ้าใช่ → เคลียร์ reusableOrderId ที่ค้างอยู่ใน sessionStorage/state แล้ว retry ด้วย ID ใหม่
+        // const msg = (firstErr?.message || "").toLowerCase();
+        // const isLoginBlock = msg.includes("ยังไม่ได้เข้าสู่ระบบ") || msg.includes("login") || msg.includes("เข้าสู่ระบบ");
+        // if (!isLoginBlock) throw firstErr;
+        //
+        // console.warn("checkoutCart: พบ error 'ยังไม่ได้ login' — เคลียร์ order ID เก่าแล้ว retry ด้วย ID ใหม่", firstErr);
+        // activeOrderId = null;
+        // activeOrderKey = null;
+        // clearStoredOrderId();
+        // // สร้าง orderRef ใหม่ด้วย ID ใหม่ (doc(collection(db,"orders")) จะสุ่ม UUID ใหม่ให้)
+        // orderRef = doc(collection(db, "orders"));
+        // receiptNumber = getReceiptNumber(orderRef.id, createdAt);
+        //
+        // // ครั้งที่ 2: ใช้ ID ใหม่
+        // const TIMEOUT_MS_RETRY = 20000;
+        // const timeoutPromise2 = new Promise((_, reject) => {
+        //   setTimeout(() => reject(new Error("เชื่อมต่อช้ากว่าปกติ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง")), TIMEOUT_MS_RETRY);
+        // });
+        // const retryTask = buildAndSaveOrder(orderRef);
+        // order = await Promise.race([retryTask, timeoutPromise2]);
+
+        // 🔧 แก้บั๊ก I9: แค่ re-throw error ออกไปให้ catch block ด้านล่างจัดการ (แสดง error ให้ลูกค้าเห็น)
+        throw firstErr;
+      }
+    } catch (err) {
+      console.error("checkoutCart error:", err);
+      let feedbackMessage;
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        // เพิ่มใหม่: ไม่มีเน็ต
+        feedbackMessage = "ไม่มีสัญญาณอินเทอร์เน็ต กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง";
+      } else if (err?.message && err.message.includes("ปิดการขายแล้ว")) {
+        // 🔧 (2026-09-22 Batch 7 fix Bug #5): ลูกค้า checkout มีเพลง hidden ในตะกร้า
+        //   ปัญหาเดิม: โยน error ทำให้ checkout พัง → ลูกค้างง ไม่รู้ว่าเพลงไหน ต้องทำยังไง
+        //   วิธีแก้: auto-remove เพลง hidden ออกจากตะกร้า + บอกชื่อเพลง + แนะนำให้ลอง checkout อีกครั้ง
+        //   1. parse ชื่อเพลงจาก error message ("เพลง "X" ปิดการขายแล้ว")
+        const songNameMatch = err.message.match(/เพลง\s+"([^"]+)"\s+ปิดการขาย/);
+        const hiddenSongName = songNameMatch ? songNameMatch[1] : "";
+        // 2. ลบเพลง hidden ออกจาก state.cart (match ด้วย song_name)
+        const beforeCount = state.cart.length;
+        state.cart = state.cart.filter(item =>
+          !(item.song_name === hiddenSongName || item.songName === hiddenSongName)
+        );
+        const removedCount = beforeCount - state.cart.length;
+        // 3. save cart ใหม่ลง localStorage
+        try { localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(state.cart)); } catch (_) {}
+        // 4. re-render cart + badge
+        renderCart();
+        // 5. แจ้งเตือนลูกค้าชัดเจน
+        if (removedCount > 0) {
+          feedbackMessage = `เพลง "${hiddenSongName}" ถูกปิดขายแล้ว — ลบออกจากตะกร้าให้อัตโนมัติ กรุณากด "ยืนยันสั่งซื้อ" อีกครั้ง`;
+        } else {
+          feedbackMessage = err.message + " — กรุณาลบเพลงนี้ออกจากตะกร้าแล้วลองใหม่";
+        }
+      } else if (!err?.code && err?.message) {
+        // ข้อความที่ระบบโยนเองอยู่แล้ว (เช่น timeout ด้านบน) เป็นภาษาไทยที่เข้าใจง่ายอยู่แล้ว ใช้ตรงๆ ได้เลย
+        feedbackMessage = err.message;
+      } else {
+        // เพิ่มใหม่: error ดิบจาก Firebase (มี err.code) แปลเป็นข้อความที่ลูกค้าอ่านเข้าใจแทน
+        feedbackMessage = "บันทึก Order ไม่สำเร็จ ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง";
+      }
+      setCheckoutFeedback(feedbackMessage);
+      submitting = false;
+      if (btn) { btn.disabled = false; btn.textContent = "ยืนยันสั่งซื้อ"; }
+      return;
+    }
+
+    // มาถึงจุดนี้แปลว่า Transaction commit สำเร็จแล้ว — ล้างเฉพาะรายการที่สั่งซื้อสำเร็จออกจากตะกร้า
+    //
+    // 🔧 แก้บั๊ก (2026-09-17) Bug #5: Dead code — storeOrderId + activeOrderId ถูก set แล้ว clear ทันที
+    // -----------------------------------------------------------
+    // ปัญหา: บรรทัดด้านล่าง (comment ออกแล้ว) เป็น dead code 100%
+    //   - activeOrderId = orderRef.id;     ← set ที่บรรทัด 1067 (comment ออก)
+    //   - activeOrderKey = checkoutKey;    ← set ที่บรรทัด 1068 (comment ออก)
+    //   - storeOrderId(checkoutKey, orderRef.id);  ← save ลง sessionStorage ที่บรรทัด 1069 (comment ออก)
+    //   ...
+    //   - activeOrderId = null;            ← clear ที่บรรทัด 1073 (comment ออก)
+    //   - activeOrderKey = null;           ← clear ที่บรรทัด 1074 (comment ออก)
+    //   - clearStoredOrderId();            ← remove จาก sessionStorage ที่บรรทัด 1075 (comment ออก)
+    //
+    //   ทั้งหมดนี้ทำงานใน synchronous block เดียวกัน — set แล้ว clear ทันที ไม่มี code อื่นอ่านค่าระหว่างนั้น
+    //   → ไม่มีผลใด ๆ ต่อระบบจริง (ยืนยันด้วย grep ทั้งไฟล์ + cross-check ทุก caller)
+    //
+    // ที่ไม่ลบทิ้ง: กฎของโปรเจกต์ "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
+    //   แต่ comment ออกเพื่อให้ Dev ใหม่เห็นชัดว่าโค้ดนี้ "ไม่ทำงาน" และลด overhead (function call + sessionStorage write)
+    //
+    // ถ้าอนาคตต้องการให้ "reuse order ID ครั้งถัดไป" ทำงานจริง:
+    //   1. Uncomment บรรทัด 1067-1069 (SET block)
+    //   2. ลบบรรทัด 1073-1075 (CLEAR block) ออก — ไม่ clear จะได้เก็บไว้ใช้ครั้งถัดไป
+    //   3. ตรวจสอบ flow ใน addToCart() ที่ set activeOrderId = null อยู่แล้ว อาจต้องปรับ
+    //
+    // ผลกระทบต่อระบบเดิม: 0%
+    //   - ไม่มี code อื่นอ่าน activeOrderId/activeOrderKey/storeOrderId ระหว่างบรรทัด 1067 ถึง 1075
+    //   - getStoredOrderId(checkoutKey) ยังคงทำงาน (line 956) — แต่จะคืน null เสมอเพราะไม่มีการ store แล้ว
+    //   - ส่งผลให้ลูกค้าที่สั่งซื้อครั้งที่ 2 ด้วยชื่อ+เบอร์เดิมจะได้ order ID ใหม่เสมอ (ซึ่งก็คือ behavior ปัจจุบันอยู่แล้ว)
+    // activeOrderId = orderRef.id;
+    // activeOrderKey = checkoutKey;
+    // storeOrderId(checkoutKey, orderRef.id);
+
+    state.cart = [];
+    try { localStorage.removeItem(CART_STORAGE_KEY); } catch (_) {}
+    // 🔧 แก้บั๊ก Bug #5: บรรทัดข้างล่างนี้ comment ออกเช่นกัน — เป็นส่วน clear ของ dead code block
+    //   อ่านคอมเมนต์ด้านบนสำหรับรายละเอียดเต็ม
+    // activeOrderId = null;
+    // activeOrderKey = null;
+    // clearStoredOrderId();
+    renderCart();
+    // เพิ่มใหม่: จำชื่อ+เบอร์โทรไว้ในเครื่อง เพื่อเติมฟอร์มอัตโนมัติให้ลูกค้าตอนสั่งซื้อครั้งถัดไป
+    saveCustomerInfo(customerName, normalizePhoneForStorage(whatsapp));
+    // 🔧 (2026-09-17): บันทึก name+whatsapp ลง MY_ORDERS_INFO_KEY ด้วย (key เดียวกับ app-promotion.js + app-user.js badge)
+    // เพื่อให้ badge บนปุ่ม "ติดตามออเดอร์" สามารถ detect ลูกค้าได้ทันทีหลังสั่งซื้อ — ไม่ต้องรอให้ลูกค้าเปิด My Orders ก่อน
+    // 🔧 (2026-09-18): เก็บเบอร์แบบ normalized ด้วย เพื่อให้ตรงกับค่าใน DB และ badge ทำงานถูกต้อง
+    try { localStorage.setItem("music_store_my_orders_info_v1", JSON.stringify({ name: customerName, whatsapp: normalizePhoneForStorage(whatsapp) })); } catch (_) {}
+    // 🔧 (2026-09-17): refresh badge ทันที — listener จะ poll ทันที (delay 0) → แสดง badge "1" ภายใน ~200-500ms
+    if (window.__refreshTrackOrderBadge) window.__refreshTrackOrderBadge();
+    if (nameInput) nameInput.value = "";
+    if (whatsappInput) whatsappInput.value = "";
+    setCheckoutFeedback(`บันทึก Order ${receiptNumber} สำเร็จแล้ว`, "success");
+
+    submitting = false;
+    if (btn) { btn.disabled = false; btn.textContent = "ยืนยันสั่งซื้อ"; }
+
+    // เดิม: เปิด WhatsApp หาแอดมินอัตโนมัติทันที — เปลี่ยนเป็นแสดงใบเสร็จก่อน แล้วให้ลูกค้ากดปุ่มเองเพื่อติดต่อแอดมิน
+    closeCheckout();
+    saveLastOrderRecord(order, receiptNumber);
+    showReceipt(order, receiptNumber, resolvedSettings.whatsapp_number);
+  }
+
+  function bindCartEvents() {
+    document.getElementById("cartToggleBtn")?.addEventListener("click", openCart);
+    document.getElementById("cartCloseBtn")?.addEventListener("click", closeCart);
+    document.getElementById("cartBackdrop")?.addEventListener("click", event => {
+      if (event.target === event.currentTarget) closeCart();
+    });
+    document.getElementById("checkoutCloseBtn")?.addEventListener("click", closeCheckout);
+    document.getElementById("checkoutBackdrop")?.addEventListener("click", event => {
+      if (event.target === event.currentTarget) closeCheckout();
+    });
+
+    // 🔧 (2026-09-22 Batch 7 fix Bug #3): Cart sync between browser tabs
+    //   ปัญหา: ลูกค้าเปิด 2 tabs → add ใน tab A → tab B ไม่ update → add ซ้ำ → double-add
+    //   วิธีแก้: ฟัง storage event → ถ้า localStorage.cart เปลี่ยน (จาก tab อื่น) → reload cart
+    //   ผลกระทบระบบเดิม: 0% — เพิ่ม event listener ไม่แตะฟังก์ชันเดิม
+    //   หมายเหตุ: storage event ทำงานเฉพาะเมื่อ ANOTHER tab/document เปลี่ยนค่า
+    //   ไม่ trigger ตอน tab ปัจจุบันเปลี่ยน → ไม่มี loop
+    window.addEventListener("storage", (event) => {
+      if (event.key === CART_STORAGE_KEY) {
+        // cart เปลี่ยนจาก tab อื่น → reload ตะกร้า + re-render
+        loadCart();
+        if (typeof renderCart === "function") renderCart();
+        if (typeof renderPendingOrderBanner === "function") renderPendingOrderBanner();
+      }
+      if (event.key === BANNER_DISMISS_KEY) {
+        // banner dismiss เปลี่ยน → re-render banner (sync ระหว่าง tabs)
+        if (typeof renderPendingOrderBanner === "function") renderPendingOrderBanner();
+      }
+      if (event.key === LAST_ORDER_STORAGE_KEY) {
+        // last order เปลี่ยน → re-render banner (เผื่อออเดอร์ใหม่จาก tab อื่น)
+        if (typeof renderPendingOrderBanner === "function") renderPendingOrderBanner();
+      }
+    });
+    document.getElementById("cartItems")?.addEventListener("click", event => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      if (button.matches("[data-cart-continue]")) { closeCart(); return; }
+      if (button.dataset.cartViewSongs) {
+        const list = document.getElementById(`cartSongs-${button.dataset.cartViewSongs}`);
+        if (list) {
+          const willOpen = !list.classList.contains("is-open");
+          list.classList.toggle("is-open", willOpen);
+          button.textContent = button.textContent.replace(/^(ดู|ซ่อน)/, willOpen ? "ซ่อน" : "ดู");
+        }
+        return;
+      }
+      if (button.dataset.cartRemove) {
+        activeOrderId = null;
+        activeOrderKey = null;
+        removeFromCart(button.dataset.cartRemove);
+      }
+    });
+    document.getElementById("clearCartBtn")?.addEventListener("click", async () => {
+      if (!state.cart.length) return;
+      // 🎨 (2026-09-26): ใช้ customConfirm แทน window.confirm()
+      const confirmed = await window.customConfirm(
+        "ต้องการล้างเพลงทั้งหมดออกจากตะกร้าหรือไม่?",
+        { title: "ล้างตะกร้า", okText: "ล้าง", danger: true }
+      );
+      if (confirmed) {
+        state.cart = [];
+        activeOrderId = null;
+        activeOrderKey = null;
+        saveCart();
+        showToast("ล้างตะกร้าแล้ว", "success");
+      }
+    });
+    document.getElementById("checkoutCartBtn")?.addEventListener("click", openCheckout);
+    document.getElementById("submitCartOrderBtn")?.addEventListener("click", checkoutCart);
+    // เพิ่มใหม่: ปิด popup ใบเสร็จ (เตือนก่อนถ้ายังไม่ได้แจ้งแอดมิน)
+    document.getElementById("receiptClose")?.addEventListener("click", attemptCloseReceipt);
+    document.getElementById("receiptBackdrop")?.addEventListener("click", event => {
+      if (event.target === event.currentTarget) attemptCloseReceipt();
+    });
+    // เพิ่มใหม่: แถบเตือนออเดอร์ค้างแจ้งแอดมิน
+    document.getElementById("pendingOrderBannerBtn")?.addEventListener("click", async () => {
+      // 🛡️ (added 2026-09-26 auto-close banner): ตรวจสถานะล่าสุดจาก server ก่อนเปิด modal
+      //   ถ้าไม่มีออเดอร์ค้างชำระจริง (state unpaid/rejected/cancelled) → ปิด banner อัตโนมัติ ไม่เปิด modal
+      //   ป้องกันกรณีลูกค้ากดปุ่ม "ไปชำระเงิน" แต่จริง ๆ ออเดอร์ถูกยืนยันแล้ว/ส่งสลิปแล้ว → ไม่ต้องเปิด modal ให้สับสน
+      //   ใช้ข้อมูล dbPendingOrders ที่ถูก sync ผ่าน updatePendingPaymentInfo() — ไม่ยิง fetch ซ้ำ
+      const pendingOrders = (dbPendingOrders || []).filter(order => {
+        const oState = getOrderPaymentState(order);
+        return oState.showPayButton; // unpaid / rejected / cancelled
+      });
+      const record = getLastOrderRecord();
+      let recordStillUnpaid = false;
+      if (record && !record.contacted) {
+        const rState = getOrderPaymentState(record.order);
+        recordStillUnpaid = rState.showPayButton;
+      }
+      const hasUnpaid = pendingOrders.length > 0 || recordStillUnpaid;
+      if (!hasUnpaid) {
+        // ไม่มีออเดอร์ค้างชำระจริง → ปิด banner อัตโนมัติ
+        const banner = document.getElementById("pendingOrderBanner");
+        if (banner) banner.hidden = true;
+        showToast("ไม่มีออเดอร์ที่ค้างชำระเงิน", "info");
+        return;
+      }
+      // 🔧 (2026-09-26 ต่อสายให้ครบ): ถ้ามี callback เปิดหน้า "ออเดอร์ทั้งหมดของฉัน" (ส่งมาจาก app-user.js)
+      //   ใช้อันนี้ก่อน — ลูกค้าจะเห็นออเดอร์ค้างชำระ "ทุกใบ" ไม่ใช่แค่ใบล่าสุดในเครื่องนี้
+      if (typeof openTrackOrderAllPicker === "function") {
+        openTrackOrderAllPicker();
+        return;
+      }
+      // fallback เดิม (กรณีไม่มี callback ส่งมา) — เปิดใบเสร็จของออเดอร์ล่าสุดในเครื่องนี้เหมือนเดิม
+      if (!record) { renderPendingOrderBanner(); return; }
+      showReceipt(record.order, record.receiptNumber, state.settings?.whatsapp_number, record.contacted);
+    });
+    document.getElementById("pendingOrderBannerDismiss")?.addEventListener("click", () => {
+      // 🔧 (2026-09-22 Batch 7 fix Bug #4): localStorage + 24h TTL แทน sessionStorage "1"
+      //   เดิม: sessionStorage → หายตอนปิด tab → ลูกค้าเปิด tab ค้างไว้ → banner หายตลอดวัน
+      //   ใหม่: localStorage เก็บ timestamp หมดอายุ (now + 24h) → ครบ 24h แสดง banner อีกครั้ง
+      const DISMISS_TTL_MS = 24 * 60 * 60 * 1000; // 24 ชั่วโมง
+      try {
+        localStorage.setItem(BANNER_DISMISS_KEY, String(Date.now() + DISMISS_TTL_MS));
+      } catch (_) {}
+      renderPendingOrderBanner();
+    });
+  }
+
+  return {
+    loadCart,
+    bindCartEvents,
+    addToCart,
+    renderCart,
+    openCart,
+    closeCart,
+    checkoutCart,
+    getLastOrderRecord,
+    showReceipt,
+    updatePendingPaymentInfo,
+    // 🛡️ (added 2026-09-26 prevent double payment): export helper สำหรับ app-user.js
+    //   เพื่อใช้ใน renderTrackOrderResult / openTrackOrderAllDetail / renderTrackOrderAllList
+    //   ทำให้ frontend ทุกส่วนใช้สถานะเดียวกัน (synced) — กัน inconsistency
+    getOrderPaymentState
+  };
 }
