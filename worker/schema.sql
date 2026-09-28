@@ -39,7 +39,8 @@ CREATE INDEX IF NOT EXISTS idx_documents_collection_created_at
 --   UNIQUE partial index บน role = 'main' → ถ้ามี main admin อยู่แล้ว INSERT ตัวที่ 2 จะ fail
 --   Worker ใช้ INSERT...ON CONFLICT DO NOTHING + เช็ค changes() เพื่อ detect race
 -- ⚠️ ถ้าในระบบมี main admin 2 ตัวอยู่แล้ว (จาก race ก่อนหน้า) → index creation จะ fail
---   ให้ลบตัวซ้ำออกก่อน (ดู README สำหรับวิธีเช็ค + ลบ)
+--   ให้รัน migration script `scripts/migrate-admin-dedup.sql` ก่อน (Critical C4 fix 2026-09-28)
+--   หลัง migration เสร็จ → index นี้จะสร้างสำเร็จ + กัน main admin ซ้อนในอนาคต
 CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_main_unique
   ON admin_users(role) WHERE role = 'main';
 
