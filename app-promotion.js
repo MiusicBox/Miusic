@@ -39,7 +39,7 @@ import { db, auth } from "./firebase-init.js?v=20260905-fix1";
 //      - ไม่งั้นไม่พัง (เพราะไม่ได้ใช้) แต่เป็น code smell ถ้าเหลืออยู่ฝั่งเดียว
 // ────────────────────────────────────────────────────────────────────────────
 import {
-  collection, doc, getDocs, setDoc, updateDoc, deleteDoc, query, onSnapshot, listenCustomerOrders,
+  collection, doc, getDocs, setDoc, updateDoc, deleteDoc, query,
   // 🔧 (2026-09-17): เพิ่ม fetchCustomerOrdersOnce สำหรับ one-shot fetch (ไม่ polling) ลด D1 quota
   //    ↑ ↑ ↑ ฟังก์ชันนี้แหละที่ใช้จริงในไฟล์นี้ (แทน listenCustomerOrders เดิม) ใน PART 4: MY ORDERS VIEW
   fetchCustomerOrdersOnce

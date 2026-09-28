@@ -24,7 +24,7 @@ import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js";
 //      - ไม่งั้นไม่พัง (เพราะไม่ได้ใช้) แต่เป็น code smell ถ้าเหลืออยู่ฝั่งเดียว
 // ────────────────────────────────────────────────────────────────────────────
 import {
-  collection, getDocs, doc, getDoc, query, where, onSnapshot, deleteDoc, queryCustomerOrder, listenCustomerOrders,
+  collection, getDocs, doc, getDoc, query, where, deleteDoc, queryCustomerOrder,
   // 🔧 (2026-09-17): เพิ่ม fetchCustomerOrdersOnce สำหรับ one-shot fetch (ไม่ polling) ลด D1 quota
   //    ↑ ↑ ↑ ฟังก์ชันนี้แหละที่ใช้จริงในไฟล์นี้ (แทน listenCustomerOrders เดิม)
   fetchCustomerOrdersOnce
@@ -2905,14 +2905,16 @@ function renderPromotionBanner() {
     }).join("");
 
     // 🎨 v6: countdown สไตล์เดียวกับ promo-card (กล่อง cyan + urgent pink blink)
+    // 🚀 (2026-09-28 fix A1): เพิ่ม id + data-promo-end → updatePromoCountdowns() จับได้ → เดินทุกวินาที
     const countdownText = promo.end_at ? promo_formatCountdownCompact(promo.end_at) : "";
     const countdownP = promo_getCountdownParts(promo.end_at);
     const isUrgent = countdownP.urgent;
     const countdownStyle = isUrgent
       ? "background:var(--cp-pink);color:#fff;box-shadow:0 0 10px var(--cp-pink-glow);animation:cp-blink 1s ease-in-out infinite;"
       : "background:var(--cp-cyan);color:var(--cp-bg);box-shadow:0 0 8px var(--cp-cyan-glow);";
+    const countdownId = `bannerCountdown_${promo.id || 'tiered'}`;
     const countdownHtml = countdownText
-      ? `<div style="display:inline-flex;align-items:center;gap:3px;${countdownStyle}padding:3px 10px;font-weight:900;font-variant-numeric:tabular-nums;font-size:11px;letter-spacing:1px;margin-top:5px;font-family:var(--cp-mono);">⏰ ${countdownText}</div>`
+      ? `<div id="${countdownId}" data-promo-end="${promo.end_at || ""}" style="display:inline-flex;align-items:center;gap:3px;${countdownStyle}padding:3px 10px;font-weight:900;font-variant-numeric:tabular-nums;font-size:11px;letter-spacing:1px;margin-top:5px;font-family:var(--cp-mono);">⏰ ${countdownText}</div>`
       : "";
 
     // 🎨 v6: title สไตล์ promo-card (text-shadow pink + cyan)
@@ -2934,14 +2936,16 @@ function renderPromotionBanner() {
     upcoming.sort((a, b) => new Date(a.end_at).getTime() - new Date(b.end_at).getTime());
 
     for (const featured of upcoming) {
+      // 🚀 (A1): เพิ่ม id + data-promo-end สำหรับ single-song promo countdown ด้วย
       const countdownText = featured.end_at ? promo_formatCountdownCompact(featured.end_at) : "";
       const countdownP = promo_getCountdownParts(featured.end_at);
       const isUrgent = countdownP.urgent;
       const countdownStyle = isUrgent
         ? "background:var(--cp-pink);color:#fff;box-shadow:0 0 10px var(--cp-pink-glow);animation:cp-blink 1s ease-in-out infinite;"
         : "background:var(--cp-cyan);color:var(--cp-bg);box-shadow:0 0 8px var(--cp-cyan-glow);";
+      const countdownId = `bannerCountdown_${featured.id || 'single'}`;
       const countdownHtml = countdownText
-        ? `<div style="display:inline-flex;align-items:center;gap:3px;${countdownStyle}padding:3px 10px;font-weight:900;font-variant-numeric:tabular-nums;font-size:11px;letter-spacing:1px;margin-top:4px;font-family:var(--cp-mono);">⏰ ${countdownText}</div>`
+        ? `<div id="${countdownId}" data-promo-end="${featured.end_at || ""}" style="display:inline-flex;align-items:center;gap:3px;${countdownStyle}padding:3px 10px;font-weight:900;font-variant-numeric:tabular-nums;font-size:11px;letter-spacing:1px;margin-top:4px;font-family:var(--cp-mono);">⏰ ${countdownText}</div>`
         : "";
 
       // 🎨 v6: discount สไตล์ promo-card (กล่อง pink + cyan text)
@@ -2967,58 +2971,6 @@ function renderPromotionBanner() {
   if (!banner._promoBound) {
     banner.addEventListener("click", () => {
       const tabBtn = document.querySelector('.bottom-nav button[data-tab="promotions"]');
-      if (tabBtn) tabBtn.click();
-    });
-    banner._promoBound = true;
-  }
-}
-
-// 🚀 (2026-09-28 fix H-7): วาดแบนเนอร์สำหรับโปรโมชัน playlist tiered
-//   แสดงตาราง tier ทั้งหมด + แนะนำ tier ที่คุ้มสุด
-function renderPlaylistTieredBanner(promo) {
-  const banner = document.getElementById("promoHomeBanner");
-  if (!banner) return;
-  banner.hidden = false;
-
-  // 🚀 (H-7): แสดงตาราง tier ใน meta section
-  const tiers = Array.isArray(promo.tiers) ? promo.tiers : [];
-  // sort จากน้อยไปมาก
-  const sortedTiers = [...tiers].sort((a, b) => Number(a.min_quantity) - Number(b.min_quantity));
-
-  // หา tier แนะนำ (max discount / min quantity — ที่คุ้มสุด)
-  let recommendedTier = null;
-  if (sortedTiers.length > 0) {
-    // แนะนำ tier ที่มีส่วนลดสูงสุด ที่ยังไม่ใช่ tier สูงสุด (กันลูกค้ากดซื้อ tier สูงสุดเลย)
-    //   ถ้ามีแค่ 1 tier → แนะนำ tier นั้น
-    //   ถ้ามีหลาย tier → แนะนำ tier รองสุดท้าย (เช่น 5 → ลด 25% ในตัวอย่าง)
-    recommendedTier = sortedTiers.length > 1 ? sortedTiers[sortedTiers.length - 2] : sortedTiers[0];
-  }
-
-  // HTML สำหรับตาราง tier (compact สำหรับ banner)
-  const tiersHtml = sortedTiers.map(t => {
-    const qty = Number(t.min_quantity) || 0;
-    const pct = Number(t.discount_percent) || 0;
-    const isRecommended = recommendedTier && qty === Number(recommendedTier.min_quantity);
-    const recommendedBadge = isRecommended ? '<span style="background:#fff3;color:#0a0;padding:1px 4px;border-radius:4px;font-size:9px;font-weight:bold;margin-left:4px;">⭐ แนะนำ</span>' : "";
-    return `<div style="font-size:11px;color:var(--text-dim);">🎵 ${qty} เพลย์ลิสต์ — ลด ${pct}%${recommendedBadge}</div>`;
-  }).join("");
-
-  const titleEl = document.getElementById("promoHomeBannerTitle");
-  const discountEl = document.getElementById("promoHomeBannerDiscount");
-  const countdownEl = document.getElementById("promoHomeBannerCountdown");
-
-  if (titleEl) titleEl.innerHTML = (promo.name || "🎵 ยิ่งเลือกเยอะ ยิ่งคุ้ม");
-  if (discountEl) discountEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:2px;">${tiersHtml}</div>`;
-  if (countdownEl) {
-    const p = promo_getCountdownParts(promo.end_at);
-    countdownEl.textContent = promo_formatCountdownCompact(promo.end_at);
-    countdownEl.classList.toggle("urgent", p.urgent);
-  }
-
-  // ผูก click (ครั้งเดียว — กันซ้ำ)
-  if (!banner._promoBound) {
-    banner.addEventListener("click", () => {
-      const tabBtn = document.querySelector('.bottom-nav button[data-tab="playlists"]');
       if (tabBtn) tabBtn.click();
     });
     banner._promoBound = true;
@@ -3311,22 +3263,26 @@ function hidePromotionsView() {
 //   - ถ้า element ไม่อยู่ → ข้ามไปเงียบ ๆ (ปลอดภัย)
 function updatePromoCountdowns() {
   // === อัปเดตแบนเนอร์หน้าแรก ===
+  // 🚀 (2026-09-28 fix A1): อัปเดต countdown ใน banner ที่มี data-promo-end (เดินทุกวินาที)
   const banner = document.getElementById("promoHomeBanner");
   if (banner && !banner.hidden) {
-    const featured = promo_pickFeaturedPromotion();
-    const countdownEl = document.getElementById("promoHomeBannerCountdown");
-    if (featured && countdownEl) {
-      const p = promo_getCountdownParts(featured.end_at);
+    // หาทุก countdown div ใน banner ที่มี data-promo-end
+    const bannerCountdowns = banner.querySelectorAll("[data-promo-end]");
+    let anyExpired = false;
+    bannerCountdowns.forEach(el => {
+      const endIso = el.getAttribute("data-promo-end");
+      if (!endIso) return;
+      const p = promo_getCountdownParts(endIso);
       if (p.expired) {
-        // โปรหมดเวลา → รีเฟรชแบนเนอร์ใหม่ (อาจเลือกโปรอื่นแทน)
-        renderPromotionBanner();
+        anyExpired = true;
       } else {
-        countdownEl.textContent = promo_formatCountdownCompact(featured.end_at);
-        countdownEl.classList.toggle("urgent", p.urgent);
+        // อัปเดต text
+        el.textContent = `⏰ ${promo_formatCountdownCompact(endIso)}`;
       }
-    } else if (!featured) {
-      // ไม่มีโปรแล้ว → ซ่อนแบนเนอร์
-      banner.hidden = true;
+    });
+    if (anyExpired) {
+      // มีโปรหมดเวลา → รีเฟรชแบนเนอร์ใหม่
+      renderPromotionBanner();
     }
   }
 
