@@ -1857,9 +1857,23 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       itemCountLine = `🎵 จำนวน: ${songCount} เพลง`;
     }
 
+    // 📅 (2026-09-29): เพิ่มวันเวลาที่ลูกค้าแจ้งชำระ — ใช้เวลาปัจจุบัน (ตอนกดแจ้งชำระจริง)
+    //   ใช้ order.payment_proof_uploaded_at ถ้ามี (จาก server หลัง upload slip สำเร็จ)
+    //   ถ้าไม่มี ใช้เวลาปัจจุบันฝั่ง client (fallback)
+    //   รูปแบบ: "29/09/2026 21:45" (ตาม timezone ของเครื่องลูกค้า)
+    const proofUploadedAt = order?.payment_proof_uploaded_at;
+    const notifyDate = proofUploadedAt ? new Date(proofUploadedAt) : new Date();
+    const notifyDateTimeStr = !isNaN(notifyDate.getTime())
+      ? notifyDate.toLocaleString("th-TH", {
+          day: "2-digit", month: "2-digit", year: "numeric",
+          hour: "2-digit", minute: "2-digit",
+        })
+      : "-";
+
     // ข้อความ WhatsApp ฉบับใหม่ — ครบข้อมูล ไม่มี link slip ไม่มีรายชื่อ
     const lines = [
       `📸 แจ้งชำระเงิน Order ${receiptNum}`,
+      `📅 เวลาแจ้ง: ${notifyDateTimeStr}`,
       `👤 ลูกค้า: ${customerName}`,
       `📱 เบอร์: ${customerPhone}`,
       itemCountLine,
