@@ -7,7 +7,7 @@ import {
   collection, getDocs, getDoc, setDoc, query, orderBy, where, doc, updateDoc, deleteDoc,
   // 🔧 (2026-09-17 Phase 2): เพิ่ม getDocsByIds สำหรับ batch fetch songs (ลด HTTP requests + Worker invocations)
   getDocsByIds
-} from "./db-client.js?v=20260917-polling-fix";
+} from "./db-client.js?v=20260928-promo-fix-v9";
 import { uploadOrderZip, deleteFromStorage } from "./storage-adapter.js?v=20260904-rawzip";
 // 🎨 (2026-09-26): เพิ่ม import sortSongsByThaiName สำหรับ sort เพลงในฟอร์มสร้างออเดอร์
 import { sortSongsByThaiName } from "./thai-sort.js";

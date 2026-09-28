@@ -6,7 +6,7 @@ import {
   // 🚀 (2026-09-28 fix H7): เพิ่ม getDocsByIds สำหรับ batch fetch แทน N+1
   //   ลด HTTP requests จาก N+1 → 2 (songs + playlists) ใน resolveCartFromDatabase
   getDocsByIds
-} from "./db-client.js";
+} from "./db-client.js?v=20260928-promo-fix-v9";
 //
 // 🔧 แก้บั๊ก (2026-09-12): "ยังไม่ได้ login" ตอนกดสั่งซื้อ
 // -----------------------------------------------------------

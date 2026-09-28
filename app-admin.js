@@ -4,7 +4,7 @@ import { db, auth, uploadToCloudinary } from "./firebase-init.js?v=20260905-fix1
 import { uploadFullSong, deleteFromStorage } from "./storage-adapter.js?v=20260904-rawzip";
 import {
   collection, addDoc, updateDoc, deleteDoc, doc, getDocs, getDoc, setDoc, getDocsAdmin
-} from "./db-client.js";
+} from "./db-client.js?v=20260928-promo-fix-v9";
 import {
   signInWithEmailAndPassword, onAuthStateChanged, signOut,
   reauthenticateWithCredential, EmailAuthProvider, updatePassword,

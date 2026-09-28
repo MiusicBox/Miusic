@@ -44,7 +44,7 @@ import {
   //    ↑ ↑ ↑ ฟังก์ชันนี้แหละที่ใช้จริงในไฟล์นี้ (แทน listenCustomerOrders เดิม) ใน PART 4: MY ORDERS VIEW
   fetchCustomerOrdersOnce
 // 🔧 (2026-09-17 v2): เพิ่ม ?v=20260917-polling-fix บังคับ browser โหลด db-client.js ใหม่ (กัน cache เก่า)
-} from "./db-client.js?v=20260917-polling-fix";
+} from "./db-client.js?v=20260928-promo-fix-v9";
 
 // ============================================================================
 // PART 1: PRICING HELPERS (คำนวณส่วนลด + โปรโมชั่น)
