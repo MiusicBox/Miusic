@@ -1039,7 +1039,7 @@ async function handleDb(request, env, url) {
   // 🔧 (2026-09-18 v6): เพิ่ม isCountAllEndpoint + isCheckDuplicateEndpoint (admin-only ด้วย)
   // 🔧 (2026-09-22 fix Bug #2 UI): เพิ่ม isAuditLogQueryEndpoint (admin-only ด้วย)
   const isAdminOnlyMetaEndpoint = isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint || isCountAllEndpoint || isCheckDuplicateEndpoint || isAuditLogQueryEndpoint || isMigrateRateLimitEndpoint;
-  if (!admin && !isOrdersPublicWriteCandidate && !isOrdersCustomerEndpoint && !isSongsPublicGet && !isSongsPublicQuery && !isAdminOnlyMetaEndpoint) {
+  if (!admin && !isOrdersPublicWriteCandidate && !isOrdersCustomerEndpoint && !isSongsPublicGet && !isSongsPublicQuery && !isAdminOnlyMetaEndpoint && !isBatchGetEndpoint) {
     if (isWrite || !PUBLIC_READ_COLLECTIONS.has(collection)) {
       return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
     }
@@ -1064,15 +1064,30 @@ async function handleDb(request, env, url) {
   // ใช้สำหรับ batch fetch songs ตอนสร้าง ZIP — ลดจำนวน HTTP requests จาก browser → Worker
   // request: POST body { ids: ["id1", "id2", ...] }
   // response: { docs: [{ id, data }, ...] }
-  // 🔒 Security: ต้อง login admin เท่านั้น — เพราะ response อาจมี full_file_url ของ songs (sensitive field)
+  // 🔒 Security (2026-09-17): เดิมบังคับ admin เท่านั้น เพราะ response อาจมี full_file_url ของ songs (sensitive)
+  // 🐛 (2026-09-29 fix): ลูกค้า checkout พัง เพราะ resolveCartFromDatabase ใช้ getDocsByIds (H7 fix)
+  //   เรียก _batch-get สำหรับ songs + playlists → บล็อก 401 "ยังไม่ได้เข้าสู่ระบบ"
+  //   ทั้งที่จริงลูกค้าไม่ต้อง login (เว็บนี้ไม่มีระบบ login ลูกค้า)
+  //   แก้: อนุญาต non-admin ใช้ _batch-get ได้ แต่ sanitize ฟิลด์ sensitive ออกก่อนส่ง
+  //       (เหมือน GET /songs ปกติที่ sanitizeSongsForPublic)
+  //       →ลูกค้าได้แค่ song_name, artist, price, status, playlist_id, cover_url, preview_url, ...
+  //       → ไม่ได้ full_file_url / full_file_public_id / full_file_name (เพลงเต็ม)
   if (isBatchGetEndpoint) {
-    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
     let body;
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
     const ids = Array.isArray(body?.ids) ? body.ids : [];
     if (ids.length === 0) return jsonResponse({ docs: [] });
     try {
       const docs = await getDocumentsByIds(env, collection, ids);
+      // 🐛 (2026-09-29 fix): ถ้าไม่ใช่ admin + collection="songs" → sanitize sensitive fields ออก
+      //   - admin ยังได้ response เต็ม (สำหรับ openFullFilesModal + createOrderZip)
+      //   - ลูกค้าได้ response ที่ sanitize แล้ว (เหมือน GET /songs ปกติ)
+      if (!admin && collection === "songs") {
+        return jsonResponse({ docs: sanitizeSongsForPublic(docs) });
+      }
+      // 🐛 (2026-09-29 fix): playlists ไม่มี sensitive fields → ส่ง raw ได้เลย (admin + ลูกค้า)
+      //   playlists มีแค่ id, playlist_name, price, ... ไม่มี file_url อะไร
+      //   ลูกค้าต้องการ price + playlist_name ตอน checkout อยู่แล้ว
       return jsonResponse({ docs });
     } catch (err) {
       return jsonResponse({ error: safeError("ดึงข้อมูลไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
