@@ -708,7 +708,8 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       if (!Number.isFinite(baseTotal) || baseTotal < 0) throw new Error("คำนวณยอดรวมจากฐานข้อมูลไม่สำเร็จ");
       // คำนวณ discount + promotion โดยใช้ category_id ของแต่ละเพลง (สำหรับ promotion หมวดหมู่)
       const cartItems = singleSongItems.map(item => {
-        const songSnap = songSnaps.find((s, idx) => songEntries[idx] && songEntries[idx].id === item.song_id);
+        // 🔧 (2026-09-28 fix H7): เปลี่ยนจาก songSnaps.find() เป็น songMap.get() (เดิมใช้ array, ตอนนี้ใช้ Map)
+        const songSnap = songMap.get(String(item.song_id));
         const songData = songSnap?.data() || {};
         return {
           kind: "song",
@@ -744,7 +745,8 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       song_titles: songs.map(s => s.title) // เก็บ snapshot ชื่อเพลงคู่กัน ใช้แสดงในใบเสร็จ/ข้อความ WhatsApp เท่านั้น ไม่ใช้คิดราคา
     }));
     const songLineItems = singleSongItems.map((item, idx) => {
-      const songSnap = songSnaps[idx];
+      // 🔧 (2026-09-28 fix H7): เปลี่ยนจาก songSnaps[idx] เป็น songMap.get() (เดิมใช้ array, ตอนนี้ใช้ Map)
+      const songSnap = songMap.get(String(item.song_id));
       const songData = songSnap?.data() || {};
       return {
         kind: "song",
