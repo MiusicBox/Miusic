@@ -2850,11 +2850,10 @@ function promo_pickFeaturedPromotion() {
 }
 
 // วาดแบนเนอร์โปรโมชั่นเด่นบนหน้าแรก
-//   🚀 (2026-09-28 fix H-7 v4): compact + single color (สีธีมหลัก) + แยก countdown
-//   - ขนาด: slightly smaller (ลด padding/margin)
-//   - สี: ใช้สีเดียวกับธีมหลัก (--primary) — ไม่หลายสี
-//   - tier: แต่ละ tier บรรทัด แต่ compact (ไม่มีกล่อง gradient)
-//   - countdown: แยกของแต่ละโปร
+//   🚀 (2026-09-28 fix H-7 v5): สวยขึ้น + countdown มีพื้นหลัง + ตัวหนังสือสวย
+//   - ใช้แบบเดิม (compact + สีเดียว) แต่ปรับสวยขึ้น
+//   - countdown มีกล่องพื้นหลังสวย ดูง่าย
+//   - ตัวหนังสือข้างในสวยขึ้น (spacing + letter-spacing + color hierarchy)
 function renderPromotionBanner() {
   const banner = document.getElementById("promoHomeBanner");
   if (!banner) return;
@@ -2877,7 +2876,7 @@ function renderPromotionBanner() {
 
   let bannerHtml = '';
 
-  // ส่วนที่ 1: playlist_tiered_percent (compact — ไม่มีกล่องสี ใช้สีเดียวกับธีม)
+  // 🎨 v5: ส่วนที่ 1 — playlist_tiered_percent (สวยขึ้น)
   for (const promo of tieredPromos) {
     const tiers = Array.isArray(promo.tiers) ? promo.tiers : [];
     const sortedTiers = [...tiers].sort((a, b) => Number(a.min_quantity) - Number(b.min_quantity));
@@ -2889,32 +2888,40 @@ function renderPromotionBanner() {
       recommendedTier = sortedTiers[0];
     }
 
-    // 🎨 v4: compact tier (ไม่มีกล่อง gradient) — แค่ text + ⭐ แนะนำ
+    // 🎨 v5: tier สวยขึ้น — ใช้ flex + spacing + สี hierarchy
     const tiersHtml = sortedTiers.map(t => {
       const qty = Number(t.min_quantity) || 0;
       const pct = Number(t.discount_percent) || 0;
       const isRecommended = recommendedTier && qty === Number(recommendedTier.min_quantity);
       const recommendedBadge = isRecommended
-        ? ' <span style="color:#fbbf24;font-weight:bold;font-size:10px;">⭐ แนะนำ</span>'
+        ? ' <span style="color:#fbbf24;font-weight:700;font-size:10px;letter-spacing:0.3px;">⭐ แนะนำ</span>'
         : "";
-      return `<div style="font-size:11px;color:rgba(255,255,255,.85);margin:2px 0;line-height:1.4;">
-        🎵 ${qty} เพลย์ลิสต์ — ลด ${pct}%${recommendedBadge}
+      return `<div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.9);margin:3px 0;padding:2px 0;letter-spacing:0.2px;">
+        <span>🎵 ${qty} เพลย์ลิสต์</span>
+        <span style="font-weight:600;">ลด ${pct}%${recommendedBadge}</span>
       </div>`;
     }).join("");
 
+    // 🎨 v5: countdown มีกล่องพื้นหลังสวย + ดูง่าย
     const countdownText = promo.end_at ? promo_formatCountdownCompact(promo.end_at) : "";
     const countdownP = promo_getCountdownParts(promo.end_at);
-    const urgentClass = countdownP.urgent ? "color:#fbbf24;font-weight:bold;" : "color:rgba(255,255,255,.6);";
+    const isUrgent = countdownP.urgent;
+    const countdownBg = isUrgent
+      ? "background:linear-gradient(135deg,rgba(251,191,36,.15),rgba(245,158,11,.1));border:1px solid rgba(251,191,36,.35);color:#fbbf24;"
+      : "background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.75);";
+    const countdownHtml = countdownText
+      ? `<div style="display:inline-block;${countdownBg}font-size:10px;font-weight:600;padding:3px 10px;border-radius:8px;margin-top:4px;letter-spacing:0.3px;">⏰ ${countdownText}</div>`
+      : "";
 
-    // 🎨 v4: ลด padding/margin — compact ขึ้น
-    bannerHtml += `<div style="margin-bottom:8px;">
-      <div style="font-size:12px;font-weight:bold;margin-bottom:3px;color:#fff;">${promo_escapeHtml(promo.name || "🎵 ยิ่งเลือกเยอะ ยิ่งคุ้ม")}</div>
+    // 🎨 v5: title สวยขึ้น — letter-spacing + font-weight
+    bannerHtml += `<div style="margin-bottom:10px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:5px;color:#fff;letter-spacing:0.3px;">${promo_escapeHtml(promo.name || "🎵 ยิ่งเลือกเยอะ ยิ่งคุ้ม")}</div>
       ${tiersHtml}
-      <div style="font-size:10px;${urgentClass}margin-top:3px;">⏰ หมดเวลา: ${countdownText}</div>
+      ${countdownHtml}
     </div>`;
   }
 
-  // ส่วนที่ 2: โปรโมชันอื่น ๆ (compact — สีเดียวกับธีม)
+  // 🎨 v5: ส่วนที่ 2 — โปรโมชันอื่น ๆ (สวยขึ้น + countdown กล่อง)
   if (otherPromos.length > 0) {
     const now = Date.now();
     const upcoming = otherPromos.filter(p => {
@@ -2927,13 +2934,18 @@ function renderPromotionBanner() {
     for (const featured of upcoming) {
       const countdownText = featured.end_at ? promo_formatCountdownCompact(featured.end_at) : "";
       const countdownP = promo_getCountdownParts(featured.end_at);
-      const urgentClass = countdownP.urgent ? "color:#fbbf24;font-weight:bold;" : "color:rgba(255,255,255,.6);";
+      const isUrgent = countdownP.urgent;
+      const countdownBg = isUrgent
+        ? "background:linear-gradient(135deg,rgba(251,191,36,.15),rgba(245,158,11,.1));border:1px solid rgba(251,191,36,.35);color:#fbbf24;"
+        : "background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.75);";
+      const countdownHtml = countdownText
+        ? `<div style="display:inline-block;${countdownBg}font-size:10px;font-weight:600;padding:3px 10px;border-radius:8px;margin-top:4px;letter-spacing:0.3px;">⏰ ${countdownText}</div>`
+        : "";
 
-      // 🎨 v4: compact — ไม่มีกล่อง gradient ใช้สีเดียวกับธีม
-      bannerHtml += `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed rgba(255,255,255,.2);">
-        <div style="font-size:12px;font-weight:bold;color:#fff;margin-bottom:2px;">${promo_escapeHtml(featured.name || "โปรโมชั่น")}</div>
-        <div style="font-size:11px;color:rgba(255,255,255,.85);">ลด ${promo_formatDiscountValue(featured)}</div>
-        <div style="font-size:10px;${urgentClass}margin-top:2px;">⏰ หมดเวลา: ${countdownText}</div>
+      bannerHtml += `<div style="margin-top:6px;padding-top:8px;border-top:1px dashed rgba(255,255,255,.15);">
+        <div style="font-size:12px;font-weight:700;color:#fff;margin-bottom:3px;letter-spacing:0.2px;">${promo_escapeHtml(featured.name || "โปรโมชั่น")}</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.75);font-weight:500;">ลด ${promo_formatDiscountValue(featured)}</div>
+        ${countdownHtml}
       </div>`;
     }
   }
