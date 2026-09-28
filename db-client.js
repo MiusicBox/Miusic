@@ -188,6 +188,24 @@ export async function deleteDoc(ref, options = {}) {
 //   ถ้าอนาคตต้องการ realtime: สร้างใหม่จาก fetchCustomerOrdersOnce pattern
 // ============================================================================
 
+// 🚀 (2026-09-28 fix): เพิ่ม queryCustomerOrder กลับ — ถูกลบไปพร้อม dead code โดยไม่ตั้งใจ
+//   ใช้ใน app-user.js บรรทัด 2113 สำหรับค้นหาออเดอร์เดียว (track order)
+//   ถ้าไม่มี export นี้ → SyntaxError → JavaScript ไม่ทำงานทั้งหน้า
+// ค้นหาออเดอร์เดียวด้วย receipt_number + customer_name + whatsapp
+// Server ตรวจทั้ง 3 ฟิลด์ คืน { exists:true, id, data } ถ้าตรงทั้งหมด ไม่งั้น { exists:false }
+export async function queryCustomerOrder({ receiptNumber, customerName, whatsapp }) {
+  const res = await apiFetch(`/orders/_customer-query`, {
+    method: "POST",
+    body: JSON.stringify({
+      receipt_number: receiptNumber,
+      customer_name: customerName,
+      whatsapp: whatsapp,
+    }),
+  });
+  if (!res || !res.exists) return { exists: false };
+  return { exists: true, id: res.id, data: res.data };
+}
+
 // ===================================================
 // 🔧 (2026-09-17): One-shot fetch สำหรับเรียกดูออเดอร์ของลูกค้า — ไม่ polling
 // เป้าหมาย: ลด D1 read quota ที่บวมจากการ polling ทุก 4 วิตลอดเวลา
