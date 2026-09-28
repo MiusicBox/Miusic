@@ -2904,18 +2904,45 @@ function renderPromotionBanner() {
       </div>`;
     }).join("");
 
-    // 🎨 v6: countdown สไตล์เดียวกับ promo-card (กล่อง cyan + urgent pink blink)
-    // 🚀 (2026-09-28 fix A1): เพิ่ม id + data-promo-end → updatePromoCountdowns() จับได้ → เดินทุกวินาที
-    const countdownText = promo.end_at ? promo_formatCountdownCompact(promo.end_at) : "";
+    // 🎨 v6: countdown สไตล์เดียวกับหน้าโปรโมชั่น (แยก วัน/ชม./นาที/วิ + Cyberpunk)
+    // 🚀 (2026-09-28 fix A1): เพิ่ม data-promo-end + data-promo-num → เดินทุกวินาที
+    //   ใช้สไตล์ promo-countdown-box แต่เล็กลง (compact) สำหรับ banner
     const countdownP = promo_getCountdownParts(promo.end_at);
-    const isUrgent = countdownP.urgent;
-    const countdownStyle = isUrgent
-      ? "background:var(--cp-pink);color:#fff;box-shadow:0 0 10px var(--cp-pink-glow);animation:cp-blink 1s ease-in-out infinite;"
-      : "background:var(--cp-cyan);color:var(--cp-bg);box-shadow:0 0 8px var(--cp-cyan-glow);";
-    const countdownId = `bannerCountdown_${promo.id || 'tiered'}`;
-    const countdownHtml = countdownText
-      ? `<div id="${countdownId}" data-promo-end="${promo.end_at || ""}" style="display:inline-flex;align-items:center;gap:3px;${countdownStyle}padding:3px 10px;font-weight:900;font-variant-numeric:tabular-nums;font-size:11px;letter-spacing:1px;margin-top:5px;font-family:var(--cp-mono);">⏰ ${countdownText}</div>`
-      : "";
+    const isUrgent = countdownP.urgent && !countdownP.expired;
+    const isExpired = countdownP.expired;
+    let countdownHtml = "";
+    if (isExpired) {
+      countdownHtml = `<div class="promo-countdown-box expired" style="padding:4px 10px;margin-top:5px;border-radius:2px;"><span class="promo-countdown-text-flat" style="font-size:11px;font-family:var(--cp-mono);">⏰ หมดเวลาแล้ว</span></div>`;
+    } else {
+      const pad = n => String(n).padStart(2, "0");
+      const showDays = countdownP.days > 0;
+      const daysHtml = showDays ? `
+        <span class="promo-countdown-unit" style="min-width:22px;">
+          <span class="promo-countdown-num" data-promo-num="d" style="font-size:14px;">${countdownP.days}</span>
+          <span class="promo-countdown-text" style="font-size:7px;">วัน</span>
+        </span>
+        <span class="promo-countdown-sep" style="font-size:12px;">:</span>` : "";
+      countdownHtml = `<div class="promo-countdown-box${isUrgent ? " urgent" : ""}" data-promo-end="${promo.end_at || ""}" style="padding:4px 10px;margin-top:5px;border-radius:2px;gap:6px;">
+        <span class="promo-countdown-label" style="font-size:9px;letter-spacing:0.5px;">${isUrgent ? "⏰" : "⏳"}</span>
+        <span class="promo-countdown-timer" style="gap:2px;">
+          ${daysHtml}
+          <span class="promo-countdown-unit" style="min-width:22px;">
+            <span class="promo-countdown-num" data-promo-num="h" style="font-size:14px;">${pad(countdownP.hours)}</span>
+            <span class="promo-countdown-text" style="font-size:7px;">ชม.</span>
+          </span>
+          <span class="promo-countdown-sep" style="font-size:12px;">:</span>
+          <span class="promo-countdown-unit" style="min-width:22px;">
+            <span class="promo-countdown-num" data-promo-num="m" style="font-size:14px;">${pad(countdownP.minutes)}</span>
+            <span class="promo-countdown-text" style="font-size:7px;">นาที</span>
+          </span>
+          <span class="promo-countdown-sep" style="font-size:12px;">:</span>
+          <span class="promo-countdown-unit" style="min-width:22px;">
+            <span class="promo-countdown-num" data-promo-num="s" style="font-size:14px;">${pad(countdownP.seconds)}</span>
+            <span class="promo-countdown-text" style="font-size:7px;">วิ</span>
+          </span>
+        </span>
+      </div>`;
+    }
 
     // 🎨 v6: title สไตล์ promo-card (text-shadow pink + cyan)
     bannerHtml += `<div style="margin-bottom:10px;">
@@ -2936,17 +2963,43 @@ function renderPromotionBanner() {
     upcoming.sort((a, b) => new Date(a.end_at).getTime() - new Date(b.end_at).getTime());
 
     for (const featured of upcoming) {
-      // 🚀 (A1): เพิ่ม id + data-promo-end สำหรับ single-song promo countdown ด้วย
-      const countdownText = featured.end_at ? promo_formatCountdownCompact(featured.end_at) : "";
-      const countdownP = promo_getCountdownParts(featured.end_at);
-      const isUrgent = countdownP.urgent;
-      const countdownStyle = isUrgent
-        ? "background:var(--cp-pink);color:#fff;box-shadow:0 0 10px var(--cp-pink-glow);animation:cp-blink 1s ease-in-out infinite;"
-        : "background:var(--cp-cyan);color:var(--cp-bg);box-shadow:0 0 8px var(--cp-cyan-glow);";
-      const countdownId = `bannerCountdown_${featured.id || 'single'}`;
-      const countdownHtml = countdownText
-        ? `<div id="${countdownId}" data-promo-end="${featured.end_at || ""}" style="display:inline-flex;align-items:center;gap:3px;${countdownStyle}padding:3px 10px;font-weight:900;font-variant-numeric:tabular-nums;font-size:11px;letter-spacing:1px;margin-top:4px;font-family:var(--cp-mono);">⏰ ${countdownText}</div>`
-        : "";
+      // 🚀 (A1): countdown สไตล์เดียวกับหน้าโปรโมชั่น (compact) — เดินทุกวินาที
+      const featuredCP = promo_getCountdownParts(featured.end_at);
+      const featuredUrgent = featuredCP.urgent && !featuredCP.expired;
+      const featuredExpired = featuredCP.expired;
+      let featuredCountdownHtml = "";
+      if (featuredExpired) {
+        featuredCountdownHtml = `<div class="promo-countdown-box expired" style="padding:4px 10px;margin-top:4px;border-radius:2px;"><span class="promo-countdown-text-flat" style="font-size:11px;font-family:var(--cp-mono);">⏰ หมดเวลาแล้ว</span></div>`;
+      } else {
+        const fpad = n => String(n).padStart(2, "0");
+        const fshowDays = featuredCP.days > 0;
+        const fdaysHtml = fshowDays ? `
+        <span class="promo-countdown-unit" style="min-width:22px;">
+          <span class="promo-countdown-num" data-promo-num="d" style="font-size:14px;">${featuredCP.days}</span>
+          <span class="promo-countdown-text" style="font-size:7px;">วัน</span>
+        </span>
+        <span class="promo-countdown-sep" style="font-size:12px;">:</span>` : "";
+        featuredCountdownHtml = `<div class="promo-countdown-box${featuredUrgent ? " urgent" : ""}" data-promo-end="${featured.end_at || ""}" style="padding:4px 10px;margin-top:4px;border-radius:2px;gap:6px;">
+          <span class="promo-countdown-label" style="font-size:9px;letter-spacing:0.5px;">${featuredUrgent ? "⏰" : "⏳"}</span>
+          <span class="promo-countdown-timer" style="gap:2px;">
+            ${fdaysHtml}
+            <span class="promo-countdown-unit" style="min-width:22px;">
+              <span class="promo-countdown-num" data-promo-num="h" style="font-size:14px;">${fpad(featuredCP.hours)}</span>
+              <span class="promo-countdown-text" style="font-size:7px;">ชม.</span>
+            </span>
+            <span class="promo-countdown-sep" style="font-size:12px;">:</span>
+            <span class="promo-countdown-unit" style="min-width:22px;">
+              <span class="promo-countdown-num" data-promo-num="m" style="font-size:14px;">${fpad(featuredCP.minutes)}</span>
+              <span class="promo-countdown-text" style="font-size:7px;">นาที</span>
+            </span>
+            <span class="promo-countdown-sep" style="font-size:12px;">:</span>
+            <span class="promo-countdown-unit" style="min-width:22px;">
+              <span class="promo-countdown-num" data-promo-num="s" style="font-size:14px;">${fpad(featuredCP.seconds)}</span>
+              <span class="promo-countdown-text" style="font-size:7px;">วิ</span>
+            </span>
+          </span>
+        </div>`;
+      }
 
       // 🎨 v6: discount สไตล์ promo-card (กล่อง pink + cyan text)
       const discountParts = promo_formatDiscountParts(featured);
@@ -2960,7 +3013,7 @@ function renderPromotionBanner() {
             <div style="font-size:8px;color:var(--cp-pink);font-weight:700;">${promo_escapeHtml(discountParts.unit)}</div>
           </div>
         </div>
-        ${countdownHtml}
+        ${featuredCountdownHtml}
       </div>`;
     }
   }
