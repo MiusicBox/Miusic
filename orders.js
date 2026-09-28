@@ -2253,6 +2253,25 @@ async function handleStatusChange(orderId, newStatus) {
 
   // "ยืนยันโอนแล้ว" จะยังไม่เปลี่ยนเป็น processing จนกว่า ZIP และลิงก์จะพร้อม
   if (newStatus === "processing" && order?.status !== "processing") {
+    // 🚀 (2026-09-28 fix H1): เช็คว่า Worker ได้ auto-trigger createOrderZip ไปแล้วหรือไม่
+    //   ถ้า Worker ทำไปแล้ว (zip_status='preparing' หรือ 'ready') → skip confirmPaymentAndCreateZip
+    //   เพื่อกัน double-trigger (Worker ทำ + client ทำ → สร้าง ZIP ซ้อน)
+    //   ผลกระทบระบบเดิม: 0% — ถ้า Worker ยังไม่ได้ทำ (zip_status ว่าง) → flow เดิม (confirmPaymentAndCreateZip)
+    //                     — ถ้า Worker ทำไปแล้ว (zip_status='preparing'/'ready') → เตือน admin รอ
+    const zipStatus = String(order?.zip_status || "").toLowerCase();
+    if (zipStatus === "preparing") {
+      // Worker กำลังสร้าง ZIP อยู่ → admin ไม่ต้องทำอะไร
+      orderToast("Worker กำลังสร้าง ZIP อยู่แล้ว — รอ 1-2 นาที (ไม่ต้องกดเปลี่ยนสถานะ)", "info");
+      renderFromState(); // re-render เพื่อคืนค่า select กลับเดิม
+      return;
+    }
+    if (zipStatus === "ready" && order?.zip_download_url) {
+      // ZIP พร้อมแล้ว → admin ไม่ต้องสร้างใหม่
+      orderToast("ZIP พร้อมแล้ว — คลิก 'ส่ง ZIP ผ่าน WhatsApp' เพื่อส่งลูกค้า", "info");
+      renderFromState();
+      return;
+    }
+    // zip_status ว่าง หรือ 'failed' → flow เดิม (confirmPaymentAndCreateZip)
     await confirmPaymentAndCreateZip(orderId);
     return;
   }
