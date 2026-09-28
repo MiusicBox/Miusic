@@ -3119,6 +3119,8 @@ function renderPromotionsView() {
     tags.push(`<span class="promo-tag type">${promo_escapeHtml(promo_getTypeLabel(p.type))}</span>`);
     if (p.applies_to === "category" && p.category_name) {
       tags.push(`<span class="promo-tag scope">🎵 ${promo_escapeHtml(p.category_name)}</span>`);
+    } else if (p.applies_to === "playlist") {
+      tags.push(`<span class="promo-tag scope">📁 เฉพาะออเดอร์ซื้อยกเพลย์ลิสต์</span>`);
     } else {
       tags.push(`<span class="promo-tag scope">🎵 ทุกเพลง</span>`);
     }
@@ -3130,9 +3132,74 @@ function renderPromotionsView() {
     }
     const tagsHtml = tags.join("");
 
+    // 🚀 (2026-09-28 fix H-7): สร้าง tier table HTML สำหรับ playlist_tiered_percent
+    let tierTableHtml = "";
+    if (p.type === "playlist_tiered_percent" && Array.isArray(p.tiers) && p.tiers.length > 0) {
+      const sortedTiers = [...p.tiers].sort((a, b) => Number(a.min_quantity) - Number(b.min_quantity));
+      let recommendedTier = null;
+      if (sortedTiers.length > 1) {
+        recommendedTier = sortedTiers[sortedTiers.length - 2];
+      } else if (sortedTiers.length === 1) {
+        recommendedTier = sortedTiers[0];
+      }
+      const tierRowsHtml = sortedTiers.map(t => {
+        const qty = Number(t.min_quantity) || 0;
+        const pct = Number(t.discount_percent) || 0;
+        const isRec = recommendedTier && qty === Number(recommendedTier.min_quantity);
+        const recBadge = isRec
+          ? '<span style="color:var(--cp-yellow);font-weight:800;font-size:11px;text-shadow:0 0 4px var(--cp-yellow);margin-left:6px;">⭐ แนะนำ</span>'
+          : "";
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;margin:4px 0;background:rgba(255,0,255,.08);border:1px solid rgba(255,0,255,.25);border-radius:2px;font-family:var(--cp-mono);">
+          <span style="font-size:13px;color:var(--cp-cyan);font-weight:700;text-shadow:0 0 4px rgba(0,255,255,.5);">📁 ${qty} เพลย์ลิสต์</span>
+          <span style="font-size:14px;color:#fff;font-weight:900;">ลด ${pct}%${recBadge}</span>
+        </div>`;
+      }).join("");
+      tierTableHtml = `<div style="margin:10px 0 12px;">${tierRowsHtml}</div>`;
+    }
+
     // วันที่เริ่มต้น/สิ้นสุด
     const startDate = formatDateTime(p.start_at);
     const endDate   = formatDateTime(p.end_at);
+
+    // 🚀 (H-7): แยกการ์ดสำหรับ playlist_tiered_percent (แสดง tier table แทน discount box)
+    if (p.type === "playlist_tiered_percent") {
+      // สร้าง countdown แบบ compact (เหมือน banner)
+      let tierCountdownHtml = "";
+      if (!isExpired && countdownText) {
+        const cStyle = isUrgent
+          ? "background:var(--cp-pink);color:#fff;box-shadow:0 0 10px var(--cp-pink-glow);animation:cp-blink 1s ease-in-out infinite;"
+          : "background:var(--cp-cyan);color:var(--cp-bg);box-shadow:0 0 8px var(--cp-cyan-glow);";
+        tierCountdownHtml = `<div style="display:inline-flex;align-items:center;gap:3px;${cStyle}padding:4px 14px;font-weight:900;font-variant-numeric:tabular-nums;font-size:13px;letter-spacing:1px;margin-top:8px;font-family:var(--cp-mono);border-radius:2px;">⏰ ${countdownText}</div>`;
+      } else if (isExpired) {
+        tierCountdownHtml = `<div style="display:inline-block;background:rgba(255,0,0,.15);border:1px solid rgba(255,0,0,.4);color:#f87171;padding:4px 14px;font-weight:700;font-size:13px;margin-top:8px;font-family:var(--cp-mono);border-radius:2px;">⏰ หมดเวลาแล้ว</div>`;
+      }
+
+      return `
+        <div class="promo-card${isUrgent ? " urgent" : ""}" data-promo-id="${promo_escapeHtml(p.id)}">
+          <div class="promo-card-body">
+            <div class="promo-card-top">
+              <div class="promo-card-name-wrap">
+                <h3 class="promo-card-name">⚡ ${promo_escapeHtml(p.name || "โปรโมชั่นพิเศษ")}</h3>
+                ${p.description ? `<div class="promo-card-desc">${promo_escapeHtml(p.description)}</div>` : ""}
+              </div>
+            </div>
+            <div class="promo-card-tags">${tagsHtml}</div>
+            ${tierTableHtml}
+            <div class="promo-card-dates">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+              <span class="promo-date-label">ใช้ได้ตั้งแต่</span>
+              <span class="promo-date-value">${promo_escapeHtml(startDate)}</span>
+              <span class="promo-date-sep">→</span>
+              <span class="promo-date-value">${promo_escapeHtml(endDate)}</span>
+            </div>
+            ${tierCountdownHtml}
+            <button type="button" class="promo-card-cta" data-promo-cta>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
+              เลือกเพลย์ลิสต์เพื่อรับส่วนลด
+            </button>
+          </div>
+        </div>`;
+    }
 
     return `
       <div class="promo-card${isUrgent ? " urgent" : ""}" data-promo-id="${promo_escapeHtml(p.id)}">
