@@ -2850,10 +2850,10 @@ function promo_pickFeaturedPromotion() {
 }
 
 // วาดแบนเนอร์โปรโมชั่นเด่นบนหน้าแรก
-//   🚀 (2026-09-28 fix H-7 v5): สวยขึ้น + countdown มีพื้นหลัง + ตัวหนังสือสวย
-//   - ใช้แบบเดิม (compact + สีเดียว) แต่ปรับสวยขึ้น
-//   - countdown มีกล่องพื้นหลังสวย ดูง่าย
-//   - ตัวหนังสือข้างในสวยขึ้น (spacing + letter-spacing + color hierarchy)
+//   🚀 (2026-09-28 fix H-7 v6): ใช้สไตล์เดียวกับหน้าโปรโมชั่น (Cyberpunk promo-card)
+//   - สีเดียวกันกับหน้าโปรโมชั่น (--cp-pink, --cp-cyan, --cp-yellow)
+//   - countdown ใช้สไตล์เดียวกับ promo-card (กล่อง cyan + urgent pink)
+//   - tier rows ใช้สไตล์ tag แบบเดียวกับ promo-card
 function renderPromotionBanner() {
   const banner = document.getElementById("promoHomeBanner");
   if (!banner) return;
@@ -2876,7 +2876,7 @@ function renderPromotionBanner() {
 
   let bannerHtml = '';
 
-  // 🎨 v5: ส่วนที่ 1 — playlist_tiered_percent (สวยขึ้น)
+  // 🎨 v6: ส่วนที่ 1 — playlist_tiered_percent (สไตล์เดียวกับ promo-card)
   for (const promo of tieredPromos) {
     const tiers = Array.isArray(promo.tiers) ? promo.tiers : [];
     const sortedTiers = [...tiers].sort((a, b) => Number(a.min_quantity) - Number(b.min_quantity));
@@ -2888,40 +2888,40 @@ function renderPromotionBanner() {
       recommendedTier = sortedTiers[0];
     }
 
-    // 🎨 v5: tier สวยขึ้น — ใช้ flex + spacing + สี hierarchy
+    // 🎨 v6: tier rows สไตล์ tag แบบ promo-card
     const tiersHtml = sortedTiers.map(t => {
       const qty = Number(t.min_quantity) || 0;
       const pct = Number(t.discount_percent) || 0;
       const isRecommended = recommendedTier && qty === Number(recommendedTier.min_quantity);
       const recommendedBadge = isRecommended
-        ? ' <span style="color:#fbbf24;font-weight:700;font-size:10px;letter-spacing:0.3px;">⭐ แนะนำ</span>'
+        ? ' <span style="color:var(--cp-yellow);font-weight:800;font-size:9px;text-shadow:0 0 4px var(--cp-yellow);">⭐ แนะนำ</span>'
         : "";
-      return `<div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.9);margin:3px 0;padding:2px 0;letter-spacing:0.2px;">
-        <span>🎵 ${qty} เพลย์ลิสต์</span>
-        <span style="font-weight:600;">ลด ${pct}%${recommendedBadge}</span>
+      // แต่ละ tier ใช้สไตล์ tag แบบ promo-card
+      return `<div style="display:inline-block;background:rgba(255,0,255,.1);border:1px solid rgba(255,0,255,.3);color:var(--cp-cyan);font-size:10px;font-weight:700;padding:2px 8px;border-radius:2px;margin:2px 4px 2px 0;text-shadow:0 0 4px rgba(0,255,255,.5);font-family:var(--cp-mono);">
+        🎵 ${qty} = ${pct}%${recommendedBadge}
       </div>`;
     }).join("");
 
-    // 🎨 v5: countdown มีกล่องพื้นหลังสวย + ดูง่าย
+    // 🎨 v6: countdown สไตล์เดียวกับ promo-card (กล่อง cyan + urgent pink blink)
     const countdownText = promo.end_at ? promo_formatCountdownCompact(promo.end_at) : "";
     const countdownP = promo_getCountdownParts(promo.end_at);
     const isUrgent = countdownP.urgent;
-    const countdownBg = isUrgent
-      ? "background:linear-gradient(135deg,rgba(251,191,36,.15),rgba(245,158,11,.1));border:1px solid rgba(251,191,36,.35);color:#fbbf24;"
-      : "background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.75);";
+    const countdownStyle = isUrgent
+      ? "background:var(--cp-pink);color:#fff;box-shadow:0 0 10px var(--cp-pink-glow);animation:cp-blink 1s ease-in-out infinite;"
+      : "background:var(--cp-cyan);color:var(--cp-bg);box-shadow:0 0 8px var(--cp-cyan-glow);";
     const countdownHtml = countdownText
-      ? `<div style="display:inline-block;${countdownBg}font-size:10px;font-weight:600;padding:3px 10px;border-radius:8px;margin-top:4px;letter-spacing:0.3px;">⏰ ${countdownText}</div>`
+      ? `<div style="display:inline-flex;align-items:center;gap:3px;${countdownStyle}padding:3px 10px;font-weight:900;font-variant-numeric:tabular-nums;font-size:11px;letter-spacing:1px;margin-top:5px;font-family:var(--cp-mono);">⏰ ${countdownText}</div>`
       : "";
 
-    // 🎨 v5: title สวยขึ้น — letter-spacing + font-weight
+    // 🎨 v6: title สไตล์ promo-card (text-shadow pink + cyan)
     bannerHtml += `<div style="margin-bottom:10px;">
-      <div style="font-size:13px;font-weight:700;margin-bottom:5px;color:#fff;letter-spacing:0.3px;">${promo_escapeHtml(promo.name || "🎵 ยิ่งเลือกเยอะ ยิ่งคุ้ม")}</div>
-      ${tiersHtml}
+      <div style="font-size:14px;font-weight:900;color:#fff;margin-bottom:5px;text-shadow:0 0 8px var(--cp-pink),2px 0 0 rgba(0,255,255,.7),-2px 0 0 rgba(255,0,255,.7);letter-spacing:0.5px;font-family:var(--cp-mono);">${promo_escapeHtml(promo.name || "🎵 ยิ่งเลือกเยอะ ยิ่งคุ้ม")}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:2px;">${tiersHtml}</div>
       ${countdownHtml}
     </div>`;
   }
 
-  // 🎨 v5: ส่วนที่ 2 — โปรโมชันอื่น ๆ (สวยขึ้น + countdown กล่อง)
+  // 🎨 v6: ส่วนที่ 2 — โปรโมชันอื่น ๆ (สไตล์เดียวกับ promo-card)
   if (otherPromos.length > 0) {
     const now = Date.now();
     const upcoming = otherPromos.filter(p => {
@@ -2935,16 +2935,25 @@ function renderPromotionBanner() {
       const countdownText = featured.end_at ? promo_formatCountdownCompact(featured.end_at) : "";
       const countdownP = promo_getCountdownParts(featured.end_at);
       const isUrgent = countdownP.urgent;
-      const countdownBg = isUrgent
-        ? "background:linear-gradient(135deg,rgba(251,191,36,.15),rgba(245,158,11,.1));border:1px solid rgba(251,191,36,.35);color:#fbbf24;"
-        : "background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.75);";
+      const countdownStyle = isUrgent
+        ? "background:var(--cp-pink);color:#fff;box-shadow:0 0 10px var(--cp-pink-glow);animation:cp-blink 1s ease-in-out infinite;"
+        : "background:var(--cp-cyan);color:var(--cp-bg);box-shadow:0 0 8px var(--cp-cyan-glow);";
       const countdownHtml = countdownText
-        ? `<div style="display:inline-block;${countdownBg}font-size:10px;font-weight:600;padding:3px 10px;border-radius:8px;margin-top:4px;letter-spacing:0.3px;">⏰ ${countdownText}</div>`
+        ? `<div style="display:inline-flex;align-items:center;gap:3px;${countdownStyle}padding:3px 10px;font-weight:900;font-variant-numeric:tabular-nums;font-size:11px;letter-spacing:1px;margin-top:4px;font-family:var(--cp-mono);">⏰ ${countdownText}</div>`
         : "";
 
-      bannerHtml += `<div style="margin-top:6px;padding-top:8px;border-top:1px dashed rgba(255,255,255,.15);">
-        <div style="font-size:12px;font-weight:700;color:#fff;margin-bottom:3px;letter-spacing:0.2px;">${promo_escapeHtml(featured.name || "โปรโมชั่น")}</div>
-        <div style="font-size:11px;color:rgba(255,255,255,.75);font-weight:500;">ลด ${promo_formatDiscountValue(featured)}</div>
+      // 🎨 v6: discount สไตล์ promo-card (กล่อง pink + cyan text)
+      const discountParts = promo_formatDiscountParts(featured);
+      bannerHtml += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,0,255,.15);">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:4px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:900;color:#fff;text-shadow:0 0 6px var(--cp-pink);letter-spacing:0.3px;font-family:var(--cp-mono);">${promo_escapeHtml(featured.name || "โปรโมชั่น")}</div>
+          </div>
+          <div style="flex-shrink:0;padding:6px 12px;background:rgba(255,0,255,.15);border:1px solid var(--cp-pink);text-align:center;min-width:60px;box-shadow:0 0 8px var(--cp-pink-glow);font-family:var(--cp-mono);">
+            <div style="font-size:16px;font-weight:900;color:var(--cp-cyan);text-shadow:0 0 6px var(--cp-cyan);font-variant-numeric:tabular-nums;">${promo_escapeHtml(discountParts.value)}</div>
+            <div style="font-size:8px;color:var(--cp-pink);font-weight:700;">${promo_escapeHtml(discountParts.unit)}</div>
+          </div>
+        </div>
         ${countdownHtml}
       </div>`;
     }
