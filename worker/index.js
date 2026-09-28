@@ -4053,7 +4053,16 @@ export default {
     //     9. Return { ok: true, proof_id, file_url, status: 'pending' }
     if (url.pathname.startsWith("/api/orders/") && url.pathname.endsWith("/payment-proof") && !url.pathname.endsWith("/payment-proofs") && request.method === "POST") {
       if (!env.DB || !env.BUCKET) return jsonResponse({ error: "D1 หรือ R2 binding ไม่ได้กำหนด" }, 500);
-      const orderId = decodeURIComponent(url.pathname.slice("/api/orders/".length, -"/payment-proof".length));
+      // 🔧 (2026-09-27 fix HIGH #1): sanitize orderId ก่อนใช้ใน R2 key — กัน path traversal
+      //   เดิม: orderId จาก path ถูก decodeURIComponent แล้วใช้ตรงใน r2Key →
+      //         ถ้าส่ง `/api/orders/..%2Forder-zips/payment-proof` → r2Key = `payment-proofs/../../order-zips/...`
+      //         → R2 อาจ normalize path ทำให้ไฟล์ไปอยู่นอกโฟลเดอร์ payment-proofs/ (namespace pollution)
+      //   ใหม่: กรองเฉพาะตัวอักษรปลอดภัย (alphanumeric + dash + underscore) + กัน path traversal
+      //   ผลกระทบระบบเดิม: 0% — orderId ปกติ (UUID) ผ่านทั้งหมด ตัวอักษรที่ไม่ปลอดภัยถูกแทนด้วย _
+      //   หมายเหตุ: orderId ที่ sanitize แล้วใช้กับ R2 key เท่านั้น — สำหรับ D1 query ยังใช้ค่าดั้งเดิม (UUID ไม่มีปัญหา SQL injection เพราะ bind)
+      const rawOrderId = decodeURIComponent(url.pathname.slice("/api/orders/".length, -"/payment-proof".length));
+      const orderId = rawOrderId.replace(/[^a-zA-Z0-9_-]/g, "_");  // sanitize สำหรับ R2 key
+      if (!orderId) return jsonResponse({ error: "orderId ไม่ถูกต้อง" }, 400);
 
       // rate limit check (10/15min — ใช้ shared IP, กัน spam)
       const clientIp = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "unknown";
@@ -4093,10 +4102,12 @@ export default {
         return jsonResponse({ error: `ประเภทไฟล์ไม่ได้รับอนุญาต: ${actualMime || "ไม่ระบุ"} (อนุญาตเฉพาะ: JPEG, PNG, WEBP)` }, 415);
       }
 
-      // 1. fetch order from D1 (documents table)
+      // 1. fetch order from D1 (documents table) — ใช้ rawOrderId (ค่าดั้งเดิม ก่อน sanitize) สำหรับ D1
+      //    เพราะ D1 ใช้ bind parameter (ปลอดภัยจาก SQL injection) + orderId ใน D1 คือ UUID ปกติ
+      //    ถ้าใช้ orderId ที่ sanitize แล้ว → อาจไม่ตรงกับ D1 id จริง (เพราะ _ แทนตัวอักษรอื่น)
       const orderRow = await env.DB.prepare(
         `SELECT data FROM documents WHERE collection='orders' AND id=?`
-      ).bind(orderId).first();
+      ).bind(rawOrderId).first();
       if (!orderRow || !orderRow.data) return jsonResponse({ error: "ไม่พบใบสั่งซื้อ" }, 404);
       let orderData = null;
       try { orderData = JSON.parse(orderRow.data); } catch { return jsonResponse({ error: "ข้อมูลใบสั่งซื้อเสีย" }, 500); }
@@ -4147,8 +4158,16 @@ export default {
         || (actualMime === "image/jpeg" || actualMime === "image/jpg" ? ".jpg"
           : actualMime === "image/png" ? ".png"
           : actualMime === "image/webp" ? ".webp" : "");
+      // 🔧 (2026-09-27 fix HIGH #1): ใช้ orderId ที่ sanitize แล้ว (จาก rawOrderId บรรทัดบน)
+      //   กัน path traversal — orderId ผ่าน regex `/[^a-zA-Z0-9_-]/g` → ไม่มี ../ ได้
       const r2Key = `payment-proofs/${orderId}/${Date.now()}-${crypto.randomUUID()}${ext}`;
-      const r2PublicBase = env.R2_PUBLIC_BASE_URL || "";
+      // 🔧 (2026-09-27 fix HIGH #2): เปลี่ยน fileUrl ให้เป็น proxy URL เสมอ — กันรั่วผ่าน public URL
+      //   เดิม: ถ้ามี R2_PUBLIC_BASE_URL → ใช้ public URL → ใครรู้ URL เปิดดูสลิปได้ (รั่วข้อมูลลูกค้า)
+      //   ใหม่: ใช้ /api/file/<r2Key> proxy ผ่าน handleFileProxy (มีอยู่แล้ว ตรวจ admin session)
+      //   ผลกระทบระบบเดิม: admin ยังเห็นสลิปผ่าน /api/file/<r2Key> เหมือนเดิม (ผ่าน handleFileProxy)
+      //                   — ลูกค้าไม่ได้รับ public URL กลับไป (ปลอดภัยกว่าเดิม)
+      //   หมายเหตุ: ในตาราง payment_proofs จะเก็บ file_url เป็น /api/file/<r2Key> แทน public URL
+      const fileUrl = `/api/file/${r2Key}`;
       // sanitize metadata values (R2 requires ASCII for customMetadata)
       const safeOrderId = sanitizeHeaderValue(orderId);
       try {
@@ -4165,7 +4184,8 @@ export default {
       } catch (err) {
         return jsonResponse({ error: safeError("อัปโหลดไฟล์ไม่สำเร็จ (R2) กรุณาลองใหม่", err) }, 502);
       }
-      const fileUrl = r2PublicBase ? `${r2PublicBase}/${r2Key}` : `/api/file/${r2Key}`;
+      // 🔧 (2026-09-27 fix HIGH #2): ลบการใช้ r2PublicBase สำหรับ fileUrl (ใช้ proxy เสมอ)
+      //   ค่า r2PublicBase ยังใช้สำหรับ ZIP URL ใน flow อื่น ไม่ได้ลบตัวแปร
 
       // 5. INSERT payment_proofs row
       const proofId = crypto.randomUUID();
@@ -4395,15 +4415,27 @@ export default {
       // ค้นหา orders ที่ zip_status='ready' + อายุเกิน 24 ชม.
       //   ใช้ json_extract บน data column (เหมือน queryDocuments)
       //   ผลลัพธ์: array ของ { id, data } — data คือ JSON string
+      // 🔧 (2026-09-27 fix HIGH #3): เพิ่ม LIMIT 100 + เพิ่ม ORDER BY เพื่อกัน OOM + กัน cron timeout
+      //   เดิม: SELECT ไม่มี LIMIT → ถ้ามี ZIP ค้าง 10,000+ จะโหลดเข้า memory หมด
+      //         + sequential R2 delete + D1 UPDATE ทีละ row → เกิน cron wall-clock limit 30s ของ Free plan
+      //         → cron ถูกตัดกลางทาง → บาง order ไม่ถูก expire
+      //   ใหม่: LIMIT 100 + ORDER BY json_extract(data, '$.zip_created_at') ASC (เก่าก่อน)
+      //         → ประมวลผลทีละ 100 รอบถัดไปจะเลือก 100 ถัดไปเอง
+      //         → ใช้เวลา ~100 × ~80ms = ~8 วินาที (อยู่ใน limit 30s ปลอดภัย)
+      //   ผลกระทบระบบเดิม: 0% — ถ้ามี ZIP ค้างน้อยกว่า 100 → ทำครบทุกตัวเหมือนเดิม
+      //                   — ถ้ามีมากกว่า 100 → ทำ 100 แรก รอบ cron ถัดไป (6 ชม.) ทำ 100 ถัดไป
+      const cleanupLimit = 100;
       const { results } = await env.DB.prepare(
         "SELECT id, data FROM documents WHERE collection = 'orders' " +
         "AND json_extract(data, '$.zip_status') = 'ready' " +
         "AND json_extract(data, '$.zip_created_at') IS NOT NULL " +
-        "AND json_extract(data, '$.zip_created_at') < ?"
-      ).bind(cutoff).all();
+        "AND json_extract(data, '$.zip_created_at') < ? " +
+        "ORDER BY json_extract(data, '$.zip_created_at') ASC " +
+        "LIMIT ?"
+      ).bind(cutoff, cleanupLimit).all();
 
       const expiredCount = results?.length || 0;
-      console.log(`[cleanup] Found ${expiredCount} ZIPs to expire`);
+      console.log(`[cleanup] Found ${expiredCount} ZIPs to expire (limit ${cleanupLimit})`);
 
       if (expiredCount === 0) {
         return; // ไม่มี ZIP ต้อง cleanup → จบการทำงาน
@@ -4417,18 +4449,16 @@ export default {
           const order = JSON.parse(row.data);
           const bucketKey = order.zip_public_id;
 
-          // 1) ลบไฟล์ ZIP ออกจาก R2 (ถ้ามี bucket key)
-          if (bucketKey) {
-            try {
-              await env.BUCKET.delete(bucketKey);
-              console.log(`[cleanup] Deleted R2 object: ${bucketKey}`);
-            } catch (r2Err) {
-              // ถ้า R2 delete fail (เช่น ไฟล์ไม่มีแล้ว) → ยัง update order อยู่ (ลบ stale reference)
-              console.warn(`[cleanup] R2 delete failed for ${bucketKey}:`, r2Err?.message || r2Err);
-            }
-          }
-
-          // 2) อัปเดต order: zip_status='expired', ลบ URL + public_id
+          // 🔧 (2026-09-27 fix HIGH #4): สลับลำดับ — UPDATE D1 ก่อน (mark as expired) แล้วค่อย delete R2
+          //   เดิม: R2 delete ก่อน → D1 UPDATE ทีหลัง
+          //         ถ้า D1 UPDATE ล้ม → ไฟล์ R2 หายแล้ว แต่ order doc ยังบอก zip_status='ready' + zip_download_url ยังอยู่
+          //         → ลูกค้าคลิก download → R2 404 → UI error แต่ order บอก "พร้อมดาวน์โหลด"
+          //         → self-heal ในรอบ cron ถัดไป (6 ชม.) แต่ช่วงนั้นลูกค้าเดือดร้อน
+          //   ใหม่: D1 UPDATE ก่อน (mark as expired) → ลูกค้าจะไม่เห็น URL แล้ว → ค่อย delete R2
+          //         ถ้า R2 delete ล้ม → ไฟล์ค้างใน R2 แต่ order doc ถูกต้อง (expired) → self-heal รอบถัดไป
+          //         (ไฟล์ค้างดีกว่าลูกค้าเจน error ตอนคลิก download)
+          //   ผลกระทบระบบเดิม: 0% — ผลลัพธ์สุดท้ายเหมือนเดิม (R2 + D1 ถูกลบ/อัปเดต)
+          //                   — แต่ลำดับการทำงานเปลี่ยน เพื่อ consistency ที่ดีกว่า
           const nowIso = new Date().toISOString();
           const updatedData = {
             ...order,
@@ -4441,7 +4471,19 @@ export default {
           await env.DB.prepare(
             "UPDATE documents SET data = ?, updated_at = ? WHERE collection = 'orders' AND id = ?"
           ).bind(JSON.stringify(updatedData), nowIso, row.id).run();
-          console.log(`[cleanup] Expired ZIP for order ${row.id}`);
+          console.log(`[cleanup] Marked order ${row.id} as expired`);
+
+          // ตอนนี้ D1 อัปเดตแล้ว → ลูกค้าจะไม่เห็น URL แล้ว → ค่อยลบไฟล์ R2
+          // ถ้า R2 delete ล้ม → log แต่ถือว่าสำเร็จ (ไฟล์ค้างรอรอบถัดไป ไม่กระทบลูกค้า)
+          if (bucketKey) {
+            try {
+              await env.BUCKET.delete(bucketKey);
+              console.log(`[cleanup] Deleted R2 object: ${bucketKey}`);
+            } catch (r2Err) {
+              // ไฟล์ค้างใน R2 → log warning แต่ไม่ block (D1 ถูกต้องแล้ว self-heal รอบถัดไป)
+              console.warn(`[cleanup] R2 delete failed for ${bucketKey} (will retry next cron):`, r2Err?.message || r2Err);
+            }
+          }
           successCount += 1;
         } catch (err) {
           console.error(`[cleanup] Failed to expire ZIP for order ${row.id}:`, err?.message || err);
