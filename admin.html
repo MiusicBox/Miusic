@@ -686,6 +686,8 @@
           <option value="cart_percent">ลด % ของยอดที่เข้าโปร</option>
           <option value="cart_fixed">ลดจำนวนเงินตายตัว (LAK)</option>
           <option value="buy_x_get_y_percent">ซื้อ X ครบ → ลด %</option>
+          <!-- 🚀 (2026-09-28 fix H-7): เพิ่ม playlist_tiered_percent -->
+          <option value="playlist_tiered_percent">🎵 ซื้อยกเพลย์ลิสต์ — ยิ่งเยอะยิ่งลด (Tiered)</option>
         </select>
         <div id="fPromoTypeHint" style="font-size:11px;color:var(--text-dim);margin-top:4px;"></div>
       </div>
@@ -706,11 +708,20 @@
         <select id="fPromoAppliesTo">
           <option value="all">เพลงทุกเพลง</option>
           <option value="category">เฉพาะหมวดหมู่ (เช่น DJ)</option>
+          <!-- 🚀 (H-7): เพิ่ม option "playlist" -->
+          <option value="playlist">🎵 เฉพาะออเดอร์ซื้อยกเพลย์ลิสต์</option>
         </select>
       </div>
       <div class="field" id="fPromoCategoryRow" style="display:none;">
         <label>หมวดหมู่ที่เข้าโปร *</label>
         <select id="fPromoCategory"></select>
+      </div>
+      <!-- 🚀 (2026-09-28 fix H-7): Tier table สำหรับ playlist_tiered_percent -->
+      <div class="field promo-tier-container" style="display:none;">
+        <label>ตาราง Tier (ยิ่งเลือกเยอะ ยิ่งลดเยอะ) *</label>
+        <div id="fPromoTiers" style="display:flex;flex-direction:column;gap:4px;margin-bottom:6px;"></div>
+        <button type="button" id="fPromoAddTier" style="background:var(--primary);color:white;border:none;border-radius:4px;padding:6px 12px;cursor:pointer;font-size:13px;">+ เพิ่ม Tier</button>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">เช่น: ซื้อครบ 2 เพลย์ลิสต์ → ลด 10% / ซื้อครบ 3 เพลย์ลิสต์ → ลด 15%</div>
       </div>
       <div class="field">
         <label>วันเริ่มต้น *</label>

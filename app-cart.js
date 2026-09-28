@@ -686,7 +686,8 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       const { playlist, songs } = playlistResolutions[0];
       // คำนวณ discount + promotion (ถ้ามี)
       const cartItems = [{ kind: "playlist", playlist_id: playlist.id, price: Number(playlist.price) }];
-      const pricing = computeCartPricing(cartItems, activeDiscounts, activePromotions);
+      // 🚀 (2026-09-28 fix H-7): ส่ง orderType="playlist" ให้ computeCartPricing
+      const pricing = computeCartPricing(cartItems, activeDiscounts, activePromotions, { orderType: "playlist" });
       return {
         items: songs.map(s => ({ song_id: s.song_id, title: s.title, price: s.price, quantity: 1 })),
         total: pricing.finalTotal,  // ← ยอดสุดท้าย (เก็บใน order.total เหมือนเดิม)
@@ -718,7 +719,8 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
           category_id: songData.category_id || songData.categoryId || null
         };
       });
-      const pricing = computeCartPricing(cartItems, activeDiscounts, activePromotions);
+      // 🚀 (H-7): ส่ง orderType="single"
+      const pricing = computeCartPricing(cartItems, activeDiscounts, activePromotions, { orderType: "single" });
       return {
         items: singleSongItems,
         total: pricing.finalTotal,
@@ -769,7 +771,8 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       price: item.price,
       category_id: item.category_id || null
     }));
-    const pricing = computeCartPricing(cartItems, activeDiscounts, activePromotions);
+    // 🚀 (H-7): ส่ง orderType="mixed"
+    const pricing = computeCartPricing(cartItems, activeDiscounts, activePromotions, { orderType: "mixed" });
 
     return {
       items,

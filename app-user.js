@@ -2752,6 +2752,15 @@ function promo_formatDiscountValue(p) {
   if (t === "cart_fixed") {
     return Number(v).toLocaleString("en-US") + " LAK";
   }
+  // 🚀 (2026-09-28 fix H-7): รองรับ playlist_tiered_percent
+  if (t === "playlist_tiered_percent") {
+    // แสดง % สูงสุดใน tiers (เพื่อให้ลูกค้าเห็นส่วนลดสูงสุดที่เป็นไปได้)
+    if (Array.isArray(p.tiers) && p.tiers.length > 0) {
+      const maxPct = Math.max(...p.tiers.map(tier => Number(tier.discount_percent) || 0));
+      return `สูงสุด ${maxPct}%`;
+    }
+    return "Tiered %";
+  }
   return String(v);
 }
 
@@ -2766,6 +2775,14 @@ function promo_formatDiscountParts(p) {
   if (t === "cart_fixed") {
     return { value: Number(v).toLocaleString("en-US"), unit: "LAK OFF" };
   }
+  // 🚀 (H-7): รองรับ playlist_tiered_percent
+  if (t === "playlist_tiered_percent") {
+    if (Array.isArray(p.tiers) && p.tiers.length > 0) {
+      const maxPct = Math.max(...p.tiers.map(tier => Number(tier.discount_percent) || 0));
+      return { value: `สูงสุด ${maxPct}`, unit: "% OFF" };
+    }
+    return { value: "Tiered", unit: "% OFF" };
+  }
   return { value: String(v), unit: "" };
 }
 
@@ -2774,6 +2791,8 @@ function promo_getTypeLabel(type) {
   if (type === "cart_percent") return "ลด % ทั้งยอด";
   if (type === "cart_fixed")   return "ลดจำนวนเงิน";
   if (type === "buy_x_get_y_percent") return "ซื้อ X ลด %";
+  // 🚀 (H-7): เพิ่ม label สำหรับ playlist_tiered_percent
+  if (type === "playlist_tiered_percent") return "🎵 ยิ่งเลือกเยอะ ยิ่งคุ้ม";
   return "โปรโมชั่น";
 }
 
@@ -2837,6 +2856,15 @@ function promo_pickFeaturedPromotion() {
 function renderPromotionBanner() {
   const banner = document.getElementById("promoHomeBanner");
   if (!banner) return;
+  // 🚀 (2026-09-28 fix H-7): แสดง playlist tiered banner ก่อน ถ้ามี
+  const tieredPromo = (STATE.promotions || []).find(p =>
+    p.type === "playlist_tiered_percent" && p.active !== false && p.applies_to === "playlist"
+  );
+  if (tieredPromo) {
+    renderPlaylistTieredBanner(tieredPromo);
+    return;
+  }
+  // โปรโมชันปกติ (เดิม)
   const featured = promo_pickFeaturedPromotion();
   if (!featured) {
     banner.hidden = true;
@@ -2857,6 +2885,58 @@ function renderPromotionBanner() {
   if (!banner._promoBound) {
     banner.addEventListener("click", () => {
       const tabBtn = document.querySelector('.bottom-nav button[data-tab="promotions"]');
+      if (tabBtn) tabBtn.click();
+    });
+    banner._promoBound = true;
+  }
+}
+
+// 🚀 (2026-09-28 fix H-7): วาดแบนเนอร์สำหรับโปรโมชัน playlist tiered
+//   แสดงตาราง tier ทั้งหมด + แนะนำ tier ที่คุ้มสุด
+function renderPlaylistTieredBanner(promo) {
+  const banner = document.getElementById("promoHomeBanner");
+  if (!banner) return;
+  banner.hidden = false;
+
+  // 🚀 (H-7): แสดงตาราง tier ใน meta section
+  const tiers = Array.isArray(promo.tiers) ? promo.tiers : [];
+  // sort จากน้อยไปมาก
+  const sortedTiers = [...tiers].sort((a, b) => Number(a.min_quantity) - Number(b.min_quantity));
+
+  // หา tier แนะนำ (max discount / min quantity — ที่คุ้มสุด)
+  let recommendedTier = null;
+  if (sortedTiers.length > 0) {
+    // แนะนำ tier ที่มีส่วนลดสูงสุด ที่ยังไม่ใช่ tier สูงสุด (กันลูกค้ากดซื้อ tier สูงสุดเลย)
+    //   ถ้ามีแค่ 1 tier → แนะนำ tier นั้น
+    //   ถ้ามีหลาย tier → แนะนำ tier รองสุดท้าย (เช่น 5 → ลด 25% ในตัวอย่าง)
+    recommendedTier = sortedTiers.length > 1 ? sortedTiers[sortedTiers.length - 2] : sortedTiers[0];
+  }
+
+  // HTML สำหรับตาราง tier (compact สำหรับ banner)
+  const tiersHtml = sortedTiers.map(t => {
+    const qty = Number(t.min_quantity) || 0;
+    const pct = Number(t.discount_percent) || 0;
+    const isRecommended = recommendedTier && qty === Number(recommendedTier.min_quantity);
+    const recommendedBadge = isRecommended ? '<span style="background:#fff3;color:#0a0;padding:1px 4px;border-radius:4px;font-size:9px;font-weight:bold;margin-left:4px;">⭐ แนะนำ</span>' : "";
+    return `<div style="font-size:11px;color:var(--text-dim);">🎵 ${qty} เพลย์ลิสต์ — ลด ${pct}%${recommendedBadge}</div>`;
+  }).join("");
+
+  const titleEl = document.getElementById("promoHomeBannerTitle");
+  const discountEl = document.getElementById("promoHomeBannerDiscount");
+  const countdownEl = document.getElementById("promoHomeBannerCountdown");
+
+  if (titleEl) titleEl.innerHTML = (promo.name || "🎵 ยิ่งเลือกเยอะ ยิ่งคุ้ม");
+  if (discountEl) discountEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:2px;">${tiersHtml}</div>`;
+  if (countdownEl) {
+    const p = promo_getCountdownParts(promo.end_at);
+    countdownEl.textContent = promo_formatCountdownCompact(promo.end_at);
+    countdownEl.classList.toggle("urgent", p.urgent);
+  }
+
+  // ผูก click (ครั้งเดียว — กันซ้ำ)
+  if (!banner._promoBound) {
+    banner.addEventListener("click", () => {
+      const tabBtn = document.querySelector('.bottom-nav button[data-tab="playlists"]');
       if (tabBtn) tabBtn.click();
     });
     banner._promoBound = true;

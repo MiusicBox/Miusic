@@ -231,6 +231,11 @@ export function applyDiscountToPrice(originalPrice, discount) {
 export function isItemInPromotionScope(item, promotion) {
   if (!promotion) return false;
   const appliesTo = promotion.applies_to || "all";
+  // 🚀 (2026-09-28 fix H-7): เพิ่ม scope "playlist" — สำหรับโปรโมชันซื้อยกเพลย์ลิสต์
+  if (appliesTo === "playlist") {
+    // ใช้ได้เฉพาะ playlist items เท่านั้น
+    return item.kind === "playlist";
+  }
   if (appliesTo === "all") return true;
   if (appliesTo === "category") {
     if (item.kind && item.kind !== "song") return false;
@@ -241,20 +246,57 @@ export function isItemInPromotionScope(item, promotion) {
   return false;
 }
 
+// 🚀 (2026-09-28 fix H-7): Helper หา tier ที่ใช้ได้จาก array tiers
+//   tiers: [{ min_quantity: 2, discount_percent: 10 }, ...]
+//   playlistCount: จำนวนเพลย์ลิสต์ในตะกร้า
+//   return: tier ที่ min_quantity มากสุดที่ยัง ≤ playlistCount, หรือ null ถ้าไม่มี tier ที่ผ่าน
+function findApplicableTier(tiers, playlistCount) {
+  if (!Array.isArray(tiers) || tiers.length === 0) return null;
+  // sort จาก min_quantity มาก → น้อย เพื่อหา tier ที่ min_quantity สูงสุดที่ยัง ≤ playlistCount
+  const sorted = [...tiers]
+    .filter(t => t && Number(t.min_quantity) > 0 && Number(t.discount_percent) >= 0)
+    .sort((a, b) => Number(b.min_quantity) - Number(a.min_quantity));
+  for (const tier of sorted) {
+    if (playlistCount >= Number(tier.min_quantity)) {
+      return {
+        min_quantity: Number(tier.min_quantity),
+        discount_percent: Number(tier.discount_percent),
+      };
+    }
+  }
+  return null;
+}
+
 // ---------------- คำนวณ promotion ที่เข้าเงื่อนไขและเลือกอันที่ลดมากที่สุด ----------------
-export function computeBestPromotion(items, promotions) {
+export function computeBestPromotion(items, promotions, options) {
+  // 🚀 (2026-09-28 fix H-7): รับ options.orderType เพื่อ filter โปรโมชันตาม order_type
+  //   (เช่น playlist_tiered_percent ใช้ได้เฉพาะ order_type="playlist" หรือ "mixed")
+  const orderType = options?.orderType || null;
   if (!Array.isArray(items) || items.length === 0 || !Array.isArray(promotions) || promotions.length === 0) {
     const subtotal = (items || []).reduce((s, it) => s + (Number(it.price) || 0), 0);
-    return { bestPromotion: null, eligibleCount: 0, discountAmount: 0, subtotal };
+    return { bestPromotion: null, eligibleCount: 0, discountAmount: 0, subtotal, appliedTier: null };
   }
   const subtotal = items.reduce((s, it) => s + (Number(it.price) || 0), 0);
   let bestDiscount = 0;
   let bestEligibleCount = 0;
   let bestPromoObj = null;
+  let bestTier = null;
   for (const promo of promotions) {
+    // 🚀 (H-7): กรองโปรโมชันตาม order_type ถ้ามี orderType
+    //   - playlist_tiered_percent ใช้ได้เฉพาะ order_type="playlist" หรือ "mixed"
+    //   - ถ้าไม่มี orderType ให้ผ่าน (backward compat — ไม่กระทบ caller เดิม)
+    if (promo.type === "playlist_tiered_percent" && orderType && orderType !== "playlist" && orderType !== "mixed") {
+      continue;
+    }
     const eligibleItems = items.filter(it => {
       if (it._hadDiscount) return false;
-      if (it.kind === "playlist") return false;
+      // 🚀 (H-7): ปรับ guard — อนุญาต playlist items สำหรับ type ที่ applies_to="playlist"
+      if (it.kind === "playlist") {
+        // โปรโมชันที่ applies_to="playlist" → อนุญาต playlist items
+        if ((promo.applies_to || "all") === "playlist") return true;
+        // โปรโมชันอื่น ๆ → ไม่อนุญาต playlist items (เหมือนเดิม)
+        return false;
+      }
       return isItemInPromotionScope(it, promo);
     });
     const eligibleCount = eligibleItems.length;
@@ -263,6 +305,7 @@ export function computeBestPromotion(items, promotions) {
     const eligibleSubtotal = eligibleItems.reduce((s, it) => s + (Number(it.price) || 0), 0);
     if (promo.min_subtotal && eligibleSubtotal < promo.min_subtotal) continue;
     let promoDiscount = 0;
+    let appliedTier = null;
     if (promo.type === "cart_percent") {
       const pct = Math.max(0, Math.min(100, Number(promo.discount_value) || 0));
       promoDiscount = Math.round(eligibleSubtotal * pct / 100);
@@ -271,6 +314,18 @@ export function computeBestPromotion(items, promotions) {
     } else if (promo.type === "buy_x_get_y_percent") {
       const pct = Math.max(0, Math.min(100, Number(promo.discount_value) || 0));
       promoDiscount = Math.round(eligibleSubtotal * pct / 100);
+    } else if (promo.type === "playlist_tiered_percent") {
+      // 🚀 (H-7): Tiered discount สำหรับซื้อยกเพลย์ลิสต์
+      //   - นับเพลย์ลิสต์ใน eligibleItems (kind="playlist")
+      //   - หา tier ที่ min_quantity ≤ playlistCount
+      //   - ลด % ตาม tier นั้น ของยอด eligibleSubtotal
+      const playlistCount = eligibleItems.filter(it => it.kind === "playlist").length;
+      if (playlistCount === 0) continue;
+      const tier = findApplicableTier(promo.tiers, playlistCount);
+      if (!tier) continue; // ไม่มี tier ที่ผ่าน
+      const pct = Math.max(0, Math.min(100, tier.discount_percent));
+      promoDiscount = Math.round(eligibleSubtotal * pct / 100);
+      appliedTier = tier;
     } else {
       continue;
     }
@@ -278,18 +333,23 @@ export function computeBestPromotion(items, promotions) {
       bestDiscount = promoDiscount;
       bestEligibleCount = eligibleCount;
       bestPromoObj = promo;
+      bestTier = appliedTier;
     }
   }
   return {
     bestPromotion: bestPromoObj,
     eligibleCount: bestEligibleCount,
     discountAmount: bestDiscount,
-    subtotal
+    subtotal,
+    appliedTier: bestTier
   };
 }
 
 // ---------------- คำนวณราคาสุดท้ายของตะกร้า ----------------
-export function computeCartPricing(cartItems, discounts, promotions) {
+export function computeCartPricing(cartItems, discounts, promotions, options) {
+  // 🚀 (2026-09-28 fix H-7): รับ options.orderType → ส่งให้ computeBestPromotion
+  //   (เพื่อ filter โปรโมชัน playlist_tiered_percent เฉพาะ order_type="playlist" / "mixed")
+  const orderType = options?.orderType || null;
   const dList = discounts || _discountsCache || [];
   const pList = promotions || _promotionsCache || [];
   if (!Array.isArray(cartItems) || cartItems.length === 0) {
@@ -317,7 +377,8 @@ export function computeCartPricing(cartItems, discounts, promotions) {
   const discountSubtotal = itemsWithDiscount.reduce((s, it) => s + it.discount_price, 0);
   const itemDiscountAmount = subtotal - discountSubtotal;
   const promoInput = itemsWithDiscount.map(it => ({ ...it, price: it.discount_price }));
-  const { bestPromotion, eligibleCount, discountAmount: promoDiscountAmount } = computeBestPromotion(promoInput, pList);
+  // 🚀 (H-7): ส่ง orderType เข้า computeBestPromotion
+  const { bestPromotion, eligibleCount, discountAmount: promoDiscountAmount, appliedTier } = computeBestPromotion(promoInput, pList, { orderType });
   const finalTotal = Math.max(0, discountSubtotal - promoDiscountAmount);
   const discountAmount = itemDiscountAmount + promoDiscountAmount;
   let promotionApplied = null;
@@ -331,6 +392,8 @@ export function computeCartPricing(cartItems, discounts, promotions) {
       category_id: bestPromotion.category_id || null,
       eligible_count: eligibleCount,
       discount_amount: promoDiscountAmount,
+      // 🚀 (H-7): เก็บ tier ที่ใช้ (สำหรับ playlist_tiered_percent)
+      tier_applied: appliedTier || null,
       snapshot_at: new Date().toISOString()
     };
   }
@@ -874,10 +937,28 @@ function renderPromotionList() {
   }
   wrap.innerHTML = PROMOTIONS_CACHE.map(p => {
     const status = getDiscountStatus(p);
-    const appliesToLabel = p.applies_to === "category" ? `เฉพาะหมวด: ${promo_escapeHtml(p.category_name || '-')}` : "ทุกเพลง";
-    const minQtyLabel = p.min_quantity ? `ซื้อครบ ${p.min_quantity} เพลง` : "ไม่มีขั้นต่ำ";
-    const valueLabel = p.type === "cart_percent" || p.type === "buy_x_get_y_percent" ? `ลด ${p.discount_value}%` : `ลด ${Number(p.discount_value).toLocaleString()} LAK`;
-    const typeLabel = p.type === "buy_x_get_y_percent" ? "ซื้อ X ลด %" : (p.type === "cart_percent" ? "ลด % ทั้งยอด" : "ลดจำนวนเงิน");
+    // 🚀 (H-7): เพิ่ม label สำหรับ playlist_tiered_percent + applies_to="playlist"
+    let appliesToLabel;
+    if (p.applies_to === "playlist") {
+      appliesToLabel = "🎵 เฉพาะออเดอร์ซื้อยกเพลย์ลิสต์";
+    } else if (p.applies_to === "category") {
+      appliesToLabel = `เฉพาะหมวด: ${promo_escapeHtml(p.category_name || '-')}`;
+    } else {
+      appliesToLabel = "ทุกเพลง";
+    }
+    let typeLabel, valueLabel, minQtyLabel;
+    if (p.type === "playlist_tiered_percent") {
+      typeLabel = "🎵 ยิ่งเลือกเยอะ ยิ่งคุ้ม";
+      const tiersText = Array.isArray(p.tiers) && p.tiers.length > 0
+        ? p.tiers.map(t => `${t.min_quantity}=${t.discount_percent}%`).join(", ")
+        : "(ไม่ได้ตั้ง tier)";
+      valueLabel = `Tiers: ${tiersText}`;
+      minQtyLabel = `เริ่มต้น ${p.tiers?.[0]?.min_quantity || 1} เพลย์ลิสต์`;
+    } else {
+      minQtyLabel = p.min_quantity ? `ซื้อครบ ${p.min_quantity} เพลง` : "ไม่มีขั้นต่ำ";
+      valueLabel = p.type === "cart_percent" || p.type === "buy_x_get_y_percent" ? `ลด ${p.discount_value}%` : `ลด ${Number(p.discount_value).toLocaleString()} LAK`;
+      typeLabel = p.type === "buy_x_get_y_percent" ? "ซื้อ X ลด %" : (p.type === "cart_percent" ? "ลด % ทั้งยอด" : "ลดจำนวนเงิน");
+    }
     return `
       <div class="list-row promotion-row" data-id="${promo_escapeHtml(p.id)}">
         <div class="info">
@@ -982,8 +1063,11 @@ function resetPromotionForm() {
   document.getElementById("fPromoMinSubtotal").value = "";
   document.getElementById("fPromoValue").value = "";
   document.getElementById("fPromoAppliesTo").value = "all";
+  document.getElementById("fPromoAppliesTo").disabled = false;
   document.getElementById("fPromoCategoryRow").style.display = "none";
   document.getElementById("fPromoCategory").value = "";
+  // 🚀 (H-7): ล้าง tiers
+  promo_clearTiers();
   const now = new Date();
   const end = new Date(); end.setDate(end.getDate() + 7);
   document.getElementById("fPromoStartAt").value = promo_toLocalDatetimeInput(now);
@@ -1017,6 +1101,10 @@ function openEditPromotion(id) {
     document.getElementById("fPromoCategoryRow").style.display = "block";
     document.getElementById("fPromoCategory").value = p.category_id;
   }
+  // 🚀 (H-7): populate tiers ถ้าเป็น playlist_tiered_percent
+  if (p.type === "playlist_tiered_percent" && Array.isArray(p.tiers)) {
+    promo_populateTiers(p.tiers);
+  }
   if (p.start_at) document.getElementById("fPromoStartAt").value = promo_toLocalDatetimeInput(new Date(p.start_at));
   if (p.end_at) document.getElementById("fPromoEndAt").value = promo_toLocalDatetimeInput(new Date(p.end_at));
   document.getElementById("fPromoActive").checked = p.active !== false;
@@ -1038,10 +1126,44 @@ function updatePromoTypeHint() {
   const hints = {
     cart_percent: "ลด % ของยอดรวมเพลงที่เข้าโปร (เช่น ลด 10% = ทุกเพลงที่เข้าโปรหัก 10%)",
     cart_fixed: "ลดจำนวนเงินตายตัว (เช่น ลด 5,000 LAK จากยอดรวมที่เข้าโปร)",
-    buy_x_get_y_percent: "ซื้อครบ X เพลง → ลด Y% ของยอดเพลงที่เข้าโปร (ตั้งค่า min_quantity = X, discount_value = Y%)"
+    buy_x_get_y_percent: "ซื้อครบ X เพลง → ลด Y% ของยอดเพลงที่เข้าโปร (ตั้งค่า min_quantity = X, discount_value = Y%)",
+    // 🚀 (2026-09-28 fix H-7): เพิ่ม hint สำหรับโปรโมชัน tiered
+    playlist_tiered_percent: "🎵 ยิ่งเลือกเยอะ ยิ่งคุ้ม — ตั้งหลาย tier ตามจำนวนเพลย์ลิสต์ (เช่น ซื้อ 2 ลด 10%, ซื้อ 3 ลด 15%)\nใช้ได้เฉพาะออเดอร์ 'ซื้อยกเพลย์ลิสต์' (order_type=playlist หรือ mixed)"
   };
   hintEl.textContent = hints[type] || "";
   hintEl.style.color = "var(--text-dim)";
+  // 🚀 (H-7): แสดง/ซ่อน tier table ตาม type
+  const tierTableEl = document.getElementById("fPromoTiers");
+  if (tierTableEl) {
+    const tierContainer = tierTableEl.closest(".promo-tier-container");
+    if (tierContainer) {
+      tierContainer.style.display = (type === "playlist_tiered_percent") ? "block" : "none";
+    }
+  }
+  // 🚀 (H-7): ซ่อน min_quantity/min_subtotal/discount_value fields เมื่อเป็น playlist_tiered_percent
+  //   (ใช้ tier table แทน)
+  const singleFields = ["fPromoMinQty", "fPromoMinSubtotal", "fPromoValue"];
+  for (const fieldId of singleFields) {
+    const field = document.getElementById(fieldId);
+    if (field) {
+      const row = field.closest(".promo-field-row") || field.closest("label") || field.parentElement;
+      if (row && row.tagName !== "FORM") {
+        row.style.display = (type === "playlist_tiered_percent") ? "none" : "";
+      }
+    }
+  }
+  // 🚀 (H-7): บังคับ applies_to = "playlist" สำหรับ playlist_tiered_percent
+  const appliesToSelect = document.getElementById("fPromoAppliesTo");
+  if (appliesToSelect) {
+    if (type === "playlist_tiered_percent") {
+      appliesToSelect.value = "playlist";
+      appliesToSelect.disabled = true;
+    } else {
+      appliesToSelect.disabled = false;
+    }
+    // trigger updateAppliesToRow
+    if (typeof updateAppliesToRow === "function") updateAppliesToRow();
+  }
 }
 
 async function handleSavePromotion() {
@@ -1052,7 +1174,7 @@ async function handleSavePromotion() {
   const minQty = Number(document.getElementById("fPromoMinQty").value) || 0;
   const minSubtotal = Number(document.getElementById("fPromoMinSubtotal").value) || 0;
   const value = Number(document.getElementById("fPromoValue").value) || 0;
-  const appliesTo = document.getElementById("fPromoAppliesTo").value;
+  let appliesTo = document.getElementById("fPromoAppliesTo").value;
   const categorySel = document.getElementById("fPromoCategory");
   const categoryId = categorySel.value;
   const categoryName = categorySel.options[categorySel.selectedIndex]?.dataset?.name || "";
@@ -1062,26 +1184,64 @@ async function handleSavePromotion() {
   const priority = Number(document.getElementById("fPromoPriority").value) || 100;
 
   if (!name) { promo_showToast("กรุณาตั้งชื่อโปรโมชั่น", "error"); return; }
-  if (value <= 0) { promo_showToast("กรุณากรอกค่าส่วนลด (ต้องมากกว่า 0)", "error"); return; }
-  if ((type === "cart_percent" || type === "buy_x_get_y_percent") && value > 100) { promo_showToast("เปอร์เซ็นต์ต้องไม่เกิน 100", "error"); return; }
   if (!startAt) { promo_showToast("กรุณาตั้งวันเริ่มต้น", "error"); return; }
   if (!endAt) { promo_showToast("กรุณาตั้งวันสิ้นสุด", "error"); return; }
   if (new Date(endAt) <= new Date(startAt)) { promo_showToast("วันสิ้นสุดต้องหลังวันเริ่มต้น", "error"); return; }
   if (appliesTo === "category" && !categoryId) { promo_showToast("กรุณาเลือกหมวดหมู่", "error"); return; }
   if (type === "buy_x_get_y_percent" && minQty <= 0) { promo_showToast("ประเภท 'ซื้อ X ลด %' ต้องตั้ง min_quantity มากกว่า 0", "error"); return; }
 
+  // 🚀 (2026-09-28 fix H-7): ตรวจสำหรับ playlist_tiered_percent
+  let tiers = null;
+  if (type === "playlist_tiered_percent") {
+    // อ่าน tiers จาก table
+    tiers = promo_readTiersFromForm();
+    if (!tiers || tiers.length === 0) {
+      promo_showToast("กรุณาเพิ่มอย่างน้อย 1 tier (เช่น ซื้อครบ 2 ลด 10%)", "error");
+      return;
+    }
+    // ตรวค่า % ต้อง 0-100
+    for (const t of tiers) {
+      if (t.discount_percent < 0 || t.discount_percent > 100) {
+        promo_showToast(`ส่วนลดของ tier "${t.min_quantity} เพลย์ลิสต์" ต้องอยู่ระหว่าง 0-100%`, "error");
+        return;
+      }
+      if (t.min_quantity < 1) {
+        promo_showToast("จำนวนเพลย์ลิสต์ขั้นต่ำต้องมากกว่า 0", "error");
+        return;
+      }
+    }
+    // บังคับ applies_to = "playlist"
+    appliesTo = "playlist";
+  } else {
+    // ตรวค่าสำหรับ type อื่น ๆ (เดิม)
+    if (value <= 0) { promo_showToast("กรุณากรอกค่าส่วนลด (ต้องมากกว่า 0)", "error"); return; }
+    if ((type === "cart_percent" || type === "buy_x_get_y_percent") && value > 100) { promo_showToast("เปอร์เซ็นต์ต้องไม่เกิน 100", "error"); return; }
+  }
+
   btn.disabled = true; btn.textContent = "กำลังบันทึก...";
   try {
     const now = new Date().toISOString();
     const currentUser = auth.currentUser;
     const payload = {
-      name, description, type, min_quantity: minQty, min_subtotal: minSubtotal,
+      name, description, type,
+      min_quantity: minQty, min_subtotal: minSubtotal,
       discount_value: value, applies_to: appliesTo,
       category_id: appliesTo === "category" ? categoryId : null,
       category_name: appliesTo === "category" ? categoryName : "",
       start_at: startAt, end_at: endAt, active, priority,
       updated_at: now, updated_by: currentUser ? currentUser.email : ""
     };
+    // 🚀 (H-7): เพิ่ม tiers field สำหรับ playlist_tiered_percent
+    if (type === "playlist_tiered_percent") {
+      payload.tiers = tiers;
+      // ล้าง fields ที่ไม่ใช้
+      payload.min_quantity = 0;
+      payload.min_subtotal = 0;
+      payload.discount_value = 0;
+    } else {
+      // ล้าง tiers field ถ้าไม่ใช่ playlist_tiered_percent (กัน leftover จาก edit)
+      payload.tiers = null;
+    }
     if (editingPromoId) {
       const existing = PROMOTIONS_CACHE.find(p => p.id === editingPromoId);
       if (existing) payload.created_by = existing.created_by || payload.updated_by;
@@ -1100,6 +1260,58 @@ async function handleSavePromotion() {
     promo_showToast("บันทึกไม่สำเร็จ: " + (err.message || err), "error");
   }
   btn.disabled = false; btn.textContent = "บันทึก";
+}
+
+// 🚀 (2026-09-28 fix H-7): Helper อ่าน tiers จาก form
+function promo_readTiersFromForm() {
+  const tiers = [];
+  const tierRows = document.querySelectorAll("#fPromoTiers .promo-tier-row");
+  for (const row of tierRows) {
+    const qtyInput = row.querySelector(".tier-qty");
+    const pctInput = row.querySelector(".tier-pct");
+    if (qtyInput && pctInput) {
+      const qty = Number(qtyInput.value) || 0;
+      const pct = Number(pctInput.value) || 0;
+      if (qty > 0 && pct >= 0) {
+        tiers.push({ min_quantity: qty, discount_percent: pct });
+      }
+    }
+  }
+  // sort จากน้อยไปมาก
+  return tiers.sort((a, b) => a.min_quantity - b.min_quantity);
+}
+
+// 🚀 (H-7): Helper เพิ่ม row tier ใน form
+function promo_addTierRow(minQty = "", pct = "") {
+  const tiersEl = document.getElementById("fPromoTiers");
+  if (!tiersEl) return;
+  const row = document.createElement("div");
+  row.className = "promo-tier-row";
+  row.style.cssText = "display:flex;gap:8px;align-items:center;margin:4px 0;";
+  row.innerHTML = `
+    <input type="number" class="tier-qty" value="${minQty}" min="1" placeholder="จำนวนเพลย์ลิสต์" style="width:140px;">
+    <span style="color:var(--text-dim);">เพลย์ลิสต์ → ลด</span>
+    <input type="number" class="tier-pct" value="${pct}" min="0" max="100" placeholder="%" style="width:80px;">
+    <span style="color:var(--text-dim);">%</span>
+    <button type="button" class="promo-tier-remove" style="background:var(--danger);color:white;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;">✕</button>
+  `;
+  row.querySelector(".promo-tier-remove").addEventListener("click", () => row.remove());
+  tiersEl.appendChild(row);
+}
+
+// 🚀 (H-7): Helper ล้าง tiers ทั้งหมด
+function promo_clearTiers() {
+  const tiersEl = document.getElementById("fPromoTiers");
+  if (tiersEl) tiersEl.innerHTML = "";
+}
+
+// 🚀 (H-7): Helper populate tiers จาก existing promotion (ตอน edit)
+function promo_populateTiers(tiers) {
+  promo_clearTiers();
+  if (!Array.isArray(tiers) || tiers.length === 0) return;
+  for (const t of tiers) {
+    promo_addTierRow(t.min_quantity, t.discount_percent);
+  }
 }
 
 function confirmDeletePromotion(id) {
@@ -1143,6 +1355,11 @@ export function initPromotionsView() {
     document.getElementById("promotionSaveBtn").addEventListener("click", handleSavePromotion);
     document.getElementById("fPromoType").addEventListener("change", updatePromoTypeHint);
     document.getElementById("fPromoAppliesTo").addEventListener("change", updateAppliesToRow);
+    // 🚀 (H-7): wire up Add Tier button
+    const addTierBtn = document.getElementById("fPromoAddTier");
+    if (addTierBtn) {
+      addTierBtn.addEventListener("click", () => promo_addTierRow());
+    }
     promo_listenersBound = true;
   }
   promo_loadData();

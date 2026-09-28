@@ -1850,6 +1850,10 @@ async function handleDb(request, env, url) {
               const isItemInPromotionScope = (item, promotion) => {
                 if (!promotion) return false;
                 const appliesTo = promotion.applies_to || "all";
+                // 🚀 (2026-09-28 fix H-7): เพิ่ม scope "playlist"
+                if (appliesTo === "playlist") {
+                  return item.kind === "playlist";
+                }
                 if (appliesTo === "all") return true;
                 if (appliesTo === "category") {
                   if (item.kind && item.kind !== "song") return false;
@@ -1862,13 +1866,41 @@ async function handleDb(request, env, url) {
                 return false;
               };
 
+              // 🚀 (H-7): อ่าน order_type จากลูกค้า เพื่อ filter playlist_tiered_percent
+              const orderType = String(filteredData.order_type || "").toLowerCase();
+              // 🚀 (H-7): Helper หา tier ที่ใช้ได้ (mirror จาก app-promotion.js)
+              const findApplicableTier = (tiers, playlistCount) => {
+                if (!Array.isArray(tiers) || tiers.length === 0) return null;
+                const sorted = [...tiers]
+                  .filter(t => t && Number(t.min_quantity) > 0 && Number(t.discount_percent) >= 0)
+                  .sort((a, b) => Number(b.min_quantity) - Number(a.min_quantity));
+                for (const tier of sorted) {
+                  if (playlistCount >= Number(tier.min_quantity)) {
+                    return {
+                      min_quantity: Number(tier.min_quantity),
+                      discount_percent: Number(tier.discount_percent),
+                    };
+                  }
+                }
+                return null;
+              };
+
               let bestPromoObj = null;
               let bestEligibleCount = 0;
               let bestPromoDiscount = 0;
+              let bestTier = null;
               for (const promo of activePromotions) {
+                // 🚀 (H-7): กรอง playlist_tiered_percent ตาม order_type
+                if (promo.type === "playlist_tiered_percent" && orderType && orderType !== "playlist" && orderType !== "mixed") {
+                  continue;
+                }
                 const eligibleItems = itemsWithDiscount.filter(it => {
                   if (it._hadDiscount) return false;
-                  if (it.kind === "playlist") return false;
+                  // 🚀 (H-7): ปรับ guard — อนุญาต playlist items สำหรับ applies_to="playlist"
+                  if (it.kind === "playlist") {
+                    if ((promo.applies_to || "all") === "playlist") return true;
+                    return false;
+                  }
                   return isItemInPromotionScope(it, promo);
                 });
                 const eligibleCount = eligibleItems.length;
@@ -1877,6 +1909,7 @@ async function handleDb(request, env, url) {
                 const eligibleSubtotal = eligibleItems.reduce((s, it) => s + (Number(it.discount_price) || 0), 0);
                 if (promo.min_subtotal && eligibleSubtotal < promo.min_subtotal) continue;
                 let promoDiscount = 0;
+                let appliedTier = null;
                 if (promo.type === "cart_percent") {
                   const pct = Math.max(0, Math.min(100, Number(promo.discount_value) || 0));
                   promoDiscount = Math.round(eligibleSubtotal * pct / 100);
@@ -1885,6 +1918,15 @@ async function handleDb(request, env, url) {
                 } else if (promo.type === "buy_x_get_y_percent") {
                   const pct = Math.max(0, Math.min(100, Number(promo.discount_value) || 0));
                   promoDiscount = Math.round(eligibleSubtotal * pct / 100);
+                } else if (promo.type === "playlist_tiered_percent") {
+                  // 🚀 (H-7): Server-side tiered discount
+                  const playlistCount = eligibleItems.filter(it => it.kind === "playlist").length;
+                  if (playlistCount === 0) continue;
+                  const tier = findApplicableTier(promo.tiers, playlistCount);
+                  if (!tier) continue;
+                  const pct = Math.max(0, Math.min(100, tier.discount_percent));
+                  promoDiscount = Math.round(eligibleSubtotal * pct / 100);
+                  appliedTier = tier;
                 } else {
                   continue;
                 }
@@ -1892,6 +1934,7 @@ async function handleDb(request, env, url) {
                   bestPromoDiscount = promoDiscount;
                   bestEligibleCount = eligibleCount;
                   bestPromoObj = promo;
+                  bestTier = appliedTier;
                 }
               }
 
@@ -1914,6 +1957,8 @@ async function handleDb(request, env, url) {
                   category_id: bestPromoObj.category_id || null,
                   eligible_count: bestEligibleCount,
                   discount_amount: bestPromoDiscount,
+                  // 🚀 (H-7): เก็บ tier ที่ใช้
+                  tier_applied: bestTier || null,
                   snapshot_at: new Date().toISOString()
                 };
               }
