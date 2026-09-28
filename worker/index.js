@@ -438,6 +438,43 @@ async function handleOrderFilesCleanup(request, env) {
   let proofsRowsDeleted = 0;
   let zipDeleted = false;
 
+  // 🚀 (2026-09-28 fix M-4): ลบ in-progress ZIP job ถ้ามี (abort multipart + partial.bin)
+  //   เดิม: ไม่เช็ค order_zip_jobs → ถ้า admin ลบ order ระหว่างกำลังสร้าง ZIP → R2 multipart + partial.bin leak
+  //   ใหม่: ตอนเริ่ม cleanup → เช็ค + abort + ลบ partial.bin ก่อน → ลบ D1 row
+  //   ผลกระทบระบบเดิม: 0% — ถ้าไม่มี job → no-op (เหมือนเดิม)
+  let zipJobCleaned = 0;
+  try {
+    const existingJob = await env.DB.prepare(
+      "SELECT job_id, bucket_key, parts FROM order_zip_jobs WHERE order_id = ? AND status = 'preparing'"
+    ).bind(orderId).first();
+    if (existingJob) {
+      // ลบ partial.bin ก่อน
+      try {
+        const partsData = parsePartsJson(existingJob.parts);
+        if (partsData.finalizeState && partsData.finalizeState.partialBufferKey) {
+          await cleanupPartialBuffer(env, partsData.finalizeState);
+        }
+      } catch (_) {}
+      // abort multipart upload
+      if (existingJob.bucket_key) {
+        try {
+          await env.BUCKET.abortMultipartUpload(existingJob.bucket_key, existingJob.job_id);
+        } catch (r2Err) {
+          console.warn(`order-files/cleanup: R2 multipart abort failed for ${existingJob.job_id} (may already be aborted):`, r2Err?.message || r2Err);
+        }
+      }
+      // ลบ D1 row
+      try {
+        await env.DB.prepare("DELETE FROM order_zip_jobs WHERE job_id = ?").bind(existingJob.job_id).run();
+        zipJobCleaned += 1;
+      } catch (d1Err) {
+        console.warn(`order-files/cleanup: DELETE order_zip_jobs failed for ${existingJob.job_id}:`, d1Err?.message || d1Err);
+      }
+    }
+  } catch (err) {
+    console.warn("order-files/cleanup: query order_zip_jobs failed (table may not exist):", err?.message || err);
+  }
+
   // ===== 1) ลบไฟล์สลิปโอนเงินทั้งหมดของออเดอร์ =====
   //   รองรับหลายสลิป: ลูกค้าอัปใหม่ได้ถ้าถูก reject → ออเดอร์เดียวมีได้หลาย rows ใน payment_proofs
   let proofRows;
@@ -2555,11 +2592,21 @@ async function handleOrderZipStart(request, env) {
 
   // ===== Cleanup leftover job ถ้ามี =====
   // (กัน multipart upload ค้างใน R2 ถ้าแอดมินกด "สร้าง ZIP ใหม่" ซ้ำ)
+  // 🚀 (2026-09-28 fix H-5): ลบ partial.bin ด้วย — กัน R2 leak (~16MB ต่อ stuck job)
+  //   เดิม: SELECT แค่ job_id, bucket_key → ละเลย partial.bin ใน finalizeState
+  //   ใหม่: SELECT เพิ่ม parts → อ่าน finalizeState.partialBufferKey → delete ก่อน
   try {
     const existing = await env.DB.prepare(
-      "SELECT job_id, bucket_key FROM order_zip_jobs WHERE order_id = ? AND status = 'preparing'"
+      "SELECT job_id, bucket_key, parts FROM order_zip_jobs WHERE order_id = ? AND status = 'preparing'"
     ).bind(orderId).first();
     if (existing) {
+      // 🚀 (H-5): ลบ partial.bin ก่อน abort multipart
+      try {
+        const partsData = parsePartsJson(existing.parts);
+        if (partsData.finalizeState && partsData.finalizeState.partialBufferKey) {
+          await cleanupPartialBuffer(env, partsData.finalizeState);
+        }
+      } catch (_) {}
       await cleanupLeftoverMultipart(env, existing.job_id, existing.bucket_key);
       await deleteOrderZipJob(env, existing.job_id);
     }
@@ -4972,7 +5019,10 @@ export default {
               at: verifiedAt,
               note: newStatus === "verified" ? "แอดมินยืนยันสลิปการโอน" : `แอดมินปฏิเสธสลิป${rejectReason ? ": " + rejectReason : ""}`,
               by: admin.id,
-              by_name: admin.display_name || admin.email,
+              // 🔒 (2026-09-28 fix H-6): ไม่ fallback ไป admin.email — กันรั่ว email แอดมินไปลูกค้า
+              //   เดิม: admin.display_name || admin.email → ถ้า display_name NULL → รั่ว email
+              //   ใหม่: admin.display_name || "แอดมิน" → ใช้ชื่อทั่วไป ถ้าไม่มี display_name
+              by_name: admin.display_name || "แอดมิน",
             });
           }
           await env.DB.prepare(
@@ -5058,54 +5108,11 @@ export default {
   //     - ปุ่ม "ส่ง ZIP ผ่าน WhatsApp" → Worker ตรวจ zip_status='expired' → return error → admin ต้องสร้างใหม่
   //   ประโยชน์: URL ถาวรที่รั่วจะใช้ได้แค่ 24 ชม. (เทียบเท่า token expiry)
   async scheduled(event, env, ctx) {
-    // 🔄 (2026-09-28 fix Sequential Queue): Safety net สำหรับ ZIP queue
-    //   Cron รันทุก 1 นาที → เช็ค queue ถ้ามี order 'queued' แต่ไม่มี job 'preparing'
-    //   → trigger order แรก (safety net ถ้า finalize ไม่ได้ trigger)
-    //   ผลกระทบระบบเดิม: 0% — ถ้า queue table ไม่มี → ไม่ทำอะไร
-    //   ข้อสังเกต: cron รันทุก 1 นาที และ ทุก 6 ชม. (จาก wrangler.jsonc) →
-    //   ทุก 1 นาทีจะเข้าส่วนนี้เสมอ (เร็ว) ส่วน 6 ชม.จะเข้า cleanup ด้วย
-    try {
-      if (env.DB && env.BUCKET) {
-        // เช็คว่ามี order 'queued' แต่ไม่มี job 'preparing' ไหม
-        const queueRow = await env.DB.prepare(
-          "SELECT COUNT(*) AS c FROM order_zip_queue WHERE status = 'queued'"
-        ).first();
-        const activeRow = await env.DB.prepare(
-          "SELECT COUNT(*) AS c FROM order_zip_jobs WHERE status = 'preparing'"
-        ).first();
-
-        const queuedCount = queueRow?.c || 0;
-        const activeCount = activeRow?.c || 0;
-
-        if (queuedCount > 0 && activeCount === 0) {
-          // มี order รอ + ไม่มี job กำลังทำ → trigger order แรก
-          console.log(`[cron queue] Found ${queuedCount} queued orders, 0 active — triggering next`);
-          // 🚀 (2026-09-28 fix CPU limit): cron ใช้ fetch self-invoke (เหมือน verify-payment + finalize)
-          //   ต้องมี WORKER_URL env var ตั้งไว้ (เช่น https://miusic-store.<user>.workers.dev)
-          //   ถ้าไม่มี → log + รอ cron รอบถัดไป
-          //   🚀 v3: cron ไม่ได้ fetch — ใช้ env.WORKER_URL เป็น base URL ของ mock Request
-          //          ส่งให้ processNextZipInQueue เรียก handleOrderZipStart โดยตรง (cron มี CPU time 30s พอ)
-          if (env.WORKER_URL) {
-            const mockRequest = new Request(
-              new URL("/api/order-zip/start", env.WORKER_URL).toString(),
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-              }
-            );
-            // ส่ง ctx ของ cron (cron มี ctx ที่รับจาก Cloudflare)
-            await processNextZipInQueue(env, mockRequest, ctx);
-          } else {
-            console.warn("[cron queue] WORKER_URL not set — cannot trigger. Set env.WORKER_URL via `wrangler secret put WORKER_URL` or Dashboard → Settings → Variables and Secrets");
-          }
-        } else if (queuedCount > 0) {
-          // มี order รอ + มี job กำลังทำ → รอ finalize เสร็จ (cron รอบถัดไปจะ trigger ถัดไป)
-          console.log(`[cron queue] ${queuedCount} queued, ${activeCount} active — wait for finalize (cron next round will trigger next)`);
-        }
-      }
-    } catch (cronQueueErr) {
-      console.warn("[cron queue] Queue processing failed:", cronQueueErr?.message || cronQueueErr);
-    }
+    // 🔄 (2026-09-28 rollback M-1): ลบ Sequential Queue safety net ออก
+    //   เดิม: cron เช็ค queue ทุก 1 นาที → trigger order ถัดไป (safety net)
+    //   หลัง rollback: Sequential Queue ไม่ใช้แล้ว → ลบ dead code นี้ออก
+    //   ผลกระทบระบบเดิม: 0% — queue table อาจมี row เก่าค้าง แต่ไม่มีใคร trigger แล้ว
+    //   (cleanup ผ่าน SQL recovery script: scripts/recover-stuck-queue.sql)
 
     // 🔒 (2026-09-21 auto-cleanup ZIP): ส่วน cron ทุก 6 ชม. (เดิม)
     //   ค้นหา ZIP เก่า > 24 ชม. + audit_log + download_tokens + stuck jobs
@@ -5266,8 +5273,11 @@ export default {
       //     - jobs ที่ stuck จริง (เกิน 2 ชม.) → abort multipart + delete row → R2 self-heal
       try {
         const stuckCutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(); // 2 ชม.
+        // 🚀 (2026-09-28 fix H-4): SELECT เพิ่ม parts → ลบ partial.bin ก่อน abort multipart
+        //   เดิม: SELECT แค่ job_id, bucket_key → ละเลย partial.bin (~16MB ต่อ stuck job) → R2 leak
+        //   ใหม่: SELECT เพิ่ม parts → อ่าน finalizeState.partialBufferKey → delete ก่อน abort
         const stuckJobs = await env.DB.prepare(
-          "SELECT job_id, bucket_key FROM order_zip_jobs " +
+          "SELECT job_id, bucket_key, parts FROM order_zip_jobs " +
           "WHERE status = 'preparing' AND updated_at < ? " +
           "ORDER BY updated_at ASC LIMIT 50"
         ).bind(stuckCutoff).all();
@@ -5278,6 +5288,14 @@ export default {
           let stuckError = 0;
           for (const job of stuckJobs.results) {
             try {
+              // 🚀 (H-4): ลบ partial.bin ก่อน abort multipart
+              //   finalizeState.partialBufferKey คือ R2 key ของ temp buffer (~16MB) จาก finalize-build
+              try {
+                const partsData = parsePartsJson(job.parts);
+                if (partsData.finalizeState && partsData.finalizeState.partialBufferKey) {
+                  await cleanupPartialBuffer(env, partsData.finalizeState);
+                }
+              } catch (_) {}
               // ลอง abort multipart upload (ถ้ายัง active ใน R2)
               // — ใช้ try/catch เพราะบาง multipart อาจถูก abort ไปแล้วโดย worker
               if (job.bucket_key) {

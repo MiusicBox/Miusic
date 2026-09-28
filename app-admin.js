@@ -37,6 +37,17 @@ function invalidateAdminCache(collection) {
     CACHE_AT.djs = 0;
     CACHE_AT.playlists = 0;
   }
+  // 🚀 (2026-09-28 fix M-2): invalidate cache ของ orders.js ด้วย
+  //   เดิม: invalidateAdminCache("songs") ล้างแค่ CACHE_AT.songs → แต่ orders.js loadSongsFromDatabase._cached ยังเก่า
+  //   ใหม่: ล้าง _cached ของ loadSongsFromDatabase ด้วย → หน้าจัดการออเดอร์เห็นเพลงใหม่ทันที
+  //   ผลกระทบระบบเดิม: 0% — ถ้า orders.js ยังไม่ได้ load → _cached เป็น undefined → no-op
+  if (collection === "songs" || !collection) {
+    try {
+      if (typeof window !== "undefined" && window.invalidateOrdersSongsCache) {
+        window.invalidateOrdersSongsCache();
+      }
+    } catch (_) {}
+  }
 }
 // Helper: ตรวจว่า cache ของ collection นี้ยัง fresh หรือไม่ (อายุ < 60 วิ)
 function isAdminCacheFresh(collection) {

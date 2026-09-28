@@ -916,7 +916,8 @@ async function loadSongsFromDatabase() {
 
 // 🚀 (H8): Lazy load batch ถัดไปใน background — กัน admin search ไม่เจอเพลงที่ยังไม่ได้โหลด
 //   เรียกครั้งแรกหลัก loadSongsFromDatabase ทำงานเสร็จ (setTimeout)
-//   และเรียกซ้ำจาก handleSearchInput ถ้า admin search เพลงที่ยังไม่ได้โหลด
+//   🚀 (H-2): และเรียกซ้ำจาก handleSearchInput ถ้า admin search เพลงที่ยังไม่ได้โหลด
+//   🚀 (H-3): เพิ่ม guard กัน infinite loop (ถ้า docs.length === 0 → หยุด)
 async function loadSongsRemainingInBackground() {
   if (!loadSongsFromDatabase._cached) return;
   if (!loadSongsFromDatabase._totalCount) return;
@@ -925,6 +926,16 @@ async function loadSongsRemainingInBackground() {
   // กันซ้อน — ถ้ากำลัง load อยู่ → รอ
   if (loadSongsFromDatabase._loadingMore) return;
   loadSongsFromDatabase._loadingMore = true;
+
+  // 🚀 (H-3): max retries กัน infinite loop (ถ้าเพลงถูกลบระหว่างโหลด)
+  const MAX_RETRIES = 50;
+  const currentRetries = (loadSongsFromDatabase._retries || 0) + 1;
+  loadSongsFromDatabase._retries = currentRetries;
+  if (currentRetries > MAX_RETRIES) {
+    console.warn("[H8] loadSongsRemainingInBackground: max retries reached, stopping");
+    loadSongsFromDatabase._loadingMore = false;
+    return;
+  }
 
   try {
     const offset = loadSongsFromDatabase._offsetLoaded;
@@ -935,10 +946,36 @@ async function loadSongsRemainingInBackground() {
       const newSongs = docs.map(d => ({ id: d.id, ...d.data }))
         .filter(s => String(s.status || "").trim().toLowerCase() !== "hidden");
 
+      // 🚀 (H-3): ถ้า docs.length === 0 → หยุด (กัน infinite loop)
+      if (docs.length === 0) {
+        console.warn("[H8] loadSongsRemainingInBackground: empty docs received, stopping (may be end of data or songs deleted)");
+        loadSongsFromDatabase._totalCount = offset; // mark as complete
+        return;
+      }
+
       // append เข้า cache + re-sort
       const merged = [...loadSongsFromDatabase._cached, ...newSongs];
       loadSongsFromDatabase._cached = sortSongsByThaiName(merged);
       loadSongsFromDatabase._offsetLoaded = offset + docs.length;
+
+      // 🚀 (H-1): อัปเดต state.songs ด้วย — กัน search ไม่เจอเพลงที่โหลดมาใหม่
+      //   เดิม: cache update แค่ใน _cached → state.songs ไม่อัปเดต → search ไม่เจอ
+      //   ใหม่: อัปเดต state.songs = _cached → search เจอทุกเพลงที่โหลดแล้ว
+      if (typeof state !== "undefined" && state.songs) {
+        state.songs = loadSongsFromDatabase._cached;
+        // 🚀 (H-2): ถ้ามี search query อยู่ → re-render เพื่อแสดงเพลงใหม่
+        const searchInput = document.getElementById("ordSongSearch");
+        if (searchInput && searchInput.value.trim()) {
+          // re-trigger search (debounced) — แต่ไม่ trigger loadSongsRemainingInBackground ซ้ำ
+          const q = searchInput.value.trim().toLowerCase();
+          state.searchResults = state.songs.filter((s) =>
+            [s.song_name, s.artist, s.dj_name].join(" ").toLowerCase().includes(q)
+          );
+          if (typeof renderSearchResults === "function") {
+            renderSearchResults();
+          }
+        }
+      }
 
       // ถ้ายังไม่ครบ → load batch ถัดไป (recursive)
       if (loadSongsFromDatabase._offsetLoaded < loadSongsFromDatabase._totalCount) {
@@ -950,6 +987,24 @@ async function loadSongsRemainingInBackground() {
   } finally {
     loadSongsFromDatabase._loadingMore = false;
   }
+}
+
+// 🚀 (2026-09-28 fix M-2): export invalidateOrdersSongsCache → ให้ app-admin.js เรียกได้
+//   เมื่อ admin save/delete song → invalidateAdminCache("songs") เรียกฟังก์ชันนี้ผ่าน window
+//   → ล้าง _cached + _totalCount + _offsetLoaded + _retries → ครั้งถัดไปโหลดใหม่ทั้งหมด
+export function invalidateOrdersSongsCache() {
+  if (typeof loadSongsFromDatabase === "function") {
+    loadSongsFromDatabase._cached = null;
+    loadSongsFromDatabase._totalCount = null;
+    loadSongsFromDatabase._offsetLoaded = null;
+    loadSongsFromDatabase._retries = 0;
+    loadSongsFromDatabase._loadingMore = false;
+  }
+}
+
+// 🚀 (M-2): attach to window เพื่อให้ app-admin.js เรียกได้ (cross-module)
+if (typeof window !== "undefined") {
+  window.invalidateOrdersSongsCache = invalidateOrdersSongsCache;
 }
 
 /* ---------------- โหลดออเดอร์ทั้งหมดจาก Firestore ---------------- */
@@ -3036,6 +3091,19 @@ function handleSearchInput(e) {
     state.searchResults = state.songs.filter((s) =>
       [s.song_name, s.artist, s.dj_name].join(" ").toLowerCase().includes(q)
     );
+    // 🚀 (H-2): ถ้า search ไม่เจอ + ยังโหลดไม่ครบ → trigger background load
+    //   เดิม: search ไม่เจอเพลงที่ยังไม่ได้โหลด → ไม่มี fallback → admin ไม่เจอ
+    //   ใหม่: ถ้า searchResults น้อยกว่าที่คาด → เรียก loadSongsRemainingInBackground
+    if (state.searchResults.length === 0 && typeof loadSongsFromDatabase === "function") {
+      const total = loadSongsFromDatabase._totalCount || 0;
+      const loaded = loadSongsFromDatabase._offsetLoaded || 0;
+      if (loaded < total) {
+        // trigger background load (debounced ผ่าน setTimeout จะเกิดใน background)
+        if (!loadSongsFromDatabase._loadingMore) {
+          loadSongsRemainingInBackground();
+        }
+      }
+    }
   }
   renderSearchResults();
 }

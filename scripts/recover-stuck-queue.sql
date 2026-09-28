@@ -32,7 +32,10 @@ DELETE FROM order_zip_jobs WHERE status = 'preparing' AND datetime(updated_at) <
 -- ============================================================
 -- หลักรัน Recovery script:
 --   - ออเดอร์ที่ค้างจะกลับเป็น 'queued'
---   - cron รอบถัดไป (≤ 1 นาที) จะ trigger ใหม่อัตโนมัติ
---   - แต่! ถ้า Worker ยังถูก kill ที่ 30s → ปัญหาจะเกิดซ้ำ
---   → ต้อง deploy fix ใหม่ (self-invoke fetch) ก่อน ถึงจะกู้ถาวร
+--   ⚠️ (2026-09-28 rollback update): Sequential Queue ถูก rollback แล้ว
+--     - cron ทุก 1 นาที ถูกลบออก → cron ไม่ trigger queue อีก
+--     - cron ทุก 6 ชม. (เดิม) ยังทำ cleanup ZIP/audit_log/tokens/stuck jobs
+--   - ถ้ารัน script นี้ → rows ใน order_zip_queue จะค้าง (ไม่มีใคร trigger)
+--   - วิธีกู้ถาวร: admin กด "ยืนยันสลิป" ใหม่ในหน้า admin → ไปกดเปลี่ยน status = "processing" เอง
+--   - (Sequential Queue + cron trigger ถูกลบออกจาก worker/index.js ใน rollback)
 -- ============================================================
