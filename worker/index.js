@@ -1451,8 +1451,24 @@ async function handleDb(request, env, url) {
         //   ย้อนกลับ: คืนค่าเดิมเป็น "public, max-age=60, s-maxage=300"
         ? { "Cache-Control": "public, max-age=10", "Vary": "Cookie" }
         : {};
+      // 🚀 (2026-09-28 fix C-1): ส่ง total กลับใน response เมื่อมี limit (สำหรับ pagination)
+      //   เดิม: response = { docs } → client ไม่รู้ว่ามีข้อมูลเท่าไหร่ทั้งหมด → background loader ไม่ทำงาน
+      //   ใหม่: response = { docs, total, limit, offset } เมื่อมี limit param
+      //   ผลกระทบระบบเดิม: 0% — client ที่ไม่ใช้ total ยังทำงานได้ (เพิ่ม field ไม่กระทบ)
+      //   ประโยชน์: orders.js loadSongsFromDatabase รู้ total → lazy load batch ถัดไปได้
+      let totalCount = null;
+      if (Number.isInteger(limit) && limit > 0) {
+        try {
+          totalCount = await countDocumentsAll(env, collection);
+        } catch (err) {
+          console.warn("countDocumentsAll failed (will return total=null):", err?.message || err);
+        }
+      }
       // ใช้ new Response เพื่อใส่ Cache-Control header (jsonResponse ไม่รองรับ cache)
-      const body = JSON.stringify({ docs });
+      const body = JSON.stringify({
+        docs,
+        ...(totalCount != null ? { total: totalCount, limit, offset } : {}),
+      });
       return new Response(body, {
         status: 200,
         headers: { "Content-Type": "application/json", ...corsHeaders(), ...extraHeaders },
