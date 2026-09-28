@@ -2850,22 +2850,21 @@ function promo_pickFeaturedPromotion() {
 }
 
 // วาดแบนเนอร์โปรโมชั่นเด่นบนหน้าแรก
-//   🚀 (2026-09-28 fix H-7 v3): แสดงทั้ง tiered + single-song + แยก countdown + สีสวย
-//   - ถ้าไม่มีโปร active → ซ่อนแบนเนอร์
-//   - แสดงทั้ง playlist_tiered + โปรโมชันอื่น ๆ พร้อม countdown แยกของแต่ละโปร
-//   - กดที่แบนเนอร์ → สลับไปแท็บ "โปรโมชั่น"
+//   🚀 (2026-09-28 fix H-7 v4): compact + single color (สีธีมหลัก) + แยก countdown
+//   - ขนาด: slightly smaller (ลด padding/margin)
+//   - สี: ใช้สีเดียวกับธีมหลัก (--primary) — ไม่หลายสี
+//   - tier: แต่ละ tier บรรทัด แต่ compact (ไม่มีกล่อง gradient)
+//   - countdown: แยกของแต่ละโปร
 function renderPromotionBanner() {
   const banner = document.getElementById("promoHomeBanner");
   if (!banner) return;
 
-  // 🚀 (H-7 v3): ดึงทุก active promotions
   const allPromos = (STATE.promotions || []).filter(p => p && p.active !== false);
   if (allPromos.length === 0) {
     banner.hidden = true;
     return;
   }
 
-  // แยกเป็น 2 กลุ่ม
   const tieredPromos = allPromos.filter(p => p.type === "playlist_tiered_percent");
   const otherPromos = allPromos.filter(p => p.type !== "playlist_tiered_percent");
 
@@ -2876,24 +2875,13 @@ function renderPromotionBanner() {
 
   banner.hidden = false;
 
-  // 🚀 (H-7 v3): build HTML สวย ๆ ด้วยสี gradient + แยก countdown ของแต่ละโปร
   let bannerHtml = '';
 
-  // 🎨 สีสำหรับ tier (gradient สวย ๆ)
-  const tierColors = [
-    "linear-gradient(135deg, #fbbf24, #f59e0b)",  // 10% — เหลือง
-    "linear-gradient(135deg, #34d399, #10b981)",  // 15% — เขียว
-    "linear-gradient(135deg, #60a5fa, #3b82f6)",  // 25% — น้ำเงิน
-    "linear-gradient(135deg, #c084fc, #8b5cf6)",  // 35% — ม่วง
-    "linear-gradient(135deg, #f87171, #ef4444)",  // 50% — แดง
-  ];
-
-  // ส่วนที่ 1: playlist_tiered_percent (แสดงตาราง tier สีสวย)
+  // ส่วนที่ 1: playlist_tiered_percent (compact — ไม่มีกล่องสี ใช้สีเดียวกับธีม)
   for (const promo of tieredPromos) {
     const tiers = Array.isArray(promo.tiers) ? promo.tiers : [];
     const sortedTiers = [...tiers].sort((a, b) => Number(a.min_quantity) - Number(b.min_quantity));
 
-    // หา tier แนะนำ (tier รองสุดท้าย — คุ้มสุด แต่ไม่มากเกินไป)
     let recommendedTier = null;
     if (sortedTiers.length > 1) {
       recommendedTier = sortedTiers[sortedTiers.length - 2];
@@ -2901,35 +2889,32 @@ function renderPromotionBanner() {
       recommendedTier = sortedTiers[0];
     }
 
-    const tiersHtml = sortedTiers.map((t, idx) => {
+    // 🎨 v4: compact tier (ไม่มีกล่อง gradient) — แค่ text + ⭐ แนะนำ
+    const tiersHtml = sortedTiers.map(t => {
       const qty = Number(t.min_quantity) || 0;
       const pct = Number(t.discount_percent) || 0;
       const isRecommended = recommendedTier && qty === Number(recommendedTier.min_quantity);
-      const color = tierColors[idx % tierColors.length];
       const recommendedBadge = isRecommended
-        ? '<span style="background:rgba(255,255,255,.9);color:#0a0;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:bold;margin-left:4px;">⭐ แนะนำ</span>'
+        ? ' <span style="color:#fbbf24;font-weight:bold;font-size:10px;">⭐ แนะนำ</span>'
         : "";
-      return `<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:8px;background:${color};color:#fff;font-size:11px;font-weight:bold;margin:3px 0;box-shadow:0 1px 3px rgba(0,0,0,.2);">
-        <span>🎵 ${qty} เพลย์ลิสต์</span>
-        <span style="margin-left:auto;">ลด ${pct}%</span>
-        ${recommendedBadge}
+      return `<div style="font-size:11px;color:rgba(255,255,255,.85);margin:2px 0;line-height:1.4;">
+        🎵 ${qty} เพลย์ลิสต์ — ลด ${pct}%${recommendedBadge}
       </div>`;
     }).join("");
 
-    // 🚀 (H-7 v3): countdown ของโปรนี้
     const countdownText = promo.end_at ? promo_formatCountdownCompact(promo.end_at) : "";
     const countdownP = promo_getCountdownParts(promo.end_at);
-    const urgentClass = countdownP.urgent ? "color:#fbbf24;font-weight:bold;" : "color:rgba(255,255,255,.7);";
+    const urgentClass = countdownP.urgent ? "color:#fbbf24;font-weight:bold;" : "color:rgba(255,255,255,.6);";
 
-    bannerHtml += `<div style="margin-bottom:10px;">
-      <div style="font-size:13px;font-weight:bold;margin-bottom:4px;color:#fff;">${promo_escapeHtml(promo.name || "🎵 ยิ่งเลือกเยอะ ยิ่งคุ้ม")}</div>
+    // 🎨 v4: ลด padding/margin — compact ขึ้น
+    bannerHtml += `<div style="margin-bottom:8px;">
+      <div style="font-size:12px;font-weight:bold;margin-bottom:3px;color:#fff;">${promo_escapeHtml(promo.name || "🎵 ยิ่งเลือกเยอะ ยิ่งคุ้ม")}</div>
       ${tiersHtml}
-      <div style="font-size:10px;${urgentClass}margin-top:4px;">⏰ หมดเวลา: ${countdownText}</div>
+      <div style="font-size:10px;${urgentClass}margin-top:3px;">⏰ หมดเวลา: ${countdownText}</div>
     </div>`;
   }
 
-  // ส่วนที่ 2: โปรโมชันอื่น ๆ (cart_percent, buy_x_get_y_percent, cart_fixed)
-  //   แสดงทุกอันที่ active (ไม่ใช่แค่ 1 อัน) — แต่ละอันมี countdown ของตัวเอง
+  // ส่วนที่ 2: โปรโมชันอื่น ๆ (compact — สีเดียวกับธีม)
   if (otherPromos.length > 0) {
     const now = Date.now();
     const upcoming = otherPromos.filter(p => {
@@ -2937,32 +2922,25 @@ function renderPromotionBanner() {
       const end = new Date(p.end_at).getTime();
       return !isNaN(end) && end > now;
     });
-    // sort จากใกล้หมดเวลาสุด
     upcoming.sort((a, b) => new Date(a.end_at).getTime() - new Date(b.end_at).getTime());
 
     for (const featured of upcoming) {
       const countdownText = featured.end_at ? promo_formatCountdownCompact(featured.end_at) : "";
       const countdownP = promo_getCountdownParts(featured.end_at);
-      const urgentClass = countdownP.urgent ? "color:#fbbf24;font-weight:bold;" : "color:rgba(255,255,255,.7);";
+      const urgentClass = countdownP.urgent ? "color:#fbbf24;font-weight:bold;" : "color:rgba(255,255,255,.6);";
 
-      // 🎨 สีสำหรับโปรโมชันเพลงเดี่ยว
-      const promoColor = "linear-gradient(135deg, #f472b6, #ec4899)";  // ชมพู
-
-      bannerHtml += `<div style="margin-top:6px;padding-top:8px;border-top:1px dashed rgba(255,255,255,.3);">
-        <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:8px;background:${promoColor};color:#fff;font-size:11px;font-weight:bold;margin:3px 0;box-shadow:0 1px 3px rgba(0,0,0,.2);">
-          <span style="flex:1;">${promo_escapeHtml(featured.name || "โปรโมชั่น")}</span>
-          <span>ลด ${promo_formatDiscountValue(featured)}</span>
-        </div>
+      // 🎨 v4: compact — ไม่มีกล่อง gradient ใช้สีเดียวกับธีม
+      bannerHtml += `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed rgba(255,255,255,.2);">
+        <div style="font-size:12px;font-weight:bold;color:#fff;margin-bottom:2px;">${promo_escapeHtml(featured.name || "โปรโมชั่น")}</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.85);">ลด ${promo_formatDiscountValue(featured)}</div>
         <div style="font-size:10px;${urgentClass}margin-top:2px;">⏰ หมดเวลา: ${countdownText}</div>
       </div>`;
     }
   }
 
-  // 🚀 (H-7 v3): ใส่ HTML ทั้งหมดลงใน content container
   const contentEl = document.getElementById("promoHomeBannerContent");
   if (contentEl) contentEl.innerHTML = bannerHtml;
 
-  // ผูก click (ครั้งเดียว — กันซ้ำ)
   if (!banner._promoBound) {
     banner.addEventListener("click", () => {
       const tabBtn = document.querySelector('.bottom-nav button[data-tab="promotions"]');
