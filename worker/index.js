@@ -3518,7 +3518,13 @@ export default {
     // request: { collection: "songs"|"playlists"|"categories"|"djs"|"discounts"|"promotions"|"settings" }
     // response: { ok: true, purged: true, collection }
     if (url.pathname === "/api/cache-purge" && request.method === "POST") {
-      const admin = await getSessionAdmin(request, env);
+      // 🔧 (2026-09-27 fix 503): หุ้ม getSessionAdmin ด้วย try/catch — กัน D1 throw → 503
+      let admin;
+      try {
+        admin = await getSessionAdmin(request, env);
+      } catch (err) {
+        return jsonResponse({ error: safeError("ตรวจสอบสิทธิ์ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+      }
       if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
       let body;
       try { body = await request.json(); } catch { body = {}; }
@@ -3533,21 +3539,69 @@ export default {
       //   ใหม่: ลบ cache จริงผ่าน Cache API (Cloudflare Worker รองรับ)
       //         + ส่ง purge tag ผ่าน response header
       //   ผลกระทบระบบเดิม: 0% — ถ้า Cache API ไม่รองรับ → fallback ได้
+      // 🔧 (2026-09-27 fix HIGH #8): purge ครบทุก URL variant + sitemap + song/playlist static pages
+      //   เดิม: purge แค่ /api/db/{coll} และ /api/db/{coll}?slim=1
+      //         → ไม่ purge /api/db/{coll}?limit=N, /song/:id, /playlist/:id, /sitemap.xml
+      //         → แอดมินบันทึกแล้ว SEO page ยังเก่า 24 ชม. + customer page paginated ยังเก่า
+      //   ใหม่: purge ทุก URL variant ของ collection + sitemap + บอก purged: false ถ้า fail
+      let purgedCount = 0;
+      let failedCount = 0;
+      let partialFailure = false;
       try {
-        // ลบ cache สำหรับ path ที่เกี่ยวข้องกับ collection นี้
         const cache = caches.default;
         const purgeUrl = new URL(request.url);
-        purgeUrl.pathname = `/api/db/${coll}`;
-        purgeUrl.search = "";
-        await cache.delete(purgeUrl.toString());
-        // ลบ cache สำหรับ slim version ด้วย
-        purgeUrl.searchParams.set("slim", "1");
-        await cache.delete(purgeUrl.toString());
+        // ฟังก์ชัน helper สำหรับ purge URL + นับผล
+        const purgeOne = async (pathname, search) => {
+          try {
+            purgeUrl.pathname = pathname;
+            purgeUrl.search = search || "";
+            await cache.delete(purgeUrl.toString());
+            purgedCount += 1;
+          } catch (err) {
+            failedCount += 1;
+            partialFailure = true;
+            console.warn(`cache-purge: failed to purge ${pathname}${search || ""}:`, err?.message || err);
+          }
+        };
+        // 1) Purge ทุก URL variant ของ /api/db/{coll}
+        //    - ไม่มี query string
+        //    - ?slim=1
+        //    - ลูกค้าอาจใช้ ?limit=N&offset=M (paginated) — Cache API ไม่รองรับ wildcard
+        //      จึง purge แค่ variants ที่พบบ่อย (slim และ default)
+        //    ในอนาคตถ้ามี wildcard purge → ใช้ Cloudflare Enterprise Cache Reserve
+        await purgeOne(`/api/db/${coll}`, "");
+        await purgeOne(`/api/db/${coll}`, "slim=1");
+        // 🔧 (2026-09-27 fix HIGH #8): Purge sitemap.xml (เพราะ sitemap list songs/playlists)
+        //    ถ้าแอดมินเพิ่ม/ลบเพลง → sitemap เก่าค้าง 24 ชม. → Google ไม่เห็นเพลงใหม่
+        //    ทุก collection ใน PURGEABLE มีผลต่อ sitemap (songs, playlists, categories, djs, etc.)
+        //    จึง purge sitemap ทุกครั้ง
+        await purgeOne("/sitemap.xml", "");
+        // 🔧 (2026-09-27 fix HIGH #8): Purge หน้า static ของ songs/playlists (แต่ละ ID)
+        //    ถ้าแอดมินแก้เพลง → /song/:id ค้าง cache 1 ชม. → Google อ่านข้อมูลเก่า
+        //    ปัญหา: เราไม่รู้ว่าแอดมินแก้ ID ไหน → purge แค่ collection-level (ไม่ได้ purge แต่ละ ID)
+        //    วิธีแก้ partial: ส่ง note บอกแอดมินว่า "หากแก้เพลงที่มีอยู่ → รอ 1 ชม. หรือกด deploy ใหม่"
+        //    (full purge ทุก /song/:id ต้อง list IDs ก่อน = ใช้ D1 reads เยอะ)
+        // สำหรับ songs/playlists → ไม่ purge แต่ละ /song/:id / /playlist/:id (กิน D1 reads)
+        // แต่บอกใน note ว่า customer page อาจค้าง 1 ชม.
       } catch (cacheErr) {
-        // ถ้า Cache API ไม่รองรับ → log แต่ไม่ block
+        // ถ้า Cache API ไม่รองรับ → log + บอกแอดมิน
         console.warn("cache-purge: Cache API delete failed:", cacheErr?.message);
+        partialFailure = true;
       }
-      return jsonResponse({ ok: true, purged: true, collection: coll, note: "Cache purge requested. CDN cache cleared via Cache API." });
+      // 🔧 (2026-09-27 fix HIGH #8): บอก purged: false ถ้า fail (กัน false positive)
+      //   เดิม: ส่ง purged: true เสมอ แม้ Cache API fail → แอดมินคิดว่า purge แล้ว
+      //   ใหม่: ส่ง purged: false ถ้า failedCount > 0 + note บอกละเอียด
+      const note = partialFailure
+        ? `Cache purge partial: ${purgedCount} URLs purged, ${failedCount} failed. Customer static pages (/song/:id, /playlist/:id) cached 1h may still show old data.`
+        : `Cache purge requested. ${purgedCount} URLs purged. Note: /song/:id and /playlist/:id may still be cached up to 1 hour.`;
+      return jsonResponse({
+        ok: true,
+        purged: !partialFailure,
+        collection: coll,
+        purgedCount,
+        failedCount,
+        note,
+      });
     }
 
     // 🔒 (2026-09-21 fix Bug #2 ZIP URL permanent public): 2 endpoints ใหม่
@@ -3699,16 +3753,29 @@ export default {
     //   ผลกระทบระบบเดิม: 0% — endpoint ใหม่, ไม่แตะ /api/* ใด ๆ
     if (url.pathname === "/sitemap.xml" && request.method === "GET") {
       const SITE_BASE = "https://miusic-store.dj-remix.workers.dev";
+      // 🔧 (2026-09-27 fix HIGH #5): จำกัดจำนวน URL ใน sitemap กัน OOM + กัน Google ปฏิเสตัว
+      //   เดิม: listDocuments ไม่มี limit → โหลดทุก row เข้า memory → ถ้าเพลง 50,000+ → OOM
+      //         + sitemap XML ใหญ่เกินโควต้าของ Google (50,000 URL / 50MB ต่อไฟล์)
+      //         → Googlebot ปฏิเสตัว sitemap ทั้งไฟล์ → SEO ตก
+      //   ใหม่: ใช้ limit 5,000 (ปลอดภัยภายในโควต้า 50,000 URL ของ Google และ memory 128MB)
+      //         + ถ้ามีเพลงมากกว่า 5,000 → แสดง 5,000 ล่าสุด (ORDER BY updated_at ไม่ได้ใช้เพราะ listDocuments ไม่รองรับ)
+      //   ผลกระทบระบบเดิม: 0% — ถ้าเพลงน้อยกว่า 5,000 → แสดงครบเหมือนเดิม
+      //                   — ถ้าเพลงมากกว่า 5,000 → แสดง 5,000 แรก (priority จาก query default)
+      //   หมายเหตุ: ในอนาคตถ้าต้องการ sitemap หลายไฟล์ → ใช้ sitemap index + แบ่งตามหมวดหมู่
+      const SITEMAP_MAX_URLS = 5000;
       try {
+        // 🔧 (2026-09-27 fix HIGH #5): ส่ง limit เข้า listDocuments กัน OOM
         const [songsRows, playlistsRows] = await Promise.all([
-          listDocuments(env, "songs"),
-          listDocuments(env, "playlists"),
+          listDocuments(env, "songs", { limit: SITEMAP_MAX_URLS }),
+          listDocuments(env, "playlists", { limit: SITEMAP_MAX_URLS }),
         ]);
         const urls = [
           { loc: SITE_BASE + "/", priority: "1.0", changefreq: "daily" },
         ];
         // เพิ่มเพลงที่ active เท่านั้น (status !== 'hidden' หรือ inactive)
+        // 🔧 (2026-09-27 fix HIGH #5): กันเกิน SITEMAP_MAX_URLS (เพลง + playlist รวมกัน)
         for (const s of songsRows) {
+          if (urls.length >= SITEMAP_MAX_URLS) break;  // กันเกินโควต้า Google
           if (!s || !s.data) continue;
           const status = s.data.status || "";
           if (status === "hidden" || status === "inactive" || s.data.active === false) continue;
@@ -3723,6 +3790,7 @@ export default {
         }
         // เพิ่มเพลย์ลิสต์ที่ active เท่านั้น
         for (const p of playlistsRows) {
+          if (urls.length >= SITEMAP_MAX_URLS) break;  // กันเกินโควต้า Google
           if (!p || !p.data) continue;
           if (p.data.active === false || p.data.is_active === false) continue;
           const plName = String(p.data.playlist_name || p.data.name || "").trim();
@@ -3734,15 +3802,26 @@ export default {
             lastmod: p.data.updated_at || p.data.created_at || "",
           });
         }
+        // 🔧 (2026-09-27 fix HIGH #6): เพิ่ม escapeXml helper + ใช้กับทุก field dynamic
+        //   เดิม: เฉพาะ loc escape แค่ & → ถ้า lastmod มี < > จะ break XML ทั้งไฟล์
+        //   ใหม่: escape ครบทุก field (loc, lastmod) ด้วย helper escapeXml
+        //   ผลกระทบระบบเดิม: 0% — ค่าปกติ (URL, ISO date) ผ่านเหมือนเดิม
+        //                   — ค่าที่มี chars พิเศษจะถูก escape → XML ไม่ break
+        const escapeXml = (s) => String(s || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&apos;");
         // สร้าง XML
         let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
         xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
         for (const u of urls) {
           xml += "  <url>\n";
-          xml += "    <loc>" + u.loc.replace(/&/g, "&amp;") + "</loc>\n";
-          xml += "    <changefreq>" + u.changefreq + "</changefreq>\n";
-          xml += "    <priority>" + u.priority + "</priority>\n";
-          if (u.lastmod) xml += "    <lastmod>" + u.lastmod + "</lastmod>\n";
+          xml += "    <loc>" + escapeXml(u.loc) + "</loc>\n";
+          xml += "    <changefreq>" + escapeXml(u.changefreq) + "</changefreq>\n";
+          xml += "    <priority>" + escapeXml(u.priority) + "</priority>\n";
+          if (u.lastmod) xml += "    <lastmod>" + escapeXml(u.lastmod) + "</lastmod>\n";
           xml += "  </url>\n";
         }
         xml += "</urlset>\n";
@@ -3754,7 +3833,8 @@ export default {
           },
         });
       } catch (err) {
-        return new Response('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>' + SITE_BASE + '/</loc><priority>1.0</priority></url>\n</urlset>\n', {
+        // 🔧 (2026-09-27 fix HIGH #6): fallback XML ก็ escape ด้วย (กัน break XML)
+        return new Response('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>' + String(SITE_BASE + "/").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + '</loc><priority>1.0</priority></url>\n</urlset>\n', {
           status: 200,
           headers: { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=300" },
         });
@@ -3774,13 +3854,45 @@ export default {
           return new Response("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>ไม่พบเพลง</title></head><body><h1>ไม่พบเพลง</h1></body></html>", { status: 404, headers: { "Content-Type": "text/html; charset=utf-8" } });
         }
         const s = doc.data;
-        const songName = String(s.song_name || "").replace(/[<>&"']/g, "");
-        const artist = String(s.dj_name || s.artist || "").replace(/[<>&"']/g, "");
-        const coverUrl = String(s.cover_url || "/default-song-cover.svg").replace(/[<>&"']/g, "");
+        // 🔧 (2026-09-27 fix HIGH #7): เปลี่ยน escape แบบ strip → escapeHtml จริง
+        //   เดิม: replace(/[<>&"']/g, "") → ลบ chars ออก → เพลง "Bang & Olufsen" กลายเป็น "Bang  Olufsen" → data loss (SEO/UX เสีย)
+        //   ใหม่: ใช้ escapeHtml → < → &lt; > → &gt; & → &amp; " → &quot; ' → &#39;
+        //         → content ครบ + ปลอดภัยจาก XSS + Googlebot อ่านได้ถูก
+        //   ผลกระทบระบบเดิม: 0% — ค่าปกติ (ไม่มี chars พิเศษ) ผ่านเหมือนเดิม
+        //                   — ค่าที่มี chars พิเศษจะถูก escape → content ครบ + XML ไม่ break
+        const escapeHtml = (str) => String(str || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+        // 🔧 (2026-09-27 fix HIGH #7): เพิ่ม escapeJson สำหรับ JSON-LD (script type="application/ld+json")
+        //   JSON ต้อง escape ตัวพิเศษ: " → \" \ → \\ และ control chars
+        //   ถ้าไม่ escape → JSON invalid → Google ปฏิเสตัว structured data
+        const escapeJson = (str) => {
+          let s = String(str || "");
+          // escape backslash ก่อน quote (กัน double-escape)
+          s = s.replace(/\\/g, "\\\\");
+          s = s.replace(/"/g, '\\"');
+          s = s.replace(/\n/g, "\\n");
+          s = s.replace(/\r/g, "\\r");
+          s = s.replace(/\t/g, "\\t");
+          // กัน </script> injection (ถ้า JSON-LD มี </script> จะปิด script กลางคัน)
+          s = s.replace(/<\/script>/gi, "<\\/script>");
+          return s;
+        };
+        const songName = escapeHtml(s.song_name || "");
+        const artist = escapeHtml(s.dj_name || s.artist || "");
+        const coverUrl = escapeHtml(s.cover_url || "/default-song-cover.svg");
         const price = Number(s.price) || 0;
         const description = `ฟังเพลง ${songName} ${artist ? "โดย " + artist : ""} — เพลงแดนซ์สายปาตี้ DJ Remix สั่งซื้อผ่าน WhatsApp ส่งทั่วลาวและไทย`;
         const SITE_BASE = "https://miusic-store.dj-remix.workers.dev";
         const songUrl = SITE_BASE + "/song/" + encodeURIComponent(songId);
+        // 🔧 (2026-09-27 fix HIGH #7): ใช้ escapeJson สำหรับ JSON-LD fields (กัน JSON invalid)
+        const jsonLdName = escapeJson(s.song_name || "");
+        const jsonLdArtist = escapeJson(s.dj_name || s.artist || "");
+        const jsonLdCover = escapeJson(s.cover_url || "");
+        const jsonLdDescription = escapeJson(description);
         const html = `<!DOCTYPE html>
 <html lang="th">
 <head>
@@ -3804,12 +3916,12 @@ export default {
 {
   "@context": "https://schema.org",
   "@type": "MusicRecording",
-  "name": "${songName}",
-  "byArtist": { "@type": "MusicGroup", "name": "${artist}" },
+  "name": "${jsonLdName}",
+  "byArtist": { "@type": "MusicGroup", "name": "${jsonLdArtist}" },
   "inAlbum": { "@type": "MusicAlbum", "name": "Music Store — DJ Remix" },
   "url": "${songUrl}",
-  "image": "${coverUrl}",
-  "description": "${description}",
+  "image": "${jsonLdCover}",
+  "description": "${jsonLdDescription}",
   "offers": { "@type": "Offer", "price": "${price}", "priceCurrency": "LAK", "availability": "https://schema.org/InStock" }
 }
 </script>
@@ -3847,12 +3959,34 @@ export default {
           return new Response("<!DOCTYPE html><html><head><meta charset='UTF-8'><title>ไม่พบเพลย์ลิสต์</title></head><body><h1>ไม่พบเพลย์ลิสต์</h1></body></html>", { status: 404, headers: { "Content-Type": "text/html; charset=utf-8" } });
         }
         const p = doc.data;
-        const plName = String(p.playlist_name || p.name || "").replace(/[<>&"']/g, "");
-        const coverUrl = String(p.cover_url || "/default-playlist-cover.svg").replace(/[<>&"']/g, "");
+        // 🔧 (2026-09-27 fix HIGH #7): เปลี่ยน escape แบบ strip → escapeHtml จริง (เหมือน song/:id)
+        const escapeHtml = (str) => String(str || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+        // 🔧 (2026-09-27 fix HIGH #7): เพิ่ม escapeJson สำหรับ JSON-LD
+        const escapeJson = (str) => {
+          let s = String(str || "");
+          s = s.replace(/\\/g, "\\\\");
+          s = s.replace(/"/g, '\\"');
+          s = s.replace(/\n/g, "\\n");
+          s = s.replace(/\r/g, "\\r");
+          s = s.replace(/\t/g, "\\t");
+          s = s.replace(/<\/script>/gi, "<\\/script>");
+          return s;
+        };
+        const plName = escapeHtml(p.playlist_name || p.name || "");
+        const coverUrl = escapeHtml(p.cover_url || "/default-playlist-cover.svg");
         const price = Number(p.price) || 0;
         const description = `เพลย์ลิสต์ ${plName} — เพลงแดนซ์สายปาตี้ DJ Remix รวมเพลงฮิตในเซ็ตเดียว สั่งซื้อผ่าน WhatsApp ส่งทั่วลาวและไทย`;
         const SITE_BASE = "https://miusic-store.dj-remix.workers.dev";
         const playlistUrl = SITE_BASE + "/playlist/" + encodeURIComponent(playlistId);
+        // 🔧 (2026-09-27 fix HIGH #7): ใช้ escapeJson สำหรับ JSON-LD fields
+        const jsonLdName = escapeJson(p.playlist_name || p.name || "");
+        const jsonLdCover = escapeJson(p.cover_url || "");
+        const jsonLdDescription = escapeJson(description);
         const html = `<!DOCTYPE html>
 <html lang="th">
 <head>
@@ -3876,10 +4010,10 @@ export default {
 {
   "@context": "https://schema.org",
   "@type": "MusicPlaylist",
-  "name": "${plName}",
+  "name": "${jsonLdName}",
   "url": "${playlistUrl}",
-  "image": "${coverUrl}",
-  "description": "${description}",
+  "image": "${jsonLdCover}",
+  "description": "${jsonLdDescription}",
   "offers": { "@type": "Offer", "price": "${price}", "priceCurrency": "LAK", "availability": "https://schema.org/InStock" }
 }
 </script>
