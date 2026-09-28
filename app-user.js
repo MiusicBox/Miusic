@@ -3070,7 +3070,9 @@ function renderPromotionsView() {
   }
 
   // วาดการ์ดทีละใบ
+  // 🚀 (2026-09-28 fix): try/catch รายการ์ด — กัน 1 การ์ดพังทำให้ทั้งหน้าว่าง
   list.innerHTML = visible.map(p => {
+    try {
     const discountParts = promo_formatDiscountParts(p);
     const cparts = promo_getCountdownParts(p.end_at);
     const isUrgent = cparts.urgent && !cparts.expired;
@@ -3165,13 +3167,14 @@ function renderPromotionsView() {
 
     // 🚀 (H-7): แยกการ์ดสำหรับ playlist_tiered_percent (แสดง tier table แทน discount box)
     if (p.type === "playlist_tiered_percent") {
-      // สร้าง countdown แบบ compact (เหมือน banner)
+      // 🚀 (2026-09-28 fix): ประกาศ countdownText ที่หายไป (เดิมใช้จาก scope อื่น → ReferenceError)
+      const tierCountdownText = !isExpired ? promo_formatCountdownCompact(p.end_at) : "";
       let tierCountdownHtml = "";
-      if (!isExpired && countdownText) {
+      if (!isExpired && tierCountdownText) {
         const cStyle = isUrgent
           ? "background:var(--cp-pink);color:#fff;box-shadow:0 0 10px var(--cp-pink-glow);animation:cp-blink 1s ease-in-out infinite;"
           : "background:var(--cp-cyan);color:var(--cp-bg);box-shadow:0 0 8px var(--cp-cyan-glow);";
-        tierCountdownHtml = `<div style="display:inline-flex;align-items:center;gap:3px;${cStyle}padding:4px 14px;font-weight:900;font-variant-numeric:tabular-nums;font-size:13px;letter-spacing:1px;margin-top:8px;font-family:var(--cp-mono);border-radius:2px;">⏰ ${countdownText}</div>`;
+        tierCountdownHtml = `<div style="display:inline-flex;align-items:center;gap:3px;${cStyle}padding:4px 14px;font-weight:900;font-variant-numeric:tabular-nums;font-size:13px;letter-spacing:1px;margin-top:8px;font-family:var(--cp-mono);border-radius:2px;">⏰ ${tierCountdownText}</div>`;
       } else if (isExpired) {
         tierCountdownHtml = `<div style="display:inline-block;background:rgba(255,0,0,.15);border:1px solid rgba(255,0,0,.4);color:#f87171;padding:4px 14px;font-weight:700;font-size:13px;margin-top:8px;font-family:var(--cp-mono);border-radius:2px;">⏰ หมดเวลาแล้ว</div>`;
       }
@@ -3231,6 +3234,16 @@ function renderPromotionsView() {
           </button>
         </div>
       </div>`;
+    } catch (cardErr) {
+      // 🚀 (2026-09-28 fix): ถ้าการ์ดใดพัง → แสดง error card แทน (ไม่ให้ทั้งหน้าว่าง)
+      console.error("[promo] Card render failed for", p?.id, cardErr);
+      return `<div class="promo-card" data-promo-id="${promo_escapeHtml(p?.id || '')}">
+        <div class="promo-card-body">
+          <h3 class="promo-card-name">⚠️ โหลดการ์ดไม่สำเร็จ</h3>
+          <div class="promo-card-desc">โปรโมชั่น "${promo_escapeHtml(p?.name || '')}" อาจมีข้อมูลผิดปกติ — กรุณาติดต่อร้าน</div>
+        </div>
+      </div>`;
+    }
   }).join("");
 
   // ผูกปุ่ม CTA — กดแล้วสลับไปแท็บ "หน้าแรก" เพื่อให้ลูกค้าเลือกเพลง
