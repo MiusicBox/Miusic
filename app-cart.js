@@ -1763,13 +1763,109 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       showToast("อัปโหลดสลิปสำเร็จ — แต่ร้านยังไม่ได้ตั้งค่าเบอร์ WhatsApp แอดมินจะเห็นสลิปในหน้าตรวจสอบ", "success");
       return;
     }
+    // 🚀 (2026-09-29 fix): เปลี่ยนข้อความ WhatsApp ตอนแจ้งชำระ — ไม่ส่ง link slip อีกต่อไป
+    //   เหตุผล: link slip (relative URL + admin auth block) → แอดมินกดไม่ได้ใน WhatsApp
+    //   แทน: ส่งข้อมูลครบ (ชื่อ + เบอร์ + เลขออเดอร์ + จำนวนเพลง/เพลย์ลิสต์ + ยอดหลังหักโปร + ยอดลด)
+    //         และบอกแอดมินให้ดูสลิปในหน้าตรวจสอบสลิป (admin panel)
+    //   ข้อมูลที่ไม่ส่ง (ตามคำขอ): รายชื่อเพลง + รายชื่อเพลย์ลิสต์ + link slip
     const amount = order?.final_total ?? order?.total ?? 0;
     const customerName = order?.customer_name || "";
+    const customerPhone = order?.whatsapp || "";
+    const receiptNum = receiptNumber || order?.receipt_number || "-";
+
+    // 🚀 (STACK): อ่าน promotions ที่ apply จาก order snapshot (รองรับทั้ง array ใหม่ + object เก่า)
+    const promosAppliedList = (() => {
+      if (Array.isArray(order?.promotions_applied)) {
+        return order.promotions_applied.filter(p => p && p.id && Number(p.discount_amount) > 0);
+      }
+      if (order?.promotion_applied && typeof order.promotion_applied === "object" && order.promotion_applied.id) {
+        const p = order.promotion_applied;
+        if (Number(p.discount_amount) > 0) {
+          return [{
+            name: p.name || "",
+            discount_amount: Number(p.discount_amount) || 0,
+            applies_to: p.applies_to || "all",
+          }];
+        }
+      }
+      return [];
+    })();
+    const totalPromoDiscount = promosAppliedList.reduce((s, p) => s + (Number(p.discount_amount) || 0), 0);
+
+    // 🚀 (fix): นับจำนวนเพลง + เพลย์ลิสต์แยก — ไม่แสดงรายชื่อ
+    //   - order.items: ใน order_type="playlist" = ทุก item คือเพลงในเพลย์ลิสต์ (kind ไม่มี)
+    //   - ใน order_type="single" = ทุก item คือเพลงเดี่ยว (kind ไม่มี หรือ song)
+    //   - ใน order_type="mixed" = มีทั้ง kind="playlist" และ kind="song"
+    const items = Array.isArray(order?.items) ? order.items : [];
+    let songCount = 0;
+    let playlistCount = 0;
+    if (order?.order_type === "playlist") {
+      // ออเดอร์ยกเพลย์ลิสต์เดียว — นับทุก item เป็นเพลงในเพลย์ลิสต์ (ราคาเหมา)
+      songCount = items.length;
+      playlistCount = 1; // 1 เพลย์ลิสต์
+    } else if (order?.order_type === "single") {
+      // ออเดอร์เพลงเดี่ยวล้วน
+      songCount = items.length;
+      playlistCount = 0;
+    } else {
+      // mixed (หรือไม่ระบุ) — แยกตาม kind
+      for (const it of items) {
+        if (it.kind === "playlist") {
+          playlistCount++;
+        } else {
+          songCount++;
+        }
+      }
+    }
+
+    // ยอดก่อนลด + ยอดลดรวม + ยอดหลังหัก
+    const subtotal = Number(order?.subtotal) || amount;
+    const totalDiscount = Number(order?.discount_amount) || 0;
+    const finalAmount = Number(order?.final_total) || amount;
+    const itemDiscount = Math.max(0, totalDiscount - totalPromoDiscount);
+
+    // สร้างบรรทัดสรุปส่วนลด (แสดงเฉพาะยอด ไม่มีรายชื่อ)
+    let discountLines = "";
+    if (totalDiscount > 0) {
+      discountLines = `\n💰 ยอดก่อนลด: ${formatPrice(subtotal)}`;
+      if (itemDiscount > 0) {
+        discountLines += `\n🏷️ ลดราคาปกติ: -${formatPrice(itemDiscount)}`;
+      }
+      // 🚀 (STACK): แสดงแต่ละ promo แยกบรรทัด (ถ้ามี 2 โปร → 2 บรรทัด)
+      for (const p of promosAppliedList) {
+        const amt = Number(p.discount_amount) || 0;
+        if (amt > 0 && p.name) {
+          discountLines += `\n🎁 ${p.name}: -${formatPrice(amt)}`;
+        }
+      }
+      discountLines += `\n✅ ยอดชำระ: ${formatPrice(finalAmount)}`;
+    } else {
+      discountLines = `\n💰 ยอดชำระ: ${formatPrice(finalAmount)}`;
+    }
+
+    // สรุปจำนวนเพลง/เพลย์ลิสต์ — แสดงแค่จำนวน ไม่มีรายชื่อ
+    let itemCountLine = "";
+    if (order?.order_type === "playlist") {
+      itemCountLine = `🎵 เพลงในเพลย์ลิสต์: ${songCount} เพลง (1 เพลย์ลิสต์)`;
+    } else if (order?.order_type === "single") {
+      itemCountLine = `🎵 จำนวนเพลง: ${songCount} เพลง`;
+    } else if (playlistCount > 0 && songCount > 0) {
+      itemCountLine = `🎵 จำนวน: ${songCount} เพลง + ${playlistCount} เพลย์ลิสต์`;
+    } else if (playlistCount > 0) {
+      itemCountLine = `🎵 จำนวน: ${playlistCount} เพลย์ลิสต์`;
+    } else {
+      itemCountLine = `🎵 จำนวน: ${songCount} เพลง`;
+    }
+
+    // ข้อความ WhatsApp ฉบับใหม่ — ครบข้อมูล ไม่มี link slip ไม่มีรายชื่อ
     const lines = [
-      `📸 แจ้งชำระเงิน Order ${receiptNumber}`,
-      `ลูกค้า: ${customerName}`,
-      `ยอด: ${formatPrice(amount)}`,
-      slipUrl ? `สลิป: ${slipUrl}` : "(สลิปอัปโหลดในระบบแล้ว — ดูในหน้าตรวจสอบสลิป)",
+      `📸 แจ้งชำระเงิน Order ${receiptNum}`,
+      `👤 ลูกค้า: ${customerName}`,
+      `📱 เบอร์: ${customerPhone}`,
+      itemCountLine,
+      discountLines,
+      "",
+      "📋 สลิปอัปโหลดในระบบแล้ว — กรุณาตรวจสอบในหน้าจัดการออเดอร์ (Admin Panel)",
     ];
     const text = lines.join("\n");
     // 📸 (แก้ไข 2026-09-26) เปิด WhatsApp ทันทีอัตโนมัติ โดยไม่ถามยืนยันก่อน
