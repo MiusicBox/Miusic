@@ -176,6 +176,34 @@ CREATE INDEX IF NOT EXISTS idx_order_zip_jobs_order ON order_zip_jobs(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_zip_jobs_status ON order_zip_jobs(status);
 
 -- ===================================================
+-- 🔄 (2026-09-28 fix Sequential Queue): ตาราง order_zip_queue
+--   เก็บ order ที่แอดมินยืนยันสลิปแล้ว รอ Worker สร้าง ZIP ทีละออเดอร์ (sequential)
+--
+--   Flow:
+--     1) Admin กด "ยืนยันสลิป" → verify-payment → INSERT ลง queue + status='queued'
+--     2) Worker finalize ของ order ก่อนหน้าเสร็จ → trigger order ถัดไป (processNextZipInQueue)
+--     3) Cron รันทุก 1 นาที → safety net (ถ้า finalize fail → trigger ต่อ)
+--     4) Worker trigger → status='processing' + delete from queue (เริ่มทำจริง)
+--
+--   ความปลอดภัย:
+--     - 1 Worker invocation = 1 order → ไม่เจอ CPU time limit 30s
+--     - ถ้า Worker fail → cron รอบถัดไปจะ retry (status='queued' ค้าง > 5 นาที)
+--
+--   ผลกระทบต่อระบบเดิม: 0% — เพิ่มตารางใหม่ ไม่แตะระบบเดิม
+--     ถ้าตารางนี้ไม่มี (DB เก่า) → Worker fallback ใช้ flow เดิม (parallel)
+-- ===================================================
+CREATE TABLE IF NOT EXISTS order_zip_queue (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id      TEXT NOT NULL UNIQUE,    -- 1 order ต่อ 1 queue row (UNIQUE กัน duplicate)
+  queued_at     TEXT NOT NULL,           -- ISO 8601 (เวลาที่ admin กดยืนยัน)
+  queued_by     TEXT,                    -- admin_id (audit)
+  status        TEXT NOT NULL DEFAULT 'queued'  -- 'queued' (รอ) | 'processing' (กำลังทำ)
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_zip_queue_status ON order_zip_queue(status);
+CREATE INDEX IF NOT EXISTS idx_order_zip_queue_queued_at ON order_zip_queue(queued_at);
+
+-- ===================================================
 -- 🔒 (2026-09-21 fix Bug #2 ZIP URL permanent public): download_tokens table
 --   เก็บ one-time use tokens สำหรับลูกค้าดาวน์โหลด ZIP ออเดอร์
 --   แทนที่การใช้ R2 public URL ถาวร (ที่แชร์ได้ตลอดไป)
