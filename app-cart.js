@@ -1908,45 +1908,41 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         //   ไม่กระทบ D1 (setDoc ทำงานเสร็จแล้วก่อนบรรทัดนี้) — _docId เป็น client-only field
         if (order && !order._docId && orderRef?.id) order._docId = orderRef.id;
       } catch (firstErr) {
-        // 🔧 แก้บั๊ก I9 (2026-09-18): Dead code path หลัง Bug #1 + Bug #5 fixes
+        // 🔧 แก้บั๊ก (2026-09-12) + 🐛 (2026-09-29 re-enable retry):
         // -----------------------------------------------------------
-        // ปัญหา: retry path นี้แทบไม่มีทาง trigger แล้ว เพราะ:
-        //   - Bug #1 fix → POST /api/db/songs/_query ผ่านสำหรับ non-admin แล้ว → resolveCartFromDatabase ไม่ล้มเพราะ 401
-        //   - Bug #5 fix → storeOrderId ถูก comment ออก → getStoredOrderId คืน null เสมอ → orderRef เป็น UUID ใหม่เสมอ
-        //     → setDoc สร้าง order ใหม่ ไม่ชน existing check ของ worker → ไม่มี error "ยังไม่ได้ login"
+        // ปัญหา: ลูกค้าเคยสั่งซื้อครั้งก่อน → order ID ค้างใน sessionStorage (CHECKOUT_ORDER_KEY)
+        //   หรือ activeOrderId ค้างใน state — ครั้งถัดไปที่ลูกค้าสั่งซื้อใหม่ด้วยชื่อ+เบอร์เดิม
+        //   → ระบบใช้ order ID เดิม → Worker เจอ existing → ส่ง 401 "ยังไม่ได้เข้าสู่ระบบ"
+        //   → ลูกค้าไม่สามารถสั่งซื้อได้ ทั้งที่จริง ๆ แค่ต้องใช้ ID ใหม่
         //
-        // ที่ไม่ลบทิ้ง: กฎของโปรเจกต์ "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
-        //   แต่ comment ออกเพื่อให้ Dev ใหม่เห็นชัดว่า "โค้ดนี้ไม่ทำงาน" และลดความสับสน
-        //
-        // ถ้าอนาคตมี edge case ที่ทำให้ retry path จำเป็นอีก:
-        //   1. Uncomment retry block ด้านล่าง
-        //   2. ตรวจสอบว่า storeOrderId/clearStoredOrderId ทำงานถูกต้อง (Bug #5 อาจต้อง uncomment ด้วย)
-        //
-        // โค้ดเดิม (comment ออกแล้ว):
-        // // 🔧 ตรวจว่า error จาก server บอกว่า "ยังไม่ได้ login" หรือ "ยังไม่ได้เข้าสู่ระบบ" หรือไม่
-        // // ถ้าใช่ → เคลียร์ reusableOrderId ที่ค้างอยู่ใน sessionStorage/state แล้ว retry ด้วย ID ใหม่
-        // const msg = (firstErr?.message || "").toLowerCase();
-        // const isLoginBlock = msg.includes("ยังไม่ได้เข้าสู่ระบบ") || msg.includes("login") || msg.includes("เข้าสู่ระบบ");
-        // if (!isLoginBlock) throw firstErr;
-        //
-        // console.warn("checkoutCart: พบ error 'ยังไม่ได้ login' — เคลียร์ order ID เก่าแล้ว retry ด้วย ID ใหม่", firstErr);
-        // activeOrderId = null;
-        // activeOrderKey = null;
-        // clearStoredOrderId();
-        // // สร้าง orderRef ใหม่ด้วย ID ใหม่ (doc(collection(db,"orders")) จะสุ่ม UUID ใหม่ให้)
-        // orderRef = doc(collection(db, "orders"));
-        // receiptNumber = getReceiptNumber(orderRef.id, createdAt);
-        //
-        // // ครั้งที่ 2: ใช้ ID ใหม่
-        // const TIMEOUT_MS_RETRY = 20000;
-        // const timeoutPromise2 = new Promise((_, reject) => {
-        //   setTimeout(() => reject(new Error("เชื่อมต่อช้ากว่าปกติ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง")), TIMEOUT_MS_RETRY);
-        // });
-        // const retryTask = buildAndSaveOrder(orderRef);
-        // order = await Promise.race([retryTask, timeoutPromise2]);
+        // วิธีแก้: retry path — ถ้าเจอ error "ยังไม่ได้ login" หรือ "ยังไม่ได้เข้าสู่ระบบ"
+        //   → เคลียร์ reusableOrderId ที่ค้าง + retry ด้วย ID ใหม่ (UUID สุ่มใหม่)
+        //   → ใช้ timeout ใหม่ (20s) เพราะ resolveCartFromDatabase ใช้เวลาเท่าเดิม
+        const errMsg = String(firstErr?.message || "");
+        const isLoginBlock =
+          errMsg.includes("ยังไม่ได้เข้าสู่ระบบ") ||
+          errMsg.includes("ยังไม่ได้ login") ||
+          errMsg.toLowerCase().includes("login") ||
+          errMsg.includes("เข้าสู่ระบบ");
+        if (!isLoginBlock) throw firstErr;
 
-        // 🔧 แก้บั๊ก I9: แค่ re-throw error ออกไปให้ catch block ด้านล่างจัดการ (แสดง error ให้ลูกค้าเห็น)
-        throw firstErr;
+        console.warn("checkoutCart: พบ error 'ยังไม่ได้เข้าสู่ระบบ' — เคลียร์ order ID เก่าแล้ว retry ด้วย ID ใหม่", firstErr);
+        // เคลียร์ order ID ที่ค้างอยู่ทั้งใน state และ sessionStorage
+        activeOrderId = null;
+        activeOrderKey = null;
+        clearStoredOrderId();
+        // สร้าง orderRef ใหม่ด้วย UUID ใหม่ (doc(collection(db,"orders")) จะสุ่มใหม่ให้)
+        orderRef = doc(collection(db, "orders"));
+        receiptNumber = getReceiptNumber(orderRef.id, createdAt);
+
+        // ครั้งที่ 2: ใช้ ID ใหม่
+        const TIMEOUT_MS_RETRY = 20000;
+        const timeoutPromise2 = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error("เชื่อมต่อช้ากว่าปกติ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง")), TIMEOUT_MS_RETRY);
+        });
+        const retryTask = buildAndSaveOrder(orderRef);
+        order = await Promise.race([retryTask, timeoutPromise2]);
+        if (order && !order._docId && orderRef?.id) order._docId = orderRef.id;
       }
     } catch (err) {
       console.error("checkoutCart error:", err);
