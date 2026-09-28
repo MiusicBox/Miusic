@@ -3119,16 +3119,44 @@ function renderPromotionsView() {
 
     // 🚀 (H-7): แยกการ์ดสำหรับ playlist_tiered_percent (แสดง tier table แทน discount box)
     if (p.type === "playlist_tiered_percent") {
-      // 🚀 (2026-09-28 fix): ประกาศ countdownText ที่หายไป (เดิมใช้จาก scope อื่น → ReferenceError)
-      const tierCountdownText = !isExpired ? promo_formatCountdownCompact(p.end_at) : "";
+      // 🚀 (2026-09-28 fix): ใช้ countdown แบบเดียวกับการ์ดอื่น (มี data-promo-num → เดินทุกวินาที)
       let tierCountdownHtml = "";
-      if (!isExpired && tierCountdownText) {
-        const cStyle = isUrgent
-          ? "background:var(--cp-pink);color:#fff;box-shadow:0 0 10px var(--cp-pink-glow);animation:cp-blink 1s ease-in-out infinite;"
-          : "background:var(--cp-cyan);color:var(--cp-bg);box-shadow:0 0 8px var(--cp-cyan-glow);";
-        tierCountdownHtml = `<div style="display:inline-flex;align-items:center;gap:3px;${cStyle}padding:4px 14px;font-weight:900;font-variant-numeric:tabular-nums;font-size:13px;letter-spacing:1px;margin-top:8px;font-family:var(--cp-mono);border-radius:2px;">⏰ ${tierCountdownText}</div>`;
-      } else if (isExpired) {
-        tierCountdownHtml = `<div style="display:inline-block;background:rgba(255,0,0,.15);border:1px solid rgba(255,0,0,.4);color:#f87171;padding:4px 14px;font-weight:700;font-size:13px;margin-top:8px;font-family:var(--cp-mono);border-radius:2px;">⏰ หมดเวลาแล้ว</div>`;
+      if (isExpired) {
+        tierCountdownHtml = `
+          <div class="promo-countdown-box expired">
+            <span class="promo-countdown-label">สถานะ</span>
+            <span class="promo-countdown-text-flat">หมดเวลาแล้ว</span>
+          </div>`;
+      } else {
+        const pad = n => String(n).padStart(2, "0");
+        const showDays = cparts.days > 0;
+        const daysHtml = showDays ? `
+          <span class="promo-countdown-unit">
+            <span class="promo-countdown-num" data-promo-num="d">${cparts.days}</span>
+            <span class="promo-countdown-text">วัน</span>
+          </span>
+          <span class="promo-countdown-sep">:</span>` : "";
+        tierCountdownHtml = `
+          <div class="promo-countdown-box${isUrgent ? " urgent" : ""}" data-promo-end="${p.end_at || ""}">
+            <span class="promo-countdown-label">${isUrgent ? "⏰ หมดเวลาในอีก" : "⏳ หมดเวลาในอีก"}</span>
+            <span class="promo-countdown-timer">
+              ${daysHtml}
+              <span class="promo-countdown-unit">
+                <span class="promo-countdown-num" data-promo-num="h">${pad(cparts.hours)}</span>
+                <span class="promo-countdown-text">ชม.</span>
+              </span>
+              <span class="promo-countdown-sep">:</span>
+              <span class="promo-countdown-unit">
+                <span class="promo-countdown-num" data-promo-num="m">${pad(cparts.minutes)}</span>
+                <span class="promo-countdown-text">นาที</span>
+              </span>
+              <span class="promo-countdown-sep">:</span>
+              <span class="promo-countdown-unit">
+                <span class="promo-countdown-num" data-promo-num="s">${pad(cparts.seconds)}</span>
+                <span class="promo-countdown-text">วิ</span>
+              </span>
+            </span>
+          </div>`;
       }
 
       return `
