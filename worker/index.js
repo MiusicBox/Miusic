@@ -1613,9 +1613,17 @@ async function handleDb(request, env, url) {
             "discount_amount", "promotion_applied", "final_total",
             "receipt_number", "created_at", "store_name", "order_type",
             "playlist_id", "playlist_name", "notes", "customer_note",
-            // 📸 Payment slip (added STEP 4): customer สามารถ set field 3 ตัวนี้ได้
-            //   (status ยัง force เป็น 'pending_verify' เสมอ — server-controlled)
-            "payment_proof_id", "payment_proof_uploaded_at",
+            // 🔒 (2026-09-28 fix H6): ลบ "payment_proof_id" + "payment_proof_uploaded_at" ออกจาก whitelist
+            //   เดิม: ลูกค้าส่ง payment_proof_id="fake-xxx" + payment_proof_uploaded_at="2026-..." ผ่าน PUT order
+            //         → หลอกแอดมินว่าอัปสลิปแล้ว (ทั้งที่ไม่ได้อัปไฟล์จริงใน R2 + ไม่มี row ใน payment_proofs table)
+            //         → แอดมินที่ไม่ระวังกด "ยืนยันสลิป" → สร้าง ZIP ส่งให้ลูกค้าฟรี
+            //   ใหม่: ลูกค้าต้องอัปสลิปผ่าน POST /api/orders/:id/payment-proof เท่านั้น
+            //         (มี ownership verify + R2 upload จริง + INSERT row ใน payment_proofs + rate limiting)
+            //         fields ทั้งสองนี้ถูก set โดย server-side ในบรรทัด ~4549-4551 เท่านั้น
+            //   ผลกระทบระบบเดิม: 0%
+            //     - frontend (app-cart.js) ไม่ได้ส่ง 2 fields นี้ผ่าน PUT order
+            //     - frontend อัปสลิปผ่าน endpoint /payment-proof ซึ่งไม่เกี่ยวกับ whitelist นี้
+            //     - ลูกค้ายังเห็นสถานะสลิปของตัวเองได้ปกติ (อ่านจาก order ที่ server บันทึก)
           ]);
           const filteredData = {};
           for (const key of Object.keys(data)) {
@@ -2218,10 +2226,38 @@ async function handleOrderZipStart(request, env) {
   }
   const order = orderDoc.data;
 
-  // ⚠️ ไม่ตรวจ order.status — เหมือน behavior เดิมของ createOrderZip ใน orders.js
+  // 🔒 (2026-09-28 fix H9): บล็อกการสร้าง ZIP สำหรับออเดอร์ที่ถูกยกเลิกหรือปฏิเสธการชำระ
+  //   เดิม: ไม่ตรวจ order.status เลย → sub-admin สามารถสร้าง ZIP ให้ลูกค้าที่ออเดอร์ถูก
+  //         cancel/reject ได้ → ลูกค้าได้เพลงฟรีแม้ไม่ได้จ่ายเงินจริง
+  //   ใหม่: บล็อกเฉพาะ status ที่เป็น "ไม่จ่ายเงินจริง" เท่านั้น (cancelled, rejected)
+  //         อนุญาต status อื่น ๆ ทั้งหมด (pending_verify, processing, completed)
+  //
+  //   หมายเหตุสำคัญ (กฎ #1: ห้าม break ระบบเดิม):
+  //     flow เดิม confirmPaymentAndCreateZip() ใน orders.js (บรรทัด ~2276) เรียก
+  //     createOrderZip() (ซึ่งเรียก /api/order-zip/start) ตอน order.status ยังเป็น
+  //     'pending_verify' → ห้ามบังคับให้เป็น 'processing' เท่านั้น ไม่งั้นจะ break flow เดิม
+  //   วิธีแก้: อนุญาตทั้ง pending_verify + processing + completed
+  //           บล็อกเฉพาะ cancelled + rejected เท่านั้น
+  //
+  //   ผลกระทบระบบเดิม: 0%
+  //     - main admin ยังสร้าง ZIP ได้ปกติ (status='pending_verify' → 'processing' → 'completed')
+  //     - sub-admin ยังสร้าง ZIP ได้สำหรับออเดอร์ปกติ (status='pending_verify' ที่ผ่านการตรวจสอบ)
+  //     - sub-admin ไม่สามารถสร้าง ZIP ให้ออเดอร์ที่ถูก cancel/reject ได้อีก
+  //   ข้อยกเว้น: ถ้า admin ตั้งใจ cancel แล้วเปลี่ยนใจ → ต้องเปลี่ยน status กลับเป็น
+  //     'pending_verify' หรือ 'processing' ก่อน แล้วค่อยสร้าง ZIP
+  const BLOCKED_ZIP_STATUSES = new Set(["cancelled", "rejected"]);
+  if (BLOCKED_ZIP_STATUSES.has(String(order.status || "").toLowerCase())) {
+    return jsonResponse({
+      error: `ไม่สามารถสร้าง ZIP สำหรับออเดอร์ที่ถูก "${order.status}" ได้ — กรุณาเปลี่ยนสถานะออเดอร์กลับเป็น "รอตรวจสอบ" หรือ "กำลังดำเนินการ" ก่อน`,
+      code: "zip/blocked-status"
+    }, 403);
+  }
+
+  // ⚠️ (เดิม 2026-09-22): ไม่ตรวจ order.status — เหมือน behavior เดิมของ createOrderZip ใน orders.js
   // เพราะ confirmPaymentAndCreateZip() เรียก createOrderZip() ก่อนเปลี่ยน status เป็น 'processing'
   // ตอนนั้นยังเป็น 'pending_verify' อยู่ → ถ้าเช็ค status จะ block flow นี้
   // (ตัวอนาคต: ถ้าต้องการ restrict เฉพาะบาง status ต้องแก้ caller ให้ update status ก่อนเรียก)
+  // 🔧 (2026-09-28 fix H9): เพิ่ม block เฉพาะ cancelled/rejected ด้านบน — ไม่ block pending_verify/processing/completed
 
   // ถ้ามี ZIP เดิมอยู่แล้ว (zip_status='ready' + zip_download_url) → คืน URL เดิม ไม่สร้างใหม่
   if (order.zip_status === "ready" && order.zip_download_url) {
@@ -4848,6 +4884,79 @@ export default {
       } catch (auditErr) {
         // ถ้าตาราง audit_log ไม่มี → log แล้วข้ามไป (ไม่ block cron)
         console.warn("[cleanup] audit_log cleanup failed:", auditErr?.message || auditErr);
+      }
+
+      // 🧹 (2026-09-28 fix H2): ลบ download_tokens ที่หมดอายุแล้ว อัตโนมัติ
+      //   เดิม: ไม่มี cleanup → download_tokens table บวมเรื่อย ๆ → D1 storage โต + reads ช้า
+      //   ใหม่: ลบ rows ที่ expires_at < now (รวม used และ unused)
+      //   - รันทุก 6 ชม. (เหมือน ZIP cleanup + audit_log cleanup)
+      //   - ลบเฉพาะ token ที่หมดอายุ → ลูกค้าที่ token ยังไม่หมดอายุ ไม่กระทบ
+      //   - ผลกระทบระบบเดิม: 0%
+      //     - token ที่ถูกใช้แล้ว (used_at IS NOT NULL) และหมดอายุ → ลบได้ (history ไม่จำเป็น)
+      //     - token ที่ยังไม่ถูกใช้ (used_at IS NULL) และหมดอายุ → ลบได้ (ใช้ไม่ได้อยู่แล้ว)
+      try {
+        const tokenNow = new Date().toISOString();
+        const tokenResult = await env.DB.prepare(
+          "DELETE FROM download_tokens WHERE expires_at < ?"
+        ).bind(tokenNow).run();
+        const tokenDeletedCount = tokenResult?.meta?.changes || 0;
+        if (tokenDeletedCount > 0) {
+          console.log(`[cleanup] Deleted ${tokenDeletedCount} expired download_tokens`);
+        }
+      } catch (tokenErr) {
+        // ถ้าตาราง download_tokens ไม่มี (DB เก่า) → log แล้วข้ามไป (ไม่ block cron)
+        console.warn("[cleanup] download_tokens cleanup failed:", tokenErr?.message || tokenErr);
+      }
+
+      // 🧹 (2026-09-28 fix M5): ลบ order_zip_jobs ที่ค้าง status='preparing' เกิน 2 ชม.
+      //   เดิม: ไม่มี cleanup → ถ้า user ปิด tab ระหว่าง append → multipart upload ค้างใน R2
+      //         → storage leak + R2 quota หมดเร็ว
+      //   ใหม่: ค้นหา jobs ที่ status='preparing' + updated_at < (now - 2h) → abort multipart + delete row
+      //   - รันทุก 6 ชม. (เหมือน ZIP + audit_log + download_tokens cleanup)
+      //   - LIMIT 50 ต่อรอบ → กัน cron timeout (เหมือน ZIP cleanup LIMIT 100)
+      //   - ผลกระทบระบบเดิม: 0%
+      //     - jobs ที่กำลังทำงานอยู่ (updated_at ภายใน 2 ชม.) → ไม่ถูกลบ
+      //     - jobs ที่ stuck จริง (เกิน 2 ชม.) → abort multipart + delete row → R2 self-heal
+      try {
+        const stuckCutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(); // 2 ชม.
+        const stuckJobs = await env.DB.prepare(
+          "SELECT job_id, bucket_key FROM order_zip_jobs " +
+          "WHERE status = 'preparing' AND updated_at < ? " +
+          "ORDER BY updated_at ASC LIMIT 50"
+        ).bind(stuckCutoff).all();
+
+        if (stuckJobs?.results?.length > 0) {
+          console.log(`[cleanup] Found ${stuckJobs.results.length} stuck ZIP jobs (older than 2h)`);
+          let stuckSuccess = 0;
+          let stuckError = 0;
+          for (const job of stuckJobs.results) {
+            try {
+              // ลอง abort multipart upload (ถ้ายัง active ใน R2)
+              // — ใช้ try/catch เพราะบาง multipart อาจถูก abort ไปแล้วโดย worker
+              if (job.bucket_key) {
+                try {
+                  // R2 multipart abort ใช้ uploadId (job_id) — ถ้า fail แสดงว่าถูก abort ไปแล้ว
+                  await env.BUCKET.abortMultipartUpload(job.bucket_key, job.job_id);
+                } catch (r2AbortErr) {
+                  // ไม่อันตราย — multipart อาจถูก abort ไปแล้ว หรือ bucket_key ไม่ตรง
+                  console.warn(`[cleanup] R2 multipart abort failed for ${job.job_id} (may already be aborted):`, r2AbortErr?.message || r2AbortErr);
+                }
+              }
+              // ลบ row ใน D1 (ไม่สนใจว่า R2 abort สำเร็จหรือไม่ — row ต้องถูกลบเพื่อกัน stuck ต่อไป)
+              await env.DB.prepare(
+                "DELETE FROM order_zip_jobs WHERE job_id = ?"
+              ).bind(job.job_id).run();
+              stuckSuccess += 1;
+            } catch (stuckErr) {
+              console.error(`[cleanup] Failed to cleanup stuck ZIP job ${job.job_id}:`, stuckErr?.message || stuckErr);
+              stuckError += 1;
+            }
+          }
+          console.log(`[cleanup] Stuck ZIP jobs cleanup: ${stuckSuccess} cleaned, ${stuckError} failed`);
+        }
+      } catch (stuckErr) {
+        // ถ้าตาราง order_zip_jobs ไม่มี → log แล้วข้ามไป
+        console.warn("[cleanup] order_zip_jobs stuck cleanup failed:", stuckErr?.message || stuckErr);
       }
     } catch (err) {
       // cron error ไม่ควรทำให้ Cloudflare ลบ trigger → log แล้วจบ
