@@ -3345,24 +3345,48 @@ function hidePromotionsView() {
 function updatePromoCountdowns() {
   // === อัปเดตแบนเนอร์หน้าแรก ===
   // 🚀 (2026-09-28 fix A1): อัปเดต countdown ใน banner ที่มี data-promo-end (เดินทุกวินาที)
+  // 🐛 (2026-09-29 fix A2): ห้ามใช้ el.textContent = ... เพราะจะทำลาย <span class="promo-countdown-num">
+  //     ที่ทำสี cyberpunk (cyan + glow) ทิ้ง → กลายเป็น text สีขาวธรรมดา
+  //     อาการ: แวบเห็นสีฟ้าสวย (ตอน render ครั้งแรก) → 1 วินาทีต่อมากลายสีขาว
+  //     แก้โดยอัปเดตเฉพาะ [data-promo-num] spans เหมือน #promotionsView branch
   const banner = document.getElementById("promoHomeBanner");
   if (banner && !banner.hidden) {
     // หาทุก countdown div ใน banner ที่มี data-promo-end
     const bannerCountdowns = banner.querySelectorAll("[data-promo-end]");
     let anyExpired = false;
+    let needRerender = false;
     bannerCountdowns.forEach(el => {
       const endIso = el.getAttribute("data-promo-end");
       if (!endIso) return;
       const p = promo_getCountdownParts(endIso);
       if (p.expired) {
         anyExpired = true;
-      } else {
-        // อัปเดต text
-        el.textContent = `⏰ ${promo_formatCountdownCompact(endIso)}`;
+        return;
       }
+      // toggle urgent class ถ้าสถานะเปลี่ยน (cyan → pink)
+      const wasUrgent = el.classList.contains("urgent");
+      if (wasUrgent !== p.urgent) {
+        el.classList.toggle("urgent", p.urgent);
+      }
+      // ถ้าจำนวน "วัน" เปลี่ยน (0→1 หรือ 1→0) → structure เปลี่ยน → re-render
+      const hasDaysSpan = !!el.querySelector('[data-promo-num="d"]');
+      if (hasDaysSpan !== (p.days > 0)) {
+        needRerender = true;
+        return;
+      }
+      // อัปเดตเฉพาะตัวเลขในแต่ละ unit span (ไม่ทำลาย structure สี cyberpunk)
+      const pad = n => String(n).padStart(2, "0");
+      const dEl = el.querySelector('[data-promo-num="d"]');
+      const hEl = el.querySelector('[data-promo-num="h"]');
+      const mEl = el.querySelector('[data-promo-num="m"]');
+      const sEl = el.querySelector('[data-promo-num="s"]');
+      if (dEl) dEl.textContent = p.days;
+      if (hEl) hEl.textContent = pad(p.hours);
+      if (mEl) mEl.textContent = pad(p.minutes);
+      if (sEl) sEl.textContent = pad(p.seconds);
     });
-    if (anyExpired) {
-      // มีโปรหมดเวลา → รีเฟรชแบนเนอร์ใหม่
+    if (anyExpired || needRerender) {
+      // มีโปรหมดเวลา หรือ structure เปลี่ยน (วันเพิ่ม/หาย) → รีเฟรชแบนเนอร์ใหม่
       renderPromotionBanner();
     }
   }
