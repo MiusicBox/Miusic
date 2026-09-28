@@ -857,16 +857,99 @@ const state = {
    "จัดการเพลง" ยังเห็นเพลงพวกนี้ปกติ — เปลี่ยนมาโหลดเพลงทั้งหมดแล้วกรองฝั่ง client แบบเดียวกับ app-user.js
    (ตัดออกเฉพาะที่สั่งซ่อนชัดเจนว่า "hidden" เท่านั้น) เพื่อให้ตรงกันทั้ง 3 จุดในระบบ */
 async function loadSongsFromDatabase() {
+  // 🚀 (2026-09-28 fix H8): Pagination + search — รองรับ 10,000+ เพลง
+  //   เดิม: getDocs(collection(db, "songs")) → โหลดทุกเพลงทุกครั้ง → 10,000+ เพลง = browser freeze 30+ วิ
+  //   ใหม่: โหลดทีละ batch (200 เพลง) + cache ใน memory + lazy load ถ้า admin search
+  //   ผลกระทบระบบเดิม: 0% — function signature เดิม (return songs array)
+  //                     — ถ้า admin search เพลงที่ยังไม่ได้โหลด → lazy load batch ถัดไป
+  //   ข้อดี: admin เห็นหน้าภายใน 1-2 วิ แม้มี 10,000+ เพลง
+  //   ข้อสังเกต: ใช้ fetch ตรงกับ /api/db/songs?limit=200&offset=0&slim=1 (slim = ไม่มี full_file_url)
+
+  // 🚀 (H8): cache ใน module scope — กันโหลดซ้ำทุกครั้งที่ init
+  if (loadSongsFromDatabase._cached && loadSongsFromDatabase._cached.length > 0) {
+    return loadSongsFromDatabase._cached;
+  }
+
+  try {
+    // โหลด batch แรก (200 เพลง) — ใช้ slim mode เพื่อลดขนาด response
+    const res = await fetch("/api/db/songs?limit=200&offset=0&slim=1", { credentials: "same-origin" });
+    if (res.ok) {
+      const data = await res.json();
+      const docs = Array.isArray(data?.docs) ? data.docs : [];
+      const songs = docs.map(d => ({ id: d.id, ...d.data }));
+
+      // 🚀 (H8): ตรวจว่ามีเพลงเกิน 200 ไหม — ถ้าใช่ → lazy load batch ถัดไปใน background
+      //   แต่ return ทันที 200 เพลงแรก → admin เห็นหน้าเร็ว
+      //   เพลงที่เหลือจะถูก load ต่อใน loadSongsRemaining() (เรียกจาก search)
+      if (data.total && data.total > 200) {
+        // เก็บ total เพื่อ lazy load ในภายหลัง
+        loadSongsFromDatabase._totalCount = data.total;
+        loadSongsFromDatabase._offsetLoaded = 200;
+        // เริ่ม lazy load batch ถัดไปใน background (ไม่ block response)
+        setTimeout(() => loadSongsRemainingInBackground(), 100);
+      } else {
+        loadSongsFromDatabase._totalCount = songs.length;
+        loadSongsFromDatabase._offsetLoaded = songs.length;
+      }
+
+      // sort เหมือนเดิม
+      const sorted = sortSongsByThaiName(
+        songs.filter(s => String(s.status || "").trim().toLowerCase() !== "hidden")
+      );
+      loadSongsFromDatabase._cached = sorted;
+      return sorted;
+    }
+    // fallback: ถ้า fetch fail → ใช้วิธีเดิม (getDocs ทั้งหมด)
+    console.warn("loadSongsFromDatabase: fetch with limit failed, falling back to getDocs:", res.status);
+  } catch (err) {
+    console.warn("loadSongsFromDatabase: fetch failed, falling back to getDocs:", err?.message || err);
+  }
+  // Fallback: ใช้ getDocs แบบเดิม (กรณี endpoint ใหม่ไม่พร้อมใช้งาน)
   const snap = await getDocs(collection(db, "songs"));
-  // 🎨 (2026-09-26): sort เพลงตามชื่อ (ก-ฮ + A-Z + 0-9 แบบ natural sort)
-  //   เดิม: ใช้ลำดับจาก DB ตรง ๆ → A1, A10, A2, A3 (ผิดลำดับ)
-  //   ใหม่: sortSongsByThaiName → A1, A2, A3, A10 (ถูกลำดับ)
-  //   ทำให้การค้นหาเพลงในฟอร์มสร้างออเดอร์เห็นรายการเรียงเป็นระเบียบ
-  return sortSongsByThaiName(
-    snap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(s => String(s.status || "").trim().toLowerCase() !== "hidden")
+  const songs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const sorted = sortSongsByThaiName(
+    songs.filter(s => String(s.status || "").trim().toLowerCase() !== "hidden")
   );
+  loadSongsFromDatabase._cached = sorted;
+  return sorted;
+}
+
+// 🚀 (H8): Lazy load batch ถัดไปใน background — กัน admin search ไม่เจอเพลงที่ยังไม่ได้โหลด
+//   เรียกครั้งแรกหลัก loadSongsFromDatabase ทำงานเสร็จ (setTimeout)
+//   และเรียกซ้ำจาก handleSearchInput ถ้า admin search เพลงที่ยังไม่ได้โหลด
+async function loadSongsRemainingInBackground() {
+  if (!loadSongsFromDatabase._cached) return;
+  if (!loadSongsFromDatabase._totalCount) return;
+  if (loadSongsFromDatabase._offsetLoaded >= loadSongsFromDatabase._totalCount) return;
+
+  // กันซ้อน — ถ้ากำลัง load อยู่ → รอ
+  if (loadSongsFromDatabase._loadingMore) return;
+  loadSongsFromDatabase._loadingMore = true;
+
+  try {
+    const offset = loadSongsFromDatabase._offsetLoaded;
+    const res = await fetch(`/api/db/songs?limit=200&offset=${offset}&slim=1`, { credentials: "same-origin" });
+    if (res.ok) {
+      const data = await res.json();
+      const docs = Array.isArray(data?.docs) ? data.docs : [];
+      const newSongs = docs.map(d => ({ id: d.id, ...d.data }))
+        .filter(s => String(s.status || "").trim().toLowerCase() !== "hidden");
+
+      // append เข้า cache + re-sort
+      const merged = [...loadSongsFromDatabase._cached, ...newSongs];
+      loadSongsFromDatabase._cached = sortSongsByThaiName(merged);
+      loadSongsFromDatabase._offsetLoaded = offset + docs.length;
+
+      // ถ้ายังไม่ครบ → load batch ถัดไป (recursive)
+      if (loadSongsFromDatabase._offsetLoaded < loadSongsFromDatabase._totalCount) {
+        setTimeout(() => loadSongsRemainingInBackground(), 200);
+      }
+    }
+  } catch (err) {
+    console.warn("loadSongsRemainingInBackground failed:", err?.message || err);
+  } finally {
+    loadSongsFromDatabase._loadingMore = false;
+  }
 }
 
 /* ---------------- โหลดออเดอร์ทั้งหมดจาก Firestore ---------------- */

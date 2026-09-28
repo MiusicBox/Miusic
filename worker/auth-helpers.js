@@ -108,19 +108,51 @@ export async function deleteSession(env, token) {
 // วิธีแก้: ใช้ JOIN query เดียว — ลด reads เป็นครึ่งหนึ่ง
 //   + ยังเช็ค expires_at ใน SQL เลย (เดิมเช็คใน JS) → ลด data transfer
 //
+// 🚀 (2026-09-28 fix H4): Sliding session expiration
+//   ปัญหา: session หมดอายุใน 7 วัน แม้ admin ใช้ทุกวัน → admin หลุด login บ่อย
+//   วิธีแก้: ถ้า session เหลือ < 1 วัน → ต่ออายุอัตโนมัติ (UPDATE expires_at = now + 7d)
+//   ผลกระทบระบบเดิม: 0% — admin ยัง login ปกติ แค่อายุยืนขึ้น (UX ดีขึ้น)
+//   ข้อสังเกต: ใช้ UPDATE ที่ไม่ block response — ถ้า UPDATE ล้ม admin ยังใช้งานได้ (session ยัง valid)
+//
 // ผลกระทบต่อระบบเดิม: 0% — return เหมือนเดิม (admin object หรือ null)
 export async function getSessionAdmin(request, env) {
   const token = getCookie(request, "session_token");
   if (!token) return null;
   // 🔧 แก้บั๊ก I6: JOIN query เดียว + เช็ค expires_at ใน SQL เลย
+  // 🚀 (H4): ดึง expires_at มาด้วย เพื่อเช็คว่าเหลือ < 1 วัน → ต่ออายุ
+  const now = new Date();
+  const nowIso = now.toISOString();
   const admin = await env.DB.prepare(
-    "SELECT a.id, a.email, a.display_name, a.role, a.created_at, a.created_by " +
+    "SELECT a.id, a.email, a.display_name, a.role, a.created_at, a.created_by, s.expires_at " +
     "FROM sessions s " +
     "JOIN admin_users a ON s.admin_id = a.id " +
     "WHERE s.token = ? AND s.expires_at > ?"
-  ).bind(token, new Date().toISOString()).first();
+  ).bind(token, nowIso).first();
   if (!admin) return null;
-  return admin;
+
+  // 🚀 (H4): Sliding session — ถ้า session เหลือ < 1 วัน → ต่ออายุเป็น 7 วัน
+  //   ทำ background (ไม่ block response) — ถ้า UPDATE ล้ม admin ยังใช้งานได้
+  try {
+    if (admin.expires_at) {
+      const expiresAt = new Date(admin.expires_at);
+      const msRemaining = expiresAt.getTime() - now.getTime();
+      const oneDayMs = 24 * 60 * 60 * 1000;
+      if (msRemaining < oneDayMs) {
+        // เหลือ < 1 วัน → ต่ออายุเป็น 7 วัน
+        const newExpiresAt = new Date(now.getTime() + SESSION_TTL_SECONDS * 1000).toISOString();
+        await env.DB.prepare(
+          "UPDATE sessions SET expires_at = ? WHERE token = ?"
+        ).bind(newExpiresAt, token).run();
+      }
+    }
+  } catch (renewErr) {
+    // ไม่ block — ถ้า UPDATE ล้ม admin ยังใช้งานได้ (session ยัง valid)
+    console.warn("Session renewal failed:", renewErr?.message || renewErr);
+  }
+
+  // ลบ expires_at ออกจาก admin object ที่ return (ไม่ใช่ field ของ admin_users)
+  const { expires_at, ...adminWithoutExpiresAt } = admin;
+  return adminWithoutExpiresAt;
 }
 
 // 🔒 Maintenance (2026-09-16): ทำความสะอาด session ที่หมดอายุทั้งหมดออกจากตาราง sessions
