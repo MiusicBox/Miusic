@@ -4887,21 +4887,16 @@ export default {
     }
 
     // 🔴 POST /api/admin/orders/:id/verify-payment  (ADMIN ONLY)
-    //   Body: { status: 'verified' | 'rejected', reject_reason?: string, amount_received?: number, auto_create_zip?: boolean }
+    //   Body: { status: 'verified' | 'rejected', reject_reason?: string, amount_received?: number }
     //   Flow:
     //     1. require admin session
     //     2. fetch proof row by id (query param ?proof_id=xxx)
     //     3. fetch order, check status='pending_verify'
     //     4. UPDATE payment_proofs: status, verified_at, verified_by, reject_reason
     //     5. UPDATE order.payment_proof_status (mirror for fast filter)
-    //     6. If verified + auto_create_zip=true (NEW 2026-09-28 H1):
-    //        → Worker auto-trigger createOrderZip ใน background (ctx.waitUntil)
-    //        → update order.status='processing' atomic (ทำใน worker ไม่ต้องรอ client)
-    //        → ลด manual step ของแอดมินจาก 3 → 1 (verify แล้ว ZIP เสร็จเอง)
-    //     7. If verified + auto_create_zip=false (default — flow เดิม):
-    //        → ไม่ auto-trigger createOrderZip (admin จะกดเปลี่ยน status เองในหน้า orders เหมือนเดิม)
+    //     6. If verified → ไม่ auto-trigger createOrderZip (admin จะกดเปลี่ยน status เองในหน้า orders เหมือนเดิม)
     //        → ป้องกันการแตะ orders.js / confirmPaymentAndCreateZip โดยตรง (rule #1: ห้ามแตะระบบเดิม)
-    //     8. writeAuditLog
+    //     7. writeAuditLog
     if (url.pathname.startsWith("/api/admin/orders/") && url.pathname.endsWith("/verify-payment") && request.method === "POST") {
       if (!env.DB) return jsonResponse({ error: "D1 binding not configured" }, 500);
       const admin = await getSessionAdmin(request, env);
@@ -4918,12 +4913,6 @@ export default {
       }
       const rejectReason = newStatus === "rejected" ? String(body?.reject_reason || "").trim().slice(0, 500) : null;
       const amountReceived = body?.amount_received != null ? Number(body.amount_received) : null;
-      // 🚀 (2026-09-28 fix H1): Optional flag — client ส่ง auto_create_zip=true เพื่อเปิดใช้ flow ใหม่
-      //   เดิม: admin ต้องทำ 3 step (verify → change status → send WhatsApp)
-      //   ใหม่: admin กด "ยืนยันสลิป" ครั้งเดียว → Worker auto-trigger createOrderZip + update status
-      //   ผลกระทบระบบเดิม: 0% — ถ้า client ไม่ส่ง flag → flow เดิม (admin เปลี่ยน status เอง)
-      //                     — ถ้า client ส่ง flag → Worker ทำทุกอย่างให้ (ลด manual step)
-      const autoCreateZip = newStatus === "verified" && body?.auto_create_zip === true;
 
       // fetch proof
       const proofRow = await env.DB.prepare(
@@ -4952,10 +4941,6 @@ export default {
       let customerWhatsapp = proofRow.whatsapp || null;
       let customerName = proofRow.customer_name || null;
       let orderFinalTotal = null;
-      // 🚀 (2026-09-28 fix H1): flag สำหรับบอก client ว่า Worker ได้ auto-trigger createOrderZip แล้ว
-      //   ถ้า true → client ไม่ต้องเรียก createOrderZip อีก (ลด manual step)
-      //   ถ้า false → client ใช้ flow เดิม (เรียก confirmPaymentAndCreateZip เอง)
-      let autoZipTriggered = false;
       if (orderRow?.data) {
         try {
           const orderData = JSON.parse(orderRow.data);
@@ -4964,40 +4949,15 @@ export default {
           orderData.payment_proof_verified_by = admin.id;
           if (rejectReason) orderData.payment_proof_reject_reason = rejectReason;
           orderData.updated_at = verifiedAt;
-
-          // 🚀 (2026-09-28 fix H1): ถ้า auto_create_zip=true → เปลี่ยน status='processing' atomic
-          //   + ใส่ status_history + payment_verified_at + zip_status='preparing'
-          //   → Worker finalize จะ detect zip_status='preparing' และทำต่อ (H5 atomic)
-          //   → ลด manual step ของแอดมินจาก 3 → 1
-          //   ผลกระทบระบบเดิม: 0% — ถ้า autoCreateZip=false → ไม่เปลี่ยน status (flow เดิม)
-          if (autoCreateZip && newStatus === "verified" && orderData.status === "pending_verify") {
-            orderData.status = "processing";
-            orderData.payment_verified_at = verifiedAt;
-            // บอก client ว่ากำลังสร้าง ZIP อยู่เบื้องหลัง
-            orderData.zip_status = "preparing";
-            orderData.zip_error = "";
-            // status_history
-            if (Array.isArray(orderData.status_history)) {
-              orderData.status_history.push({
-                status: "processing",
-                at: verifiedAt,
-                note: "แอดมินยืนยันสลิป + auto-create ZIP",
-                by: admin.id,
-                by_name: admin.display_name || admin.email,
-              });
-            }
-            autoZipTriggered = true;
-          } else {
-            // status_history (flow เดิม)
-            if (Array.isArray(orderData.status_history)) {
-              orderData.status_history.push({
-                status: orderData.status,
-                at: verifiedAt,
-                note: newStatus === "verified" ? "แอดมินยืนยันสลิปการโอน" : `แอดมินปฏิเสธสลิป${rejectReason ? ": " + rejectReason : ""}`,
-                by: admin.id,
-                by_name: admin.display_name || admin.email,
-              });
-            }
+          // status_history
+          if (Array.isArray(orderData.status_history)) {
+            orderData.status_history.push({
+              status: orderData.status,
+              at: verifiedAt,
+              note: newStatus === "verified" ? "แอดมินยืนยันสลิปการโอน" : `แอดมินปฏิเสธสลิป${rejectReason ? ": " + rejectReason : ""}`,
+              by: admin.id,
+              by_name: admin.display_name || admin.email,
+            });
           }
           await env.DB.prepare(
             `UPDATE documents SET data=?, updated_at=? WHERE collection='orders' AND id=?`
@@ -5011,26 +4971,6 @@ export default {
         }
       }
 
-      // 🚀 (2026-09-28 v3 fix CPU limit): Cron-only trigger (ไม่ใช้ fetch)
-      //   v1: trigger handleOrderZipStart ใน ctx.waitUntil → Worker ถูก kill ที่ 30s → ค้าง
-      //   v2: trigger ผ่าน fetch self-invoke → Cloudflare Free block Worker-to-self fetch → ค้าง
-      //   v3 (current): enqueue เท่านั้น — ปล่อยให้ cron (ทุก 1 นาที) เป็นคน trigger
-      //   ผลกระทบ: admin ต้องรอ ≤ 1 นาที หลังกดยืนยันสลิป ถึงจะเริ่มสร้าง ZIP
-      //   ผลกระทบระบบเดิม: 0% — ถ้า queue table ไม่มี → fallback ใช้ flow เดิม
-      let queueInfo = { queued: false, position: null, triggeredNow: false };
-      if (autoZipTriggered) {
-        try {
-          // enqueue เท่านั้น — cron จะ trigger ในรอบถัดไป (≤ 1 นาที)
-          queueInfo = await enqueueZipOrder(env, orderId, admin.id, request);
-          // 🚀 v3: ปล่อยให้ cron เป็นคน trigger (ไม่ใช้ fetch — ปลอดภัยบน Free plan)
-          console.log(`[H1 v3] Order ${orderId} enqueued at position ${queueInfo.position} — cron will trigger in ≤ 1 minute`);
-        } catch (triggerErr) {
-          // ถ้า enqueue ล้ม → log แต่ไม่ block response
-          // admin ยังสามารถกด "ยืนยันโอนแล้ว" ในหน้า orders เองได้ (fallback สู่ flow เดิม)
-          console.error(`[H1 v3] Failed to enqueue for order ${orderId}:`, triggerErr?.message || triggerErr);
-        }
-      }
-
       // audit log
       try {
         ctx.waitUntil(writeAuditLog(
@@ -5038,9 +4978,9 @@ export default {
           newStatus === "verified" ? "status_change" : "status_change",
           "payment_proofs",
           proofId,
-          `Order ${orderId.slice(0, 8)}... — ${newStatus}${autoZipTriggered ? " + auto-zip" : ""}`,
+          `Order ${orderId.slice(0, 8)}... — ${newStatus}`,
           { status: "pending", verified_at: null },
-          { status: newStatus, verified_at: verifiedAt, verified_by: admin.id, reject_reason: rejectReason, auto_create_zip: autoZipTriggered }
+          { status: newStatus, verified_at: verifiedAt, verified_by: admin.id, reject_reason: rejectReason }
         ));
       } catch {}
 
@@ -5052,14 +4992,6 @@ export default {
         verified_at: verifiedAt,
         verified_by: admin.id,
         order_updated: orderUpdateOk,
-        // 🚀 (2026-09-28 fix H1 + Sequential Queue): บอก client สถานะ queue
-        //   auto_zip_triggered: true ถ้า Worker เริ่มทำ ZIP (ทันที หรือ queued)
-        //   queue_position: 1 = กำลังทำ, 2 = รอ 1 ออเดอร์, 3 = รอ 2 ออเดอร์ ฯลฯ
-        auto_zip_triggered: autoZipTriggered,
-        queue_position: queueInfo.position,
-        queue_status: queueInfo.queued
-          ? (queueInfo.triggeredNow ? "processing_now" : "queued_waiting")
-          : "not_queued",
         // 📸 (added) snapshot สำหรับ frontend ใช้สร้าง WhatsApp message ส่งลูกค้า
         customer_whatsapp: customerWhatsapp,
         customer_name: customerName,
@@ -5072,11 +5004,7 @@ export default {
           : null,
         // hint สำหรับ client: ถ้า verified → admin ควรไปกดเปลี่ยน status ในหน้า orders เอง
         next_action_hint: newStatus === "verified"
-          ? (autoZipTriggered
-            ? (queueInfo.position > 1
-              ? `Worker อยู่ในคิวที่ ${queueInfo.position} — รอ ${(queueInfo.position - 1) * 2}-${(queueInfo.position - 1) * 4} นาที (สร้างทีละออเดอร์)`
-              : "Worker กำลังสร้าง ZIP — รอ 1-2 นาที")
-            : "ไปที่หน้าจัดการออเดอร์ → คลิก 'ยืนยันโอนแล้ว' เพื่อสร้าง ZIP ส่งลูกค้า")
+          ? "ไปที่หน้าจัดการออเดอร์ → คลิก 'ยืนยันโอนแล้ว' เพื่อสร้าง ZIP ส่งลูกค้า"
           : "ลูกค้าจะสามารถอัปโหลดสลิปใหม่ได้ — กดปุ่มด้านล่างเพื่อเปิด WhatsApp แจ้งลูกค้า",
       }, 200);
     }

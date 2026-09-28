@@ -3410,9 +3410,8 @@ async function renderPaymentsList() {
 
 async function verifyPayment(proofId, orderId) {
   // 🎨 (2026-09-26): ใช้ adminConfirm แทน confirm() — สไตล์เดียวกับเว็บ
-  // 🚀 (2026-09-28 fix H1 + Sequential Queue): อัปเดต message — Worker ทำทีละออเดอร์ (sequential)
   const ok = await adminConfirm(
-    "ยืนยันว่าสลิปนี้ถูกต้อง?\n\nหลังยืนยัน: Worker จะสร้าง ZIP ส่งลูกค้าให้อัตโนมัติ — ถ้ามีออเดอร์อื่นรออยู่ Worker จะทำทีละออเดอร์ (ปลอดภัยกว่า Free plan 30s limit)\n\nหลังกดยืนยัน → ระบบจะเปิดหน้าต่างให้คุณตรวจสอบข้อความ + กดเปิด WhatsApp ส่งลูกค้าเอง (แจ้งสถานะ — ไม่ต้องส่งลิงก์ ZIP เพราะระบบจะ auto-generate ให้)",
+    "ยืนยันว่าสลิปนี้ถูกต้อง?\n\nหลังยืนยัน: ลูกค้าจะยังไม่ได้รับไฟล์ — แอดมินต้องไปกดเปลี่ยนสถานะออเดอร์เป็น 'processing' เพื่อสร้าง ZIP ส่งลูกค้าเองในหน้าจัดการออเดอร์ (เหมือนเดิม)\n\nหลังกดยืนยัน → ระบบจะเปิดหน้าต่างให้คุณตรวจสอบข้อความ + กดเปิด WhatsApp ส่งลูกค้าเอง",
     { title: "ยืนยันสลิปการโอนเงิน", okText: "ยืนยันสลิป", success: true }
   );
   if (!ok) return;
@@ -3421,34 +3420,14 @@ async function verifyPayment(proofId, orderId) {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      // 🚀 (2026-09-28 fix H1): ส่ง auto_create_zip=true → Worker auto-trigger createOrderZip
-      //   + update status='processing' atomic → admin ไม่ต้องไปกดเปลี่ยน status เอง
-      body: JSON.stringify({ status: "verified", auto_create_zip: true }),
+      body: JSON.stringify({ status: "verified" }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       showToast("ยืนยันไม่สำเร็จ: " + (data?.error || res.statusText), "error");
       return;
     }
-    // 🚀 (2026-09-28 fix H1 + Sequential Queue): toast แยกกรณี
-    //   - queue_position = 1 → Worker กำลังทำอยู่
-    //   - queue_position > 1 → รอในคิว (ทำทีละออเดอร์)
-    if (data?.auto_zip_triggered) {
-      const pos = data?.queue_position || 1;
-      if (pos > 1) {
-        // อยู่ในคิว → บอก admin ว่าต้องรอ
-        const waitMins = (pos - 1) * 2;
-        const waitMinsMax = (pos - 1) * 4;
-        showToast(`✓ ยืนยันสลิปแล้ว — Worker อยู่ในคิวที่ ${pos} (รอ ${waitMins}-${waitMinsMax} นาที — สร้างทีละออเดอร์)`, "success");
-      } else {
-        // กำลังทำอยู่
-        showToast("✓ ยืนยันสลิปแล้ว — Worker กำลังสร้าง ZIP (1-2 นาที)", "success");
-      }
-    } else {
-      // fallback: Worker ไม่ auto-trigger (เช่น order.status ไม่ใช่ pending_verify)
-      // → admin ใช้ flow เดิม (ไปกด "ยืนยันโอนแล้ว" ในหน้าออเดอร์เอง)
-      showToast("✓ ยืนยันสลิปแล้ว — ไปหน้าออเดอร์เพื่อเปลี่ยนสถานะเป็น processing", "success");
-    }
+    showToast("✓ ยืนยันสลิปแล้ว — ไปหน้าออเดอร์เพื่อเปลี่ยนสถานะเป็น processing", "success");
     await renderPaymentsList();
     await refreshPaymentsBadge();
     // 📸 (replaced auto-open with manual modal) — แสดง modal ให้ admin ตรวจสอบข้อความก่อนคลิกเปิด WhatsApp เอง
