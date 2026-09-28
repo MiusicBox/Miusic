@@ -238,8 +238,10 @@ async function init() {
   //   - ที่นี่ดึง cache นั้นมาเก็บใน STATE.promotions เพื่อใช้ในฝั่ง UI โดยตรง
   //   - ไม่กระทบระบบ cart (cart จะ fetchActivePromotions(true) บังคับ refresh ใหม่ตอน checkout อยู่แล้ว)
   //   - ถ้าไม่มีโปรโมชั่น active → STATE.promotions = [] (empty array) — หน้าพรีวิวจะแสดง empty state
+  //   🚀 (2026-09-28 fix H-7): forceRefresh=true เพื่อข้าม cache ที่อาจเก่า → แน่ใจว่าเห็น tiered promo
   try {
-    STATE.promotions = await fetchActivePromotions();
+    STATE.promotions = await fetchActivePromotions(true);
+    console.log("[promo] Loaded promotions for view:", STATE.promotions.length, STATE.promotions.map(p => p.type));
   } catch (e) {
     console.warn("โหลด promotions สำหรับหน้าพรีวิวไม่สำเร็จ — หน้าโปรโมชั่นจะแสดง empty state", e);
     STATE.promotions = [];
@@ -3268,8 +3270,16 @@ function showPromotionsView() {
   // แสดง promotionsView
   const view = document.getElementById("promotionsView");
   if (view) view.style.display = "block";
-  // วาดการ์ดใหม่ทุกครั้งที่เปิด (เผื่อ cache หมดอายุ)
-  renderPromotionsView();
+  // 🚀 (2026-09-28 fix H-7): refresh promotions ทุกครั้งที่เปิดหน้า (กัน cache เก่า)
+  //   ใช้ .then() เพราะ showPromotionsView ไม่ใช่ async function
+  fetchActivePromotions(true).then(promos => {
+    STATE.promotions = promos;
+    console.log("[promo] Refreshed for view:", STATE.promotions.length, STATE.promotions.map(p => p.type));
+    renderPromotionsView();
+  }).catch(e => {
+    console.warn("[promo] Refresh failed, using cache", e);
+    renderPromotionsView();
+  });
 }
 
 // ซ่อนหน้าโปรโมชั่น (เรียกจาก click handler ของ bottom-nav)
