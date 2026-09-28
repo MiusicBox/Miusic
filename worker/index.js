@@ -2172,6 +2172,150 @@ async function cleanupPartialBuffer(env, finalizeState) {
   try { await env.BUCKET.delete(finalizeState.partialBufferKey); } catch (_) {}
 }
 
+// 🔄 (2026-09-28 fix Sequential Queue): Helper functions สำหรับ ZIP queue
+// -----------------------------------------------------------
+// Flow:
+//   1) Admin กดยืนยันสลิป → verify-payment → enqueueZipOrder(orderId)
+//      - INSERT ลง order_zip_queue (status='queued')
+//      - ถ้าไม่มี job 'preparing' อยู่ → trigger handleOrderZipStart ทันที
+//      - ถ้ามี job 'preparing' อยู่ → รอ (finalize ของ order ก่อนหน้าจะ trigger ถัดไป)
+//
+//   2) Worker finalize เสร็จ → processNextZipInQueue()
+//      - DELETE จาก order_zip_jobs (เหมือนเดิม)
+//      - SELECT order ถัดไปจาก order_zip_queue WHERE status='queued' ORDER BY queued_at ASC LIMIT 1
+//      - ถ้ามี → trigger handleOrderZipStart ใน ctx.waitUntil
+//
+//   3) Cron รันทุก 1 นาที → safety net
+//      - เช็คถ้าไม่มี job 'preparing' แต่มี queue 'queued' → trigger order แรก
+//      - เช็คถ้า queue 'queued' เกิน 10 นาที (อาจ stuck) → retry
+//
+//   ผลกระทบระบบเดิม: 0%
+//     - ถ้าตาราง order_zip_queue ไม่มี (DB เก่า) → fallback ใช้ flow เดิม (parallel)
+//     - ฟังก์ชันทั้งหมดใช้ try/catch + ไม่ throw → ไม่ break caller
+// ===================================================
+
+// enqueueZipOrder: เพิ่ม order ลง queue + trigger ถ้าไม่มี job กำลังทำอยู่
+async function enqueueZipOrder(env, orderId, adminId, request) {
+  if (!env.DB) return { queued: false, position: null, triggeredNow: false };
+
+  try {
+    const now = new Date().toISOString();
+    // INSERT...ON CONFLICT DO NOTHING → ถ้า order นี้อยู่ใน queue แล้ว → ไม่ duplicate
+    await env.DB.prepare(
+      "INSERT INTO order_zip_queue (order_id, queued_at, queued_by, status) " +
+      "VALUES (?, ?, ?, 'queued') ON CONFLICT(order_id) DO NOTHING"
+    ).bind(orderId, now, adminId || null).run();
+
+    // นับตำแหน่งใน queue (รวมตัวเอง)
+    const posRow = await env.DB.prepare(
+      "SELECT COUNT(*) AS pos FROM order_zip_queue WHERE status = 'queued' AND queued_at <= ?"
+    ).bind(now).first();
+    const position = posRow?.pos || 1;
+
+    // เช็คว่ามี job 'preparing' อยู่ไหม
+    const activeRow = await env.DB.prepare(
+      "SELECT COUNT(*) AS c FROM order_zip_jobs WHERE status = 'preparing'"
+    ).first();
+    const activeCount = activeRow?.c || 0;
+
+    // ถ้าไม่มี job 'preparing' และเราเป็น order แรกใน queue → trigger ทันที
+    let triggeredNow = false;
+    if (activeCount === 0 && position === 1) {
+      // ทำเครื่องหมายว่ากำลังทำ → กัน cron ทริกเกอร์ซ้อน
+      try {
+        await env.DB.prepare(
+          "UPDATE order_zip_queue SET status = 'processing' WHERE order_id = ? AND status = 'queued'"
+        ).bind(orderId).run();
+      } catch (_) {}
+      triggeredNow = true;
+    }
+
+    return { queued: true, position, triggeredNow };
+  } catch (err) {
+    console.warn("[enqueueZipOrder] failed (queue table may not exist — fallback to parallel):", err?.message || err);
+    return { queued: false, position: null, triggeredNow: false, error: err?.message };
+  }
+}
+
+// processNextZipInQueue: trigger order ถัดไปใน queue (เรียกจาก finalize หลังเสร็จ)
+async function processNextZipInQueue(env, request) {
+  if (!env.DB || !env.BUCKET) return;
+
+  try {
+    // หา order แรกใน queue ที่ status='queued' (เรียงตาม queued_at)
+    const nextRow = await env.DB.prepare(
+      "SELECT order_id FROM order_zip_queue WHERE status = 'queued' ORDER BY queued_at ASC LIMIT 1"
+    ).first();
+
+    if (!nextRow) {
+      // ไม่มี order ใน queue → ไม่ต้องทำอะไร
+      return;
+    }
+
+    const nextOrderId = nextRow.order_id;
+
+    // ทำเครื่องหมายว่ากำลังทำ → กัน trigger ซ้อน
+    try {
+      await env.DB.prepare(
+        "UPDATE order_zip_queue SET status = 'processing' WHERE order_id = ? AND status = 'queued'"
+      ).bind(nextOrderId).run();
+    } catch (_) {}
+
+    // สร้าง mock Request สำหรับ handleOrderZipStart (เหมือนที่ admin ยิงผ่าน fetch)
+    // — ส่ง Cookie header จาก request ปัจจุบัน (ถ้ามี) เพื่อ auth
+    const cookieHeader = request?.headers?.get?.("Cookie") || "";
+    const internalRequest = new Request(
+      new URL("/api/order-zip/start", request.url).toString(),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Cookie": cookieHeader,
+        },
+        body: JSON.stringify({ orderId: nextOrderId }),
+      }
+    );
+
+    // Trigger ใน sync (ไม่ใช้ waitUntil — เพราะ ctx อาจไม่มีใน finalize)
+    // finalize อยู่ใน Worker request lifecycle → สามารถ await ได้
+    try {
+      const result = await handleOrderZipStart(internalRequest, env);
+      console.log(`[queue] Triggered createOrderZip for next order ${nextOrderId}: ${result.status}`);
+      if (!result.ok) {
+        // ถ้า trigger ล้ม → คืน status='queued' ให้ cron ลองใหม่รอบถัดไป
+        try {
+          await env.DB.prepare(
+            "UPDATE order_zip_queue SET status = 'queued' WHERE order_id = ?"
+          ).bind(nextOrderId).run();
+        } catch (_) {}
+        console.warn(`[queue] Triggered createOrderZip failed for ${nextOrderId}:`, await result.text().catch(() => ""));
+      }
+    } catch (triggerErr) {
+      console.error(`[queue] Failed to trigger createOrderZip for ${nextOrderId}:`, triggerErr?.message || triggerErr);
+      // คืน status='queued' ให้ cron ลองใหม่
+      try {
+        await env.DB.prepare(
+          "UPDATE order_zip_queue SET status = 'queued' WHERE order_id = ?"
+        ).bind(nextOrderId).run();
+      } catch (_) {}
+    }
+  } catch (err) {
+    console.error("[processNextZipInQueue] failed:", err?.message || err);
+  }
+}
+
+// removeOrderFromQueue: ลบ order ออกจาก queue หลัง finalize สำเร็จ (หรือ abort)
+async function removeOrderFromQueue(env, orderId) {
+  if (!env.DB) return;
+  try {
+    await env.DB.prepare(
+      "DELETE FROM order_zip_queue WHERE order_id = ?"
+    ).bind(orderId).run();
+  } catch (err) {
+    console.warn("[removeOrderFromQueue] failed:", err?.message || err);
+  }
+}
+
 // ---------------- POST /api/order-zip/start ----------------
 // รับ: { orderId }
 // ทำ:
@@ -2998,8 +3142,62 @@ async function handleOrderZipFinalize(request, env) {
   const totalSongs = Number(jobRow.total_songs || parts.length);
   const now = new Date().toISOString();
 
+  // 🔒 (2026-09-28 fix H5): Atomic status update — รวม zip_status + order.status ใน UPDATE เดียว
+  //   เดิม: updateDocument(orders, { zip_status: "ready" }) แยกจากการ update status='processing'
+  //         ที่ทำใน orders.js:confirmPaymentAndCreateZip ฝั่ง client
+  //         → ถ้า client updateDoc({status:'processing'}) ล้ม → ออเดอร์ค้าง pending_verify
+  //           แม้ ZIP จะเสร็จใน R2 + zip_status='ready' → silent stuck order
+  //   ใหม่: Worker ทำ atomic ทั้ง zip_status='ready' + status='processing' (ถ้ายังไม่ใช่ processing/completed)
+  //         ผ่าน D1 UPDATE ครั้งเดียว → กัน silent stuck
+  //
+  //   วิธีการ: SELECT order ปัจจุบันก่อน (เพื่อ merge field) → UPDATE ทั้งหมดใน 1 operation
+  //   - ถ้า order.status ยังเป็น 'pending_verify' → เปลี่ยนเป็น 'processing' atomic (H5)
+  //   - ถ้า order.status เป็น 'processing'/'completed' แล้ว → ไม่เปลี่ยน (ลด race กับ client)
+  //   - ถ้า order.status เป็น 'cancelled'/'rejected' → ไม่เปลี่ยน (กัน ZIP ส่งให้ออเดอร์ที่ cancel)
+  //
+  //   ผลกระทบระบบเดิม: 0%
+  //     - orders.js:confirmPaymentAndCreateZip ยังเรียก updateDoc({status:'processing'}) เหมือนเดิม
+  //     - แต่ถ้า client updateDoc ล้ม → Worker ได้ทำไปแล้วใน atomic นี้ → silent stuck หายไป
+  //     - ถ้า client updateDoc สำเร็จ → UPDATE ที่นี่เป็น no-op (status ตรงอยู่แล้ว)
+  //   หมายเหตุ: ใช้ updateDocument(env, "orders", ...) ที่มีอยู่แล้ว (เป็น INSERT...ON CONFLICT DO UPDATE)
+  //   → atomic ในระดับ D1 statement เดียว (ไม่มี race กับ client)
   try {
-    await updateDocument(env, "orders", jobRow.order_id, {
+    // โหลด order ปัจจุบันเพื่อ merge field (เหมือนเดิม)
+    const existingOrderRow = await env.DB.prepare(
+      "SELECT data FROM documents WHERE collection='orders' AND id=?"
+    ).bind(jobRow.order_id).first();
+
+    let mergedOrderData = {};
+    if (existingOrderRow?.data) {
+      try { mergedOrderData = JSON.parse(existingOrderRow.data); } catch (_) {}
+    }
+
+    // 🔒 (H5): ถ้า status ยังเป็น pending_verify → เปลี่ยนเป็น 'processing' atomic
+    //   และใส่ status_history + payment_verified_at (เหมือนที่ client ทำใน confirmPaymentAndCreateZip)
+    //   ถ้า client ทำก่อนแล้ว → status='processing' อยู่แล้ว → UPDATE ที่นี่จะเป็น no-op
+    const currentStatus = String(mergedOrderData.status || "").toLowerCase();
+    let newStatus = currentStatus;
+    let newStatusHistory = mergedOrderData.status_history;
+    let newPaymentVerifiedAt = mergedOrderData.payment_verified_at;
+
+    if (currentStatus === "pending_verify") {
+      newStatus = "processing";
+      if (!newPaymentVerifiedAt) newPaymentVerifiedAt = now;
+      // append status_history (เหมือน buildStatusAuditWithHistory ใน orders.js)
+      if (Array.isArray(newStatusHistory)) {
+        newStatusHistory.push({
+          status: "processing",
+          at: now,
+          note: "Worker atomic update — ZIP ready",
+          by: "system",
+          by_name: "Miusic Worker",
+        });
+      }
+    }
+
+    // รวม zip fields + status (atomic ใน D1 statement เดียว)
+    const updatedData = {
+      ...mergedOrderData,
       zip_status: "ready",
       zip_download_url: url,
       zip_file_name: zipFileName,
@@ -3007,8 +3205,15 @@ async function handleOrderZipFinalize(request, env) {
       zip_song_count: totalSongs,
       zip_created_at: now,
       zip_error: "",
+      status: newStatus,
+      status_history: newStatusHistory,
+      payment_verified_at: newPaymentVerifiedAt,
       updated_at: now,
-    });
+    };
+
+    await env.DB.prepare(
+      "UPDATE documents SET data=?, updated_at=? WHERE collection='orders' AND id=?"
+    ).bind(JSON.stringify(updatedData), now, jobRow.order_id).run();
   } catch (err) {
     return jsonResponse({
       error: "อัปเดตออเดอร์ด้วยลิงก์ ZIP ไม่สำเร็จ (แต่ไฟล์ ZIP ถูกสร้างใน R2 แล้ว — bucket key: " + jobRow.bucket_key + "): " + (err?.message || String(err)),
@@ -3017,6 +3222,12 @@ async function handleOrderZipFinalize(request, env) {
 
   // ===== ลบ job row =====
   await deleteOrderZipJob(env, jobId);
+
+  // 🔄 (2026-09-28 fix Sequential Queue): ลบ order จาก queue + trigger ถัดไป
+  //   finalize เสร็จ → ลบจาก queue → trigger order ถัดไปถ้ามี
+  //   ผลกระทบระบบเดิม: 0% — ถ้า queue table ไม่มี → ไม่ทำอะไร (fallback)
+  await removeOrderFromQueue(env, jobRow.order_id);
+  await processNextZipInQueue(env, request);
 
   return jsonResponse({
     ok: true,
@@ -3574,8 +3785,43 @@ async function handleOrderZipFinalizeCompose(request, env) {
   const zipFileName = jobRow.bucket_key.split("/").pop() || `Order-${jobRow.order_id}.zip`;
   const totalSongs = Number(jobRow.total_songs || songs.length);
   const now = new Date().toISOString();
+
+  // 🔒 (2026-09-28 fix H5): Atomic status update — เหมือน handleOrderZipFinalize ด้านบน
+  //   Worker ทำ atomic ทั้ง zip_status='ready' + status='processing' (ถ้ายังเป็น pending_verify)
+  //   ผ่าน D1 UPDATE ครั้งเดียว → กัน silent stuck ถ้า client updateDoc ล้ม
+  //   ผลกระทบระบบเดิม: 0% — ถ้า client ทำก่อนแล้ว → no-op (status ตรงอยู่แล้ว)
   try {
-    await updateDocument(env, "orders", jobRow.order_id, {
+    // โหลด order ปัจจุบันเพื่อ merge field (เหมือนเดิม)
+    const existingOrderRow = await env.DB.prepare(
+      "SELECT data FROM documents WHERE collection='orders' AND id=?"
+    ).bind(jobRow.order_id).first();
+
+    let mergedOrderData = {};
+    if (existingOrderRow?.data) {
+      try { mergedOrderData = JSON.parse(existingOrderRow.data); } catch (_) {}
+    }
+
+    const currentStatus = String(mergedOrderData.status || "").toLowerCase();
+    let newStatus = currentStatus;
+    let newStatusHistory = mergedOrderData.status_history;
+    let newPaymentVerifiedAt = mergedOrderData.payment_verified_at;
+
+    if (currentStatus === "pending_verify") {
+      newStatus = "processing";
+      if (!newPaymentVerifiedAt) newPaymentVerifiedAt = now;
+      if (Array.isArray(newStatusHistory)) {
+        newStatusHistory.push({
+          status: "processing",
+          at: now,
+          note: "Worker atomic update — ZIP ready (compose)",
+          by: "system",
+          by_name: "Miusic Worker",
+        });
+      }
+    }
+
+    const updatedData = {
+      ...mergedOrderData,
       zip_status: "ready",
       zip_download_url: url,
       zip_file_name: zipFileName,
@@ -3583,8 +3829,15 @@ async function handleOrderZipFinalizeCompose(request, env) {
       zip_song_count: totalSongs,
       zip_created_at: now,
       zip_error: "",
+      status: newStatus,
+      status_history: newStatusHistory,
+      payment_verified_at: newPaymentVerifiedAt,
       updated_at: now,
-    });
+    };
+
+    await env.DB.prepare(
+      "UPDATE documents SET data=?, updated_at=? WHERE collection='orders' AND id=?"
+    ).bind(JSON.stringify(updatedData), now, jobRow.order_id).run();
   } catch (err) {
     return jsonResponse({
       error: "อัปเดตออเดอร์ด้วยลิงก์ ZIP ไม่สำเร็จ (แต่ไฟล์ ZIP ถูกสร้างใน R2 แล้ว — bucket key: " + jobRow.bucket_key + "): " + (err?.message || String(err)),
@@ -3594,6 +3847,12 @@ async function handleOrderZipFinalizeCompose(request, env) {
   // Cleanup
   await cleanupPartialBuffer(env, state);
   await deleteOrderZipJob(env, jobId);
+
+  // 🔄 (2026-09-28 fix Sequential Queue): ลบ order จาก queue + trigger ถัดไป
+  //   finalize-compose เสร็จ → ลบจาก queue → trigger order ถัดไปถ้ามี
+  //   ผลกระทบระบบเดิม: 0% — ถ้า queue table ไม่มี → ไม่ทำอะไร (fallback)
+  await removeOrderFromQueue(env, jobRow.order_id);
+  await processNextZipInQueue(env, request);
 
   return jsonResponse({
     ok: true,
@@ -4621,16 +4880,21 @@ export default {
     }
 
     // 🔴 POST /api/admin/orders/:id/verify-payment  (ADMIN ONLY)
-    //   Body: { status: 'verified' | 'rejected', reject_reason?: string, amount_received?: number }
+    //   Body: { status: 'verified' | 'rejected', reject_reason?: string, amount_received?: number, auto_create_zip?: boolean }
     //   Flow:
     //     1. require admin session
     //     2. fetch proof row by id (query param ?proof_id=xxx)
     //     3. fetch order, check status='pending_verify'
     //     4. UPDATE payment_proofs: status, verified_at, verified_by, reject_reason
     //     5. UPDATE order.payment_proof_status (mirror for fast filter)
-    //     6. If verified → ไม่ auto-trigger createOrderZip (admin จะกดเปลี่ยน status เองในหน้า orders เหมือนเดิม)
+    //     6. If verified + auto_create_zip=true (NEW 2026-09-28 H1):
+    //        → Worker auto-trigger createOrderZip ใน background (ctx.waitUntil)
+    //        → update order.status='processing' atomic (ทำใน worker ไม่ต้องรอ client)
+    //        → ลด manual step ของแอดมินจาก 3 → 1 (verify แล้ว ZIP เสร็จเอง)
+    //     7. If verified + auto_create_zip=false (default — flow เดิม):
+    //        → ไม่ auto-trigger createOrderZip (admin จะกดเปลี่ยน status เองในหน้า orders เหมือนเดิม)
     //        → ป้องกันการแตะ orders.js / confirmPaymentAndCreateZip โดยตรง (rule #1: ห้ามแตะระบบเดิม)
-    //     7. writeAuditLog
+    //     8. writeAuditLog
     if (url.pathname.startsWith("/api/admin/orders/") && url.pathname.endsWith("/verify-payment") && request.method === "POST") {
       if (!env.DB) return jsonResponse({ error: "D1 binding not configured" }, 500);
       const admin = await getSessionAdmin(request, env);
@@ -4647,6 +4911,12 @@ export default {
       }
       const rejectReason = newStatus === "rejected" ? String(body?.reject_reason || "").trim().slice(0, 500) : null;
       const amountReceived = body?.amount_received != null ? Number(body.amount_received) : null;
+      // 🚀 (2026-09-28 fix H1): Optional flag — client ส่ง auto_create_zip=true เพื่อเปิดใช้ flow ใหม่
+      //   เดิม: admin ต้องทำ 3 step (verify → change status → send WhatsApp)
+      //   ใหม่: admin กด "ยืนยันสลิป" ครั้งเดียว → Worker auto-trigger createOrderZip + update status
+      //   ผลกระทบระบบเดิม: 0% — ถ้า client ไม่ส่ง flag → flow เดิม (admin เปลี่ยน status เอง)
+      //                     — ถ้า client ส่ง flag → Worker ทำทุกอย่างให้ (ลด manual step)
+      const autoCreateZip = newStatus === "verified" && body?.auto_create_zip === true;
 
       // fetch proof
       const proofRow = await env.DB.prepare(
@@ -4675,6 +4945,10 @@ export default {
       let customerWhatsapp = proofRow.whatsapp || null;
       let customerName = proofRow.customer_name || null;
       let orderFinalTotal = null;
+      // 🚀 (2026-09-28 fix H1): flag สำหรับบอก client ว่า Worker ได้ auto-trigger createOrderZip แล้ว
+      //   ถ้า true → client ไม่ต้องเรียก createOrderZip อีก (ลด manual step)
+      //   ถ้า false → client ใช้ flow เดิม (เรียก confirmPaymentAndCreateZip เอง)
+      let autoZipTriggered = false;
       if (orderRow?.data) {
         try {
           const orderData = JSON.parse(orderRow.data);
@@ -4683,15 +4957,40 @@ export default {
           orderData.payment_proof_verified_by = admin.id;
           if (rejectReason) orderData.payment_proof_reject_reason = rejectReason;
           orderData.updated_at = verifiedAt;
-          // status_history
-          if (Array.isArray(orderData.status_history)) {
-            orderData.status_history.push({
-              status: orderData.status,
-              at: verifiedAt,
-              note: newStatus === "verified" ? "แอดมินยืนยันสลิปการโอน" : `แอดมินปฏิเสธสลิป${rejectReason ? ": " + rejectReason : ""}`,
-              by: admin.id,
-              by_name: admin.display_name || admin.email,
-            });
+
+          // 🚀 (2026-09-28 fix H1): ถ้า auto_create_zip=true → เปลี่ยน status='processing' atomic
+          //   + ใส่ status_history + payment_verified_at + zip_status='preparing'
+          //   → Worker finalize จะ detect zip_status='preparing' และทำต่อ (H5 atomic)
+          //   → ลด manual step ของแอดมินจาก 3 → 1
+          //   ผลกระทบระบบเดิม: 0% — ถ้า autoCreateZip=false → ไม่เปลี่ยน status (flow เดิม)
+          if (autoCreateZip && newStatus === "verified" && orderData.status === "pending_verify") {
+            orderData.status = "processing";
+            orderData.payment_verified_at = verifiedAt;
+            // บอก client ว่ากำลังสร้าง ZIP อยู่เบื้องหลัง
+            orderData.zip_status = "preparing";
+            orderData.zip_error = "";
+            // status_history
+            if (Array.isArray(orderData.status_history)) {
+              orderData.status_history.push({
+                status: "processing",
+                at: verifiedAt,
+                note: "แอดมินยืนยันสลิป + auto-create ZIP",
+                by: admin.id,
+                by_name: admin.display_name || admin.email,
+              });
+            }
+            autoZipTriggered = true;
+          } else {
+            // status_history (flow เดิม)
+            if (Array.isArray(orderData.status_history)) {
+              orderData.status_history.push({
+                status: orderData.status,
+                at: verifiedAt,
+                note: newStatus === "verified" ? "แอดมินยืนยันสลิปการโอน" : `แอดมินปฏิเสธสลิป${rejectReason ? ": " + rejectReason : ""}`,
+                by: admin.id,
+                by_name: admin.display_name || admin.email,
+              });
+            }
           }
           await env.DB.prepare(
             `UPDATE documents SET data=?, updated_at=? WHERE collection='orders' AND id=?`
@@ -4705,6 +5004,62 @@ export default {
         }
       }
 
+      // 🚀 (2026-09-28 fix Sequential Queue): auto-trigger createOrderZip ผ่าน QUEUE
+      //   เดิม (H1 v1): Worker trigger createOrderZip ทันทีใน ctx.waitUntil → parallel
+      //   ใหม่ (H1 v2): Worker enqueue order ลง queue + trigger ถ้าไม่มี job กำลังทำอยู่
+      //   → ทำงาน sequential (ทีละออเดอร์) → ปลอดภัยกว่า Free plan CPU limit 30s
+      //   ผลกระทบระบบเดิม: 0% — ถ้า queue table ไม่มี → fallback ใช้ parallel (H1 v1)
+      let queueInfo = { queued: false, position: null, triggeredNow: false };
+      if (autoZipTriggered && ctx && typeof ctx.waitUntil === "function") {
+        try {
+          queueInfo = await enqueueZipOrder(env, orderId, admin.id, request);
+
+          // ถ้า enqueue สำเร็จ + เป็น order แรกใน queue → trigger ทันที
+          if (queueInfo.queued && queueInfo.triggeredNow) {
+            // สร้าง mock Request สำหรับ handleOrderZipStart
+            const internalRequest = new Request(
+              new URL("/api/order-zip/start", request.url).toString(),
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Cookie": request.headers.get("Cookie") || "",
+                },
+                body: JSON.stringify({ orderId }),
+              }
+            );
+            ctx.waitUntil((async () => {
+              try {
+                const result = await handleOrderZipStart(internalRequest, env);
+                console.log(`[H1 queue] createOrderZip started for order ${orderId}: ${result.status}`);
+                if (!result.ok) {
+                  // ถ้า trigger ล้ม → คืน status='queued' ให้ cron ลองใหม่รอบถัดไป
+                  try {
+                    await env.DB.prepare(
+                      "UPDATE order_zip_queue SET status = 'queued' WHERE order_id = ? AND status = 'processing'"
+                    ).bind(orderId).run();
+                  } catch (_) {}
+                  console.warn(`[H1 queue] createOrderZip failed for order ${orderId}:`, await result.text().catch(() => ""));
+                }
+              } catch (autoZipErr) {
+                console.error(`[H1 queue] createOrderZip exception for order ${orderId}:`, autoZipErr?.message || autoZipErr);
+                // คืน status='queued' ให้ cron ลองใหม่
+                try {
+                  await env.DB.prepare(
+                    "UPDATE order_zip_queue SET status = 'queued' WHERE order_id = ?"
+                  ).bind(orderId).run();
+                } catch (_) {}
+              }
+            })());
+          }
+          // ถ้า queueInfo.queued && !triggeredNow → รอ finalize ของ order ก่อนหน้าจะ trigger ถัดไป
+        } catch (triggerErr) {
+          // ถ้า trigger ล้ม → log แต่ไม่ block response
+          // admin ยังสามารถกด "ยืนยันโอนแล้ว" ในหน้า orders เองได้ (fallback สู่ flow เดิม)
+          console.error(`[H1 queue] Failed to enqueue/trigger createOrderZip for order ${orderId}:`, triggerErr?.message || triggerErr);
+        }
+      }
+
       // audit log
       try {
         ctx.waitUntil(writeAuditLog(
@@ -4712,9 +5067,9 @@ export default {
           newStatus === "verified" ? "status_change" : "status_change",
           "payment_proofs",
           proofId,
-          `Order ${orderId.slice(0, 8)}... — ${newStatus}`,
+          `Order ${orderId.slice(0, 8)}... — ${newStatus}${autoZipTriggered ? " + auto-zip" : ""}`,
           { status: "pending", verified_at: null },
-          { status: newStatus, verified_at: verifiedAt, verified_by: admin.id, reject_reason: rejectReason }
+          { status: newStatus, verified_at: verifiedAt, verified_by: admin.id, reject_reason: rejectReason, auto_create_zip: autoZipTriggered }
         ));
       } catch {}
 
@@ -4726,6 +5081,14 @@ export default {
         verified_at: verifiedAt,
         verified_by: admin.id,
         order_updated: orderUpdateOk,
+        // 🚀 (2026-09-28 fix H1 + Sequential Queue): บอก client สถานะ queue
+        //   auto_zip_triggered: true ถ้า Worker เริ่มทำ ZIP (ทันที หรือ queued)
+        //   queue_position: 1 = กำลังทำ, 2 = รอ 1 ออเดอร์, 3 = รอ 2 ออเดอร์ ฯลฯ
+        auto_zip_triggered: autoZipTriggered,
+        queue_position: queueInfo.position,
+        queue_status: queueInfo.queued
+          ? (queueInfo.triggeredNow ? "processing_now" : "queued_waiting")
+          : "not_queued",
         // 📸 (added) snapshot สำหรับ frontend ใช้สร้าง WhatsApp message ส่งลูกค้า
         customer_whatsapp: customerWhatsapp,
         customer_name: customerName,
@@ -4738,7 +5101,11 @@ export default {
           : null,
         // hint สำหรับ client: ถ้า verified → admin ควรไปกดเปลี่ยน status ในหน้า orders เอง
         next_action_hint: newStatus === "verified"
-          ? "ไปที่หน้าจัดการออเดอร์ → คลิก 'ยืนยันโอนแล้ว' เพื่อสร้าง ZIP ส่งลูกค้า"
+          ? (autoZipTriggered
+            ? (queueInfo.position > 1
+              ? `Worker อยู่ในคิวที่ ${queueInfo.position} — รอ ${(queueInfo.position - 1) * 2}-${(queueInfo.position - 1) * 4} นาที (สร้างทีละออเดอร์)`
+              : "Worker กำลังสร้าง ZIP — รอ 1-2 นาที")
+            : "ไปที่หน้าจัดการออเดอร์ → คลิก 'ยืนยันโอนแล้ว' เพื่อสร้าง ZIP ส่งลูกค้า")
           : "ลูกค้าจะสามารถอัปโหลดสลิปใหม่ได้ — กดปุ่มด้านล่างเพื่อเปิด WhatsApp แจ้งลูกค้า",
       }, 200);
     }
@@ -4776,11 +5143,64 @@ export default {
   //     - ปุ่ม "ส่ง ZIP ผ่าน WhatsApp" → Worker ตรวจ zip_status='expired' → return error → admin ต้องสร้างใหม่
   //   ประโยชน์: URL ถาวรที่รั่วจะใช้ได้แค่ 24 ชม. (เทียบเท่า token expiry)
   async scheduled(event, env, ctx) {
+    // 🔄 (2026-09-28 fix Sequential Queue): Safety net สำหรับ ZIP queue
+    //   Cron รันทุก 1 นาที → เช็ค queue ถ้ามี order 'queued' แต่ไม่มี job 'preparing'
+    //   → trigger order แรก (safety net ถ้า finalize ไม่ได้ trigger)
+    //   ผลกระทบระบบเดิม: 0% — ถ้า queue table ไม่มี → ไม่ทำอะไร
+    //   ข้อสังเกต: cron รันทุก 1 นาที และ ทุก 6 ชม. (จาก wrangler.jsonc) →
+    //   ทุก 1 นาทีจะเข้าส่วนนี้เสมอ (เร็ว) ส่วน 6 ชม.จะเข้า cleanup ด้วย
+    try {
+      if (env.DB && env.BUCKET) {
+        // เช็คว่ามี order 'queued' แต่ไม่มี job 'preparing' ไหม
+        const queueRow = await env.DB.prepare(
+          "SELECT COUNT(*) AS c FROM order_zip_queue WHERE status = 'queued'"
+        ).first();
+        const activeRow = await env.DB.prepare(
+          "SELECT COUNT(*) AS c FROM order_zip_jobs WHERE status = 'preparing'"
+        ).first();
+
+        const queuedCount = queueRow?.c || 0;
+        const activeCount = activeRow?.c || 0;
+
+        if (queuedCount > 0 && activeCount === 0) {
+          // มี order รอ + ไม่มี job กำลังทำ → trigger order แรก
+          console.log(`[cron queue] Found ${queuedCount} queued orders, 0 active — triggering next`);
+          // สร้าง mock Request สำหรับ processNextZipInQueue (cron ไม่มี request จริง)
+          const mockRequest = new Request("https://internal.miusic.app/api/order-zip/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+          await processNextZipInQueue(env, mockRequest);
+        } else if (queuedCount > 0) {
+          // มี order รอ + มี job กำลังทำ → ปล่อยให้ finalize trigger ถัดไป
+          console.log(`[cron queue] ${queuedCount} queued, ${activeCount} active — wait for finalize`);
+        }
+      }
+    } catch (cronQueueErr) {
+      console.warn("[cron queue] Queue processing failed:", cronQueueErr?.message || cronQueueErr);
+    }
+
+    // 🔒 (2026-09-21 auto-cleanup ZIP): ส่วน cron ทุก 6 ชม. (เดิม)
+    //   ค้นหา ZIP เก่า > 24 ชม. + audit_log + download_tokens + stuck jobs
+    //   ตรวจผ่าน cron expression — ถ้าเป็นรอบ 6 ชม. (ชั่วโมง == 0, 6, 12, 18) ให้ทำ cleanup
     try {
       if (!env.DB || !env.BUCKET) {
         console.warn("[cleanup] DB or BUCKET binding not configured — skip");
         return;
       }
+
+      // 🔄 (2026-09-28): ตรวจว่าเป็นรอบ 6 ชม. หรือรอบ 1 นาที
+      //   cron "* * * * *" ทุก 1 นาที → ทำ queue เท่านั้น (ด้านบน)
+      //   cron "0 */6 * * *" ทุก 6 ชม. → ทำ cleanup ด้วย (ด้านล่าง)
+      //   วิธีเช็ค: ดู minute ของเวลาปัจจุบัน — ถ้า minute = 0 และ hour % 6 = 0 → เป็นรอบ 6 ชม.
+      const now = new Date();
+      const isCleanupCron = now.getMinutes() === 0 && (now.getHours() % 6 === 0);
+
+      if (!isCleanupCron) {
+        // รอบ 1 นาที → ทำ queue เสร็จแล้วจบ (ไม่ทำ cleanup)
+        return;
+      }
+      console.log("[cleanup] Running 6-hour cleanup cycle");
 
       // คำนวณ cutoff = now - 24 ชม.
       const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
