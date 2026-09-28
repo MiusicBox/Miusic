@@ -3736,19 +3736,19 @@ button:active {
 .promo-home-banner-icon {
   width: 56px; height: 56px;
   border-radius: 0;
-  background: rgba(255, 0, 255, 0.2);
-  border: 1px solid var(--cp-pink);
+  background: rgba(255, 215, 0, 0.15);
+  border: 1px solid #ffd700;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 0 12px var(--cp-pink-glow);
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.5);
   transform: skew(-5deg);
 }
 .promo-home-banner-icon svg {
   width: 30px; height: 30px;
-  color: var(--cp-cyan);
+  color: #ffd700;
   stroke-width: 2.4;
-  transform: skew(5deg); /* คืน skew ของ icon */
-  filter: drop-shadow(0 0 4px var(--cp-cyan));
+  transform: skew(5deg);
+  filter: drop-shadow(0 0 4px #ffd700);
 }
 .promo-home-banner-text {
   flex: 1; min-width: 0;

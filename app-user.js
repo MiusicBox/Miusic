@@ -2898,7 +2898,7 @@ function renderPromotionBanner() {
         : "";
       // แต่ละ tier ใช้สไตล์ tag แบบ promo-card
       return `<div style="display:inline-block;background:rgba(255,0,255,.1);border:1px solid rgba(255,0,255,.3);color:var(--cp-cyan);font-size:10px;font-weight:700;padding:2px 8px;border-radius:2px;margin:2px 4px 2px 0;text-shadow:0 0 4px rgba(0,255,255,.5);font-family:var(--cp-mono);">
-        🎵 ${qty} = ${pct}%${recommendedBadge}
+        📁 ${qty} = ${pct}%${recommendedBadge}
       </div>`;
     }).join("");
 
