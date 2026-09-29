@@ -2654,7 +2654,28 @@ async function _handleStatusChangeInner(orderId, newStatus, order) {
 }
 
 async function confirmPaymentAndCreateZip(orderId) {
+  // 🔒 (Audit Fix H-2): Idempotency guard — กัน double-click ภายใน tab เดียวกัน
+  //   ปัญหาเดิม: ถ้า admin กด Verify 2 ครั้งใน tab เดียวกัน (ภายใน 100ms)
+  //     → createOrderZip ถูกเรียก 2 ครั้ง (zipJobs.set ยังไม่ได้ตั้งทัน)
+  //     → Worker /api/order-zip/start ถูกยิง 2 ครั้ง → race + wasted work
+  //   วิธีแก้: เช็ค zipJobs.has(orderId) ก่อน createOrderZip
+  //     ถ้ามีอยู่แล้ว (กำลังสร้าง ZIP อยู่) → ไม่ทำซ้ำ + toast info
+  //   ผลกระทบระบบเดิม: 0% — ถ้าไม่มี zipJobs.has(orderId) → ทำงานเหมือนเดิม
+  //   หมายเหตุ: createOrderZip ด้านในมี zipJobs.has check อยู่แล้ว (line 509)
+  //     แต่มัน return { ok: false, error: "กำลังสร้าง ZIP..." } ไม่ใช่ return early
+  //     → โค้ดด้านล่าง updateOrderInState({zip_status: 'failed'}) จะเขียนทับ state
+  //     → guard ที่นี่ป้องกันไม่ให้เกิดเรื่องแบบนั้น
+  if (zipJobs.has(orderId)) {
+    orderToast("กำลังสร้าง ZIP ของออเดอร์นี้อยู่ — กรุณารอให้เสร็จก่อน หรือกดยกเลิก (ปุ่ม ✕)", "info");
+    return;
+  }
+
   const result = await createOrderZip(orderId);
+  // 🔒 (Audit Fix H-2): ถ้าได้ conflict จาก H-1 (แอดมินอื่นกำลังสร้าง ZIP) → แสดง toast + return
+  if (result.conflict) {
+    orderToast(result.error || "กำลังสร้าง ZIP โดยแอดมินอื่น — กรุณารอ", "info");
+    return;
+  }
   // 🔧 (2026-09-18 v5): ถ้า user กด "ยกเลิก" → ไม่แสดง error (Worker อัปเดต order doc แล้ว)
   if (result.aborted) {
     orderToast("ยกเลิกการสร้าง ZIP — ออเดอร์ยังคงรอตรวจสอบ", "info");
