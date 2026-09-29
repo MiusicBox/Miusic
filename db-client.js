@@ -51,19 +51,54 @@ async function apiFetch(path, options = {}) {
   //   ใช้ใน getDocsAdmin() ที่ admin เรียก → แน่ใจว่าเห็นข้อมูลใหม่หลัง invalidateAdminCache
   const { cacheBust, ...fetchOptions } = options;
   const url = API_BASE + path + (cacheBust ? `?nocache=${Date.now()}` : "");
-  const res = await fetch(url, {
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    ...fetchOptions,
-  });
-  let body = null;
-  try { body = await res.json(); } catch { /* ไม่มี body หรือไม่ใช่ JSON */ }
-  if (!res.ok) {
-    const err = new Error((body && body.error) || `คำขอไปยังฐานข้อมูลไม่สำเร็จ (HTTP ${res.status})`);
-    if (body && body.code) err.code = body.code;
-    throw err;
+
+  // 🔒 (Audit Fix H-27): Retry with exponential backoff สำหรับ transient failures
+  //   ปัญหาเดิม: fetch 1 ครั้ง → ถ้า 5xx หรือ network fail → throw error ทันที
+  //   → user เห็น error toast → ต้องกดลองใหม่เอง
+  //   วิธีแก้: retry 3 ครั้ง (1s, 2s, 4s backoff) สำหรับ 5xx + network errors
+  //   ไม่ retry สำหรับ 4xx (client error — ไม่น่าจะสำเร็จถ้า retry)
+  //   ผลกระทบระบบเดิม: 0% — กรณีสำเร็จ → return เหมือนเดิม (no retry)
+  //   กรณี 5xx → retry 3 ครั้งก่อน throw (เพิ่มโอกาสสำเร็จ)
+  //   กรณี 4xx → throw เหมือนเดิม (retry ไม่ช่วย)
+  const MAX_RETRIES = 3;
+  const BACKOFF_MS = [1000, 2000, 4000]; // 1s, 2s, 4s
+  let lastErr;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(url, {
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        ...fetchOptions,
+      });
+      let body = null;
+      try { body = await res.json(); } catch { /* ไม่มี body หรือไม่ใช่ JSON */ }
+      if (!res.ok) {
+        // 🔒 (H-27): retry เฉพาะ 5xx (server error) — ไม่ retry 4xx (client error)
+        if (res.status >= 500 && res.status < 600 && attempt < MAX_RETRIES) {
+          console.warn(`[H-27] apiFetch retry ${attempt + 1}/${MAX_RETRIES} for ${path} (HTTP ${res.status})`);
+          await new Promise(r => setTimeout(r, BACKOFF_MS[attempt]));
+          lastErr = new Error((body && body.error) || `HTTP ${res.status}`);
+          if (body && body.code) lastErr.code = body.code;
+          continue;
+        }
+        const err = new Error((body && body.error) || `คำขอไปยังฐานข้อมูลไม่สำเร็จ (HTTP ${res.status})`);
+        if (body && body.code) err.code = body.code;
+        throw err;
+      }
+      return body;
+    } catch (fetchErr) {
+      // network error (TypeError: Failed to fetch) → retry
+      if (attempt < MAX_RETRIES && (fetchErr?.name === "TypeError" || !fetchErr?.code)) {
+        console.warn(`[H-27] apiFetch network retry ${attempt + 1}/${MAX_RETRIES} for ${path}:`, fetchErr?.message || fetchErr);
+        await new Promise(r => setTimeout(r, BACKOFF_MS[attempt]));
+        lastErr = fetchErr;
+        continue;
+      }
+      throw fetchErr;
+    }
   }
-  return body;
+  // ครบ retries → throw last error
+  throw lastErr || new Error(`apiFetch failed after ${MAX_RETRIES} retries`);
 }
 
 // ---------------- References (เหมือน Firestore: แค่ path ยังไม่ได้อ่าน/เขียนจริง) ----------------

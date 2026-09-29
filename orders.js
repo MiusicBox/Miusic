@@ -215,6 +215,20 @@ function normalizePhoneForStorage(v) {
   return "856" + rest;
 }
 
+// 🔒 (Audit Fix H-29): validate เบอร์โทรหลัง normalize — กันเบอร์สั้น/ยาวผิดปกติ
+//   ปัญหาเดิม: normalizePhoneForStorage('') → return '856' (3 chars)
+//   → บันทึก whatsapp='856' ใน order → admin ส่ง WhatsApp ไม่สำเร็จ
+//   วิธีแก้: เพิ่ม validateLength ใช้ก่อนบันทึก order (orders.js handleSubmitOrder)
+//   ผลกระทบระบบเดิม: 0% — เป็น function ใหม่ ไม่แตะฟังก์ชันเดิม
+//   ใช้ใน: handleSubmitOrder, handleUpdateOrder (ก่อน setDoc)
+function isValidNormalizedPhone(phone) {
+  if (!phone) return false;
+  const s = String(phone);
+  if (s.startsWith("856")) return s.length >= 10 && s.length <= 14; // 856 + 7-11 digits
+  if (s.startsWith("66")) return s.length >= 10 && s.length <= 12; // 66 + 8-10 digits
+  return s.length >= 8 && s.length <= 15; // generic
+}
+
 // เปิดแชท WhatsApp ไปหาเบอร์ที่ระบุ (รูปแบบเดียวกับ buildWhatsAppLink ใน app-user.js/app-cart.js)
 function buildWhatsAppLink(number, text) {
   const clean = String(number || "").replace(/[^0-9]/g, "");
@@ -3546,6 +3560,14 @@ async function handleSubmitOrder() {
 
   if (!customerName || !whatsapp) {
     feedback.textContent = "กรุณากรอกชื่อลูกค้าและเบอร์ WhatsApp";
+    return;
+  }
+  // 🔒 (Audit Fix H-29): validate เบอร์โทรหลัง normalize — กันเบอร์สั้น/ยาวผิดปกติ
+  //   normalizePhoneForStorage('') → '856' (3 chars) → บันทึกแล้วส่ง WhatsApp ไม่ได้
+  //   ที่นี่เช็คหลัง normalize → ถ้า invalid แจ้ง error ก่อนบันทึก
+  if (!isValidNormalizedPhone(whatsapp)) {
+    feedback.textContent = "เบอร์ WhatsApp ไม่ถูกต้อง — กรุณากรอกเบอร์โทรศัพท์ให้ครบ (เช่น 020 1234567 หรือ +856 20 1234567)";
+    if (whatsappInput) { whatsappInput.focus(); whatsappInput.select(); }
     return;
   }
   if (state.cartEntries.length === 0) {
