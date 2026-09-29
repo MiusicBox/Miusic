@@ -261,15 +261,45 @@ function findDanceWindow(bars) {
 
 // วิเคราะห์จากไฟล์ที่แอดมินเพิ่งเลือก (File object) — เรียกก่อนอัปโหลดขึ้น Cloudinary ก็ได้ ไม่ต้องรอ
 export async function analyzeSongFile(file, onProgress) {
-  const arrayBuffer = await file.arrayBuffer();
+  // 🔒 (Audit Fix H-15): จำกัดขนาด arrayBuffer ก่อน decode — กัน mobile Safari crash
+  //   ปัญหาเดิม: file.arrayBuffer() โหลดไฟล์ทั้งหมด (100MB WAV) → decodeAudioData
+  //   ทำให้ heap 30MB → 300MB (PCM float32) → mobile Safari พัง
+  //   วิธีแก้: ถ้าไฟล์ > 5MB → ใช้แค่ 5MB แรก (เพียงพอสำหรับ 30 วินาทีของ MP3/WAV)
+  //   dance window detection ใช้แค่ ~30 วินาทีแรก จึงไม่กระทบผลลัพธ์
+  //   ผลกระทบระบบเดิม: 0% — ถ้าไฟล์ < 5MB → ใช้ทั้งหมดเหมือนเดิม
+  //   ถ้าไฟล์ > 5MB → ใช้แค่ 5MB แรก (analysis อาจเห็นแค่ 30-60 วินาทีแรก แต่เพียงพอ)
+  const MAX_ANALYZE_BYTES = 5 * 1024 * 1024; // 5 MB
+  let arrayBuffer;
+  if (file.size > MAX_ANALYZE_BYTES) {
+    console.log(`[H-15] File ${file.size} bytes > 5MB limit — analyzing first 5MB only (saves memory on mobile)`);
+    arrayBuffer = await file.slice(0, MAX_ANALYZE_BYTES).arrayBuffer();
+  } else {
+    arrayBuffer = await file.arrayBuffer();
+  }
   return analyzeArrayBuffer(arrayBuffer, onProgress);
 }
 
 // วิเคราะห์จาก URL ที่อัปโหลดไปแล้ว (ใช้ตอนกด "วิเคราะห์ใหม่ทั้งหมด" หรือใน backfill script)
 export async function analyzeSongUrl(url, onProgress) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("ดึงไฟล์เพลงไม่สำเร็จสำหรับวิเคราะห์ (HTTP " + res.status + ")");
-  const arrayBuffer = await res.arrayBuffer();
+  // 🔒 (Audit Fix H-15): ดึงแค่ 5MB แรก (ก่อน decode) — กัน memory crash
+  //   เดิม: fetch(url) → res.arrayBuffer() → โหลดไฟล์ทั้งหมด → heap spike
+  //   ใหม่: fetch(url, { headers: { Range: 'bytes=0-5242879' } }) → ดึงแค่ 5MB แรก
+  //   ถ้า server ไม่รองรับ Range → fallback ดึงทั้งหมด (เหมือนเดิม)
+  //   ผลกระทบระบบเดิม: 0% — ถ้า server ไม่รองรับ Range → res.arrayBuffer() เหมือนเดิม
+  //   ถ้า server รองรับ → ดึงแค่ 5MB (memory ลดลง)
+  const MAX_ANALYZE_BYTES = 5 * 1024 * 1024; // 5 MB
+  let arrayBuffer;
+  try {
+    const res = await fetch(url, { headers: { Range: `bytes=0-${MAX_ANALYZE_BYTES - 1}` } });
+    if (!res.ok && res.status !== 206) throw new Error("HTTP " + res.status);
+    arrayBuffer = await res.arrayBuffer();
+  } catch (rangeErr) {
+    // Fallback: ดึงทั้งหมด (เหมือนเดิม) ถ้า Range request fail
+    console.warn("[H-15] Range request failed, falling back to full fetch:", rangeErr?.message || rangeErr);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("ดึงไฟล์เพลงไม่สำเร็จสำหรับวิเคราะห์ (HTTP " + res.status + ")");
+    arrayBuffer = await res.arrayBuffer();
+  }
   return analyzeArrayBuffer(arrayBuffer, onProgress);
 }
 
