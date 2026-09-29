@@ -258,6 +258,23 @@ function getPlaylistName(playlist) {
 const zipJobs = new Map(); // orderId → { abortController, jobId }
 let jsZipModulePromise = null;
 
+// 🔒 (Audit Fix H-31): beforeunload warning ตอนกำลังสร้าง ZIP — กัน admin ปิด tab โดยไม่ตั้งใจ
+//   ปัญหาเดิม: admin กด Verify → รอ 5-15 นาที → ปิด tab โดยไม่ตั้งใจ → ZIP build หยุด
+//   → R2 multipart upload orphan + D1 row ค้าง 'preparing' (กว่า cron cleanup 6 ชม.)
+//   วิธีแก้: ถ้า zipJobs.size > 0 → beforeunload แสดง warning "ออกจากหน้านี้?"
+//   ผลกระทบระบบเดิม: 0% — ถ้าไม่มี ZIP build → ไม่มี warning (เหมือนเดิม)
+//   ถ้ามี ZIP build → browser ถามยืนยันก่อน close (UX ดีขึ้น + กัน data loss)
+//   หมายเหตุ: ใช้ function ไม่ใช่ arrow เพราะบาง browser ต้องการ returnValue
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", function (e) {
+    if (zipJobs.size > 0) {
+      e.preventDefault();
+      e.returnValue = "กำลังสร้าง ZIP อยู่ — ถ้าปิดหน้านี้ ZIP จะไม่เสร็จ (ต้องสร้างใหม่)";
+      return e.returnValue;
+    }
+  });
+}
+
 async function loadJSZip() {
   if (!jsZipModulePromise) {
     jsZipModulePromise = import("https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm")
@@ -2031,6 +2048,8 @@ function renderHistory() {
           ${o.zip_download_url ? `<button class="icon-btn" data-delete-zip-order="${o.id}" title="ลบไฟล์ ZIP ออกจาก Cloud (ไม่ลบออเดอร์ — ประหยัดพื้นที่จัดเก็บ)">🧹</button>` : ""}
           ${/* v5: ปุ่ม "ยกเลิก" แสดงตอนกำลังสร้าง ZIP */""}
           ${zipJobs.has(o.id) ? `<button class="icon-btn danger" data-abort-zip-order="${o.id}" title="ยกเลิกการสร้าง ZIP ระหว่างทำ (cleanup R2 multipart + D1 row)">✕</button>` : ""}
+          ${/* 🔒 (Audit Fix H-31): persistent progress indicator ตอนกำลังสร้าง ZIP */""}
+          ${zipJobs.has(o.id) ? `<span class="zip-progress-badge" style="font-size:11px;color:var(--accent-2,#ec4899);margin-left:4px;">กำลังสร้าง ZIP...</span>` : ""}
           <button class="icon-btn" data-edit-order="${o.id}" title="แก้ไขออเดอร์">✏️</button>
           ${isMainAdmin() ? `<button class="icon-btn danger" data-delete-order="${o.id}" title="ลบออเดอร์">🗑</button>` : ""}
         </div>
