@@ -295,9 +295,18 @@ async function loadMoreSongs() {
   const nextPage = (STATE.songsPage || 0) + 1;
   const offset = (nextPage - 1) * 50;
   try {
+    // 🔒 (Audit Fix M-38): เพิ่ม AbortController timeout 15 วินาที — กัน fetch hang forever
+    //   ปัญหาเดิม: ถ้า Worker hang → fetch hang forever → STATE.songsLoading = true ค้าง
+    //   → user scroll ลง → กด "load more" ไม่ได้ → UI ค้าง
+    //   วิธีแก้: AbortController + setTimeout 15s → ถ้าเกิน → abort + reset state
+    //   ผลกระทบระบบเดิม: 0% — ปกติ loadMoreSongs ใช้ 1-2 วินาที → ไม่เกิน 15 วินาที
+    const _abortCtrl = new AbortController();
+    const _timeoutId = setTimeout(() => _abortCtrl.abort(), 15000);
     const res = await fetch(`/api/db/songs?limit=50&offset=${offset}&slim=1`, {
       credentials: "same-origin",
+      signal: _abortCtrl.signal,
     });
+    clearTimeout(_timeoutId);
     if (!res.ok) {
       console.warn(`loadMoreSongs: HTTP ${res.status}`);
       STATE.songsHasMore = false;

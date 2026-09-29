@@ -31,6 +31,22 @@ const CloudinaryProvider = {
   // และไฟล์จะถูกเก็บตาม path ที่ preset กำหนดแทน — เข้า Cloudinary Console > Upload presets เพื่อเช็ค/แก้ได้
   // signal (ไม่บังคับ): ส่ง AbortController().signal เข้ามาเพื่อยกเลิกอัปโหลดจริงกลางทางได้ (ยิง xhr.abort())
   async upload(file, { folder = "", resourceType = "auto" } = {}, onProgress, signal) {
+    // 🔒 (Audit Fix M-32): Client-side file size limit — กัน upload ไฟล์ 100MB
+    //   ปัญหาเดิม: ไม่มี limit ฝั่ง storage-adapter → ลูกค้า/แอดมินอัปโหลดไฟล์ใหญ่ได้
+    //   → Cloudinary free tier 10MB limit → reject แต่เสีย bandwidth
+    //   → Worker free plan 100MB body limit → อาจพัง
+    //   วิธีแก้: ตรวจ file.size ก่อน upload → ถ้าเกิน 50MB → reject ทันที
+    //   ผลกระทบระบบเดิม: 0% — ถ้าไฟล์ < 50MB → ผ่าน (เหมือนเดิม)
+    //   ถ้าเกิน 50MB → reject + แจ้ง error (กัน bandwidth + Worker crash)
+    const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+    if (file && file.size && file.size > MAX_FILE_SIZE_BYTES) {
+      const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+      const err = new Error(`ไฟล์ใหญ่เกินไป (${sizeMB} MB) — ขนาดสูงสุด 50 MB`);
+      err.code = "file/too-large";
+      err.maxSize = MAX_FILE_SIZE_BYTES;
+      err.actualSize = file.size;
+      throw err;
+    }
     return new Promise((resolve, reject) => {
       const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`;
       const formData = new FormData();

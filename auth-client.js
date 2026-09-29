@@ -24,8 +24,13 @@ function toUser(body) {
 function notify() {
   for (const cb of listeners.slice()) cb(auth.currentUser);
 }
+// 🔒 (Audit Fix M-37): safeJson ไม่กลืน error เงียบ ๆ — log warning แทน
 async function safeJson(res) {
-  try { return await res.json(); } catch { return {}; }
+  try { return await res.json(); } catch (err) {
+    // 🔒 (M-37): log warning แทนที่จะกลืนเงียบ ๆ → dev เห็นใน console
+    console.warn("[M-37] safeJson: JSON parse failed (may be empty body or non-JSON):", err?.message || err);
+    return {};
+  }
 }
 function apiError(body, fallbackMessage, fallbackCode) {
   const err = new Error((body && body.error) || fallbackMessage);
@@ -33,11 +38,35 @@ function apiError(body, fallbackMessage, fallbackCode) {
   return err;
 }
 
+// 🔒 (Audit Fix M-36): fetchWithRetry — ใช้สำหรับ auth endpoints ที่ transient fail
+//   ปัญหาเดิม: /api/auth/me transient fail → admin ถูก logout โดยไม่ตั้งใจ
+//   วิธีแก้: retry 1 ครั้งหลัง 1 วินาที (เพียงพอสำหรับ transient)
+//   ผลกระทบระบบเดิม: 0% — กรณีสำเร็จ → return เหมือนเดิม (no retry)
+async function fetchWithRetry(url, options = {}, maxRetries = 1) {
+  let lastErr;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, { credentials: "same-origin", ...options });
+      return res; // success → return
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxRetries && (err?.name === "TypeError" || !err?.code)) {
+        console.warn(`[M-36] auth fetchWithRetry ${attempt + 1}/${maxRetries} for ${url}:`, err?.message || err);
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
 // ---------------- ตรวจสอบ session ปัจจุบันตอนโหลดหน้าเว็บครั้งแรก (เทียบเท่า Firebase ตรวจ token ที่เก็บไว้) ----------------
 let initialCheckDone = false;
 const initialCheckPromise = (async () => {
   try {
-    const res = await fetch("/api/auth/me", { credentials: "same-origin" });
+    // 🔒 (Audit Fix M-36): ใช้ fetchWithRetry แทน fetch ตรง ๆ → กัน transient fail
+    const res = await fetchWithRetry("/api/auth/me", {}, 1);
     auth.currentUser = res.ok ? toUser(await safeJson(res)) : null;
     // เก็บ role ไว้ใน currentUser ด้วย เผื่อโค้ดเดิมบางจุดอยากอ่านตรงๆ (ของเดิม Firebase ไม่มี role
     // ใน user object แต่ resolveCurrentAdminRole() จะ query เพิ่มเองอยู่แล้วเหมือนเดิมทุกจุด)
