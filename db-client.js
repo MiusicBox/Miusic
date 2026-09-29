@@ -79,15 +79,10 @@ async function apiFetch(path, options = {}) {
         //   วิธีแก้: ถ้า 401 → ล้าง cookie + redirect ไป login page (global)
         //   ผลกระทบระบบเดิม: 0% — ถ้า session valid → ไม่ทำอะไร (เหมือนเดิม)
         //   ถ้า session หมด → redirect ครั้งเดียว (UX ชัดเจน)
-        if (res.status === 401 && typeof window !== "undefined") {
-          // ล้าง cookie ฝั่ง client (server ลบ session แล้ว)
+        if (res.status === 401 && typeof window !== "undefined" && window.location.pathname.includes("/admin")) {
+          // Only redirect on admin pages — customer pages use 401 for order ID conflicts
           document.cookie = "session_token=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0";
-          // redirect ไป login page (admin.html หรือ root)
-          if (window.location.pathname.includes("/admin")) {
-            // admin page → reload (login screen shows)
-            window.location.reload();
-          }
-          // customer page → ไม่ redirect (ลูกค้าไม่ต้อง login)
+          window.location.reload();
         }
         // 🔒 (H-27): retry เฉพาะ 5xx (server error) — ไม่ retry 4xx (client error)
         if (res.status >= 500 && res.status < 600 && attempt < MAX_RETRIES) {
