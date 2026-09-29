@@ -3378,10 +3378,37 @@ async function handleUpdateOrder() {
   const btn = document.getElementById("eOrderSaveBtn");
 
   const customerName = nameInput.value.trim();
-  const whatsapp = whatsappInput.value.trim();
+  const whatsappRaw = whatsappInput.value.trim();
+  // 🔒 (Audit Fix H-33): validate status ก่อนให้แก้ — กัน admin แก้ completed/cancelled order
+  //   ปัญหาเดิม: handleUpdateOrder ไม่เช็ค status → admin แก้ completed order ได้
+  //   → ออเดอร์ completed ถูกแก้ items/total → customer เห็นใบเสร็จเปลี่ยน (เสียความเชื่อมั่น)
+  //   → cancelled order ถูกแก้ → สับสนว่ายกเลิกจริงหรือไม่
+  //   วิธีแก้: ถ้า status === 'completed' หรือ 'cancelled' → แจ้ง warning + ยืนยันก่อน
+  //   ผลกระทบระบบเดิม: 0% — กรณี status='pending_verify'/'processing' → ผ่าน (เหมือนเดิม)
+  //   กรณี completed/cancelled → ถามยืนยันก่อน (UX ชัดเจน + กันการแก้โดยไม่ตั้งใจ)
+  const existingOrder = state.allOrders.find((o) => o.id === orderId);
+  if (existingOrder && (existingOrder.status === "completed" || existingOrder.status === "cancelled")) {
+    const cfg = STATUS_CONFIG[existingOrder.status] || {};
+    const msg = existingOrder.status === "completed"
+      ? `ออเดอร์นี้อยู่ในสถานะ "${cfg.label || existingOrder.status}" (เสร็จสิ้นแล้ว) — การแก้ไขอาจทำให้ข้อมูลใบเสร็จที่ลูกค้าเห็นเปลี่ยน ต้องการแก้ต่อหรือไม่?`
+      : `ออเดอร์นี้อยู่ในสถานะ "${cfg.label || existingOrder.status}" (ยกเลิกแล้ว) — การแก้ไขอาจสับสนว่ายกเลิกจริงหรือไม่ ต้องการแก้ต่อหรือไม่?`;
+    const confirm = window.askConfirm
+      ? await window.askConfirm(msg, { title: "ยืนยันการแก้ไขออเดอร์", okText: "แก้ต่อ", danger: true })
+      : window.confirm(msg);
+    if (!confirm) {
+      return;  // admin ยกเลิก → ไม่แก้
+    }
+  }
+
+  const whatsapp = normalizePhoneForStorage(whatsappRaw);
+  // 🔒 (Audit Fix H-29): validate เบอร์โทรหลัง normalize (เหมือน handleSubmitOrder)
+  if (!isValidNormalizedPhone(whatsapp)) {
+    feedback.textContent = "เบอร์ WhatsApp ไม่ถูกต้อง — กรุณากรอกเบอร์โทรศัพท์ให้ครบ";
+    if (whatsappInput) { whatsappInput.focus(); whatsappInput.select(); }
+    return;
+  }
   const payload = buildOrderPayloadFromEntries(state.editCartEntries);
   const total = payload.total;
-  const existingOrder = state.allOrders.find((o) => o.id === orderId);
 
   feedback.style.color = "var(--danger)";
   feedback.textContent = "";
@@ -3441,6 +3468,13 @@ async function handleUpdateOrder() {
 
   try {
     await updateDoc(doc(db, "orders", orderId), updatedData);
+    // 🔒 (Audit Fix H-32): แสดง success toast ก่อน closeEditOrderModal — กัน feedback หาย
+    //   ปัญหาเดิม: closeEditOrderModal() ปิด modal ทันที → feedback "บันทึกสำเร็จ"
+    //   อยู่ใน modal ที่ถูกซ่อนไปแล้ว → admin ไม่เห็น
+    //   วิธีแก้: แสดง orderToast (global toast ที่ไม่อยู่ใน modal) ก่อน close
+    //   ผลกระทบระบบเดิม: 0% — closeEditOrderModal ยังทำงานเหมือนเดิม (modal ปิด)
+    //   แต่ admin เห็น success toast visible (UX ดีขึ้น)
+    orderToast(`บันทึกการแก้ไขออเดอร์ของ ${customerName} เรียบร้อย ✓`, "success");
     closeEditOrderModal();
     // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client แทน re-fetch (ลด D1 reads)
     //   updatedData มีทุก field ที่จำเป็น (items, total, status, zip fields, ฯลฯ) อยู่แล้ว
@@ -3667,6 +3701,10 @@ async function handleSubmitOrder() {
     renderPlaylistSelected();
     renderPlaylistSearchResults();
 
+    // 🔒 (Audit Fix H-32): แสดง success toast (global) ก่อน modal close — กัน feedback หาย
+    //   เดิม: feedback.textContent อยู่ใน modal → modal close ทันที → admin ไม่เห็น
+    //   ใหม่: แสดง orderToast (global toast) + คง feedback ใน modal ไว้ด้วย (เผื่อ modal เปิดอยู่)
+    orderToast(`บันทึกออเดอร์ของ ${customerName} เรียบร้อย ✓`, "success");
     feedback.style.color = "var(--success)";
     feedback.textContent = `บันทึกออเดอร์ของ ${customerName} เรียบร้อยแล้ว ✓`;
 
