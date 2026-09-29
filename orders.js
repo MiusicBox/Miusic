@@ -555,6 +555,18 @@ async function createOrderZip(orderId) {
       throw new Error(errText);
     }
     if (!startRes.ok || !startData.ok) {
+      // 🔒 (Audit Fix H-1): ถ้าได้ 409 Conflict → แปลว่าแอดมินอื่นกำลังสร้าง ZIP อยู่
+      //   แสดงข้อความที่เข้าใจง่าย ไม่ใช่ error 500 ทั่วไป
+      if (startRes.status === 409 || startData?.code === "zip/concurrent-build-conflict") {
+        // ลบ zipJobs entry (ไม่ได้สร้าง ZIP จริง) → ปลดล็อกปุ่ม
+        if (zipJobs.has(orderId)) zipJobs.delete(orderId);
+        renderFromState();
+        return {
+          ok: false,
+          error: startData?.error || "กำลังสร้าง ZIP ของออเดอร์นี้อยู่โดยแอดมินอื่น — กรุณารอให้เสร็จก่อน",
+          conflict: true,
+        };
+      }
       throw new Error(startData?.error || `เริ่มกระบวนการ ZIP ไม่สำเร็จ (HTTP ${startRes.status})`);
     }
 

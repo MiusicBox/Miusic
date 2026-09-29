@@ -2876,8 +2876,23 @@ async function handleOrderZipStart(request, env) {
       "ON CONFLICT(job_id) DO UPDATE SET order_id = excluded.order_id, bucket_key = excluded.bucket_key, parts = excluded.parts, total_songs = excluded.total_songs, status = 'preparing', error = '', updated_at = excluded.updated_at"
     ).bind(jobId, orderId, bucketKey, initialParts, totalSongs, now, now).run();
   } catch (err) {
-    // ถ้า insert ล้มเหลว → abort multipart upload เพื่อไม่ให้ค้างใน R2
+    // 🔒 (Audit Fix H-1): ถ้า INSERT fail เพราะ UNIQUE constraint บน (order_id, status='preparing')
+    //   → แปลว่ามีแอดมินอื่นกำลังสร้าง ZIP สำหรับออเดอร์นี้อยู่แล้ว
+    //   → แจ้ง 409 Conflict (ไม่ใช่ 500 error)
+    //   → abort multipart upload ที่เราสร้างไปแล้ว (กัน R2 leak)
+    //   ถ้า UNIQUE index ยังไม่สร้าง (DB เก่า) → จะไม่เจอ error นี้ → ทำงานเหมือนเดิม
     try { await mpu.abort(); } catch (_) {}
+    const errMsg = String(err?.message || err || "");
+    // D1/SQLite UNIQUE constraint error message มีหลายรูปแบบ:
+    //   "UNIQUE constraint failed: order_zip_jobs.order_id"
+    //   "constraint failed"
+    if (errMsg.includes("UNIQUE") || errMsg.includes("constraint")) {
+      return jsonResponse({
+        error: "กำลังสร้าง ZIP ของออเดอร์นี้อยู่โดยแอดมินอื่น — กรุณารอให้เสร็จก่อน",
+        code: "zip/concurrent-build-conflict",
+        order_id: orderId,
+      }, 409);
+    }
     return jsonResponse({ error: safeError("บันทึกสถานะไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
   }
 

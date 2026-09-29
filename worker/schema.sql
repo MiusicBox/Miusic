@@ -175,6 +175,21 @@ CREATE TABLE IF NOT EXISTS order_zip_jobs (
 CREATE INDEX IF NOT EXISTS idx_order_zip_jobs_order ON order_zip_jobs(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_zip_jobs_status ON order_zip_jobs(status);
 
+-- 🔒 (Audit Fix H-1): UNIQUE partial index บน order_id WHERE status='preparing'
+--   ปัญหาเดิม: 2 แอดมินกด "Verify payment" พร้อมกัน → ทั้งคู่ INSERT row ใน order_zip_jobs
+--     Worker /api/order-zip/start ทำการ cleanup (delete row เดิม + abort R2 multipart)
+--     แต่ cleanup ไม่ atomic กับ INSERT → race window → ทั้งคู่ INSERT สำเร็จ
+--     → แอดมินตัวแรกเสีย work ที่ทำ (R2 multipart ถูก abort)
+--     → แอดมินตัวแรกเห็น confusing error
+--   วิธีแก้: UNIQUE partial index → INSERT ตัวที่ 2 จะ fail (เพราะ row แรกค้าง status='preparing')
+--     Worker จับ error → return 409 → client แสดง "กำลังสร้าง ZIP โดยแอดมินอื่น"
+--   ผลกระทบระบบเดิม: 0% — เป็น partial index (WHERE status='preparing')
+--     ถ้า row มี status='ready' หรือ 'failed' → ไม่ block INSERT ใหม่ (ออเดอร์เดิมเสร็จแล้ว)
+--   ⚠️ ถ้า DB เก่ามี row หลายตัวที่ status='preparing' สำหรับ order_id เดียวกัน →
+--     index creation จะ fail → ต้อง cleanup manual ก่อน (ดู scripts/recover-stuck-queue.sql)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_order_zip_jobs_order_preparing
+  ON order_zip_jobs(order_id) WHERE status = 'preparing';
+
 -- ===================================================
 -- 🔄 (2026-09-28 fix Sequential Queue): ตาราง order_zip_queue
 --   เก็บ order ที่แอดมินยืนยันสลิปแล้ว รอ Worker สร้าง ZIP ทีละออเดอร์ (sequential)
