@@ -892,8 +892,13 @@ async function handleAuth(request, env, url) {
     try {
       // 🔧 (2026-09-22 fix Bug #6): นับ attempts ทั้ง IP และ email
       //   ถ้าใครก็ตามที่ยิง password เกิน 5 ครั้ง ไม่ว่าจาก IP ใด → block
+      // BUG FIX: Only count actual LOGIN attempts — not cust-query/cust-list/change-pw/verify-pw
+      //   Those use the same login_attempts table but with different email keys
+      //   (cust-query:IP, cust-list:IP, change-pw:adminId, verify-pw:adminId)
+      //   Login uses actual email as key — so filter by email field
       const ipAttemptsRow = await env.DB.prepare(
-        "SELECT COUNT(*) AS c FROM login_attempts WHERE ip = ? AND attempted_at > ?"
+        "SELECT COUNT(*) AS c FROM login_attempts WHERE ip = ? AND attempted_at > ? " +
+        "AND email NOT LIKE 'cust-%%' AND email NOT LIKE 'change-pw%%' AND email NOT LIKE 'verify-pw%%'"
       ).bind(clientIP, rateLimitWindow).first();
       // 🔧 (2026-09-22 fix Bug #6): นับตาม email ด้วย — กัน distributed IP brute-force
       const emailAttemptsRow = await env.DB.prepare(
