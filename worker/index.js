@@ -5969,6 +5969,30 @@ export default {
         // ถ้าตาราง order_zip_jobs ไม่มี → log แล้วข้ามไป
         console.warn("[cleanup] order_zip_jobs stuck cleanup failed:", stuckErr?.message || stuckErr);
       }
+
+      // 🔒 (Audit Fix H-26): Cleanup login_attempts + order_creation_attempts + payment_proof_attempts
+      //   ปัญหาเดิม: tables สะสม forever → ขยะ + ช้าเมื่อ table ใหญ่
+      //   วิธีแก้: ลบ rows ที่เก่ากว่า 24 ชม. (cutoff เดียวกับ ZIP)
+      //   ใช้ cutoff จากด้านบน (24 ชม. ago) — ตาราง attempts ไม่ต้องเก็บเกิน 24 ชม.
+      //   ผลกระทบระบบเดิม: 0% — rate limit window = 15 นาที → ข้อมูล > 24 ชม. ไม่จำเป็น
+      //   ถ้า table ไม่มี → catch + log + ข้าม
+      try {
+        // cleanup login_attempts (login fail + change-pw fail + customer-query + customer-list)
+        await env.DB.prepare(
+          "DELETE FROM login_attempts WHERE attempted_at < ?"
+        ).bind(cutoff).run();
+        // cleanup order_creation_attempts
+        await env.DB.prepare(
+          "DELETE FROM order_creation_attempts WHERE attempted_at < ?"
+        ).bind(cutoff).run();
+        // cleanup payment_proof_attempts
+        await env.DB.prepare(
+          "DELETE FROM payment_proof_attempts WHERE attempted_at < ?"
+        ).bind(cutoff).run();
+        console.log("[cleanup] Rate-limit attempts tables cleaned (rows older than 24h)");
+      } catch (attemptsErr) {
+        console.warn("[cleanup] attempts tables cleanup failed:", attemptsErr?.message || attemptsErr);
+      }
     } catch (err) {
       // cron error ไม่ควรทำให้ Cloudflare ลบ trigger → log แล้วจบ
       console.error("[cleanup] Cron error:", err?.message || err);
