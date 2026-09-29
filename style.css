@@ -4900,3 +4900,31 @@ body {
   height: 300px !important;
   margin-top: 0 !important;
 }
+
+/* Fix v4: เพลงสุดท้ายในเพลย์ลิสต์ + เพลย์ลิสต์สุดท้าย โดนบัง */
+/* เพิ่ม padding-bottom ให้ทุก container ที่อาจมีเพลงสุดท้าย */
+.playlist-wrapper {
+  padding-bottom: 300px !important;
+}
+
+.playlist-block:last-child {
+  margin-bottom: 300px !important;
+}
+
+.playlist-content-box {
+  padding-bottom: 20px !important;
+}
+
+/* เพลงสุดท้ายในเพลย์ลิสต์ */
+.playlist-song-row:last-child {
+  margin-bottom: 20px !important;
+}
+
+/* djSection ก็เช่นกัน */
+#djSection {
+  padding-bottom: 300px !important;
+}
+
+.dj-row {
+  padding-bottom: 20px !important;
+}
