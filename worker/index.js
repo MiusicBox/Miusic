@@ -2149,6 +2149,9 @@ async function handleDb(request, env, url) {
         return jsonResponse({ exists: true, id: doc.id, data: responseData });
       }
       if (request.method === "PUT") {
+        // BUG FIX: body must be parsed before use in PUT handler
+        let body;
+        try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
         // 🔒 แก้บั๊ก C2 (2026-09-17): กัน Privilege Escalation
         //   เดิม: ตรวจแค่ "login หรือไม่" แต่ไม่ตรวจ admin.role === "main"
         //   → Sub-admin สามารถ PATCH/PUT ตัวเองเป็น main admin หรือแก้ email ของ main admin ได้
