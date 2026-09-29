@@ -150,6 +150,76 @@ function safeError(userMessage, err) {
   return userMessage;
 }
 
+// 🔒 (Audit Fix H-10): Server-side validation สำหรับ discount_value + type ใน discounts/promotions
+//   ปัญหาเดิม: client-side validate แค่ discount_value <= 100 สำหรับ percent types
+//     sub-admin สามารถ bypass client ด้วย direct API call: PATCH /api/db/promotions/:id
+//     { data: { discount_value: 150 } } → server stores 150 → calc Math.min(100) clamps
+//     แต่กรณี type=cart_fixed ไม่มี clamp → sub-admin สามารถตั้ง discount=999999 LAK
+//     → final_total = 0 (ฟรี) แม้ลูกค้าไม่มี coupon
+//   วิธีแก้: validate ฝั่ง server ทุกครั้งที่ PUT/PATCH discounts/promotions
+//   ผลกระทบระบบเดิม: 0% — ถ้าค่าถูกต้อง → ผ่าน (เหมือนเดิม)
+//   ถ้าค่าผิด → return error message (string) → caller return 400
+//   ถ้าไม่มี type หรือ discount_value → ข้าม validation (backward-compat กับของเดิม)
+function validateDiscountData(collection, data) {
+  if (!data || typeof data !== "object") return null;
+  const type = data.type;
+  // ถ้าไม่มี type → ข้าม validation (อาจเป็น document เดิมที่ยังไม่ได้ตั้ง type)
+  if (!type) return null;
+  const discountValue = data.discount_value;
+  // valid types
+  const validTypes = ["cart_percent", "cart_fixed", "buy_x_get_y_percent", "playlist_tiered_percent", "item_percent", "item_fixed"];
+  if (!validTypes.includes(type)) {
+    return `ประเภทส่วนลด "${type}" ไม่ถูกต้อง — ประเภทที่รองรับ: ${validTypes.join(", ")}`;
+  }
+  // ตรวจ discount_value (percent types: 0-100, fixed types: >= 0)
+  const isPercentType = type === "cart_percent" || type === "buy_x_get_y_percent" || type === "playlist_tiered_percent" || type === "item_percent";
+  const isFixedType = type === "cart_fixed" || type === "item_fixed";
+  if (discountValue != null) {
+    const v = Number(discountValue);
+    if (!Number.isFinite(v)) {
+      return `discount_value ต้องเป็นตัวเลข — ได้รับ: ${discountValue}`;
+    }
+    if (v < 0) {
+      return `discount_value ต้อง >= 0 — ได้รับ: ${v}`;
+    }
+    if (isPercentType && v > 100) {
+      return `discount_value สำหรับ type="${type}" ต้อง <= 100 (เป็นเปอร์เซ็นต์) — ได้รับ: ${v}`;
+    }
+    if (isFixedType && v > 1000000000) {
+      // upper bound 1 billion LAK — กัน overflow / ราคาติดลบ
+      return `discount_value สำหรับ type="${type}" ต้อง <= 1,000,000,000 LAK — ได้รับ: ${v}`;
+    }
+  }
+  // ตรวจ tier.discount_percent สำหรับ playlist_tiered_percent
+  if (type === "playlist_tiered_percent" && Array.isArray(data.tiers)) {
+    for (let i = 0; i < data.tiers.length; i++) {
+      const tier = data.tiers[i];
+      if (!tier || typeof tier !== "object") continue;
+      const tp = Number(tier.discount_percent);
+      if (Number.isFinite(tp)) {
+        if (tp < 0 || tp > 100) {
+          return `tier[${i}].discount_percent ต้องอยู่ในช่วง 0-100 — ได้รับ: ${tp}`;
+        }
+      }
+      if (tier.min_quantity != null) {
+        const mq = Number(tier.min_quantity);
+        if (Number.isFinite(mq) && mq < 1) {
+          return `tier[${i}].min_quantity ต้อง >= 1 — ได้รับ: ${mq}`;
+        }
+      }
+    }
+  }
+  // ตรวจ date range (ถ้ามีทั้งคู่)
+  if (data.start_at && data.end_at) {
+    const s = new Date(data.start_at);
+    const e = new Date(data.end_at);
+    if (!isNaN(s.getTime()) && !isNaN(e.getTime()) && s.getTime() > e.getTime()) {
+      return `start_at (${data.start_at}) ต้อง <= end_at (${data.end_at})`;
+    }
+  }
+  return null; // valid
+}
+
 // 🔧 (2026-09-28 fix Critical C3): Dynamic CORS origin allowlist
 //   เดิม: ไม่ตั้ง ACAO เลย = same-origin เท่านั้น
 //         → ในกรณีที่ Worker deploy ในหลายโดเมน (เช่น *.workers.dev + custom domain)
@@ -1801,7 +1871,19 @@ async function handleDb(request, env, url) {
         if (collection === "admins" && admin.role !== "main") {
           return jsonResponse({ error: "เฉพาะแอดมินหลักเท่านั้นที่จัดการแอดมินได้" }, 403);
         }
-        const body = await request.json();
+        // 🔒 (Audit Fix H-10): Server-side validation สำหรับ discount_value bounds
+        //   ปัญหาเดิม: client-side validate discount_value <= 100 แต่ server ไม่ validate
+        //   sub-admin สามารถ bypass client ด้วย direct API call: PATCH /api/db/promotions/:id
+        //   { data: { discount_value: 150 } } → server stores 150 → calc Math.min(100) clamps
+        //   แต่กรณี type=cart_fixed ไม่มี clamp → sub-admin สามารถตั้ง discount=999999 LAK
+        //   ทำให้ final_total = 0 (ฟรี) แม้ลูกค้าไม่มี coupon
+        //   วิธีแก้: validate ฝั่ง server ทุกครั้งที่เขียน discounts/promotions
+        //   ผลกระทบระบบเดิม: 0% — ถ้าค่าถูกต้อง → ผ่าน (เหมือนเดิม)
+        //   ถ้าค่าผิด → return 400 + ไม่บันทึก
+        if ((collection === "discounts" || collection === "promotions") && body?.data) {
+          const validationErr = validateDiscountData(collection, body.data);
+          if (validationErr) return jsonResponse({ error: validationErr }, 400);
+        }
         if (!admin && collection === "orders") {
           // 🔒 (2026-09-23 fix): Rate limiting บนการสร้างออเดอร์สำหรับลูกค้าที่ยังไม่ login
           //   ปัญหา: endpoint นี้ (PUT /api/db/orders/:id แบบไม่ login) ไม่มี rate limit
@@ -2419,6 +2501,17 @@ async function handleDb(request, env, url) {
           return jsonResponse({ error: "เฉพาะแอดมินหลักเท่านั้นที่จัดการแอดมินได้" }, 403);
         }
         const body = await request.json();
+        // 🔒 (Audit Fix H-10): Server-side validation สำหรับ discount_value bounds (เหมือน PUT)
+        //   ดึง beforeDoc ก่อน เพื่อ merge body.data + before เป็น full document → validate
+        //   ทำไมต้อง merge? เพราะ PATCH อาจส่งแค่ field ที่เปลี่ยน (เช่น { discount_value: 150 })
+        //   type ยังอยู่ใน DB → ต้อง merge ก่อน validate
+        if ((collection === "discounts" || collection === "promotions") && body?.data) {
+          let existingForValidation = null;
+          try { existingForValidation = await getDocument(env, collection, id); } catch {}
+          const mergedForValidation = { ...(existingForValidation?.data || {}), ...body.data };
+          const validationErr = validateDiscountData(collection, mergedForValidation);
+          if (validationErr) return jsonResponse({ error: validationErr }, 400);
+        }
         // 🔧 (2026-09-22 fix Bug #2 UI v2): ดึงข้อมูลก่อนเปลี่ยนเก็บไว้สำหรับ audit log diff
         //   PATCH ทุกครั้งคือการแก้ไข (update) → ต้องดึง before เสมอ
         let beforeDoc = null;
