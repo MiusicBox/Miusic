@@ -1337,6 +1337,23 @@ async function handleDb(request, env, url) {
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
     const ids = Array.isArray(body?.ids) ? body.ids : [];
     if (ids.length === 0) return jsonResponse({ docs: [] });
+    // 🔒 (Audit Fix H-35): limit ids สูงสุด 500 — กัน D1 amplification + DoS
+    //   ปัญหาเดิม: ไม่มี limit → attacker ส่ง 10,000 ids → getDocumentsByIds chunk 100 × 100
+    //   = 100 D1 queries × 10,000 rows = 1,000,000 D1 reads ใน 1 request
+    //   → D1 read quota exhausted → DoS
+    //   วิธีแก้: limit 500 (เพียงพอสำหรับ checkout 30-50 เพลง + bulk operations)
+    //   ถ้าเกิน → return 400 + แจ้ง error
+    //   ผลกระทบระบบเดิม: 0% — กรณีปกติ (< 500) → ผ่าน (เหมือนเดิม)
+    //   กรณีผิดปกติ (> 500) → reject (กัน DoS)
+    const BATCH_GET_MAX_IDS = 500;
+    if (ids.length > BATCH_GET_MAX_IDS) {
+      return jsonResponse({
+        error: `จำนวนเอกสารเกิน ${BATCH_GET_MAX_IDS} รายการ — กรุณาแบ่ง batch เล็กลง`,
+        code: "batch-get/too-many-ids",
+        received: ids.length,
+        max: BATCH_GET_MAX_IDS,
+      }, 400);
+    }
     try {
       const docs = await getDocumentsByIds(env, collection, ids);
       // 🐛 (2026-09-29 fix): ถ้าไม่ใช่ admin + collection="songs" → sanitize sensitive fields ออก
@@ -1899,12 +1916,26 @@ async function handleDb(request, env, url) {
       //   ?slim=1            → ส่งเฉพาะฟิลด์จำเป็นสำหรับ list view (ลด response size ~75%)
       //   default: no limit, no slim — backward compat (admin ใช้ได้ปกติ)
       //   ใช้กับ /api/db/songs ของ customer page (เพลง 5000+ ตัว) → ลดเวลาโหลดจาก 30s+ → 1s
+      // 🔒 (Audit Fix H-34): clamp limit สูงสุด 5,000 — กัน D1 amplification
+      //   ปัญหาเดิม: ไม่มี limit → attacker ส่ง ?limit=1000000 → listDocuments ดึง 1M rows
+      //   → D1 read quota exhausted + Worker memory spike
+      //   วิธีแก้: Math.min(limit, 5000) — เพียงพอสำหรับ admin (ดูทุก orders) + customer (lazy load)
+      //   ถ้าต้องการมากกว่า 5,000 → ใช้ pagination (offset + limit ทีละ 5,000)
+      //   ผลกระทบระบบเดิม: 0% — กรณีปกติ (limit <= 5000) → ผ่าน (เหมือนเดิม)
+      //   กรณีผิดปกติ (limit > 5000) → clamp เป็น 5000 (กัน DoS)
       const urlParams = new URL(request.url).searchParams;
-      const limit = parseInt(urlParams.get("limit") || "", 10);
+      const LIMIT_MAX = 5000;
+      let limit = parseInt(urlParams.get("limit") || "", 10);
       const offset = parseInt(urlParams.get("offset") || "0", 10);
       const slim = urlParams.get("slim") === "1";
       const opts = {};
-      if (Number.isInteger(limit) && limit > 0) opts.limit = limit;
+      if (Number.isInteger(limit) && limit > 0) {
+        if (limit > LIMIT_MAX) {
+          console.warn(`[H-34] listDocuments limit ${limit} exceeds max ${LIMIT_MAX} — clamping`);
+          limit = LIMIT_MAX;
+        }
+        opts.limit = limit;
+      }
       if (Number.isInteger(offset) && offset > 0) opts.offset = offset;
       let docs = await listDocuments(env, collection, opts);
       // 🔒 sanitize ฟิลด์ sensitive ของ songs ถ้าเป็น non-admin
