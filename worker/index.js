@@ -1354,10 +1354,44 @@ async function handleDb(request, env, url) {
       const total = Number(totalRow?.cnt) || 0;
 
       // parse before_data/after_data เป็น object (ฝั่ง client จะได้ไม่ต้อง JSON.parse ซ้ำ)
+      // 🔒 (Audit Fix H-9): สำหรับ sub-admin → redact PII fields ใน before_data/after_data
+      //   ปัญหาเดิม: sub-admin เห็นข้อมูลลูกค้าทั้งหมด (whatsapp, bank_account, customer_name)
+      //     ผ่าน audit_log ของแอดมินคนอื่น → privacy breach
+      //   วิธีแก้: ถ้า admin.role !== 'main' → redact sensitive fields จาก before_data/after_data
+      //   SENSITIVE_FIELDS = whatsapp, customer_name, bank_account, qr_code_url,
+      //     full_file_url, zip_download_url, password_hash, session_token
+      //   ผลกระทบระบบเดิม: 0% — main admin เห็นเหมือนเดิม (no redaction)
+      //     sub-admin เห็นข้อมูลที่ redact แล้ว (privacy safe)
+      const isMainAdmin = admin?.role === "main";
+      const SENSITIVE_AUDIT_FIELDS = new Set([
+        "whatsapp", "customer_name", "bank_account", "bank_account_name",
+        "qr_code_url", "full_file_url", "zip_download_url",
+        "password_hash", "session_token", "password",
+      ]);
+      function redactSensitive(obj) {
+        if (!obj || typeof obj !== "object") return obj;
+        if (Array.isArray(obj)) return obj.map(redactSensitive);
+        const out = {};
+        for (const [k, v] of Object.entries(obj)) {
+          if (SENSITIVE_AUDIT_FIELDS.has(k)) {
+            out[k] = "[REDACTED]";
+          } else if (v && typeof v === "object") {
+            out[k] = redactSensitive(v);
+          } else {
+            out[k] = v;
+          }
+        }
+        return out;
+      }
       const parsedLogs = (logs || []).map(row => {
         let beforeParsed = null, afterParsed = null;
         try { if (row.before_data) beforeParsed = JSON.parse(row.before_data); } catch { beforeParsed = row.before_data; }
         try { if (row.after_data)  afterParsed  = JSON.parse(row.after_data);  } catch { afterParsed  = row.after_data;  }
+        // 🔒 (Audit Fix H-9): redact PII สำหรับ sub-admin
+        if (!isMainAdmin) {
+          beforeParsed = redactSensitive(beforeParsed);
+          afterParsed = redactSensitive(afterParsed);
+        }
         return {
           id: row.id,
           admin_id: row.admin_id,
