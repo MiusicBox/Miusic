@@ -2526,7 +2526,43 @@ function closeFullFilesModal() {
 
 /* ---------------- เปลี่ยนสถานะออเดอร์ ---------------- */
 async function handleStatusChange(orderId, newStatus) {
-  const order = state.allOrders.find((item) => item.id === orderId);
+  let order = state.allOrders.find((item) => item.id === orderId);
+
+  // 🔒 (Audit Fix H-5): Re-fetch order จาก DB ก่อน validate transition
+  //   ปัญหาเดิม: order มาจาก state.allOrders (in-memory) ที่อาจเก่า →
+  //   แอดมิน A ยืนยัน order → status='processing'
+  //   แอดมิน B มี state.allOrders เก่า (ยังเป็น pending_verify) →
+  //   B กดยืนยันซ้ำ → confirmPaymentAndCreateZip รันอีกครั้ง → race + wasted work
+  //   วิธีแก้: re-fetch order จาก DB ก่อน validate transition
+  //   ถ้า DB status != newStatus ที่จะเปลี่ยน → ข้ามไป (admin อื่นทำแล้ว)
+  //   ถ้า DB status === newStatus ที่จะเปลี่ยน → ไม่ทำซ้ำ (already in target state)
+  //   ผลกระทบระบบเดิม: 0% — ถ้า state.allOrders fresh → DB ตรง state → เหมือนเดิม
+  //   ถ้า state.allOrders stale → re-fetch ให้ค่าล่าสุด → ป้องกัน double-action
+  try {
+    const freshSnap = await getDoc(doc(db, "orders", orderId));
+    if (freshSnap && freshSnap.exists && freshSnap.exists()) {
+      const freshData = freshSnap.data();
+      // update state.allOrders ให้ fresh ด้วย (so other UI elements see latest)
+      const idx = state.allOrders.findIndex(o => o.id === orderId);
+      if (idx >= 0) {
+        state.allOrders[idx] = { ...state.allOrders[idx], ...freshData, id: orderId };
+      }
+      // ใช้ freshData แทน order เดิม (เพื่อ validate transition ถูกต้อง)
+      order = { ...order, ...freshData, id: orderId };
+    }
+  } catch (err) {
+    // ถ้า re-fetch fail (network/DB transient) → fallback ใช้ state.allOrders เดิม (เหมือนเดิม)
+    console.warn("[H-5] re-fetch order failed, using stale state:", err?.message || err);
+  }
+
+  // 🔒 (Audit Fix H-5): ถ้า DB status === newStatus → ไม่ต้องทำซ้ำ (already done by another admin)
+  //   ตัวอย่าง: A กด processing → DB=processing, B กด processing → DB=processing อยู่แล้ว
+  //   B ควรเห็น toast "ออเดอร์อยู่ในสถานะ processing อยู่แล้ว" แทนที่จะรัน ZIP build ซ้ำ
+  if (order?.status === newStatus) {
+    const cfg = STATUS_CONFIG[newStatus] || {};
+    orderToast(`ออเดอร์นี้อยู่ในสถานะ "${cfg.label || newStatus}" อยู่แล้ว (อาจถูกเปลี่ยนโดยแอดมินอื่น)`, "info");
+    return;
+  }
 
   // 🔒 (Audit Fix H-3): Disable <select> ระหว่าง async เพื่อกัน race
   //   ปัญหาเดิม: handleStatusChange รัน async นาน (5-15 นาทีตอนสร้าง ZIP)
