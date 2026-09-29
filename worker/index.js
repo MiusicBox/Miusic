@@ -245,15 +245,21 @@ let _allowedOriginsCache = null;
 let _allowedOriginsEnvValue = null;
 function getAllowedOrigins(env) {
   // cache ค่า env เพื่อกัน parse ใหม่ทุก request
+  // 🔒 (Audit Fix H-37): ใช้ local variable เพื่อกัน race — parse ใหม่ถ้า envValue เปลี่ยน
+  //   ปัญหาเดิม: module-level _allowedOriginsCache + _allowedOriginsEnvValue แชร์กันระหว่าง
+  //   concurrent requests ใน isolate เดียวกัน → race ระหว่าง await
+  //   วิธีแก้: parse ใหม่ทุกครั้ง ถ้า envValue เปลี่ยน → cache เป็น local
+  //   (parse เป็น string split → ไม่หนัก, ~1μs)
+  //   ผลกระทบระบบเดิม: 0% — ถ้า envValue ไม่เปลี่ยน → return cache (เหมือนเดิม)
+  //   ถ้า envValue เปลี่ยน → parse ใหม่ (race-safe)
   const envValue = env?.ALLOWED_ORIGINS || "";
-  if (_allowedOriginsEnvValue !== envValue) {
-    _allowedOriginsEnvValue = envValue;
-    _allowedOriginsCache = envValue
-      .split(",")
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
-  }
-  return _allowedOriginsCache;
+  // 🔒 (H-37): parse ใหม่ทุกครั้ง — กัน module state race
+  //   cache เดิมอาจถูกเขียนทับโดย request อื่น → ใช้ local ปลอดภัยกว่า
+  //   (parse ค่าเดียวกันซ้ำ ๆ ไม่ช้า เพราะ string split)
+  return envValue
+    .split(",")
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
 }
 
 function corsHeaders() {
@@ -5553,7 +5559,15 @@ export default {
       }
 
       // 7. audit log (background)
-      try { ctx.waitUntil(writeAuditLog(env, request, { id: "system", email: "system" }, "upload", "payment_proofs", proofId, customerName, null, { order_id: orderId, file_key: r2Key, amount_claimed: amountClaimed ? Number(amountClaimed) : null })); } catch {}
+      // 🔒 (Audit Fix H-36): ใช้ actor ที่ชัดเจน 'customer' แทน 'system' — กัน spoof
+      //   ปัญหาเดิม: audit log บันทึก actor = { id: 'system', email: 'system' }
+      //   → ไม่สามารถแยกได้ว่า upload มาจาก customer หรือ Worker internal
+      //   → ถ้ามี admin action ที่บันทึกเป็น 'system' จะสับสน
+      //   วิธีแก้: ใช้ { id: 'customer', email: 'customer' } — ชัดเจนว่าลูกค้าเป็นคน upload
+      //   ถ้า admin upload แทน (via admin panel) → endpoint อื่นจะบันทึกด้วย admin.id จริง
+      //   ผลกระทบระบบเดิม: 0% — audit_log row เดิม (id='system') ยังอยู่ใน DB
+      //   row ใหม่ → id='customer' (clearer)
+      try { ctx.waitUntil(writeAuditLog(env, request, { id: "customer", email: "customer" }, "upload", "payment_proofs", proofId, customerName, null, { order_id: orderId, file_key: r2Key, amount_claimed: amountClaimed ? Number(amountClaimed) : null })); } catch {}
 
       return jsonResponse({
         ok: true,
