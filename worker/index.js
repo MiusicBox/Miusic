@@ -837,7 +837,23 @@ async function handleAuth(request, env, url) {
     await cleanupExpiredSessions(env);
     // 🔧 (2026-09-22 fix Bug #4): query ด้วย LOWER(email) — case-insensitive match
     const admin = await env.DB.prepare("SELECT * FROM admin_users WHERE LOWER(email) = ?").bind(email).first();
-    if (!admin || !(await verifyPassword(password, admin.password_hash))) {
+    // 🔒 (Audit Fix H-22): ป้องกัน timing oracle — ถ้า admin ไม่พบ ก็ยังต้อง verifyPassword
+    //   เพื่อใช้เวลาเท่ากัน (PBKDF2 100k iterations ใช้ ~100ms)
+    //   ปัญหาเดิม: if (!admin || !verifyPassword(...)) → ถ้า !admin → return เร็วกว่า
+    //   → attacker วัด timing ได้ว่า email มีอยู่จริงไหม (timing oracle)
+    //   วิธีแก้: ถ้า !admin → ใช้ dummy hash + verify เพื่อใช้เวลาเท่ากัน
+    //   ผลกระทบระบบเดิม: 0% — กรณี admin พบ → ใช้ verify ปกติ (เหมือนเดิม)
+    //   กรณี admin ไม่พบ → verify กับ dummy hash (เสียเวลา 100ms เพิ่มเติม + กัน timing oracle)
+    const DUMMY_HASH = "pbkdf2$100000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    let passwordOk = false;
+    if (admin) {
+      passwordOk = await verifyPassword(password, admin.password_hash);
+    } else {
+      // dummy verify — เสียเวลาเท่ากัน แต่ผลต้องเป็น false เสมอ
+      await verifyPassword(password, DUMMY_HASH);
+      passwordOk = false;
+    }
+    if (!passwordOk) {
       // 🔒 แก้บั๊ก #4: บันทึก login attempt ที่ล้มเหลวลง D1 (สำหรับ rate limiting)
       try {
         await env.DB.prepare(
