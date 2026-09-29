@@ -1073,6 +1073,20 @@ async function handleDb(request, env, url) {
   const isMigrateRateLimitEndpoint =
     parts.length === 2 && request.method === "POST" && parts[1] === "_migrate-rate-limit" && collection === "_meta";
 
+  // 🔒 (Audit Fix H-7): POST /api/db/orders/_admin-search
+  //   Server-side search สำหรับ old orders ที่ไม่ได้อยู่ใน 200 ออเดอร์ล่าสุด
+  //   ปัญหาเดิม: loadOrdersFromDatabase โหลดแค่ 200 ออเดอร์ล่าสุด
+  //     แอดมิน search → filter state.allOrders ฝั่ง client → ออเดอร์เก่า 201+ ไม่เจอ
+  //     แอดมินคิดว่าไม่มีออเดอร์เก่า → อาจสร้างออเดอร์ซ้ำ
+  //   วิธีแก้: endpoint ใหม่รับ { q: "keyword", limit?: 200 } → server LIKE search
+  //     ค้นใน customer_name + whatsapp + receipt_number + id
+  //     return { docs: [{id, data}] } — เหมือน listDocuments format
+  //   ผลกระทบระบบเดิม: 0% — เป็น endpoint ใหม่ ไม่แตะของเดิม
+  //     client ใช้ถ้าต้องการ ไม่บังคับ (fallback เดิมที่ search ฝั่ง client)
+  //   Security: admin-only (ข้อมูลฝั่งระบบ ลูกค้า PII)
+  const isOrdersAdminSearchEndpoint =
+    collection === "orders" && parts.length === 2 && request.method === "POST" && parts[1] === "_admin-search";
+
   // 🔧 (2026-09-18 v6 Full System): endpoint นับ documents ทั้งหมดใน collection
   //   ใช้สำหรับ dashboard stats → 1 D1 read แทน N reads
   //   request: POST /api/db/:collection/_count-all
@@ -1091,7 +1105,8 @@ async function handleDb(request, env, url) {
 
   // 🔒 Security (2026-09-11): ดึง admin status เสมอเมื่อเป็น collection "songs" เพื่อตัดสินใจว่าจะ sanitize
   // ฟิลด์ sensitive ออกหรือไม่ — ไม่ใช่แค่ตอน isWrite หรือ non-public collection
-  const needsAdminCheck = isWrite || !PUBLIC_READ_COLLECTIONS.has(collection) || collection === "songs" || isOrdersCountPendingEndpoint || isBatchGetEndpoint || isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint || isCountAllEndpoint || isCheckDuplicateEndpoint || isAuditLogQueryEndpoint || isMigrateRateLimitEndpoint;
+  // 🔒 (Audit Fix H-7): เพิ่ม isOrdersAdminSearchEndpoint ใน admin-only check
+  const needsAdminCheck = isWrite || !PUBLIC_READ_COLLECTIONS.has(collection) || collection === "songs" || isOrdersCountPendingEndpoint || isBatchGetEndpoint || isHasOrdersBatchEndpoint || isCheckCoverUsedEndpoint || isCountAllEndpoint || isCheckDuplicateEndpoint || isAuditLogQueryEndpoint || isMigrateRateLimitEndpoint || isOrdersAdminSearchEndpoint;
 
   let admin = null;
   if (needsAdminCheck || isOrdersCustomerEndpoint) {
@@ -1374,6 +1389,74 @@ async function handleDb(request, env, url) {
         });
       }
       return jsonResponse({ error: safeError("อ่านประวัติร้านไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+    }
+  }
+
+  // 🔒 (Audit Fix H-7): POST /api/db/orders/_admin-search
+  //   Server-side search สำหรับ old orders (ที่ไม่ได้อยู่ใน 200 ล่าสุด)
+  //   request body: { q: "search keyword", limit?: 200 (max 500), offset?: 0 }
+  //   response: { docs: [{ id, data }], total: <number> }
+  //   ค้นใน: customer_name, whatsapp, receipt_number, id (LIKE %q%)
+  //   Security: admin-only (PII)
+  if (isOrdersAdminSearchEndpoint) {
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+    const q = String(body?.q || "").trim();
+    const limit = Math.min(Math.max(Number(body?.limit) || 200, 1), 500);
+    const offset = Math.max(Number(body?.offset) || 0, 0);
+    if (!q) return jsonResponse({ docs: [], total: 0 });
+
+    try {
+      // 🔒 (Audit Fix H-7): ใช้ LIKE บน json_extract ของหลายฟิลด์ + id column
+      //   D1 (SQLite) รองรับ LIKE กับ wildcards % และ _ (case-insensitive สำหรับ ASCII)
+      //   ถ้ามี index บน json_extract(field) → ใช้ index ได้ (เร็ว)
+      //   ถ้าไม่มี index → scan ทั้งตาราง (ช้าสำหรับ 10k+ orders — แต่ admin ใช้นาน ๆ ครั้ง)
+      //   ⚠️ ใช้ OR 4 คอลัมน์ → D1 ต้อง scan 4 ครั้ง (or ใช้ UNION ALL)
+      //   เลือกใช้ UNION ALL เพื่อใช้ index ของแต่ละ column ได้ (ถ้ามี)
+      //   ผลกระทบระบบเดิม: 0% — เป็น endpoint ใหม่ ไม่แตะของเดิม
+      const likePattern = `%${q.replace(/[%_]/g, (m) => "\\" + m)}%`; // escape wildcards
+      const sql = `
+        SELECT id, data, created_at FROM (
+          SELECT id, data, created_at FROM documents
+          WHERE collection = 'orders' AND id LIKE ? ESCAPE '\\'
+          UNION ALL
+          SELECT id, data, created_at FROM documents
+          WHERE collection = 'orders' AND json_extract(data, '$.customer_name') LIKE ? ESCAPE '\\'
+          UNION ALL
+          SELECT id, data, created_at FROM documents
+          WHERE collection = 'orders' AND json_extract(data, '$.whatsapp') LIKE ? ESCAPE '\\'
+          UNION ALL
+          SELECT id, data, created_at FROM documents
+          WHERE collection = 'orders' AND json_extract(data, '$.receipt_number') LIKE ? ESCAPE '\\'
+        )
+        GROUP BY id  -- dedup (order อาจ match หลาย field)
+        ORDER BY MAX(created_at) DESC
+        LIMIT ? OFFSET ?
+      `;
+      const { results } = await env.DB.prepare(sql)
+        .bind(likePattern, likePattern, likePattern, likePattern, limit, offset).all();
+
+      // count total (สำหรับ pagination UI ในอนาคต)
+      const countSql = `
+        SELECT COUNT(*) AS c FROM (
+          SELECT id FROM documents WHERE collection = 'orders' AND id LIKE ? ESCAPE '\\'
+          UNION
+          SELECT id FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_name') LIKE ? ESCAPE '\\'
+          UNION
+          SELECT id FROM documents WHERE collection = 'orders' AND json_extract(data, '$.whatsapp') LIKE ? ESCAPE '\\'
+          UNION
+          SELECT id FROM documents WHERE collection = 'orders' AND json_extract(data, '$.receipt_number') LIKE ? ESCAPE '\\'
+        )
+      `;
+      const countRow = await env.DB.prepare(countSql)
+        .bind(likePattern, likePattern, likePattern, likePattern).first();
+      const total = countRow?.c || 0;
+
+      const docs = (results || []).map(r => ({ id: r.id, data: JSON.parse(r.data) }));
+      return jsonResponse({ docs, total, limit, offset });
+    } catch (err) {
+      return jsonResponse({ error: safeError("ค้นหาไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }
   }
 

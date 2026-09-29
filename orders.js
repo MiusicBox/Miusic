@@ -1742,7 +1742,68 @@ function orderMatchesSearch(order, keywords) {
 function handleHistorySearchInput(e) {
   const raw = (e.target.value || "").trim().toLowerCase();
   state.historySearch = raw;
-  renderHistory();
+  // 🔒 (Audit Fix H-7): ถ้ามีคำค้นหา → ใช้ server-side search (เพื่อหาออเดอร์เก่าที่ไม่ได้อยู่ใน 200 ล่าสุด)
+  //   ถ้าไม่มีคำค้นหา → ใช้ state.allOrders (200 ล่าสุด) เหมือนเดิม
+  //   ผลกระทบระบบเดิม: 0% — ถ้า q="" → renderHistory() ทำงานเหมือนเดิม (filter state.allOrders)
+  //   ถ้า q!="xyz" → renderHistory() ใช้ server results (เจอออเดอร์เก่า 201+ ได้)
+  if (raw) {
+    // debounced server search — ใช้ helper _adminSearchDebounced (set ด้านล่าง)
+    if (typeof _adminSearchDebounced === "function") {
+      _adminSearchDebounced(raw);
+    } else {
+      // fallback: ใช้ renderHistory (filter state.allOrders ฝั่ง client) เหมือนเดิม
+      renderHistory();
+    }
+  } else {
+    // ไม่มีคำค้นหา → เคลียร์ server search cache + render จาก state.allOrders
+    state._adminSearchResults = null;
+    renderHistory();
+  }
+}
+
+// 🔒 (Audit Fix H-7): debounced server-side search
+//   ใช้ debounce 300ms → กันยิงทุก keystroke
+//   cache ผลลัพธ์ใน state._adminSearchResults → renderHistory ใช้แทน state.allOrders
+let _adminSearchTimer = null;
+let _adminSearchLastQ = null;
+let _adminSearchLoading = false;
+async function _adminSearchDebounced(q) {
+  clearTimeout(_adminSearchTimer);
+  _adminSearchTimer = setTimeout(async () => {
+    // ถ้า q เดิม → ไม่ re-search
+    if (_adminSearchLastQ === q && state._adminSearchResults) {
+      renderHistory();
+      return;
+    }
+    _adminSearchLastQ = q;
+    _adminSearchLoading = true;
+    state._adminSearchResults = null; // clear old results (UI shows loading)
+    renderHistory();
+    try {
+      const res = await fetch("/api/db/orders/_admin-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ q, limit: 200, offset: 0 }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const docs = Array.isArray(data?.docs) ? data.docs : [];
+        state._adminSearchResults = docs.map(d => ({ id: d.id, ...d.data }));
+        state._adminSearchTotal = data?.total || 0;
+      } else {
+        // fallback: ถ้า endpoint ใหม่ไม่มี (Worker เก่า) → ใช้ state.allOrders filter ฝั่ง client
+        console.warn("[H-7] _admin-search endpoint failed, falling back to client-side filter:", res.status);
+        state._adminSearchResults = null; // signal: use state.allOrders
+      }
+    } catch (err) {
+      console.warn("[H-7] _admin-search network error, falling back to client-side:", err?.message || err);
+      state._adminSearchResults = null;
+    } finally {
+      _adminSearchLoading = false;
+      renderHistory();
+    }
+  }, 300);
 }
 
 /* ---------------- Render: ประวัติออเดอร์ ---------------- */
@@ -1782,12 +1843,31 @@ function renderHistory() {
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 
+  // 🔒 (Audit Fix H-7): ถ้ามี server-side search results → ใช้แทน state.allOrders
+  //   ทำให้แอดมินเจอออเดอร์เก่า (เกิน 200 ล่าสุด) ได้
+  //   ถ้าไม่มี (search ว่าง หรือ endpoint ใหม่ fail) → ใช้ state.allOrders เหมือนเดิม
+  //   ผลกระทบระบบเดิม: 0% — ถ้าไม่มี keywords → state._adminSearchResults = null → ใช้ state.allOrders
+  let sourceOrders = state.allOrders;
+  if (keywords.length > 0 && state._adminSearchResults) {
+    sourceOrders = state._adminSearchResults;
+  }
+
   // กรองทั้งสถานะ (historyFilter) และคำค้นหา (historySearch) ไปด้วยกัน — flow เข้ากัน
-  const orders = state.allOrders.filter((o) => {
+  //   🔒 (H-7): ถ้าใช้ server results → ไม่ต้อง filter keywords อีก (server ทำให้แล้ว)
+  //   แต่ต้อง filter historyStatus เหมือนเดิม (server ไม่ได้ filter status)
+  const orders = sourceOrders.filter((o) => {
     const passStatus = state.historyFilter === "all" ? true : o.status === state.historyFilter;
     if (!passStatus) return false;
+    // 🔒 (H-7): ถ้าใช้ server results → ข้าม keyword filter (server ทำแล้ว)
+    if (keywords.length > 0 && state._adminSearchResults) return true;
     return orderMatchesSearch(o, keywords);
   });
+
+  // 🔒 (H-7): แสดง loading state ระหว่าง server search
+  if (keywords.length > 0 && _adminSearchLoading && !state._adminSearchResults) {
+    wrap.innerHTML = `<div class="empty-state">กำลังค้นหาจากฐานข้อมูล...</div>`;
+    return;
+  }
 
   if (orders.length === 0) {
     const hasSearch = keywords.length > 0;
