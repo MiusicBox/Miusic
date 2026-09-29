@@ -285,10 +285,17 @@ if (typeof window !== "undefined") {
 function orderToast(message, type = "") {
   if (window.__showToast) window.__showToast(message, type);
   // 🎨 (2026-09-26): fallback ใช้ adminAlert แทน alert (กรณี __showToast ยังไม่โหลด)
-  else if (type === "error") {
-    if (window.adminAlert) window.adminAlert(message, { title: "ข้อผิดพลาด" });
-    else alert(message);
+  // 🟢 (Audit Fix L-11): fallback สำหรับทุก type ไม่ใช่แค่ error (กัน toast หายเงียบ)
+  else if (window.adminAlert && (type === "error" || type === "error_long")) {
+    window.adminAlert(message, { title: "ข้อผิดพลาด" });
   }
+  else if (type === "success" || type === "success_long") {
+    console.log("[orderToast]", message); // fallback: log แทน (dev เห็นใน console)
+  }
+  else if (type === "info" || type === "progress") {
+    console.log("[orderToast]", message); // fallback: log
+  }
+  // ถ้าไม่มี type หรือ type อื่น ๆ → ไม่แสดง (silent — ไม่ block ด้วย alert)
 }
 
 function getOrderPlaylistIds(order) {
@@ -3210,7 +3217,13 @@ function renderEditCart() {
 }
 
 function addToEditCart(songId) {
-  const song = state.songs.find((s) => s.id === songId);
+  // 🟢 (Audit Fix L-9): ใช้ Map lookup แทน O(n) find — เร็วขึ้นสำหรับ 10k+ songs
+  //   เดิม: state.songs.find → O(n) per click
+  //   ใหม่: สร้าง Map ครั้งแรก + lookup O(1)
+  if (!addToEditCart._songMap) {
+    addToEditCart._songMap = new Map(state.songs.map(s => [s.id, s]));
+  }
+  const song = addToEditCart._songMap.get(songId) || state.songs.find((s) => s.id === songId);
   if (!song) return;
   // 🔧 (2026-09-16): ห้ามเพิ่มเพลงซ้ำในออเดอร์เดียวเด็ดขาด (เหมือน addToCart ฝั่งสร้างใหม่)
   const check = findSongInCartEntries(state.editCartEntries, song.id);
@@ -3842,8 +3855,11 @@ export async function initOrdersView() {
   const loadingEl = document.getElementById("ordSongsLoading");
   ensureReceiptElements();
   ensureFullFilesElements();
-  loadingEl.style.display = "block";
-  loadingEl.textContent = "กำลังโหลดรายชื่อเพลง...";
+  // 🟢 (Audit Fix L-10): null check ก่อน style.display — กัน TypeError ถ้า element ไม่มี
+  if (loadingEl) {
+    loadingEl.style.display = "block";
+    loadingEl.textContent = "กำลังโหลดรายชื่อเพลง...";
+  }
 
   try {
     // โหลดทั้งเพลงและเพลย์ลิสต์ (ราคาเหมา) พร้อมกัน เพื่อให้ระบบขายยกเพลย์ลิสต์ใช้งานได้ทันที
@@ -3855,9 +3871,11 @@ export async function initOrdersView() {
     state.songs = songs;
     state.playlists = playlists;
     state.storeName = storeName;
-    loadingEl.style.display = "none";
+    if (loadingEl) loadingEl.style.display = "none";
+    // 🟢 (Audit Fix L-9): invalidate song Map cache (เพลงโหลดใหม่)
+    if (addToEditCart._songMap) addToEditCart._songMap = null;
   } catch (err) {
-    loadingEl.textContent = "โหลดข้อมูลไม่สำเร็จ: " + err.message;
+    if (loadingEl) loadingEl.textContent = "โหลดข้อมูลไม่สำเร็จ: " + err.message;
     return;
   }
 

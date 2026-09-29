@@ -1033,7 +1033,24 @@ function renderPromotionList() {
     wrap.innerHTML = '<div class="empty-state">ยังไม่มีโปรโมชั่น — กด "สร้างโปรโมชั่น" เพื่อสร้างใหม่</div>';
     return;
   }
-  wrap.innerHTML = PROMOTIONS_CACHE.map(p => {
+  // 🟢 (Audit Fix M-20): Sort promotions — active ก่อน expired (archive expired ไปด้านล่าง)
+  //   ปัญหาเดิม: expired promotions ค้างใน list ปนกับ active → admin สับสน
+  //   วิธีแก้: sort โดย status (active/scheduled ก่อน, expired หลัง) + end_at DESC
+  //   ผลกระทบระบบเดิม: 0% — แค่เปลี่ยนลำดับแสดงผล (ข้อมูลเหมือนเดิม)
+  const sortedPromos = [...PROMOTIONS_CACHE].sort((a, b) => {
+    const sa = getDiscountStatus(a).status;
+    const sb = getDiscountStatus(b).status;
+    // expired ไปด้านล่าง
+    if (sa === "expired" && sb !== "expired") return 1;
+    if (sb === "expired" && sa !== "expired") return -1;
+    // ถ้าทั้งคู่ expired → end_at DESC (ใหม่ก่อน)
+    if (sa === "expired" && sb === "expired") {
+      return new Date(b.end_at || 0).getTime() - new Date(a.end_at || 0).getTime();
+    }
+    // ถ้าทั้งคู่ active/scheduled → start_at ASC (เก่าก่อน)
+    return new Date(a.start_at || 0).getTime() - new Date(b.start_at || 0).getTime();
+  });
+  wrap.innerHTML = sortedPromos.map(p => {
     const status = getDiscountStatus(p);
     // 🚀 (H-7): เพิ่ม label สำหรับ playlist_tiered_percent + applies_to="playlist"
     let appliesToLabel;
