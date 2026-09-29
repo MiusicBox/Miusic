@@ -1282,7 +1282,7 @@ function renderSongList(list) {
   wrap.innerHTML = visibleList.map(s => `
     <div class="list-row" data-song-row="${s.id}" style="cursor:pointer;">
       ${songSelectMode ? `<input type="checkbox" class="song-select-chk" data-id="${s.id}" ${selectedSongIds.has(s.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;">` : ""}
-      <img src="${s.cover_url || ""}" loading="lazy" alt="">
+      <img src="${escapeHtml(s.cover_url || "")}" loading="lazy" alt="">
       <div class="info"><div class="n1">${escapeHtml(s.song_name)}</div>
       <div class="n2">${escapeHtml(s.dj_name || "-")} · ${escapeHtml(s.category_name || "-")} · ${formatPrice(s.price)}</div>
       ${!s.full_file_url && !s.file_url ? `<div class="n2" style="color:var(--danger);">⚠️ ยังไม่มีไฟล์เต็ม (WAV) บน Cloud</div>` : ""}
@@ -2203,7 +2203,7 @@ async function loadDjs() {
   const wrap = document.getElementById("djList");
   if (CACHE.djs.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มี DJ</div>'; return; }
   wrap.innerHTML = CACHE.djs.map(d => `
-    <div class="list-row" data-open="${d.id}" style="cursor:pointer;"><img src="${d.image_url || ""}" loading="lazy" alt="">
+    <div class="list-row" data-open="${d.id}" style="cursor:pointer;"><img src="${escapeHtml(d.image_url || "")}" loading="lazy" alt="">
     <div class="info"><div class="n1">${escapeHtml(d.dj_name)}</div><div class="n2">${escapeHtml(d.description || "")}</div></div>
     <div class="row-actions"><button class="icon-btn" data-edit="${d.id}">✎</button>
     <button class="icon-btn danger" data-del="${d.id}">🗑</button></div></div>`).join("");
@@ -2289,7 +2289,7 @@ async function loadPlaylists() {
   const wrap = document.getElementById("playlistList");
   if (CACHE.playlists.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีเพลย์ลิสต์</div>'; return; }
   wrap.innerHTML = CACHE.playlists.map(p => `
-    <div class="list-row" data-open="${p.id}" style="cursor:pointer;"><img src="${p.cover_url || ""}" loading="lazy" alt="">
+    <div class="list-row" data-open="${p.id}" style="cursor:pointer;"><img src="${escapeHtml(p.cover_url || "")}" loading="lazy" alt="">
     <div class="info"><div class="n1">${escapeHtml(p.playlist_name)}</div><div class="n2">${escapeHtml(p.description || "")}${p.price ? ` · ${formatPrice(p.price)}` : ""}</div></div>
     <div class="row-actions"><button class="icon-btn" data-edit="${p.id}">✎</button>
     <button class="icon-btn danger" data-del="${p.id}">🗑</button></div></div>`).join("");
@@ -2359,7 +2359,7 @@ function renderDetailSongsList() {
   const removeLabel = { category: "นำออกจากหมวดหมู่นี้ (ไม่ลบเพลง)", playlist: "นำออกจากเพลย์ลิสต์นี้ (ไม่ลบเพลง)", dj: "นำออกจาก DJ นี้ (ไม่ลบเพลง)" }[type];
   wrap.innerHTML = visibleSongs.map(s => `
     <div class="list-row" data-detail-song-row="${s.id}" style="cursor:pointer;">
-      <img src="${s.cover_url || ""}" loading="lazy" alt="">
+      <img src="${escapeHtml(s.cover_url || "")}" loading="lazy" alt="">
       <div class="info"><div class="n1">${escapeHtml(s.song_name)}</div>
       <div class="n2">${escapeHtml(s.dj_name || "-")} · ${escapeHtml(s.category_name || "-")} · ${formatPrice(s.price)}</div></div>
       <div class="row-actions">

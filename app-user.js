@@ -632,7 +632,7 @@ function renderSongGrid() {
       return `
         <div class="song-card song-card-row" data-id="${s.id}">
           <div class="song-cover">
-            <img src="${s.cover_url || "default-song-cover.svg"}" loading="lazy" alt="${escapeHtml(s.song_name)}" onerror="this.src='default-song-cover.svg'">
+            <img src="${escapeHtml(s.cover_url || "default-song-cover.svg")}" loading="lazy" alt="${escapeHtml(s.song_name)}" onerror="this.src='default-song-cover.svg'">
             <button class="play-btn" data-play="${s.id}" aria-label="เล่น ${escapeHtml(s.song_name)}"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg></button>
           </div>
           <div class="song-info">
@@ -799,7 +799,7 @@ function renderPlaylists() {
       <div class="playlist-block" data-playlist-id="${pl.id}">
         <div class="playlist-folder-btn" data-toggle-playlist="${pl.id}">
           <div class="playlist-folder-cover">
-            <img src="${cover}" loading="lazy" alt="${escapeHtml(pl.playlist_name)}" onerror="this.style.display='none'">
+            <img src="${escapeHtml(cover)}" loading="lazy" alt="${escapeHtml(pl.playlist_name)}" onerror="this.style.display='none'">
           </div>
           <div class="playlist-folder-info">
             <div class="playlist-folder-name">${escapeHtml(pl.playlist_name)}</div>
@@ -823,7 +823,7 @@ function renderPlaylists() {
             ${displaySongs.map(s => `
               <div class="playlist-song-row song-card-row" data-id="${s.id}">
                 <div class="playlist-cover song-cover">
-                  <img src="${s.cover_url || pl.cover_url || "default-song-cover.svg"}" loading="lazy" alt="${escapeHtml(s.song_name)}" onerror="this.src='default-song-cover.svg'">
+                  <img src="${escapeHtml(s.cover_url || pl.cover_url || "default-song-cover.svg")}" loading="lazy" alt="${escapeHtml(s.song_name)}" onerror="this.src='default-song-cover.svg'">
                   <button class="playlist-play-btn play-btn" data-play="${s.id}" aria-label="เล่น ${escapeHtml(s.song_name)}">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
                   </button>
