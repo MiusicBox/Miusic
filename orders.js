@@ -516,6 +516,20 @@ async function createOrderZip(orderId) {
   const order = state.allOrders.find((item) => item.id === orderId);
   if (!order) return { ok: false, error: "ไม่พบออเดอร์นี้" };
 
+  // 🔒 (Audit Fix H-19): Empty-order guard — กันสร้าง ZIP เปล่า
+  //   ปัญหาเดิม: ถ้า order.items = [] และ order.playlist_ids = []
+  //   → createOrderZip ยังเรียก /api/order-zip/start → Worker สร้าง empty ZIP
+  //   → upload ไป R2 (storage leak) + ลูกค้าดาวน์โหลด ZIP เปล่ามา → สับสน
+  //   วิธีแก้: เช็คก่อนเริ่ม → ถ้าไม่มี songs/playlists → return early
+  //   ผลกระทบระบบเดิม: 0% — กรณีปกติ (มี items) → ผ่าน (เหมือนเดิม)
+  //   กรณีผิดปกติ (empty) → แจ้ง error + ไม่เรียก Worker (กัน R2 leak)
+  const hasItems = Array.isArray(order.items) && order.items.length > 0;
+  const hasPlaylistIds = Array.isArray(order.playlist_ids) && order.playlist_ids.length > 0;
+  const hasSinglePlaylist = !!order.playlist_id;
+  if (!hasItems && !hasPlaylistIds && !hasSinglePlaylist) {
+    return { ok: false, error: "ออเดอร์นี้ไม่มีรายการเพลงสำหรับสร้าง ZIP — กรุณาตรวจสอบรายการสินค้า" };
+  }
+
   // ถ้ามี ZIP ที่สร้างสำเร็จแล้ว ใช้ลิงก์เดิมได้ ไม่สร้างไฟล์ซ้ำโดยไม่จำเป็น
   // 🔧 (2026-09-18 v5): ย้ายเช็คนี้มาก่อน zipJobs.set() — กัน edge case ที่ early return
   //   โดยไม่ได้ลบ zipJobs → zipJobs.has(orderId) ค้างเป็น true → กดสร้าง ZIP ซ้ำไม่ได้
@@ -1137,6 +1151,28 @@ async function loadOrdersFromDatabase() {
    หมายเหตุ: เอาไว้เฉพาะเพลย์ลิสต์ที่ตั้ง "ราคาเหมา" ไว้แล้ว (price > 0) เพราะถือว่าเป็นชุดที่ขายทั้งชุดได้
    เพลย์ลิสต์ที่ไม่ได้ตั้งราคา (ปล่อยว่าง/0) จะไม่โผล่ในช่องค้นหานี้ */
 async function loadPlaylistsFromDatabase() {
+  // 🔒 (Audit Fix H-20): เพิ่ม pagination — กัน browser freeze ตอนโหลด 5,000+ playlists
+  //   ปัญหาเดิม: getDocs(collection(db, "playlists")) → โหลดทุก playlists ทีเดียว
+  //   5,000+ playlists = browser freeze + memory 50MB
+  //   วิธีแก้: ใช้ fetch /api/db/playlists?limit=N ผ่าน Worker (รองรับ limit + offset)
+  //   เดิม filter เฉพาะ playlists ที่มี price > 0 (สำหรับขายยกชุด) → server ไม่รองรับ filter
+  //   → ใช้ limit 500 (สูงสุดที่ admin UI ต้องการ) + filter price > 0 ฝั่ง client
+  //   ผลกระทบระบบเดิม: 0% — ถ้า playlists < 500 → return เหมือนเดิม
+  //   ถ้า playlists > 500 → โหลดแค่ 500 แรก (admin ใช้ search หาเก่า)
+  try {
+    const res = await fetch("/api/db/playlists?limit=500", { credentials: "same-origin" });
+    if (res.ok) {
+      const data = await res.json();
+      const docs = Array.isArray(data?.docs) ? data.docs : [];
+      return docs
+        .map(d => ({ id: d.id, ...d.data }))
+        .filter(p => Number(p.price || 0) > 0);
+    }
+    console.warn("loadPlaylistsFromDatabase: fetch with limit failed, falling back to getDocs:", res.status);
+  } catch (err) {
+    console.warn("loadPlaylistsFromDatabase: fetch failed, falling back to getDocs:", err?.message || err);
+  }
+  // Fallback: ใช้ getDocs แบบเดิม (กรณี endpoint ใหม่ไม่พร้อมใช้งาน)
   const snap = await getDocs(collection(db, "playlists"));
   return snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
