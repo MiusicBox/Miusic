@@ -499,15 +499,18 @@ export function computeCartPricing(cartItems, discounts, promotions, options) {
 }
 
 // ---------------- ฟอร์แมตวันที่สำหรับแสดงในหน้า admin ----------------
+// 🟢 (Audit Fix M-23): timezone display — แสดง label "เวลาท้องถิ่น" เพื่อความชัดเจน
 export function formatDateTime(iso) {
   if (!iso) return "-";
   try {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return "-";
-    return d.toLocaleString("th-TH", {
+    // 🟢 (M-23): เพิ่ม label "เวลาท้องถิ่น" เพื่อให้ admin รู้ว่าแสดงตาม timezone เครื่องตัวเอง
+    const formatted = d.toLocaleString("th-TH", {
       day: "2-digit", month: "2-digit", year: "numeric",
       hour: "2-digit", minute: "2-digit"
     });
+    return formatted + " (เวลาท้องถิ่น)";
   } catch (e) {
     return "-";
   }

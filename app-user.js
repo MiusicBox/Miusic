@@ -428,7 +428,10 @@ function setupSongListInfinityScroll() {
     }
   }, { rootMargin: "200px" });  // trigger เมื่อ sentinel อยู่ใกล้ viewport 200px
   observer.observe(sentinel);
-  // เก็บ observer ไว้ใน STATE เพื่อ disconnect ภายหลัง (ถ้าต้องการ)
+  // 🟢 (Audit Fix L-7): disconnect old observer ก่อนตั้งใหม่ — กัน leak ถ้าเรียกซ้ำ
+  if (STATE.songListObserver) {
+    try { STATE.songListObserver.disconnect(); } catch (_) {}
+  }
   STATE.songListObserver = observer;
 }
 
@@ -1510,7 +1513,9 @@ function playSongAndSeekTo(songId, targetSec, section) {
   playSong(songId);
 }
 
-document.getElementById("modalJumpToIntro").addEventListener("click", () => {
+// 🟢 (Audit Fix L-6): null check ก่อน addEventListener — กัน TypeError ถ้า element ไม่มี
+const _modalJumpIntro = document.getElementById("modalJumpToIntro");
+if (_modalJumpIntro) _modalJumpIntro.addEventListener("click", () => {
   // 🔧 แก้บั๊ก (2026-09-17): ถ้า modal เปิดอยู่ที่เพลงอื่น → เริ่มเล่นเพลงใน modal แทน
   if (modalCurrentSongId !== STATE.currentPlayingId) {
     // 🔧 แก้บั๊ก I1 (2026-09-18): เดิมส่ง null → per-call listener ไม่ seek
@@ -1532,7 +1537,9 @@ document.getElementById("modalJumpToIntro").addEventListener("click", () => {
   }
 });
 
-document.getElementById("modalJumpToPreview").addEventListener("click", () => {
+// 🟢 (Audit Fix L-6): null check
+const _modalJumpPreview = document.getElementById("modalJumpToPreview");
+if (_modalJumpPreview) _modalJumpPreview.addEventListener("click", () => {
   // 🔧 แก้บั๊ก (2026-09-17): ถ้า modal เปิดอยู่ที่เพลงอื่น → เริ่มเล่นเพลงใน modal แทน + seek
   if (modalCurrentSongId !== STATE.currentPlayingId) {
     const song = findSong(modalCurrentSongId);
@@ -1565,7 +1572,9 @@ document.getElementById("modalJumpToPreview").addEventListener("click", () => {
   }
 });
 
-document.getElementById("modalJumpToOutro").addEventListener("click", () => {
+// 🟢 (Audit Fix L-6): null check
+const _modalJumpOutro = document.getElementById("modalJumpToOutro");
+if (_modalJumpOutro) _modalJumpOutro.addEventListener("click", () => {
   // 🔧 แก้บั๊ก (2026-09-17): ถ้า modal เปิดอยู่ที่เพลงอื่น → เริ่มเล่นเพลงใน modal แทน + seek
   if (modalCurrentSongId !== STATE.currentPlayingId) {
     const song = findSong(modalCurrentSongId);

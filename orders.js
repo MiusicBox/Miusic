@@ -163,19 +163,16 @@ function toCloudinaryDownloadUrl(url) {
 // ที่อาจโดน CORS block (เพราะ R2 pub-*.r2.dev ไม่ได้ตั้ง CORS headers ไว้)
 // Worker proxy อ่านไฟล์จาก R2 binding ตรงๆ (เร็ว) แล้วส่งกลับเป็น blob พร้อม CORS headers
 // ถ้าไม่ใช่ R2 URL (เช่น Cloudinary เก่า) จะปล่อยผ่านไม่แตะต้อง
-function r2UrlToProxyUrl(url) {
-  if (!url || typeof url !== "string") return url;
-  // ตรวจจาก pattern "pub-xxx.r2.dev" ที่เป็น R2 public URL มาตรฐาน
-  // หรือตรวจจากโดเมนเดียวกับเว็บเรา (ถ้าใช้ custom domain R2)
-  const r2Pattern = /^https?:\/\/pub-[a-z0-9]+\.r2\.dev\//i;
-  if (!r2Pattern.test(url)) return url; // ไม่ใช่ R2 public URL — ปล่อยผ่าน
-  // ตัด prefix ออก เหลือแค่ key (รวม subfolder ถ้ามี)
-  // ตัวอย่าง: https://pub-xxx.r2.dev/full-songs/123-abc.wav → /api/file/full-songs/123-abc.wav
-  const key = url.replace(r2Pattern, "");
-  // อย่าลืม decode URI components ที่อาจจะ encode อยู่ใน URL แล้วเข้ารหัสใหม่สำหรับ path
-  // แต่เนื่องจาก Worker จะ decodeURIComponent อีกที ให้ส่งเป็น encoded path ไปเลย
-  return "/api/file/" + key;
-}
+// 🟢 (Audit Fix L-1): DEAD CODE — r2UrlToProxyUrl ไม่มี caller (ยืนยันด้วย grep)
+//   Worker สร้าง ZIP ฝั่ง server แล้ว → ไม่ต้อง proxy R2 URL ฝั่ง client
+//   ไม่ลบตามกฎข้อ 7 — comment out แทน
+// function r2UrlToProxyUrl(url) {
+//   if (!url || typeof url !== "string") return url;
+//   const r2Pattern = /^https?:\/\/pub-[a-z0-9]+\.r2\.dev\//i;
+//   if (!r2Pattern.test(url)) return url;
+//   const key = url.replace(r2Pattern, "");
+//   return "/api/file/" + key;
+// }
 function formatLAK(v) { return Number(v || 0).toLocaleString("en-US") + " LAK"; }
 
 // 🔧 แก้บั๊ก (2026-09-18): normalize เบอร์ Laos ให้เป็นมาตรฐานเดียวก่อนเก็บลง DB
@@ -256,7 +253,8 @@ function getPlaylistName(playlist) {
 //   เพื่อรองรับปุ่ม "ยกเลิก" — กดแล้วเรียก abort() ที่ controller ซึ่ง cancel ทุก fetch ที่กำลังทำอยู่
 //   และเรียก /api/order-zip/abort เพื่อ cleanup ฝั่ง Worker (R2 multipart + D1 row + order doc)
 const zipJobs = new Map(); // orderId → { abortController, jobId }
-let jsZipModulePromise = null;
+// 🟢 (Audit Fix L-2): DEAD CODE — jsZipModulePromise ไม่มี caller (Worker สร้าง ZIP แล้ว)
+// let jsZipModulePromise = null;
 
 // 🔒 (Audit Fix H-31): beforeunload warning ตอนกำลังสร้าง ZIP — กัน admin ปิด tab โดยไม่ตั้งใจ
 //   ปัญหาเดิม: admin กด Verify → รอ 5-15 นาที → ปิด tab โดยไม่ตั้งใจ → ZIP build หยุด
@@ -275,13 +273,14 @@ if (typeof window !== "undefined") {
   });
 }
 
-async function loadJSZip() {
-  if (!jsZipModulePromise) {
-    jsZipModulePromise = import("https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm")
-      .then((module) => module.default || module);
-  }
-  return jsZipModulePromise;
-}
+// 🟢 (Audit Fix L-2): DEAD CODE — loadJSZip ไม่มี caller (Worker สร้าง ZIP แล้ว)
+// async function loadJSZip() {
+//   if (!jsZipModulePromise) {
+//     jsZipModulePromise = import("https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm")
+//       .then((module) => module.default || module);
+//   }
+//   return jsZipModulePromise;
+// }
 
 function orderToast(message, type = "") {
   if (window.__showToast) window.__showToast(message, type);
