@@ -2666,6 +2666,18 @@ async function handleDeleteOrder(orderId) {
     else alert(msg);
     return;
   }
+  // 🔒 (Audit Fix C-6): ตรวจก่อนลบว่าออเดอร์กำลังสร้าง ZIP อยู่หรือไม่
+  //   ถ้าลบระหว่างสร้าง ZIP → R2 multipart upload จะถูกทิ้งไว้ (leak) + D1 order_zip_jobs row ค้าง 'preparing'
+  //   และออเดอร์ที่ถูกลบไปแล้วอาจถูก finalize-compose เขียนทับเป็น zombie document (มีแค่ zip_* fields)
+  //   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่ม guard ก่อน destructive operation
+  //   ถ้า zipJobs.has(orderId) → แจ้งเตือนให้ยกเลิกการสร้าง ZIP ก่อน
+  if (zipJobs.has(orderId)) {
+    const msg = "ออเดอร์กำลังสร้าง ZIP อยู่ ไม่สามารถลบได้ — กรุณากดยกเลิกการสร้าง ZIP (ปุ่ม ✕) ก่อน หรือรอให้สร้างเสร็จ";
+    if (window.adminAlert) await window.adminAlert(msg, { title: "กำลังสร้าง ZIP อยู่" });
+    else if (window.__showToast) window.__showToast(msg, "error");
+    else alert(msg);
+    return;
+  }
   const order = state.allOrders.find((o) => o.id === orderId);
   const label = order ? `ออเดอร์ของ ${order.customer_name} (${formatLAK(order.total)})` : "ออเดอร์นี้";
   // 🎨 (2026-09-26): ใช้ askConfirm พร้อม options danger + title
