@@ -2823,10 +2823,37 @@ async function confirmPaymentAndCreateZip(orderId) {
     });
     renderFromState();
     orderToast("ยืนยันการโอนแล้ว และสร้าง Download Link สำหรับ Admin เรียบร้อย", "success_long");
+    // 🔒 (Audit Fix M-9): เตือนให้ admin ส่งลิงก์ดาวน์โหลดให้ลูกค้าผ่าน WhatsApp
+    //   ปัญหาเดิม: admin ยืนยันแล้วจบ → ลืมส่งลิงก์ → ลูกค้าไม่ได้รับเพลง
+    //   วิธีแก้: แสดง toast แจ้งเตือนหลัง verify สำเร็จ → admin รู้ว่าต้องกดปุ่ม 📥
+    //   ผลกระทบระบบเดิม: 0% — เพิ่ม toast เตือนเท่านั้น (ไม่ block ไม่ force action)
+    setTimeout(() => {
+      orderToast("💡 อย่าลืมกดปุ่ม 📥 เพื่อส่งลิงก์ดาวน์โหลดให้ลูกค้าผ่าน WhatsApp", "info");
+    }, 1500);
   } catch (err) {
-    // ZIP ยังอยู่บน Cloud แต่จะไม่แสดงเป็นออเดอร์ที่ชำระแล้วจนกว่าจะอัปเดตสถานะสำเร็จ
-    await refreshDashboardAndHistory();
-    orderToast("สร้าง ZIP สำเร็จ แต่เปลี่ยนสถานะออเดอร์ไม่สำเร็จ: " + err.message, "error_long");
+    // 🔒 (Audit Fix M-8): Partial-failure stuck state — ZIP พร้อม แต่ status ยัง pending_verify
+    //   ปัญหาเดิม: ZIP สร้างสำเร็จ (zip_status=ready) แต่ updateDoc status=processing ล้ม
+    //   → order ค้าง pending_verify + zip_status=ready → admin สับสน
+    //   วิธีแก้: ถ้า updateDoc ล้ม → ลองอีกครั้งหลัง 2 วินาที (retry 1 ครั้ง)
+    //   ถ้า retry ก็ล้ม → แจ้ง admin ว่าต้องเปลี่ยน status เอง (manual)
+    //   ผลกระทบระบบเดิม: 0% — กรณีปกติ (สำเร็จ) → ไม่ทำ retry (เหมือนเดิม)
+    //   กรณี partial fail → retry 1 ครั้ง → ถ้าผ่าน → เหมือนปกติ
+    console.warn("[M-8] updateDoc status=processing failed, retrying in 2s:", err?.message || err);
+    setTimeout(async () => {
+      try {
+        await updateDoc(doc(db, "orders", orderId), {
+          status: "processing",
+          payment_verified_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        await updateOrderInState(orderId, { status: "processing" });
+        renderFromState();
+        orderToast("อัปเดตสถานะออเดอร์สำเร็จ (หลัง retry) — ออเดอร์พร้อมแล้ว", "success");
+      } catch (retryErr) {
+        await refreshDashboardAndHistory();
+        orderToast("สร้าง ZIP สำเร็จ แต่เปลี่ยนสถานะออเดอร์ไม่สำเร็จ (retry ก็ล้ม) — กรุณาเปลี่ยนสถานะเป็น 'กำลังเตรียมไฟล์' เอง: " + retryErr.message, "error_long");
+      }
+    }, 2000);
   }
 }
 
