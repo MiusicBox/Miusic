@@ -51,6 +51,38 @@ export const ZIP_CDH_SIGNATURE       = 0x02014B50;  // PK\x01\x02
 export const ZIP_EOCD_SIGNATURE      = 0x06054B50;  // PK\x05\x06
 export const ZIP_DATA_DESC_SIGNATURE = 0x08074B50;  // PK\x07\x08
 
+// 🔒 (Audit Fix C-12): ZIP32 format limits — throw ถ้าเกิน กัน silent corruption
+//   - ZIP32 size/offset fields คือ Uint32 → max 0xFFFFFFFF (4,294,967,295 bytes = 4 GiB − 1)
+//   - ZIP32 entry count field คือ Uint16 → max 0xFFFF (65,535 entries)
+//   ถ้าเกิน → ค่าจะถูก truncate โดย `>>> 0` และ `setUint32` ทำให้ ZIP เสียโดยไม่มี error
+//   ปัจจุบันระบบใช้ ZIP สำหรับออเดอร์เดียว (playlist ~30 เพลง, ~200 MB) → ไม่เกิน limit
+//   แต่ถ้าอนาคตมีออเดอร์ใหญ่กว่านี้ ต้องการให้ระบบ throw error ชัดเจน แทนที่จะ corrupt เงียบ ๆ
+//   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่ม check ก่อนเขียน ถ้าไม่เกินก็ไม่มีผลอะไร
+const ZIP32_MAX_SIZE   = 0xFFFFFFFF; // 4 GiB − 1 byte
+const ZIP32_MAX_ENTRIES = 0xFFFF;   // 65,535
+
+// 🔒 (Audit Fix C-12): ตรวจสอบค่า size/offset ก่อนเขียนลง Uint32 field
+//   ถ้าเกิน ZIP32 limit → throw Error (จะถูก catch ที่ caller → ส่ง error กลับแอดมิน)
+function assertZip32Size(value, fieldName) {
+  if (!Number.isFinite(value) || value < 0 || value > ZIP32_MAX_SIZE) {
+    throw new Error(
+      `ZIP32 overflow: ${fieldName} = ${value} เกิน limit ${ZIP32_MAX_SIZE} ` +
+      `(ต้องการ ZIP64 สำหรับไฟล์ > 4 GiB — ยังไม่รองรับในระบบปัจจุบัน)`
+    );
+  }
+}
+
+// 🔒 (Audit Fix C-12): ตรวจสอบจำนวน entries ก่อนเขียนลง Uint16 field
+//   ถ้าเกิน 65,535 → throw Error
+function assertZip32Entries(count, fieldName) {
+  if (!Number.isFinite(count) || count < 0 || count > ZIP32_MAX_ENTRIES) {
+    throw new Error(
+      `ZIP32 overflow: ${fieldName} = ${count} เกิน limit ${ZIP32_MAX_ENTRIES} ` +
+      `(ต้องการ ZIP64 สำหรับ > 65,535 entries — ยังไม่รองรับในระบบปัจจุบัน)`
+    );
+  }
+}
+
 // เวอร์ชั่นที่เราใช้: ZIP 2.0 (implies traditional compression flags)
 const ZIP_VERSION_EXTRACT = 20;       // 2.0
 const ZIP_VERSION_MADE_BY = 20;        // 2.0 + 0 (MS-DOS)
@@ -105,6 +137,9 @@ export function buildLocalFileHeader(filenameBytes) {
 //   [8..11]  compressed size
 //   [12..15] uncompressed size  (= compressed size for STORE)
 export function buildDataDescriptor(crc32, size) {
+  // 🔒 (Audit Fix C-12): ตรวจ size ก่อนเขียน — ถ้าเกิน 4 GiB → throw แทนที่จะ truncate
+  assertZip32Size(size, "buildDataDescriptor.size");
+  // crc32 ถูก mask ด้วย >>> 0 อยู่แล้ว ปลอดภัย Uint32
   const buf = new ArrayBuffer(16);
   const dv = new DataView(buf);
   dv.setUint32(0, ZIP_DATA_DESC_SIGNATURE, true);
@@ -135,6 +170,9 @@ export function buildDataDescriptor(crc32, size) {
 //   [42..45] local header offset  (จริง — offset จากต้นไฟล์)
 //   [46..]   filename (UTF-8)
 export function buildCentralDirectoryEntry(filenameBytes, crc32, size, localHeaderOffset) {
+  // 🔒 (Audit Fix C-12): ตรวจ size + offset ก่อนเขียน — ถ้าเกิน ZIP32 limit → throw
+  assertZip32Size(size, "buildCentralDirectoryEntry.size");
+  assertZip32Size(localHeaderOffset, "buildCentralDirectoryEntry.localHeaderOffset");
   const fnameLen = filenameBytes.byteLength;
   const buf = new ArrayBuffer(46 + fnameLen);
   const dv = new DataView(buf);
@@ -171,6 +209,11 @@ export function buildCentralDirectoryEntry(filenameBytes, crc32, size, localHead
 //   [16..19] CD offset            (จากต้นไฟล์)
 //   [20..21] comment length       0
 export function buildEndOfCentralDirectory(entriesCount, cdSize, cdOffset) {
+  // 🔒 (Audit Fix C-12): ตรวจ entriesCount (Uint16) + cdSize/cdOffset (Uint32) ก่อนเขียน
+  //   ถ้าเกิน limit → throw แทนที่จะ truncate แล้ว ZIP เสียเงียบ ๆ
+  assertZip32Entries(entriesCount, "buildEndOfCentralDirectory.entriesCount");
+  assertZip32Size(cdSize, "buildEndOfCentralDirectory.cdSize");
+  assertZip32Size(cdOffset, "buildEndOfCentralDirectory.cdOffset");
   const buf = new ArrayBuffer(22);
   const dv = new DataView(buf);
   dv.setUint32(0, ZIP_EOCD_SIGNATURE, true);
