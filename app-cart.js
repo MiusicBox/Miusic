@@ -1887,27 +1887,27 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       "📋 สลิปอัปโหลดในระบบแล้ว — กรุณาตรวจสอบในหน้าจัดการออเดอร์ (Admin Panel)",
     ];
     const text = lines.join("\n");
-    // 🔒 (Audit Fix C-10): เปลี่ยนจาก window.location.href → window.open เพื่อเปิด WhatsApp
-    //   ในแท็บใหม่ ทำให้ cart + order tracking UI ของลูกค้ายังอยู่ในแท็บเดิม
-    //   แต่ต้อง fallback ไป location.href ถ้า window.open ถูกบล็อก (Safari/iOS popup blocker
-    //   มักบล็อก window.open หลัง await fetch()) เพื่อรักษาพฤติกรรมเดิมไว้
-    //   ผลกระทบระบบเดิม: 0% — ถ้า popup ถูกบล็อก จะใช้ location.href เหมือนเดิม
-    //   ถ้า popup ไม่ถูกบล็อก → UX ดีขึ้น (cart ยังอยู่)
+    // Fix C-10: Open WhatsApp in new tab ONLY — never use location.href
+    //   Bug: window.open + location.href fallback = 2 WhatsApp tabs opened
+    //   Fix: Use window.open only. If popup blocked, show link for user to click manually.
     const whatsappUrl = buildWhatsAppLink(adminNumber, text);
     let opened = false;
     try {
       const popup = window.open(whatsappUrl, "_blank", "noopener,noreferrer");
-      if (popup && !popup.closed) {
+      if (popup) {
         opened = true;
       }
     } catch (_) {
-      // บางเบราว์เซอร์ throw แทนที่จะ return null — ปลอดภัยกว่า catch ไว้
       opened = false;
     }
-    // Fallback: ถ้า window.open ไม่สำเร็จ (popup blocker บล็อก) → ใช้ location.href เหมือนเดิม
-    //   เพื่อให้ลูกค้ายังสามารถส่งสลิปผ่าน WhatsApp ได้แม้ว่า cart จะหาย
+    // If popup blocked — show a clickable link instead of navigating away
     if (!opened) {
-      window.location.href = whatsappUrl;
+      // Show a toast/modal with a link for the user to tap
+      const toastEl = document.createElement("div");
+      toastEl.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#25D366;color:white;padding:20px 30px;border-radius:12px;z-index:99999;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.3);";
+      toastEl.innerHTML = '<p style="margin:0 0 12px 0;font-size:16px;">บันทึกออเดอร์สำเร็จ! กดเพื่อส่งข้อความ WhatsApp</p><a href="' + whatsappUrl + '" target="_blank" rel="noopener" style="display:inline-block;background:white;color:#25D366;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">เปิด WhatsApp</a>';
+      document.body.appendChild(toastEl);
+      setTimeout(() => { try { toastEl.remove(); } catch (_) {} }, 30000);
     }
   }
 
