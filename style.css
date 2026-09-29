@@ -59,7 +59,7 @@ html, body {
 }
 
 body {
-  padding-bottom: calc(105px + var(--safe-bottom));
+  padding-bottom: calc(165px + var(--safe-bottom));
 }
 
 a {
