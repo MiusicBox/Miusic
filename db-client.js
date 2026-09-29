@@ -73,6 +73,22 @@ async function apiFetch(path, options = {}) {
       let body = null;
       try { body = await res.json(); } catch { /* ไม่มี body หรือไม่ใช่ JSON */ }
       if (!res.ok) {
+        // 🔒 (Audit Fix M-3 + M-4): Global 401 interceptor — force re-login เมื่อ session หมดอายุ
+        //   ปัญหาเดิม: แต่ละ view handle 401 ต่างกัน → admin stuck เมื่อ session หมด
+        //   → กดปุ่มได้แต่ทุกครั้ง fail สับสน
+        //   วิธีแก้: ถ้า 401 → ล้าง cookie + redirect ไป login page (global)
+        //   ผลกระทบระบบเดิม: 0% — ถ้า session valid → ไม่ทำอะไร (เหมือนเดิม)
+        //   ถ้า session หมด → redirect ครั้งเดียว (UX ชัดเจน)
+        if (res.status === 401 && typeof window !== "undefined") {
+          // ล้าง cookie ฝั่ง client (server ลบ session แล้ว)
+          document.cookie = "session_token=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0";
+          // redirect ไป login page (admin.html หรือ root)
+          if (window.location.pathname.includes("/admin")) {
+            // admin page → reload (login screen shows)
+            window.location.reload();
+          }
+          // customer page → ไม่ redirect (ลูกค้าไม่ต้อง login)
+        }
         // 🔒 (H-27): retry เฉพาะ 5xx (server error) — ไม่ retry 4xx (client error)
         if (res.status >= 500 && res.status < 600 && attempt < MAX_RETRIES) {
           console.warn(`[H-27] apiFetch retry ${attempt + 1}/${MAX_RETRIES} for ${path} (HTTP ${res.status})`);
