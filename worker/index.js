@@ -322,6 +322,21 @@ function getAllowedOrigins(env) {
     .filter(s => s.length > 0);
 }
 
+
+// Security headers (C-8 fix via Worker code instead of _headers file)
+// Cloudflare _headers parser has caching issues with multibyte chars
+// so we add security headers here in Worker code instead
+function securityHeaders() {
+  return {
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.r2.dev https://res.cloudinary.com data:; font-src 'self'; connect-src 'self' https://api.cloudinary.com; media-src 'self' https://*.r2.dev; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; frame-src 'none'",
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=()",
+  };
+}
+
 function corsHeaders() {
   // base headers — คงไว้เหมือนเดิม + เพิ่ม GET/PUT/PATCH ใน Allow-Methods (เดิมมีแค่ POST/DELETE/OPTIONS)
   const baseHeaders = {
@@ -360,7 +375,7 @@ function corsHeaders() {
 function jsonResponse(obj, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { "Content-Type": "application/json", ...corsHeaders(), ...extraHeaders },
+    headers: { "Content-Type": "application/json", ...corsHeaders(), ...extraHeaders, ...securityHeaders() },
   });
 }
 
@@ -2102,7 +2117,7 @@ async function handleDb(request, env, url) {
       });
       return new Response(body, {
         status: 200,
-        headers: { "Content-Type": "application/json", ...corsHeaders(), ...extraHeaders },
+        headers: { "Content-Type": "application/json", ...corsHeaders(), ...extraHeaders, ...securityHeaders() },
       });
     }
 
@@ -4757,7 +4772,7 @@ export default {
       const url = new URL(request.url);
 
     if (request.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
-      return new Response(null, { headers: corsHeaders() });
+      return new Response(null, { headers: { ...corsHeaders(), ...securityHeaders() } });
     }
 
     if (url.pathname === "/api/upload" && request.method === "POST") {
