@@ -721,7 +721,9 @@ button:active {
   display: flex;
   flex-direction: column;
   gap: 2px !important;
-  padding: 0 16px 20px;
+  /* Fix: padding-bottom รวม bottom-nav height (105px) + safe-bottom + margin */
+  /* เดิม: padding: 0 16px 20px → เพลงสุดท้ายโดน bottom-nav บังครึ่งเดียว */
+  padding: 0 16px calc(105px + var(--safe-bottom, 0px) + 20px);
   max-width: 1080px;
   margin: 0 auto;
 }
