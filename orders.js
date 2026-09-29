@@ -785,6 +785,19 @@ async function createOrderZip(orderId) {
       composeStatusIdx = (composeStatusIdx + 1) % composeStatuses.length;
       orderToast(composeStatuses[composeStatusIdx], "progress");
     }, 2000);  // rotate ทุก 2 วิ — กัน user คิดว่าค้าง
+    // 🔒 (Audit Fix H-30): Hard timeout สำหรับ finalize-compose — กัน fetch hang → setInterval leak
+    //   ปัญหาเดิม: ถ้า Worker hang (D1 deadlock, R2 slow) → fetch hang forever
+    //   → composeStatusInterval ทำงานตลอด → toast spam + memory leak (each toast may stay in DOM)
+    //   วิธีแก้: ตั้ง hard timeout 5 นาที → ถ้าเกิน → abort + clearInterval + throw
+    //   ผลกระทบระบบเดิม: 0% — ปกติ finalize-compose ใช้ 30s-2min → ไม่เกิน 5 min
+    //   ถ้าเกิน 5 min → abort + cleanup + admin ลองใหม่
+    const COMPOSE_TIMEOUT_MS = 5 * 60 * 1000; // 5 นาที
+    const composeTimeoutId = setTimeout(() => {
+      clearInterval(composeStatusInterval);
+      try { abortController.abort(); } catch (_) {}
+      orderToast("สร้าง ZIP ใช้เวลานานเกินไป (5 นาที) — กรุณากดสร้างใหม่ หรือติดต่อผู้ดูแล", "error_long");
+    }, COMPOSE_TIMEOUT_MS);
+
     let composeRes;
     try {
       composeRes = await fetch("/api/order-zip/finalize-compose", {
@@ -795,12 +808,14 @@ async function createOrderZip(orderId) {
         signal,
       });
     } catch (err) {
+      clearTimeout(composeTimeoutId);  // 🔒 (H-30): เคลียร์ timeout เมื่อได้ response/error
       clearInterval(composeStatusInterval);
       if (err?.name === "AbortError" || signal.aborted) {
         return { ok: false, error: "ยกเลิกการสร้าง ZIP โดยแอดมิน", aborted: true };
       }
       throw new Error(`สร้างลิงก์ดาวน์โหลด ZIP ไม่สำเร็จ (network): ${err?.message || err}`);
     }
+    clearTimeout(composeTimeoutId);  // 🔒 (H-30): เคลียร์ timeout เมื่อได้ response
     clearInterval(composeStatusInterval);  // หยุด rotate ทันทีที่ได้ response
     let composeData;
     try { composeData = await composeRes.json(); } catch {
