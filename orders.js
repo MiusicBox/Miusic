@@ -226,7 +226,13 @@ function debounce(fn, wait) { let t; return (...a) => { clearTimeout(t); t = set
 function isMainAdmin() { return window.__currentAdminRole === "main"; }
 // ชื่อฟิลด์จริงใน Firestore คือ playlist_name แต่รองรับข้อมูลเก่าที่อาจใช้ name ด้วย
 function getPlaylistName(playlist) {
-  return String(playlist?.playlist_name ?? playlist?.name ?? "");
+  // 🔒 (Audit Fix H-17): ใช้ || แทน ?? — กรณี playlist_name="" (empty string) ให้ fallback ไป name
+  //   เดิม: ?? ไม่ fallback บน empty string → ถ้า playlist_name="" และ name="Real" → return ""
+  //   ใหม่: || fallback บน empty string + null + undefined → return "Real"
+  //   ผลกระทบระบบเดิม: 0% — ถ้ามี playlist_name ทั้งคู่ → ใช้ playlist_name (เหมือนเดิม)
+  //   ถ้า playlist_name="" → ใช้ name (แก้ bug)
+  //   ถ้าทั้งคู่ว่าง → return "" (เหมือนเดิม)
+  return String(playlist?.playlist_name || playlist?.name || "");
 }
 
 // งานสร้าง ZIP ถูกกันซ้ำไว้ในหน้านี้ เพื่อไม่ให้ออเดอร์เดียวกันถูกสร้างหลายไฟล์
@@ -2639,9 +2645,20 @@ async function _handleStatusChangeInner(orderId, newStatus, order) {
   try {
     // 🔧 (2026-09-20 admin audit): บันทึกชื่อแอดมิน + เวลา ที่เปลี่ยนสถานะ (ฟิลด์เพิ่ม ไม่กระทบฟิลด์เดิม)
     const statusAudit = await buildStatusAuditWithHistory(orderId, newStatus);
-    await updateDoc(doc(db, "orders", orderId), { status: newStatus, updated_at: new Date().toISOString(), ...statusAudit });
+    // 🔒 (Audit Fix H-18): เคลียร์ payment_verified_at เมื่อเปลี่ยนสถานะเป็น cancelled
+    //   ปัญหาเดิม: ยืนยันโอน → payment_verified_at = now → ยกเลิก → status=cancelled
+    //   แต่ payment_verified_at ยังค้าง → query "นับยอด verified" รวม cancelled order
+    //   → reports ผิด + compliance issue
+    //   วิธีแก้: ถ้า newStatus === 'cancelled' → เคลียร์ payment_verified_at = null
+    //   ผลกระทบระบบเดิม: 0% — กรณีอื่น (pending_verify/processing/completed) ไม่เคลียร์
+    //   หมายเหตุ: ถ้าจะ reopen (cancelled → pending_verify) → payment_verified_at จะ set ใหม่ตอนยืนยันอีกครั้ง
+    const updateData = { status: newStatus, updated_at: new Date().toISOString(), ...statusAudit };
+    if (newStatus === "cancelled") {
+      updateData.payment_verified_at = null;
+    }
+    await updateDoc(doc(db, "orders", orderId), updateData);
     // 🔧 (2026-09-17 Phase 2): อัปเดต state ฝั่ง client แทน re-fetch ทั้งหมด (ลด D1 reads)
-    await updateOrderInState(orderId, { status: newStatus, updated_at: new Date().toISOString(), ...statusAudit });
+    await updateOrderInState(orderId, updateData);
     renderFromState();
   } catch (err) {
     // 🎨 (2026-09-26): ใช้ adminAlert แทน alert()
