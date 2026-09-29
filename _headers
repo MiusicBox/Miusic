@@ -1,6 +1,7 @@
 /robots.txt
   Content-Type: text/plain; charset=utf-8
 
+# static asset cache
 /*.css
   Cache-Control: public, max-age=31536000, immutable
 /*.js
@@ -8,6 +9,7 @@
 /*.svg
   Cache-Control: public, max-age=31536000, immutable
 
+# security headers for all pages
 /*
   Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.r2.dev https://res.cloudinary.com data:; font-src 'self'; connect-src 'self' https://api.cloudinary.com; media-src 'self' https://*.r2.dev; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; frame-src 'none'
   X-Frame-Options: DENY
@@ -15,3 +17,5 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=()
+  
+
