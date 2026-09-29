@@ -2997,11 +2997,14 @@ async function handleOrderZipStart(request, env) {
   const now = new Date().toISOString();
   const initialParts = JSON.stringify({ songs: [], finalizeState: null });
   try {
+    // 🔒 (Audit Fix H-16): เพิ่ม created_by_admin ลงใน INSERT (สำหรับ ownership check ใน abort)
+    //   ใช้ INSERT OR IGNORE pattern เพื่อรองรับ schema เก่าที่ยังไม่มี column นี้
+    //   ถ้า column ยังไม่มี → INSERT พัง → catch error → fallback ไม่ใส่ created_by_admin
     await env.DB.prepare(
-      "INSERT INTO order_zip_jobs (job_id, order_id, bucket_key, parts, total_songs, status, error, created_at, updated_at) " +
-      "VALUES (?, ?, ?, ?, ?, 'preparing', '', ?, ?) " +
-      "ON CONFLICT(job_id) DO UPDATE SET order_id = excluded.order_id, bucket_key = excluded.bucket_key, parts = excluded.parts, total_songs = excluded.total_songs, status = 'preparing', error = '', updated_at = excluded.updated_at"
-    ).bind(jobId, orderId, bucketKey, initialParts, totalSongs, now, now).run();
+      "INSERT INTO order_zip_jobs (job_id, order_id, bucket_key, parts, total_songs, status, error, created_at, updated_at, created_by_admin) " +
+      "VALUES (?, ?, ?, ?, ?, 'preparing', '', ?, ?, ?) " +
+      "ON CONFLICT(job_id) DO UPDATE SET order_id = excluded.order_id, bucket_key = excluded.bucket_key, parts = excluded.parts, total_songs = excluded.total_songs, status = 'preparing', error = '', updated_at = excluded.updated_at, created_by_admin = excluded.created_by_admin"
+    ).bind(jobId, orderId, bucketKey, initialParts, totalSongs, now, now, admin.id).run();
   } catch (err) {
     // 🔒 (Audit Fix H-1): ถ้า INSERT fail เพราะ UNIQUE constraint บน (order_id, status='preparing')
     //   → แปลว่ามีแอดมินอื่นกำลังสร้าง ZIP สำหรับออเดอร์นี้อยู่แล้ว
@@ -3020,7 +3023,31 @@ async function handleOrderZipStart(request, env) {
         order_id: orderId,
       }, 409);
     }
-    return jsonResponse({ error: safeError("บันทึกสถานะไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+    // 🔒 (Audit Fix H-16): ถ้า INSERT fail เพราะ column created_by_admin ไม่มี (schema เก่า)
+    //   → retry ไม่ใส่ created_by_admin (backward-compat)
+    if (errMsg.includes("no such column") || errMsg.toLowerCase().includes("created_by_admin")) {
+      console.warn("[H-16] created_by_admin column missing — falling back to insert without it (DB schema is old)");
+      try {
+        await env.DB.prepare(
+          "INSERT INTO order_zip_jobs (job_id, order_id, bucket_key, parts, total_songs, status, error, created_at, updated_at) " +
+          "VALUES (?, ?, ?, ?, ?, 'preparing', '', ?, ?) " +
+          "ON CONFLICT(job_id) DO UPDATE SET order_id = excluded.order_id, bucket_key = excluded.bucket_key, parts = excluded.parts, total_songs = excluded.total_songs, status = 'preparing', error = '', updated_at = excluded.updated_at"
+        ).bind(jobId, orderId, bucketKey, initialParts, totalSongs, now, now).run();
+      } catch (retryErr) {
+        try { await mpu.abort(); } catch (_) {}
+        const retryMsg = String(retryErr?.message || retryErr || "");
+        if (retryMsg.includes("UNIQUE") || retryMsg.includes("constraint")) {
+          return jsonResponse({
+            error: "กำลังสร้าง ZIP ของออเดอร์นี้อยู่โดยแอดมินอื่น — กรุณารอให้เสร็จก่อน",
+            code: "zip/concurrent-build-conflict",
+            order_id: orderId,
+          }, 409);
+        }
+        return jsonResponse({ error: safeError("บันทึกสถานะไม่สำเร็จ กรุณาลองใหม่", retryErr) }, 500);
+      }
+    } else {
+      return jsonResponse({ error: safeError("บันทึกสถานะไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+    }
   }
 
   // อัปเดต order doc: zip_status = 'preparing' (เหมือนเดิมใน orders.js createOrderZip)
@@ -4338,12 +4365,36 @@ async function handleOrderZipAbort(request, env) {
   let jobRow;
   try {
     jobRow = await env.DB.prepare(
-      "SELECT job_id, order_id, bucket_key, parts, status FROM order_zip_jobs WHERE job_id = ?"
+      "SELECT job_id, order_id, bucket_key, parts, status, created_by_admin FROM order_zip_jobs WHERE job_id = ?"
     ).bind(jobId).first();
   } catch (err) {
-    return jsonResponse({ error: safeError("อ่านสถานะไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+    // 🔒 (Audit Fix H-16): ถ้า column created_by_admin ไม่มี (DB schema เก่า) → fallback query ไม่มี column นี้
+    try {
+      jobRow = await env.DB.prepare(
+        "SELECT job_id, order_id, bucket_key, parts, status FROM order_zip_jobs WHERE job_id = ?"
+      ).bind(jobId).first();
+    } catch (err2) {
+      return jsonResponse({ error: safeError("อ่านสถานะไม่สำเร็จ กรุณาลองใหม่", err2) }, 500);
+    }
   }
   if (!jobRow) return jsonResponse({ error: "ไม่พบ ZIP job นี้" }, 404);
+
+  // 🔒 (Audit Fix H-16): Ownership check — กัน admin A abort job ของ admin B
+  //   ปัญหาเดิม: /api/order-zip/abort เช็คแค่ "login" → ทุก admin สามารถ abort job ของ admin อื่นได้
+  //   แม้ไม่ใช่เจ้าของ job → แอดมิน A กด abort → ทำลายงาน admin B ระหว่างทำ
+  //   วิธีแก้: ถ้ามี created_by_admin ใน row → เช็ค admin.id === job.created_by_admin
+  //     ยกเว้น main admin → abort ได้ทุก job (main admin มีสิทธิ์สูงสุด)
+  //   ถ้า created_by_admin ไม่มี (schema เก่า) → ข้าม check (backward-compat)
+  //   ผลกระทบระบบเดิม: 0% — ถ้าไม่มี created_by_admin → ทำงานเหมือนเดิม
+  //     ถ้ามี + sub-admin พยายาม abort job ของคนอื่น → return 403
+  if (jobRow.created_by_admin && admin.role !== "main" && admin.id !== jobRow.created_by_admin) {
+    return jsonResponse({
+      error: "ไม่สามารถยกเลิง ZIP job ของแอดมินอื่นได้ — เฉพาะเจ้าของ job หรือแอดมินหลักเท่านั้น",
+      code: "zip/not-owner",
+      job_owner: jobRow.created_by_admin,
+      your_id: admin.id,
+    }, 403);
+  }
 
   // 🔧 (2026-09-18 v5): อ่าน finalizeState เพื่อ cleanup partial buffer ใน R2 ด้วย
   //   (finalize-build สร้าง temp object ชื่อ partialBufferKey — ต้องลบตอน abort)

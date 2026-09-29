@@ -169,7 +169,11 @@ CREATE TABLE IF NOT EXISTS order_zip_jobs (
   status        TEXT NOT NULL DEFAULT 'preparing', -- 'preparing' | 'ready' | 'failed'
   error         TEXT NOT NULL DEFAULT '',
   created_at    TEXT NOT NULL,
-  updated_at    TEXT NOT NULL
+  updated_at    TEXT NOT NULL,
+  -- 🔒 (Audit Fix H-16): created_by_admin สำหรับ ownership check ใน /api/order-zip/abort
+  --   ถ้าไม่มี (DB เก่า) → /api/order-zip/abort ข้าม check (backward-compat)
+  --   ถ้ามี → sub-admin ไม่สามารถ abort job ของ admin อื่นได้ (เจ้าของ + main admin เท่านั้น)
+  created_by_admin TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_order_zip_jobs_order ON order_zip_jobs(order_id);
