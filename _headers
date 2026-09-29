@@ -1,9 +1,7 @@
 /robots.txt
   Content-Type: text/plain; charset=utf-8
 
-# 🔧 (2026-09-24 SEO/perf): แคชไฟล์ static ยาวขึ้น (PageSpeed แจ้ง "ใช้อายุการใช้งานแคชที่มีประสิทธิภาพ")
-# ปลอดภัย: ทุกไฟล์เหล่านี้เรียกผ่าน query string เวอร์ชัน (เช่น ?v=20260922-...) อยู่แล้วในโค้ด
-# เวลาผู้ดูแลอัปเดตไฟล์แล้วเปลี่ยนเลขเวอร์ชันใน index.html/admin.html เบราว์เซอร์จะดึงไฟล์ใหม่ทันที ไม่ติดแคชเก่า
+# 🔧 (2026-09-24 SEO/perf): แคชไฟล์ static ยาวขึ้น
 /*.css
   Cache-Control: public, max-age=31536000, immutable
 /*.js
@@ -11,49 +9,11 @@
 /*.svg
   Cache-Control: public, max-age=31536000, immutable
 
-# 🔒 (Audit Fix C-8): Security headers สำหรับทุกหน้า (CSP + clickjacking + MIME + HSTS + Referrer)
-#   ปัญหาเดิม: ไม่มี CSP ทั้งระบบ → XSS sinks ทุกจุดไม่ถูกบล็อก
-#   วิธีแก้: เพิ่ม CSP + security headers อื่น ๆ ที่จำเป็น
-#   ผลกระทบระบบเดิม: ต้อง whitelist โดเมนที่ใช้จริง ไม่งั้น html2canvas/รูป R2/Cloudinary พัง
-#     - script-src: 'self' + cdn.jsdelivr.net (html2canvas + jszip ใช้)
-#     - img-src: 'self' + R2 public + Cloudinary + data: (inline base64 รูปเล็ก)
-#     - style-src: 'unsafe-inline' (มี inline <style> ใน admin.html — ยังจำเป็นต้องใช้)
-#     - connect-src: 'self' + Cloudinary API (upload รูป QR + สลิป)
-#     - font-src: 'self' (ไม่ได้ใช้ custom font จาก CDN)
-#   ถ้า future ต้องการเพิ่ม CDN อื่น ต้องเพิ่มโดเมนใน CSP ด้วย ไม่งั้น browser บล็อก
+# 🔒 (Audit Fix C-8): Security headers — Cloudflare _headers ต้องเขียนเป็นบรรทัดเดียว (ไม่รองรับ \)
 /*
-  # Content-Security-Policy: กำแพงหลัก — บอก browser ว่าอนุญาตให้โหลด resource จากที่ไหน
-  # default-src 'self' = default ปฏิเสธทุกอย่าง ยกเว้นจาก same origin
-  # แต่ละ directive ด้านล่าง override default สำหรับ resource type นั้น ๆ
-  Content-Security-Policy: default-src 'self'; \
-    script-src 'self' https://cdn.jsdelivr.net; \
-    style-src 'self' 'unsafe-inline'; \
-    img-src 'self' https://*.r2.dev https://res.cloudinary.com data:; \
-    font-src 'self'; \
-    connect-src 'self' https://api.cloudinary.com; \
-    media-src 'self' https://*.r2.dev; \
-    object-src 'none'; \
-    base-uri 'self'; \
-    form-action 'self'; \
-    frame-ancestors 'none'; \
-    frame-src 'none'
-
-  # X-Frame-Options: ป้องกัน clickjacking — ห้าม embed ใน iframe
-  # (CSP frame-ancestors 'none' ครอบคลุมแล้ว แต่เก็บไว้สำหรับ browser เก่าที่ไม่รองรับ CSP)
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.r2.dev https://res.cloudinary.com data:; font-src 'self'; connect-src 'self' https://api.cloudinary.com; media-src 'self' https://*.r2.dev; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; frame-src 'none'
   X-Frame-Options: DENY
-
-  # X-Content-Type-Options: ปิด MIME sniffing — บังคับ browser ใช้ Content-Type ที่ server ส่ง
-  # กัน browser sniff ไฟล์เป็น HTML/JS แล้ว execute (เช่น upload รูปที่เป็น HTML จริง ๆ)
   X-Content-Type-Options: nosniff
-
-  # Referrer-Policy: ส่งเฉพาะ origin (ไม่ส่ง path/query) เมื่อข้าม origin
-  # กัน leak sensitive query string ผ่าน Referer header
   Referrer-Policy: strict-origin-when-cross-origin
-
-  # Strict-Transport-Security: บังคับ HTTPS สำหรับ 1 ปี + รวม subdomain
-  # รองรับ preload list (browser จะใช้ HTTPS โดยอัตโนมัติ แม้จะพิมพ์ http://)
   Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
-
-  # Permissions-Policy: ปิด API ที่ไม่จำเป็น — ลด attack surface
-  # ปิด: camera, microphone, geolocation, payment, USB, Bluetooth
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=()
