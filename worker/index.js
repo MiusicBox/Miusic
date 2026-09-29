@@ -867,11 +867,22 @@ async function handleAuth(request, env, url) {
       await env.DB.prepare("DELETE FROM login_attempts WHERE ip = ?").bind(clientIP).run();
     } catch (_) { /* ถ้าตารางไม่มี → ข้าม */ }
     const token = await createSession(env, admin.id);
+    // 🔒 (Audit Fix H-24): audit log สำหรับ login สำเร็จ
+    try {
+      await writeAuditLog(env, request, admin, "login", "admins", admin.id, admin.email || admin.id, null, { login_at: new Date().toISOString() });
+    } catch {}
     return jsonResponse(adminToClient(admin), 200, { "Set-Cookie": buildSessionCookie(token) });
   }
 
   if (path === "logout" && request.method === "POST") {
     const token = getCookie(request, "session_token");
+    // 🔒 (Audit Fix H-24): audit log สำหรับ logout — บันทึกก่อนลบ session
+    try {
+      const admin = await getSessionAdmin(request, env);
+      if (admin) {
+        await writeAuditLog(env, request, admin, "logout", "admins", admin.id, admin.email || admin.id, null, { logout_at: new Date().toISOString() });
+      }
+    } catch {}
     await deleteSession(env, token);
     return jsonResponse({ ok: true }, 200, { "Set-Cookie": buildClearCookie() });
   }
@@ -982,6 +993,10 @@ async function handleAuth(request, env, url) {
       await env.DB.prepare(
         "DELETE FROM login_attempts WHERE ip = ? AND email = ?"
       ).bind(cpClientIP, cpKey).run();
+    } catch {}
+    // 🔒 (Audit Fix H-24): audit log สำหรับ change-password สำเร็จ
+    try {
+      await writeAuditLog(env, request, admin, "change_password", "admins", admin.id, admin.email || admin.id, null, { changed_at: new Date().toISOString() });
     } catch {}
     return jsonResponse({ ok: true });
   }
