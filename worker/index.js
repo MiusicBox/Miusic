@@ -87,6 +87,50 @@ async function writeAuditLog(env, request, admin, action, collection, targetId, 
   await auditInsertPromise;
 }
 
+// 🔒 (Audit Fix C-5): Helper สำหรับบันทึก status_history ลงตารางแยกแบบ append-only (atomic)
+//   ปัญหาเดิม: status_history เป็น JSON array ใน order document → read-modify-write ไม่ atomic
+//     → 2 admins แก้พร้อมกัน → entry ตัวแรกหาย (lost update)
+//   วิธีแก้: INSERT ลงตาราง order_status_history แยกต่างหาก → atomic โดยธรรมชาติ (autoincrement PK)
+//   ใช้คู่ขนานกับ JSON array เดิม (backward-compat) — JSON array ยังอัปเดตเหมือนเดิม
+//   ผลกระทบระบบเดิม: 0% — best-effort INSERT; ถ้าพัง → log warning + ข้าม (ไม่ block request)
+//     ถ้าตาราง order_status_history ไม่มี (DB เก่า) → INSERT พัง → catch + log + ข้าม
+//   พารามิเตอร์:
+//     env: Worker env (มี env.DB + env.__ctx)
+//     orderId: documents.id WHERE collection='orders'
+//     status: status ของ order ณ ตอนนั้น
+//     note: หมายเหตุภาษาไทย (เช่น "แอดมินยืนยันสลิป", "Worker atomic update")
+//     byId: admin_id หรือ "system" หรือ "customer"
+//     byName: display_name ของผู้บันทึก (เช่น "Main Admin", "Miusic Worker")
+async function insertOrderStatusHistory(env, orderId, status, note, byId, byName) {
+  if (!env || !env.DB || !orderId) return;
+  const ctx = env.__ctx;
+  const now = new Date().toISOString();
+
+  const insertPromise = env.DB.prepare(
+    "INSERT INTO order_status_history (order_id, status, note, by_id, by_name, created_at) " +
+    "VALUES (?, ?, ?, ?, ?, ?)"
+  ).bind(
+    orderId,
+    String(status || ""),
+    note ? String(note).slice(0, 500) : null,
+    byId ? String(byId).slice(0, 100) : null,
+    byName ? String(byName).slice(0, 200) : null,
+    now
+  ).run().catch((histErr) => {
+    // ถ้าตาราง order_status_history ไม่มี → log ใน Worker logs แต่ไม่ block action
+    //   ระบบเดิมยังทำงานได้ — JSON array ยังถูกอัปเดตเหมือนเดิม
+    console.warn("[C-5] order_status_history insert failed (table may not exist — run schema.sql):", histErr?.message);
+  });
+
+  // ถ้ามี ctx → รันใน background (response ไม่รอ INSERT)
+  if (ctx && typeof ctx.waitUntil === "function") {
+    ctx.waitUntil(insertPromise);
+    return;
+  }
+  // fallback: รอ INSERT (กรณี ctx ไม่มี)
+  await insertPromise;
+}
+
 // 🔧 (2026-09-22 fix Bug #4): sanitize string สำหรับ orderId + ค่าที่เข้า HTTP header / R2 metadata
 //   กัน CRLF injection → attacker ใส่ \r\n ใน orderId → inject header
 function sanitizeHeaderValue(value) {
@@ -618,6 +662,60 @@ async function handleAuth(request, env, url) {
 
     const token = await createSession(env, id);
     const admin = await env.DB.prepare("SELECT id, email, display_name, role, created_at, created_by FROM admin_users WHERE id = ?").bind(id).first();
+
+    // 🔒 (Audit Fix C-14): พยายาม auto-delete ALLOW_BOOTSTRAP secret หลัง bootstrap สำเร็จ
+    //   ปัญหาเดิม: operator ต้อง manually รัน `wrangler secret delete ALLOW_BOOTSTRAP`
+    //            ถ้าลืม → endpoint ยังเปิดอยู่ → ระหว่าง D1 outage ผู้โจมตีอาจ bootstrap main admin ตัวใหม่ได้
+    //   วิธีแก้: หลัง bootstrap สำเร็จ → เรียก Cloudflare API ลบ secret โดยอัตโนมัติ
+    //            ต้องตั้ง env เพิ่ม: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN (Workers Scripts:Edit)
+    //            ถ้าไม่ได้ตั้ง → log warning ใน Worker logs (operator เห็นใน Dashboard) แต่ไม่ทำให้ bootstrap พัง
+    //   ผลกระทบระบบเดิม: 0% — ถ้าไม่มี env token → ข้ามไป ใช้วิธีเดิม (manual delete)
+    //            ถ้ามี env token → ลบ secret อัตโนมัติ (UX ดีขึ้น)
+    //   ⚠️ ใช้ waitUntil เพื่อให้ Cloudflare API call ทำงานหลัง response ส่งแล้ว (ไม่ block ลูกค้า)
+    try {
+      const accountId = env.CLOUDFLARE_ACCOUNT_ID;
+      const apiToken = env.CLOUDFLARE_API_TOKEN;
+      const scriptName = "miusic-store"; // ตรงกับ wrangler.jsonc name field
+      if (accountId && apiToken) {
+        // ใช้ ctx.waitUntil เพื่อ run หลังส่ง response — ไม่ block ลูกค้า
+        const deletePromise = fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${scriptName}/secrets/ALLOW_BOOTSTRAP`,
+          {
+            method: "DELETE",
+            headers: { "Authorization": `Bearer ${apiToken}` },
+          }
+        ).then(async (resp) => {
+          if (!resp.ok) {
+            const body = await resp.text().catch(() => "");
+            console.warn(
+              `[C-14] Auto-delete ALLOW_BOOTSTRAP failed: ${resp.status} ${body}. ` +
+              `Operator ต้องรัน: wrangler secret delete ALLOW_BOOTSTRAP`
+            );
+          } else {
+            console.log("[C-14] ALLOW_BOOTSTRAP secret auto-deleted after successful bootstrap");
+          }
+        }).catch((err) => {
+          console.warn(
+            `[C-14] Auto-delete ALLOW_BOOTSTRAP network error: ${err?.message || err}. ` +
+            `Operator ต้องรัน: wrangler secret delete ALLOW_BOOTSTRAP`
+          );
+        });
+        // ใช้ ctx.waitUntil ถ้ามี ctx (Cloudflare Worker context) — ถ้าไม่มี ctx ก็ยอมแพ้ (fire-and-forget)
+        if (typeof ctx !== "undefined" && ctx && typeof ctx.waitUntil === "function") {
+          ctx.waitUntil(deletePromise);
+        }
+      } else {
+        // ไม่ได้ตั้ง CLOUDFLARE_ACCOUNT_ID หรือ CLOUDFLARE_API_TOKEN → log warning ให้ operator เห็น
+        console.warn(
+          "[C-14] Bootstrap สำเร็จ แต่ไม่สามารถ auto-delete ALLOW_BOOTSTRAP ได้ (ไม่มี CLOUDFLARE_ACCOUNT_ID หรือ CLOUDFLARE_API_TOKEN). " +
+          "Operator ต้องรันด้วยตัวเอง: wrangler secret delete ALLOW_BOOTSTRAP"
+        );
+      }
+    } catch (cleanupErr) {
+      // ไม่ทำให้ bootstrap พัง ถ้า cleanup มีปัญหา — log warning อย่างเดียว
+      console.warn("[C-14] Bootstrap cleanup error:", cleanupErr?.message || cleanupErr);
+    }
+
     return jsonResponse(adminToClient(admin), 200, { "Set-Cookie": buildSessionCookie(token) });
   }
 
@@ -2130,13 +2228,42 @@ async function handleDb(request, env, url) {
         // 🔧 (2026-09-22 fix Bug #2 UI v2): ดึงข้อมูลก่อนเปลี่ยนเก็บไว้สำหรับ audit log diff
         //   ถ้า body.merge=true (อัปเดต) → ดึงเอกสารเดิมก่อน set
         //   ถ้า body.merge=false (สร้างใหม่) → ก่อนหน้านี้ไม่มี → beforeDoc อาจเป็น null (create จริงๆ)
-        //   กรณี PUT โดยไม่ merge ที่มีเอกสารเดิมอยู่ → ถือเป็น "replace" (delete + create)
+        //   กรณี PUT โดยไม่ merge ที่มีเอกสารเดิมอยู่ → ถือว่าเป็น "replace" (delete + create)
         //   แต่ audit log จะบันทึกเป็น "create" เพราะ action คือ !!body.merge ? "update" : "create"
         let beforeDoc = null;
         if (body.merge) {
           try { beforeDoc = await getDocument(env, collection, id); } catch { beforeDoc = null; }
         }
-        const result = await setDocument(env, collection, id, body.data || {}, !!body.merge, admin?.email);
+        // 🔒 (Audit Fix C-7): Wrap setDocument ด้วย cleanup-on-failure เพื่อกัน orphan placeholder row
+        //   ปัญหาเดิม: บรรทัด 2170 INSERT placeholder (data='{}') แล้วบรรทัดนี้ setDocument เขียนทับ
+        //     ถ้า setDocument พัง (D1 transient, network) → placeholder ค้าง → ลูกค้าลองใหม่ไม่ได้
+        //     (เพราะ INSERT...ON CONFLICT DO NOTHING ด้านบนเห็น row มีอยู่ → changes() === 0 → 401)
+        //   วิธีแก้: ถ้า setDocument พัง และเป็น customer order PUT (no admin) → DELETE placeholder ออก
+        //     แล้วโยน error เดิมออกไป เพื่อให้ลูกค้า retry ได้
+        //   ผลกระทบระบบเดิม: 0% — ถ้า setDocument สำเร็จ (กรณีปกติ) → ไม่มีการทำ cleanup (เหมือนเดิม)
+        //     ถ้า setDocument พัง และเป็น admin path → ไม่ทำ cleanup (ไม่มี placeholder ให้ลบ)
+        //     ถ้า setDocument พัง และเป็น customer path → ลบ placeholder ให้ลูกค้า retry ได้
+        //   หมายเหตุ: ใช้ WHERE data = '{}' เพื่อกันลบ row ที่มีข้อมูลจริง (กันกรณี setDocument เขียนบาง field สำเร็จ)
+        let result;
+        try {
+          result = await setDocument(env, collection, id, body.data || {}, !!body.merge, admin?.email);
+        } catch (setDocErr) {
+          // ถ้าเป็น customer order PUT (no admin) → ลบ placeholder ที่ INSERT ไว้ด้านบน
+          //   ถ้าไม่ใช่ customer path → ไม่ต้อง cleanup (admin path ไม่มี placeholder)
+          if (!admin && collection === "orders") {
+            try {
+              await env.DB.prepare(
+                "DELETE FROM documents WHERE collection = ? AND id = ? AND data = '{}'"
+              ).bind(collection, id).run();
+              console.log("[C-7] Cleaned up orphan placeholder row after setDocument failure:", setDocErr?.message || setDocErr);
+            } catch (cleanupErr) {
+              console.error("[C-7] Failed to cleanup orphan placeholder:", cleanupErr?.message || cleanupErr);
+            }
+          }
+          // โยน error เดิมออกไป เพื่อให้ caller (handleDb) ส่ง error กลับลูกค้า
+          //   ลูกค้าได้รับ error → กดลองใหม่ได้ (เพราะ placeholder ถูกลบแล้ว)
+          throw setDocErr;
+        }
         // 🔧 (2026-09-22 fix Bug #2 UI v3): ตรวจหา target_name จากหลาย field ที่เป็นไปได้
         //   ไม่ใช่แค่ song_name/playlist_name/customer_name แต่รวม dj_name, category_name, name, display_name, title
         //   ทำให้ target_name แสดงชื่อจริง ๆ แทน UUID ตอนแก้ไข DJ/หมวดหมู่/ผู้ใช้ ฯลฯ
@@ -3258,6 +3385,9 @@ async function handleOrderZipFinalize(request, env) {
           by_name: "Miusic Worker",
         });
       }
+      // 🔒 (Audit Fix C-5): atomic INSERT ลงตาราง order_status_history (คู่ขนาน JSON array)
+      //   ถ้า JSON array เกิด lost update จาก race → ตารางนี้ยังเก็บ entry ครบ
+      try { await insertOrderStatusHistory(env, jobRow.order_id, "processing", "Worker atomic update — ZIP ready", "system", "Miusic Worker"); } catch (_) {}
     }
 
     // รวม zip fields + status (atomic ใน D1 statement เดียว)
@@ -3884,6 +4014,8 @@ async function handleOrderZipFinalizeCompose(request, env) {
           by_name: "Miusic Worker",
         });
       }
+      // 🔒 (Audit Fix C-5): atomic INSERT ลงตาราง order_status_history (คู่ขนาน JSON array)
+      try { await insertOrderStatusHistory(env, jobRow.order_id, "processing", "Worker atomic update — ZIP ready (compose)", "system", "Miusic Worker"); } catch (_) {}
     }
 
     const updatedData = {
@@ -4921,6 +5053,8 @@ export default {
           by: "customer",
         });
       }
+      // 🔒 (Audit Fix C-5): atomic INSERT ลงตาราง order_status_history (คู่ขนาน JSON array)
+      try { await insertOrderStatusHistory(env, orderId, orderData.status || "pending_verify", "ลูกค้าอัปโหลดสลิปการโอนเงิน", "customer", "ลูกค้า"); } catch (_) {}
       try {
         await env.DB.prepare(
           `UPDATE documents SET data=?, updated_at=? WHERE collection='orders' AND id=?`
@@ -5022,6 +5156,12 @@ export default {
               by_name: admin.display_name || "แอดมิน",
             });
           }
+          // 🔒 (Audit Fix C-5): atomic INSERT ลงตาราง order_status_history (คู่ขนาน JSON array)
+          //   ถ้า JSON array เกิด lost update จาก race (2 admins แก้พร้อมกัน) → ตารางนี้ยังเก็บ entry ครบ
+          const verifyNote = newStatus === "verified"
+            ? "แอดมินยืนยันสลิปการโอน"
+            : `แอดมินปฏิเสธสลิป${rejectReason ? ": " + rejectReason : ""}`;
+          try { await insertOrderStatusHistory(env, orderId, orderData.status || "pending_verify", verifyNote, admin.id, admin.display_name || "แอดมิน"); } catch (_) {}
           await env.DB.prepare(
             `UPDATE documents SET data=?, updated_at=? WHERE collection='orders' AND id=?`
           ).bind(JSON.stringify(orderData), verifiedAt, orderId).run();

@@ -308,3 +308,31 @@ CREATE TABLE IF NOT EXISTS payment_proof_attempts (
   attempted_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_payment_proof_attempts_ip ON payment_proof_attempts(ip, attempted_at);
+
+-- ===================================================
+-- 🔒 (Audit Fix C-5): ตาราง order_status_history — append-only atomic log
+--   ปัญหาเดิม: status_history เก็บเป็น JSON array ใน order document
+--     การ append ทำแบบ read-modify-write ที่ไม่ atomic → 2 admins แก้พร้อมกัน
+--     → entry ของตัวแรกหายเงียบ ๆ (lost update)
+--   วิธีแก้: ตารางนี้เป็น append-only (INSERT เท่านั้น) → atomic โดยธรรมชาติ
+--     ใช้เป็น authoritative source คู่ขนานกับ JSON array เดิม (backward-compat)
+--   ผลกระทบระบบเดิม: 0% — เพิ่มตารางใหม่ ไม่แตะตารางเดิม
+--     ถ้าตารางนี้ไม่มี (DB เก่า) → worker INSERT พัง → catch + log warning + ข้าม
+--     ระบบเดิมยังทำงานได้ (JSON array ยังอัปเดตเหมือนเดิม)
+--   การใช้งานในอนาคต: client สามารถอ่านจากตารางนี้แทน JSON array
+--     ได้รับข้อมูลครบ 100% ไม่มี lost update
+-- ===================================================
+CREATE TABLE IF NOT EXISTS order_status_history (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id      TEXT NOT NULL,                    -- documents.id WHERE collection='orders'
+  status        TEXT NOT NULL,                    -- status ของ order ณ ตอนที่บันทึก
+  note          TEXT,                              -- หมายเหตุ (เช่น "แอดมินยืนยันสลิป", "Worker ZIP ready")
+  by_id         TEXT,                              -- admin_id หรือ "system" / "customer"
+  by_name       TEXT,                              -- display_name ของผู้บันทึก
+  created_at    TEXT NOT NULL                      -- ISO 8601 timestamp
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_status_history_order
+  ON order_status_history(order_id, id);
+CREATE INDEX IF NOT EXISTS idx_order_status_history_created
+  ON order_status_history(created_at);
