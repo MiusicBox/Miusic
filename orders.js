@@ -3642,6 +3642,33 @@ async function handleSubmitOrder() {
     feedback.textContent = "กรุณาเลือกเพลงหรือเพลย์ลิสต์อย่างน้อย 1 รายการ";
     return;
   }
+  // 🔒 (Audit Fix M-7): Duplicate order check — กันสร้างออเดอร์ซ้ำภายใน 60 วินาที
+  //   ปัญหาเดิม: admin double-click "บันทึก" หรือ retry → สร้าง 2 ออเดอร์ที่เหมือนกัน
+  //   → ลูกค้าได้ 2 receipt numbers → สับสน + อาจจ่ายซ้ำ
+  //   วิธีแก้: เช็คใน state.allOrders ว่ามี pending_verify order ที่ name+whatsapp ตรง
+  //   และสร้างภายใน 60 วินาทีที่ผ่านมา → ถ้ามี → แจ้ง warning + ถามยืนยัน
+  //   ผลกระทบระบบเดิม: 0% — ถ้าไม่มี duplicate → ผ่าน (เหมือนเดิม)
+  //   ถ้ามี duplicate (เป็นไปได้ว่า double-click) → ถามยืนยันก่อนสร้าง
+  const _nowMs = Date.now();
+  const _duplicateWindow = 60 * 1000; // 60 วินาที
+  const _possibleDup = state.allOrders.find(o => {
+    if (o.status !== "pending_verify") return false;
+    if (o.customer_name !== customerName) return false;
+    if (o.whatsapp !== whatsapp) return false;
+    if (!o.created_at) return false;
+    const ageMs = _nowMs - new Date(o.created_at).getTime();
+    return ageMs < _duplicateWindow;
+  });
+  if (_possibleDup) {
+    const _dupMsg = `พบออเดอร์เดียวกัน (name: ${customerName}, เบอร์: ${whatsapp}) ที่สร้างไปแล้วเมื่อสักครู่ (${new Date(_possibleDup.created_at).toLocaleTimeString("th-TH")}) — ต้องการสร้างออเดอร์ใหม่จริงหรือไม่?`;
+    const _confirmDup = window.askConfirm
+      ? await window.askConfirm(_dupMsg, { title: "ออเดอร์ซ้ำ?", okText: "สร้างใหม่", danger: false })
+      : window.confirm(_dupMsg);
+    if (!_confirmDup) {
+      feedback.textContent = "ยกเลิก — ออเดอร์ที่มีอยู่แล้วอาจเพียงพอ";
+      return;
+    }
+  }
   if (!Number.isFinite(total) || total < 0) {
     feedback.textContent = "กรุณากรอกยอดรวมให้ถูกต้อง";
     return;
