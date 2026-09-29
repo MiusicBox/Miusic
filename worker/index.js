@@ -5114,7 +5114,65 @@ export default {
       ).bind(proofId, orderId).first();
       if (!proofRow) return jsonResponse({ error: "ไม่พบหลักฐานการชำระที่ระบุ" }, 404);
 
+      // 🔒 (Audit Fix H-11): เช็คยอดสลิปตรงยอดออเดอร์ก่อน verify
+      //   ปัญหาเดิม: verify-payment endpoint ไม่เช็คว่ายอดในสลิป (amount_claimed)
+      //   ตรงกับยอดออเดอร์ (final_total) → แอดมิน (โดยเฉพาะ sub-admin) สามารถ
+      //   ยืนยันสลิป 1,000 LAK สำหรับออเดอร์ 100,000 LAK → ลูกค้าได้ของเต็มในราคา 1/100
+      //   วิธีแก้:
+      //     1. fetch orderData ก่อน update (เพื่อเช็คยอด + เก็บ status_history)
+      //     2. ถ้า newStatus === "verified" → เช็ค |amount_claimed - orderTotal| <= tolerance (1 LAK)
+      //     3. ถ้า mismatch → return 400 พร้อม warning ระบุยอดต่าง
+      //     4. แอดมินสามารถ override ด้วย body.force === true (กรณีพิเศษ เช่น ส่วนลดพิเศษ)
+      //         แต่ต้องใส่ force_reason (บันทึกเป็น audit trail)
+      //   ผลกระทบระบบเดิม: 0%
+      //     - ถ้ายอดตรง → ผ่านได้ปกติ (กรณีส่วนใหญ่)
+      //     - ถ้ายอดไม่ตรง และไม่มี force → ปฏิเสธ (กัน fraud)
+      //     - ถ้ายอดไม่ตรง และมี force + reason → ยืนยันได้ (admin override)
+      //     - ถ้า amount_claimed เป็น null (ลูกค้าไม่กรอก) → ข้าม check (backward-compat)
+      const force = body?.force === true;
+      const forceReason = force ? String(body?.force_reason || "").trim().slice(0, 500) : null;
+      if (force && !forceReason) {
+        return jsonResponse({ error: "การ force verify ต้องมีเหตุผล (force_reason)" }, 400);
+      }
+
       const verifiedAt = new Date().toISOString();
+
+      // 🔒 (Audit Fix H-11): fetch order ก่อน + เช็คยอดสลิปตรงยอดออเดอร์ ก่อน UPDATE payment_proofs
+      //   เดิม: UPDATE payment_proofs ก่อน fetch order → ถ้าเกิด mismatch ที่ check ด้านล่าง
+      //         payment_proofs.status ถูกเปลี่ยนเป็น 'verified' ไปแล้ว → แย่
+      //   ใหม่: fetch order ก่อน → เช็คยอด → ถ้า mismatch return 400 (ยังไม่ UPDATE payment_proofs)
+      //         ถ้าผ่าน → UPDATE payment_proofs + UPDATE order ตามลำดับ
+      //   ผลกระทบระบบเดิม: 0% — flow ปกติผ่านเหมือนเดิม
+      //     กรณี mismatch → payment_proofs ยังเป็น status='pending' (ไม่ถูกทำลาย)
+      const orderRow = await env.DB.prepare(
+        `SELECT data FROM documents WHERE collection='orders' AND id=?`
+      ).bind(orderId).first();
+      let orderDataForCheck = null;
+      if (orderRow?.data) {
+        try { orderDataForCheck = JSON.parse(orderRow.data); } catch (_) { orderDataForCheck = null; }
+      }
+      if (newStatus === "verified" && !force && orderDataForCheck) {
+        const amountClaimed = proofRow.amount_claimed != null ? Number(proofRow.amount_claimed) : null;
+        const orderTotal = orderDataForCheck.final_total != null ? Number(orderDataForCheck.final_total)
+                         : orderDataForCheck.total != null ? Number(orderDataForCheck.total)
+                         : null;
+        if (amountClaimed != null && orderTotal != null
+            && Number.isFinite(amountClaimed) && Number.isFinite(orderTotal)) {
+          const diff = Math.abs(amountClaimed - orderTotal);
+          const TOLERANCE = 1; // 1 LAK (floating point tolerance)
+          if (diff > TOLERANCE) {
+            return jsonResponse({
+              error: `ยอดในสลิป (${amountClaimed} LAK) ไม่ตรงกับยอดออเดอร์ (${orderTotal} LAK) — ผลต่าง ${diff} LAK ` +
+                     `— หากตั้งใจยืนยัน (เช่น ส่วนลดพิเศษ) ให้ส่ง force=true + force_reason ใน body`,
+              code: "verify/amount-mismatch",
+              amount_claimed: amountClaimed,
+              order_total: orderTotal,
+              diff,
+            }, 400);
+          }
+        }
+      }
+
       try {
         await env.DB.prepare(
           `UPDATE payment_proofs
@@ -5125,10 +5183,6 @@ export default {
         return jsonResponse({ error: safeError("อัปเดตสถานะสลิปไม่สำเร็จ", err) }, 500);
       }
 
-      // fetch + update order
-      const orderRow = await env.DB.prepare(
-        `SELECT data FROM documents WHERE collection='orders' AND id=?`
-      ).bind(orderId).first();
       let orderUpdateOk = false;
       // snapshot สำหรับส่งกลับ client (ใช้ตอนเปิด WhatsApp แจ้งลูกค้า)
       let receiptNumber = null;
