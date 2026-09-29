@@ -1453,6 +1453,11 @@ async function handleDb(request, env, url) {
   try {
     // 🔒 /api/db/orders/_customer-query — ลูกค้าค้นหาออเดอร์เดียวด้วย receipt_number + ชื่อ + เบอร์
     // Server ตรวจทั้ง 3 ฟิลด์ คืนออเดอร์เดียวถ้าตรงทั้งหมด ไม่คืนข้อมูลคนอื่นให้ browser
+    // 🔒 (Audit Fix H-6): เพิ่ม limit 1 + ตรวจซ้ำกัน birthday paradox
+    //   เดิม queryDocuments คืน array → loop หาตัวแรกที่ตรง name+whatsapp
+    //   แต่ถ้ามี 2 orders ที่ receipt_number ตรงกัน (จาก H-6 collision) → server อาจคืนตัวผิด
+    //   วิธีแก้: queryDocuments ใช้ LIMIT (ดู db-helpers.js) + ตรวจ name+whatsapp เข้มข้น
+    //   ป้องกันเพิ่ม: ถ้าเจอมากกว่า 1 row → log warning (อาจเป็น collision)
     if (isOrdersCustomerEndpoint && parts[1] === "_customer-query") {
       let body;
       try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
@@ -1465,14 +1470,32 @@ async function handleDb(request, env, url) {
       const docs = await queryDocuments(env, "orders", {
         wheres: [{ __type: "where", field: "receipt_number", op: "==", value: receiptNumber }],
       });
+      // 🔒 (Audit Fix H-6): ถ้าเจอมากกว่า 1 row → log warning (birthday paradox collision)
+      //   ในอนาคตควรเปลี่ยนเป็น server-side sequence (ใช้ receipt_id INT AUTOINCREMENT)
+      if (docs.length > 1) {
+        console.warn(`[H-6] customer-query: ${docs.length} orders share receipt_number "${receiptNumber}" — birthday paradox collision detected. Future orders use 12-char suffix (see getReceiptNumber fix).`);
+      }
       const queryName = normalizeNameServer(customerName);
       const queryPhone = normalizePhoneServer(whatsapp);
+      let matchCount = 0;
+      let firstMatch = null;
       for (const d of docs) {
         const oName = normalizeNameServer(d.data?.customer_name || "");
         const oPhone = normalizePhoneServer(d.data?.whatsapp || "");
         if (oName === queryName && oPhone === queryPhone) {
-          return jsonResponse({ exists: true, id: d.id, data: d.data });
+          matchCount++;
+          if (!firstMatch) firstMatch = d;
         }
+      }
+      // 🔒 (Audit Fix H-6): ถ้าเจอหลาย match (name+whatsapp ตรงหลายออเดอร์ + receipt_number ตรง) → ambiguous
+      //   ไม่คืนอะไรเลย (ปลอดภัยกว่าคืนตัวแรก ที่อาจเป็นของคนอื่น)
+      //   ในกรณีปกติ (no collision) → matchCount = 1 → คืน firstMatch ตามเดิม
+      if (matchCount === 1 && firstMatch) {
+        return jsonResponse({ exists: true, id: firstMatch.id, data: firstMatch.data });
+      } else if (matchCount > 1) {
+        // ambiguous — log + return exists:false (ลูกค้าติดต่อแอดมิน)
+        console.warn(`[H-6] customer-query: ambiguous match (${matchCount} orders match receipt+name+whatsapp) — refusing to return any for safety`);
+        return jsonResponse({ exists: false, ambiguous: true });
       }
       return jsonResponse({ exists: false });
     }
