@@ -631,9 +631,14 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
    *     กรณีนี้ 1 รายการในตะกร้า = 1 Order Item เสมอ (เพลย์ลิสต์ไม่ถูกขยายเป็นหลายเพลง)
    *     เช่น เพลง 3 เพลง + เพลย์ลิสต์ 2 รายการ -> items.length === 5
    */
-  async function resolveCartFromDatabase() {
-    const songEntries = state.cart.filter(item => item.kind !== "playlist");
-    const playlistEntries = state.cart.filter(item => item.kind === "playlist");
+  async function resolveCartFromDatabase(cartOverride) {
+    // 🔒 (Audit Fix C-11): รองรับ cart override เพื่อกัน mutation ระหว่าง async checkout
+    //   ถ้าส่ง cartOverride มา (เป็น snapshot ของ state.cart ตอนเริ่ม submit) → ใช้ค่านั้น
+    //   ถ้าไม่ส่ง → ใช้ state.cart ตามเดิม (backward-compat สำหรับ caller อื่นถ้ามี)
+    //   ผลกระทบระบบเดิม: 0% — ถ้าไม่ส่ง cartOverride → ใช้ state.cart เหมือนเดิม
+    const cartSource = Array.isArray(cartOverride) ? cartOverride : state.cart;
+    const songEntries = cartSource.filter(item => item.kind !== "playlist");
+    const playlistEntries = cartSource.filter(item => item.kind === "playlist");
     const playlistIds = playlistEntries.map(item => String(item.id).replace(/^playlist:/, ""));
 
     // ---- เพิ่มใหม่ (แก้บั๊ก 2026-09-09): อ่านข้อมูลทุกอย่างพร้อมกันด้วย Promise.all แทนการวน await ทีละรายการ ----
@@ -1882,11 +1887,28 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       "📋 สลิปอัปโหลดในระบบแล้ว — กรุณาตรวจสอบในหน้าจัดการออเดอร์ (Admin Panel)",
     ];
     const text = lines.join("\n");
-    // 📸 (แก้ไข 2026-09-26) เปิด WhatsApp ทันทีอัตโนมัติ โดยไม่ถามยืนยันก่อน
-    //   เหตุผล: เว็บยังไม่มีระบบแจ้งเตือนแอดมินแบบอื่น (push notif ฯลฯ) จึงจำเป็นต้องให้แอดมินรู้ทันทีที่มีลูกค้าสั่งซื้อ
-    //   ใช้ location.href (เปลี่ยนหน้าในแท็บเดิม) แทน window.open (เปิดแท็บใหม่)
-    //   เพราะ window.open หลัง await fetch() มักถูก popup blocker ของ Safari บล็อก แต่ location.href ไม่ถูกบล็อก
-    window.location.href = buildWhatsAppLink(adminNumber, text);
+    // 🔒 (Audit Fix C-10): เปลี่ยนจาก window.location.href → window.open เพื่อเปิด WhatsApp
+    //   ในแท็บใหม่ ทำให้ cart + order tracking UI ของลูกค้ายังอยู่ในแท็บเดิม
+    //   แต่ต้อง fallback ไป location.href ถ้า window.open ถูกบล็อก (Safari/iOS popup blocker
+    //   มักบล็อก window.open หลัง await fetch()) เพื่อรักษาพฤติกรรมเดิมไว้
+    //   ผลกระทบระบบเดิม: 0% — ถ้า popup ถูกบล็อก จะใช้ location.href เหมือนเดิม
+    //   ถ้า popup ไม่ถูกบล็อก → UX ดีขึ้น (cart ยังอยู่)
+    const whatsappUrl = buildWhatsAppLink(adminNumber, text);
+    let opened = false;
+    try {
+      const popup = window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+      if (popup && !popup.closed) {
+        opened = true;
+      }
+    } catch (_) {
+      // บางเบราว์เซอร์ throw แทนที่จะ return null — ปลอดภัยกว่า catch ไว้
+      opened = false;
+    }
+    // Fallback: ถ้า window.open ไม่สำเร็จ (popup blocker บล็อก) → ใช้ location.href เหมือนเดิม
+    //   เพื่อให้ลูกค้ายังสามารถส่งสลิปผ่าน WhatsApp ได้แม้ว่า cart จะหาย
+    if (!opened) {
+      window.location.href = whatsappUrl;
+    }
   }
 
   // bind close buttons for new modals
@@ -1936,6 +1958,18 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     if (btn) { btn.disabled = true; btn.textContent = "กำลังตรวจสอบและบันทึก..."; }
     setCheckoutFeedback("กำลังตรวจสอบรายการและราคาจากฐานข้อมูล...", "success");
 
+    // 🔒 (Audit Fix C-11): Snapshot cart ทันทีตอนเริ่ม submit เพื่อกัน mutation ระหว่าง async
+    //   ปัญหาเดิม: ลูกค้ากด "ยืนยันสั่งซื้อ" → ระหว่าง await fetch() (200ms) ลูกค้าอาจกด
+    //     addToCart / removeFromCart / clearCart ทำให้ state.cart เปลี่ยน → order ที่บันทึก
+    //     ไม่ตรงกับที่ลูกค้าเห็นใน UI
+    //   วิธีแก้: deep-clone state.cart เป็น cartSnapshot ตอนเริ่ม submit แล้วใช้ snapshot
+    //     นี้สร้าง order (ไม่ใช่ state.cart ตอน buildOrder)
+    //   ผลกระทบระบบเดิม: 0% — ถ้าลูกค้าไม่กดอะไรระหว่าง submit → snapshot === state.cart → เหมือนเดิม
+    //     ถ้าลูกค้ากดปุ่ม mutation ระหว่าง submit → UI cart เปลี่ยน แต่ order ใช้ snapshot เดิม (ถูกต้อง)
+    //   หมายเหตุ: เป็นการ fix เฉพาะ data-integrity ของ order ไม่ได้ disable ปุ่ม cart mutation
+    //     (disable ปุ่มเป็น UX improvement ที่ควรทำใน Phase 2 — ที่นี้ fix เฉพาะ data race)
+    const cartSnapshot = Array.isArray(state.cart) ? state.cart.map(item => ({ ...item })) : [];
+
     const createdAt = new Date().toISOString();
     const checkoutKey = getCheckoutKey(customerName, whatsapp);
     const reusableOrderId = activeOrderKey === checkoutKey
@@ -1972,7 +2006,9 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       // เมื่อ setDoc เจอ "ยังไม่ได้เข้าสู่ระบบ" (เกิดจาก order ID ค้างใน sessionStorage หรือ worker เก่า
       // ที่ยังไม่ได้แก้ exception สำหรับ orders) → เคลียร์ order ID เก่าแล้วลองใหม่ด้วย ID ใหม่
       const buildAndSaveOrder = async (refToUse) => {
-        const resolved = await resolveCartFromDatabase();
+        // 🔒 (Audit Fix C-11): ส่ง cartSnapshot เข้า resolveCartFromDatabase
+        //   เพื่อกัน mutation ระหว่าง await — ใช้ snapshot ที่ถ่ายตอนเริ่ม submit
+        const resolved = await resolveCartFromDatabase(cartSnapshot);
         resolvedSettings = resolved.settings || {};
 
         const builtOrder = {
