@@ -4860,3 +4860,16 @@ html.admin-page body {
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.30) !important;
   }
 }
+
+/* ==========================================================================
+   Fix: เพลงสุดท้ายโดน bottom-nav + player-bar บัง
+   เพิ่ม padding-bottom ให้เพียงพอสำหรับ bottom-nav + player-bar
+   ใช้ --bottom-nav-h (วัดจาก script ใน index.html) + เผื่อ player-bar 100px
+   ========================================================================== */
+body {
+  padding-bottom: calc(var(--bottom-nav-h, 105px) + 100px + var(--safe-bottom, 0px)) !important;
+}
+
+.song-grid {
+  padding-bottom: calc(var(--bottom-nav-h, 105px) + 100px + var(--safe-bottom, 0px) + 20px) !important;
+}
