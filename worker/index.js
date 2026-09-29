@@ -880,6 +880,35 @@ async function handleAuth(request, env, url) {
   if (path === "change-password" && request.method === "POST") {
     const admin = await getSessionAdmin(request, env);
     if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+
+    // 🔒 (Audit Fix H-21): Rate limit บน change-password — กัน brute-force current password
+    //   ปัญหาเดิม: ไม่มี rate limit → attacker ที่มี session cookie สามารถ brute-force
+    //   currentPassword ได้ไม่จำกัด (5 attempts/sec)
+    //   วิธีแก้: ใช้ login_attempts table (มีอยู่แล้ว) บันทึก failed attempts ตาม admin_id
+    //   threshold: 5 fails / 15 นาที → block
+    //   ผลกระทบระบบเดิม: 0% — ถ้า login_attempts table ไม่มี → ข้าม (fallback)
+    //   ถ้าผ่าน rate limit → ดำเนินการต่อ (เหมือนเดิม)
+    try {
+      const cpClientIP = request.headers.get("CF-Connecting-IP") || "unknown";
+      const CP_RATE_LIMIT_MAX = 5;
+      const CP_RATE_LIMIT_WINDOW_MINUTES = 15;
+      const cpWindow = new Date(Date.now() - CP_RATE_LIMIT_WINDOW_MINUTES * 60 * 1000).toISOString();
+      const cpKey = `change-pw:${admin.id}`;
+      // ใช้ login_attempts table (email field เก็บ key 'change-pw:<admin_id>')
+      const cpRow = await env.DB.prepare(
+        "SELECT COUNT(*) AS c FROM login_attempts WHERE ip = ? AND email = ? AND attempted_at > ?"
+      ).bind(cpClientIP, cpKey, cpWindow).first();
+      if ((cpRow?.c || 0) >= CP_RATE_LIMIT_MAX) {
+        return jsonResponse({
+          error: `พยายามเปลี่ยนรหัสผ่านผิดพลาดเกินไป (${CP_RATE_LIMIT_MAX} ครั้งใน ${CP_RATE_LIMIT_WINDOW_MINUTES} นาที) — กรุณารอ`,
+          code: "auth/change-pw-rate-limited"
+        }, 429);
+      }
+    } catch (cpRateErr) {
+      // ถ้า login_attempts table ไม่มี → ข้าม rate limiting (fallback)
+      console.warn("change-password rate limiting skipped:", cpRateErr?.message);
+    }
+
     let body;
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
 
@@ -897,6 +926,14 @@ async function handleAuth(request, env, url) {
     const full = await env.DB.prepare("SELECT password_hash FROM admin_users WHERE id = ?").bind(admin.id).first();
     const currentOk = await verifyPassword(currentPassword, full?.password_hash);
     if (!currentOk) {
+      // 🔒 (Audit Fix H-21): บันทึก failed attempt เพื่อ rate limiting
+      try {
+        const cpClientIP = request.headers.get("CF-Connecting-IP") || "unknown";
+        const cpKey = `change-pw:${admin.id}`;
+        await env.DB.prepare(
+          "INSERT INTO login_attempts (ip, email, attempted_at) VALUES (?, ?, ?)"
+        ).bind(cpClientIP, cpKey, new Date().toISOString()).run();
+      } catch {}
       return jsonResponse({ error: "รหัสผ่านปัจจุบันไม่ถูกต้อง", code: "auth/wrong-password" }, 401);
     }
 
@@ -921,6 +958,15 @@ async function handleAuth(request, env, url) {
       // ถ้าลบ session ไม่ได้ → log แต่ไม่ block การเปลี่ยนรหัสผ่าน
       console.warn("Failed to invalidate other sessions:", sessionErr?.message);
     }
+    // 🔒 (Audit Fix H-21): เคลียร์ failed attempts หลังเปลี่ยนรหัสผ่านสำเร็จ
+    //   เหมือน login สำเร็จ → เคลียร์ rate limit counter
+    try {
+      const cpClientIP = request.headers.get("CF-Connecting-IP") || "unknown";
+      const cpKey = `change-pw:${admin.id}`;
+      await env.DB.prepare(
+        "DELETE FROM login_attempts WHERE ip = ? AND email = ?"
+      ).bind(cpClientIP, cpKey).run();
+    } catch {}
     return jsonResponse({ ok: true });
   }
 
