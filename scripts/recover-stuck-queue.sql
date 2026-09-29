@@ -26,8 +26,13 @@ SELECT id, order_id, queued_at, status FROM order_zip_queue;
 --   คำเตือน: ถ้ามี ZIP กำลังสร้างจริง การลบจะทำให้ abort
 SELECT job_id, order_id, status, updated_at FROM order_zip_jobs WHERE status = 'preparing';
 
--- Step 5 (optional): ลบ stuck jobs (รันเฉพาะถ้า Step 4 มี rows ที่ updated_at เก่า > 5 นาที)
-DELETE FROM order_zip_jobs WHERE status = 'preparing' AND datetime(updated_at) < datetime('now', '-5 minutes');
+-- Step 5 (optional): ลบ stuck jobs (รันเฉพาะถ้า Step 4 มี rows ที่ updated_at เก่า > 30 นาที)
+-- 🔒 (Audit Fix M-41): เพิ่ม threshold จาก 5 นาที → 30 นาที — กันลบ legitimate in-progress jobs
+--   ปัญหาเดิม: 5 นาทีอาจไม่พอสำหรับ ZIP ขนาดใหญ่ (30 เพลง × 10MB = 5-10 นาที)
+--   → ลบ job ที่กำลังทำอยู่ → R2 multipart orphan + admin เสียงาน
+--   วิธีแก้: เพิ่มเป็น 30 นาที — ปลอดภัยกว่า (ถ้า ZIP ใช้เกิน 30 นาที = มีปัญหาจริง)
+--   ผลกระทบระบบเดิม: 0% — ถ้า stuck < 30 นาที → ไม่ลบ (เหมือนเดิมแต่ threshold เปลี่ยน)
+DELETE FROM order_zip_jobs WHERE status = 'preparing' AND datetime(updated_at) < datetime('now', '-30 minutes');
 
 -- ============================================================
 -- หลักรัน Recovery script:

@@ -64,15 +64,26 @@ ORDER BY created_at ASC;
 --     → ผู้ดูแลระบบต้องตั้ง main admin ใหม่ผ่าน /api/auth/bootstrap
 --     (กรณีนี้เกิดน้อยมาก แต่เผื่อไว้)
 --
+-- 🔒 (Audit Fix M-40): เพิ่ม guard กัน demote ทั้งหมด (กรณี created_at เท่ากัน)
+--   ปัญหาเดิม: ถ้า main admin ทั้งหมดมี created_at เท่ากัน → demote ทั้งหมด
+--   → ไม่มี main admin → ระบบพัง (ต้อง bootstrap ใหม่)
+--   วิธีแก้: เก็บ main admin 1 ตัวเสมอ (ใช้ ROW_NUMBER หรือ MIN(id) เป็น tiebreaker)
+--   ผลกระทบระบบเดิม: 0% — ถ้า created_at ต่างกัน → เหมือนเดิม
+--   ถ้า created_at เท่ากัน → เก็บ 1 ตัว (ไม่ demote ทั้งหมด)
+--
 --   - ถ้ามี main admin 2 ตัวที่ created_at ต่างกัน → demote ตัวที่ created_at มากกว่า
 --     → main admin ตัวแรกยังเป็น main → step 3 จะสำเร็จ
 --
 -- รัน statement นี้ครั้งเดียว:
+-- 🔒 (M-40): ใช้ id เป็น tiebreaker ถ้า created_at เท่ากัน (กัน demote ทั้งหมด)
 UPDATE admin_users
 SET role = 'sub'
 WHERE role = 'main'
-  AND created_at != (
-    SELECT MIN(created_at) FROM admin_users WHERE role = 'main'
+  AND id NOT IN (
+    SELECT id FROM admin_users
+    WHERE role = 'main'
+    ORDER BY created_at ASC, id ASC
+    LIMIT 1
   );
 
 -- ============================================================
