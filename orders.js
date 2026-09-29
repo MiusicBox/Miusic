@@ -2406,6 +2406,25 @@ function closeFullFilesModal() {
 async function handleStatusChange(orderId, newStatus) {
   const order = state.allOrders.find((item) => item.id === orderId);
 
+  // 🔒 (Audit Fix H-3): Disable <select> ระหว่าง async เพื่อกัน race
+  //   ปัญหาเดิม: handleStatusChange รัน async นาน (5-15 นาทีตอนสร้าง ZIP)
+  //   แต่ <select> ยัง enabled → แอดมินเปลี่ยน status ระหว่าง async →
+  //   handleStatusChange ตัวที่ 2 รันพร้อมกัน → เขียนทับกัน → state สับสน
+  //   วิธีแก้: disable <select> ที่ trigger เรา ณ ตอนเริ่ม แล้ว re-enable ใน finally
+  //   ผลกระทบระบบเดิม: 0% — เป็น visual feedback + กัน double-trigger เท่านั้น
+  //   ถ้าเกิด error → finally จะ re-enable (admin ลองใหม่ได้)
+  const selTrigger = document.querySelector(`select.status-select[data-order-id="${orderId}"]`);
+  if (selTrigger) selTrigger.disabled = true;
+
+  try {
+    await _handleStatusChangeInner(orderId, newStatus, order);
+  } finally {
+    // 🔒 (Audit Fix H-3): re-enable ในทุกกรณี (สำเร็จ/ล้มเหลว/abort)
+    if (selTrigger) selTrigger.disabled = false;
+  }
+}
+
+async function _handleStatusChangeInner(orderId, newStatus, order) {
   // 🔒 (2026-09-22 fix): validate status transitions — กันเปลี่ยนสถานะผิด logic
   //   เดิม: รับทุก transition → cancelled→completed ได้ → ผิดธุรกิจ logic
   //   ใหม่: ตรวจ transition ถูกต้องก่อน → ถ้าผิด → แจ้ง error + ไม่เปลี่ยน
