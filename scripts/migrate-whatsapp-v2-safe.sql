@@ -9,8 +9,44 @@
 --   2. ตรวจเบอร์ที่ไม่มี country code → เพิ่ม 856 หรือ 66 ตามรูปแบบ
 --   3. มี verification query ท้ายไฟล์
 --
+-- 🔒 (Audit Fix H-38): PRE-MIGRATION BACKUP — กัน data loss
+--   ปัญหาเดิม: migration เขียนทับ whatsapp field โดยไม่มี backup
+--   → ถ้า migration พัง (syntax error, ลำดับผิด, edge case) → whatsapp ผิด → ลูกค้า track order ไม่เจอ
+--   → ไม่สามารถ rollback ได้ (ไม่มีค่าเดิม)
+--   วิธีแก้: สร้าง backup table ก่อน migration → ถ้าพัง → restore จาก backup
+--   ผลกระทบระบบเดิม: 0% — เป็น SQL statements เพิ่มเติมที่จุดเริ่มต้น
+--
+-- วิธีใช้:
+--   1. รัน Step 0 (backup) ก่อน
+--   2. ตรวจดู backup row count: SELECT COUNT(*) FROM documents_backup_whatsapp_v2;
+--      ต้องเท่ากับ SELECT COUNT(*) FROM documents WHERE collection='orders';
+--   3. รัน Step 1-4 (migration)
+--   4. รัน Step 5 (verification)
+--   5. ถ้า verification ผ่าน → รัน Step 6 (drop backup)
+--   6. ถ้า verification ไม่ผ่าน → รัน Step 7 (rollback) + รายงานปัญหา
+--
 -- รันทีละ statement (D1 Console ไม่รองรับหลาย statements)
 -- ============================================================
+
+-- Step 0 (NEW): สร้าง backup table ก่อน migration
+--   เก็บ snapshot ของ orders documents ทั้งหมดก่อนแก้ whatsapp
+--   ถ้า migration พัง → restore จากตารางนี้
+CREATE TABLE IF NOT EXISTS documents_backup_whatsapp_v2 AS
+SELECT collection, id, data, created_at, updated_at
+FROM documents
+WHERE collection = 'orders';
+
+-- ตรวจสอบ row count หลังสร้าง backup
+--   ควรเท่ากับจำนวน orders ทั้งหมด
+--   ถ้าไม่เท่า → หยุด + รายงาน (backup ไม่สมบูรณ์)
+SELECT
+  (SELECT COUNT(*) FROM documents_backup_whatsapp_v2) AS backup_count,
+  (SELECT COUNT(*) FROM documents WHERE collection='orders') AS orders_count,
+  CASE
+    WHEN (SELECT COUNT(*) FROM documents_backup_whatsapp_v2) = (SELECT COUNT(*) FROM documents WHERE collection='orders')
+    THEN '✅ Backup OK — proceed with migration'
+    ELSE '❌ Backup count mismatch — DO NOT proceed'
+  END AS status;
 
 -- Step 1: เพิ่ม country code 856 ให้ออเดอร์ลาวที่ยังไม่มี country code
 --   เงื่อนไข: whatsapp ไม่ขึ้นต้นด้วย 856 และ 66 และขึ้นต้นด้วย 2 (Laos local)
@@ -70,3 +106,22 @@ FROM documents
 WHERE collection = 'orders'
 GROUP BY status
 ORDER BY count DESC;
+
+-- ============================================================
+-- 🔒 (Audit Fix H-38): Step 6 — DROP backup (รันหลัง verification ผ่านเท่านั้น)
+-- ============================================================
+-- ⚠️ รัน Step 6 นี้ก็ต่อเมื่อ verification ผ่านทั้งหมดเท่านั้น
+--   ถ้ามี '❌ MISSING_COUNTRY_CODE' → หยุด + รัน Step 7 (rollback)
+-- DROP TABLE IF EXISTS documents_backup_whatsapp_v2;
+
+-- ============================================================
+-- 🔒 (Audit Fix H-38): Step 7 — ROLLBACK (รันถ้า migration พัง)
+-- ============================================================
+-- ⚠️ รัน Step 7 นี้ถ้า verification ไม่ผ่าน (พบ '❌ MISSING_COUNTRY_CODE' หรือ error อื่น)
+--   restore orders documents จาก backup → กลับไปใช้ค่าเดิม
+--   หลัง rollback → ตรวจสอบอีกครั้ง + รายงานปัญหา + อย่าลบ backup
+-- UPDATE documents
+-- SET data = (SELECT data FROM documents_backup_whatsapp_v2 b WHERE b.collection = documents.collection AND b.id = documents.id)
+-- WHERE collection = 'orders'
+--   AND EXISTS (SELECT 1 FROM documents_backup_whatsapp_v2 b WHERE b.collection = documents.collection AND b.id = documents.id);
+
