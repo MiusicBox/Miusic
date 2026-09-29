@@ -4873,3 +4873,13 @@ body {
 .song-grid {
   padding-bottom: calc(var(--bottom-nav-h, 105px) + 100px + var(--safe-bottom, 0px) + 20px) !important;
 }
+
+/* Fix v2: เพิ่ม margin-bottom ให้การ์ดเพลงสุดท้ายโดยตรง */
+.song-card:last-child {
+  margin-bottom: calc(var(--bottom-nav-h, 105px) + 100px + var(--safe-bottom, 0px)) !important;
+}
+
+/* Fix v2: เพิ่ม padding-bottom ให้ empty-state ด้วย */
+.empty-state {
+  padding-bottom: calc(var(--bottom-nav-h, 105px) + 100px + var(--safe-bottom, 0px)) !important;
+}
