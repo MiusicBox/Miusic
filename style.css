@@ -721,9 +721,7 @@ button:active {
   display: flex;
   flex-direction: column;
   gap: 2px !important;
-  /* Fix: padding-bottom รวม bottom-nav height (105px) + safe-bottom + margin */
-  /* เดิม: padding: 0 16px 20px → เพลงสุดท้ายโดน bottom-nav บังครึ่งเดียว */
-  padding: 0 16px calc(105px + var(--safe-bottom, 0px) + 20px);
+  padding: 0 16px 20px;
   max-width: 1080px;
   margin: 0 auto;
 }
@@ -4859,72 +4857,4 @@ html.admin-page body {
     color: #fff !important;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.30) !important;
   }
-}
-
-/* ==========================================================================
-   Fix: เพลงสุดท้ายโดน bottom-nav + player-bar บัง
-   เพิ่ม padding-bottom ให้เพียงพอสำหรับ bottom-nav + player-bar
-   ใช้ --bottom-nav-h (วัดจาก script ใน index.html) + เผื่อ player-bar 100px
-   ========================================================================== */
-body {
-  padding-bottom: calc(var(--bottom-nav-h, 105px) + 100px + var(--safe-bottom, 0px)) !important;
-}
-
-.song-grid {
-  padding-bottom: calc(var(--bottom-nav-h, 105px) + 100px + var(--safe-bottom, 0px) + 20px) !important;
-}
-
-/* Fix v2: เพิ่ม margin-bottom ให้การ์ดเพลงสุดท้ายโดยตรง */
-.song-card:last-child {
-  margin-bottom: calc(var(--bottom-nav-h, 105px) + 100px + var(--safe-bottom, 0px)) !important;
-}
-
-/* Fix v2: เพิ่ม padding-bottom ให้ empty-state ด้วย */
-.empty-state {
-  padding-bottom: calc(var(--bottom-nav-h, 105px) + 100px + var(--safe-bottom, 0px)) !important;
-}
-
-/* Fix v3: เพลงสุดท้ายบัง — เพราะ :last-child เป็น sentinel ไม่ใช่ .song-card */
-/* เพิ่ม spacer div หลัง grid + ให้ .song-grid มีพื้นที่พอ */
-.song-grid {
-  padding-bottom: 300px !important;
-}
-
-/* เพิ่ม margin-bottom ให้ทุก .song-card ไม่ใช่แค่ :last-child */
-.song-card {
-  margin-bottom: 0 !important;
-}
-
-/* Spacer หลัง grid */
-#songGridSentinel {
-  height: 300px !important;
-  margin-top: 0 !important;
-}
-
-/* Fix v4: เพลงสุดท้ายในเพลย์ลิสต์ + เพลย์ลิสต์สุดท้าย โดนบัง */
-/* เพิ่ม padding-bottom ให้ทุก container ที่อาจมีเพลงสุดท้าย */
-.playlist-wrapper {
-  padding-bottom: 300px !important;
-}
-
-.playlist-block:last-child {
-  margin-bottom: 300px !important;
-}
-
-.playlist-content-box {
-  padding-bottom: 20px !important;
-}
-
-/* เพลงสุดท้ายในเพลย์ลิสต์ */
-.playlist-song-row:last-child {
-  margin-bottom: 20px !important;
-}
-
-/* djSection ก็เช่นกัน */
-#djSection {
-  padding-bottom: 300px !important;
-}
-
-.dj-row {
-  padding-bottom: 20px !important;
 }
