@@ -903,9 +903,28 @@ async function loadSongsFromDatabase() {
   //   ข้อดี: admin เห็นหน้าภายใน 1-2 วิ แม้มี 10,000+ เพลง
   //   ข้อสังเกต: ใช้ fetch ตรงกับ /api/db/songs?limit=200&offset=0&slim=1 (slim = ไม่มี full_file_url)
 
-  // 🚀 (H8): cache ใน module scope — กันโหลดซ้ำทุกครั้งที่ init
-  if (loadSongsFromDatabase._cached && loadSongsFromDatabase._cached.length > 0) {
+  // 🚀 (H8 + Audit Fix H-4): cache ใน module scope — กันโหลดซ้ำทุกครั้งที่ init
+  //   🔒 (Audit Fix H-4): เพิ่ม TTL 5 นาที กัน stale prices
+  //   ปัญหาเดิม: cache อยู่ indefinitely จนกว่าจะมีการเรียก invalidateOrdersSongsCache()
+  //     → ถ้าแอดมิน A แก้ราคาเพลง แล้วแอดมิน B มี cache เก่า → B ใช้ราคาเก่าตอนสั่งซื้อ
+  //     → ราคาในออเดอร์ผิด (ใช้ราคาเก่า ไม่ใช่ราคาล่าสุด)
+  //   วิธีแก้: ตั้ง TTL 5 นาที (300,000 ms) — cache หมดอายุอัตโนมัติ
+  //     หลัง 5 นาที → re-fetch ราคาล่าสุดจาก DB
+  //   ผลกระทบระบบเดิม: 0%
+  //     - ใน 5 นาทีแรกหลัง load → cache ใช้ได้เหมือนเดิม (เร็ว)
+  //     - หลัง 5 นาที → re-fetch ใหม่ (slow ขึ้นเล็กน้อย แต่ราคาถูกต้อง)
+  //     - invalidateOrdersSongsCache ยังทำงานเหมือนเดิม (force refresh)
+  const SONG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 นาที
+  const cacheAge = Date.now() - (loadSongsFromDatabase._cachedAt || 0);
+  const cacheValid = loadSongsFromDatabase._cached
+    && loadSongsFromDatabase._cached.length > 0
+    && cacheAge < SONG_CACHE_TTL_MS;
+  if (cacheValid) {
     return loadSongsFromDatabase._cached;
+  }
+  // cache หมดอายุ → log + ทำเหมือน cache ว่าง (re-fetch ด้านล่าง)
+  if (loadSongsFromDatabase._cached && !cacheValid) {
+    console.log("[H-4] Song cache expired (TTL 5min) — re-fetching fresh prices");
   }
 
   try {
@@ -935,6 +954,7 @@ async function loadSongsFromDatabase() {
         songs.filter(s => String(s.status || "").trim().toLowerCase() !== "hidden")
       );
       loadSongsFromDatabase._cached = sorted;
+      loadSongsFromDatabase._cachedAt = Date.now(); // 🔒 (H-4): เก็บเวลา cache เพื่อ TTL check
       return sorted;
     }
     // fallback: ถ้า fetch fail → ใช้วิธีเดิม (getDocs ทั้งหมด)
@@ -949,6 +969,7 @@ async function loadSongsFromDatabase() {
     songs.filter(s => String(s.status || "").trim().toLowerCase() !== "hidden")
   );
   loadSongsFromDatabase._cached = sorted;
+  loadSongsFromDatabase._cachedAt = Date.now(); // 🔒 (H-4): เก็บเวลา cache เพื่อ TTL check
   return sorted;
 }
 
