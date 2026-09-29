@@ -856,7 +856,19 @@ function getReceiptNumber(orderId, createdAt) {
         String(date.getMonth() + 1).padStart(2, "0"),
         String(date.getDate()).padStart(2, "0"),
       ].join("");
-  return `RCPT-${ymd}-${String(orderId || "000000").slice(-6).toUpperCase()}`;
+  // 🔒 (Audit Fix H-6): เพิ่ม suffix จาก 6 → 12 chars เพื่อกัน birthday collision
+  //   ปัญหาเดิม: slice(-6) → เหลือ 6 hex chars = 24 bits = 16M values
+  //     birthday paradox: หลัง ~46,000 orders → >50% chance ของ 2 orders sharing 6-char suffix
+  //     → ลูกค้าค้นด้วย receipt_number อาจเจอออเดอร์คนอื่น (ถ้า server ไม่เช็ค name+whatsapp)
+  //   วิธีแก้: slice(-12) → 12 hex chars = 48 bits = 2.8 × 10^14 values
+  //     birthday paradox ไม่เกิดจนกว่าจะมี ~16M orders (ปลอดภัยสำหรับทุก business)
+  //   ผลกระทบระบบเดิม: 0% — backward-compat
+  //     - ออเดอร์เก่าที่มี receipt_number อยู่แล้ว → ใช้ค่าเดิม (ไม่ถูกแก้)
+  //     - ออเดอร์ใหม่ → ใช้รูปแบบ 12-char (ยาวขึ้นเล็กน้อย แต่ยังอ่านง่าย)
+  //     - customer-query endpoint เช็ค receipt_number + name + whatsapp → ปลอดภัยแม้ collision
+  //   รูปแบบใหม่: RCPT-YYYYMMDD-XXXXXXXXXXXX (12 hex chars)
+  //   รูปแบบเก่า:  RCPT-YYYYMMDD-XXXXXX (6 hex chars) — ยังใช้ได้กับออเดอร์เดิม
+  return `RCPT-${ymd}-${String(orderId || "000000000000").slice(-12).toUpperCase()}`;
 }
 
 const state = {
