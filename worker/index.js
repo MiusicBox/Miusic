@@ -902,11 +902,52 @@ async function handleAuth(request, env, url) {
   if (path === "verify-password" && request.method === "POST") {
     const admin = await getSessionAdmin(request, env);
     if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+
+    // 🔒 (Audit Fix M-1): Rate limit บน verify-password — กัน brute-force
+    //   เหมือน change-password (H-21) — ใช้ login_attempts table
+    //   threshold: 5 fails / 15 นาที → block
+    //   ผลกระทบระบบเดิม: 0% — ถ้า table ไม่มี → ข้าม (fallback)
+    try {
+      const vpClientIP = request.headers.get("CF-Connecting-IP") || "unknown";
+      const VP_RATE_LIMIT_MAX = 5;
+      const VP_RATE_LIMIT_WINDOW_MIN = 15;
+      const vpWindow = new Date(Date.now() - VP_RATE_LIMIT_WINDOW_MIN * 60 * 1000).toISOString();
+      const vpKey = `verify-pw:${admin.id}`;
+      const vpRow = await env.DB.prepare(
+        "SELECT COUNT(*) AS c FROM login_attempts WHERE ip = ? AND email = ? AND attempted_at > ?"
+      ).bind(vpClientIP, vpKey, vpWindow).first();
+      if ((vpRow?.c || 0) >= VP_RATE_LIMIT_MAX) {
+        return jsonResponse({
+          error: `พยายามยืนยันรหัสผ่านผิดพลาดเกินไป (${VP_RATE_LIMIT_MAX} ครั้งใน ${VP_RATE_LIMIT_WINDOW_MIN} นาที) — กรุณารอ`,
+          code: "auth/verify-pw-rate-limited"
+        }, 429);
+      }
+    } catch (vpRateErr) {
+      console.warn("verify-password rate limiting skipped:", vpRateErr?.message);
+    }
+
     let body;
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
     const full = await env.DB.prepare("SELECT password_hash FROM admin_users WHERE id = ?").bind(admin.id).first();
     const ok = await verifyPassword(String(body.password || ""), full?.password_hash);
-    if (!ok) return jsonResponse({ error: "รหัสผ่านปัจจุบันไม่ถูกต้อง", code: "auth/wrong-password" }, 401);
+    if (!ok) {
+      // 🔒 (M-1): บันทึก failed attempt
+      try {
+        const vpClientIP = request.headers.get("CF-Connecting-IP") || "unknown";
+        const vpKey = `verify-pw:${admin.id}`;
+        await env.DB.prepare(
+          "INSERT INTO login_attempts (ip, email, attempted_at) VALUES (?, ?, ?)"
+        ).bind(vpClientIP, vpKey, new Date().toISOString()).run();
+      } catch {}
+      return jsonResponse({ error: "รหัสผ่านปัจจุบันไม่ถูกต้อง", code: "auth/wrong-password" }, 401);
+    }
+    // 🔒 (M-1): เคลียร์ failed attempts เมื่อ verify สำเร็จ
+    try {
+      const vpClientIP = request.headers.get("CF-Connecting-IP") || "unknown";
+      const vpKey = `verify-pw:${admin.id}`;
+      await env.DB.prepare("DELETE FROM login_attempts WHERE ip = ? AND email = ?")
+        .bind(vpClientIP, vpKey).run();
+    } catch {}
     return jsonResponse({ ok: true });
   }
 
