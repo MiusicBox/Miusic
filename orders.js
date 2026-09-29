@@ -965,12 +965,21 @@ async function loadSongsRemainingInBackground() {
   if (loadSongsFromDatabase._loadingMore) return;
   loadSongsFromDatabase._loadingMore = true;
 
-  // 🚀 (H-3): max retries กัน infinite loop (ถ้าเพลงถูกลบระหว่างโหลด)
-  const MAX_RETRIES = 50;
+  // 🚀 (H-3 + Audit Fix H-8): max retries กัน infinite loop (ถ้าเพลงถูกลบระหว่างโหลด)
+  //   🔒 (Audit Fix H-8): เพิ่ม MAX_RETRIES จาก 50 → 100,000 (200 songs/batch × 100k = 20M songs)
+  //   ปัญหาเดิม: หลัง 50 batches × 200 songs = 10,000 songs → หยุดโหลด
+  //     → ไลบรารีที่มีเพลง 10,000+ จะมีบางเพลง invisible + unsearchable
+  //     → แอดมินคิดว่าเพลงไม่มี ทั้งที่จริง ๆ มี
+  //   วิธีแก้: เพิ่ม cap เป็น 100,000 (มากพอสำหรับ library ใด ๆ ในโลก)
+  //   ป้องกัน infinite loop จริง: docs.length === 0 (line 988) คือ stop หลัก
+  //     MAX_RETRIES เป็นแค่ safety net สำรอง (กัน bug ในอนาคต)
+  //   ผลกระทบระบบเดิม: 0% — ถ้า library เล็ก (< 10,000) → หยุดที่ docs.length === 0
+  //     ถ้า library ใหญ่ (10,000-20M) → โหลดต่อได้ (ไม่ถูก block ที่ 10k)
+  const MAX_RETRIES = 100000;
   const currentRetries = (loadSongsFromDatabase._retries || 0) + 1;
   loadSongsFromDatabase._retries = currentRetries;
   if (currentRetries > MAX_RETRIES) {
-    console.warn("[H8] loadSongsRemainingInBackground: max retries reached, stopping");
+    console.warn("[H8] loadSongsRemainingInBackground: max retries reached, stopping (very unusual — library > 20M songs?)");
     loadSongsFromDatabase._loadingMore = false;
     return;
   }
