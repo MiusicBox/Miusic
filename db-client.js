@@ -94,12 +94,13 @@ async function apiFetch(path, options = {}) {
         }
         const err = new Error((body && body.error) || `คำขอไปยังฐานข้อมูลไม่สำเร็จ (HTTP ${res.status})`);
         if (body && body.code) err.code = body.code;
+        err.status = res.status; // 4xx = don't retry, 5xx = retry
         throw err;
       }
       return body;
     } catch (fetchErr) {
-      // network error (TypeError: Failed to fetch) → retry
-      if (attempt < MAX_RETRIES && (fetchErr?.name === "TypeError" || !fetchErr?.code)) {
+      // Only retry on network errors (TypeError) — not on HTTP errors that were thrown above
+      if (attempt < MAX_RETRIES && fetchErr?.name === "TypeError" && !fetchErr?.status) {
         console.warn(`[H-27] apiFetch network retry ${attempt + 1}/${MAX_RETRIES} for ${path}:`, fetchErr?.message || fetchErr);
         await new Promise(r => setTimeout(r, BACKOFF_MS[attempt]));
         lastErr = fetchErr;
