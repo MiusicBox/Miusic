@@ -220,6 +220,66 @@ function validateDiscountData(collection, data) {
   return null; // valid
 }
 
+// 🔒 (Audit Fix M-26): Server-side validation สำหรับ settings save
+//   ปัญหาเดิม: settings save ไม่มี server-side field validation
+//   → sub-admin สามารถส่ง XSS payload ใน bank_name → customer checkout แสดง XSS
+//   วิธีแก้: validate fields ที่ sensitive (bank_account, qr_code_url, whatsapp_number, website_logo)
+//   ผลกระทบระบบเดิม: 0% — ถ้าค่าถูกต้อง → ผ่าน (เหมือนเดิม)
+//   ถ้าค่าผิด → return 400 + ไม่บันทึก
+function validateSettingsData(data) {
+  if (!data || typeof data !== "object") return null;
+  // bank_account: digits + dash only, max 30 chars
+  if (data.bank_account != null) {
+    const ba = String(data.bank_account).trim();
+    if (ba.length > 30) return "เลขบัญชียาวเกินไป (สูงสุด 30 ตัวอักษร)";
+    if (ba && !/^[0-9\-]+$/.test(ba)) return "เลขบัญชีต้องเป็นตัวเลขและขีดกลางเท่านั้น";
+  }
+  // qr_code_url + website_logo: ต้องเป็น URL ที่ถูกต้อง (https:// หรือ /)
+  for (const urlField of ["qr_code_url", "website_logo"]) {
+    if (data[urlField] != null) {
+      const u = String(data[urlField]).trim();
+      if (u && u.length > 500) return `${urlField} ยาวเกินไป (สูงสุด 500 ตัวอักษร)`;
+      if (u && !u.startsWith("/") && !u.startsWith("https://") && !u.startsWith("http://")) {
+        return `${urlField} ต้องเป็น URL ที่ถูกต้อง (เริ่มด้วย / หรือ https://)`;
+      }
+    }
+  }
+  // whatsapp_number: digits only, max 20 chars
+  if (data.whatsapp_number != null) {
+    const wn = String(data.whatsapp_number).trim();
+    if (wn.length > 20) return "เบอร์ WhatsApp ยาวเกินไป (สูงสุด 20 ตัวอักษร)";
+    if (wn && !/^[0-9\+]+$/.test(wn)) return "เบอร์ WhatsApp ต้องเป็นตัวเลขและ + เท่านั้น";
+  }
+  // website_name: max 100 chars
+  if (data.website_name != null && String(data.website_name).length > 100) {
+    return "ชื่อเว็บไซต์ยาวเกินไป (สูงสุด 100 ตัวอักษร)";
+  }
+  return null; // valid
+}
+
+// 🔒 (Audit Fix M-49): Redact password_hash + session_token จาก audit_log response
+//   ปัญหาเดิม: audit_log response ส่ง before_data/after_data แบบ raw →
+//   ถ้า admin เปลี่ยนรหัสผ่าน → before_data มี password_hash เก่า → รั่วใน devtools
+//   วิธีแก้: ลบ password_hash, session_token, password ออกจาก response (server-side)
+//   ผลกระทบระบบเดิม: 0% — audit_log UI ไม่แสดงฟิลด์นี้อยู่แล้ว (client-side filter)
+//   แต่ network response ยังรั่ว → server-side redact เป็น defense in depth
+function redactAuditSensitiveFields(obj) {
+  if (!obj || typeof obj !== "object") return obj;
+  const SENSITIVE = new Set(["password_hash", "session_token", "password"]);
+  if (Array.isArray(obj)) return obj.map(redactAuditSensitiveFields);
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (SENSITIVE.has(k)) {
+      out[k] = "[REDACTED]";
+    } else if (v && typeof v === "object") {
+      out[k] = redactAuditSensitiveFields(v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 // 🔧 (2026-09-28 fix Critical C3): Dynamic CORS origin allowlist
 //   เดิม: ไม่ตั้ง ACAO เลย = same-origin เท่านั้น
 //         → ในกรณีที่ Worker deploy ในหลายโดเมน (เช่น *.workers.dev + custom domain)
@@ -1603,6 +1663,11 @@ async function handleDb(request, env, url) {
           beforeParsed = redactSensitive(beforeParsed);
           afterParsed = redactSensitive(afterParsed);
         }
+        // 🔒 (Audit Fix M-49): Redact password_hash + session_token จาก response (defense in depth)
+        //   แม้ main admin เห็น before_data/after_data → ก็ไม่ควรเห็น password_hash
+        //   (defense in depth — client-side filter อยู่แล้ว แต่ network response ยังรั่ว)
+        beforeParsed = redactAuditSensitiveFields(beforeParsed);
+        afterParsed = redactAuditSensitiveFields(afterParsed);
         return {
           id: row.id,
           admin_id: row.admin_id,
@@ -2089,6 +2154,11 @@ async function handleDb(request, env, url) {
         if ((collection === "discounts" || collection === "promotions") && body?.data) {
           const validationErr = validateDiscountData(collection, body.data);
           if (validationErr) return jsonResponse({ error: validationErr }, 400);
+        }
+        // 🔒 (Audit Fix M-26): validate settings fields ฝั่ง server
+        if (collection === "settings" && body?.data) {
+          const settingsErr = validateSettingsData(body.data);
+          if (settingsErr) return jsonResponse({ error: settingsErr }, 400);
         }
         if (!admin && collection === "orders") {
           // 🔒 (2026-09-23 fix): Rate limiting บนการสร้างออเดอร์สำหรับลูกค้าที่ยังไม่ login
