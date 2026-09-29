@@ -516,17 +516,16 @@
   }
 </style>
 
-<!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): html2canvas เป็น regular script (ไม่ใช่ dynamic import)
+<!-- 🔧 (2026-09-22 Batch 7 fix Bug #1) + 🔒 (Audit Fix H-13): Self-host html2canvas
      เดิม: app-cart.js ใช้ `await import("https://esm.sh/html2canvas@1.4.1")` ทุกครั้งที่สร้างใบเสร็จ
             → ถ้า esm.sh ล่ม → ลูกค้าไม่มีใบเสร็จ
             → ถ้าเน็ตช้า → โหลดช้าทุกครั้งที่สร้าง
      ใหม่: โหลดครั้งเดียวตอน page load → cache ไว้ใน window.html2canvas
-            → เร็วขึ้น + ถ้า CDN ล่ม → page load error ตั้งแต่แรก (รู้ชัดเจน)
-            → ใช้ jsdelivr CDN (UMD version) แทน esm.sh (ESM version)
-     ผลกระทบระบบเดิม: 0% — app-cart.js จะใช้ window.html2canvas ถ้ามี, fallback ไป dynamic import ถ้าไม่มี
-     fallback: ถ้า window.html2canvas undefined (CDN ไม่โหลด) → ใช้ dynamic import เดิม -->
-<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer
-  onerror="console.warn('html2canvas CDN failed to load — will fallback to dynamic import');"></script>
+     🔒 (H-13): ย้ายจาก cdn.jsdelivr.net → self-hosted /vendor/html2canvas.min.js
+       กัน supply-chain risk: ถ้า CDN ถูกแฮ็ก → โค้ดรันในหน้าลูกค้า
+       ผลกระทบระบบเดิม: 0% — window.html2canvas ยังเหมือนเดิม, app-cart.js fallback dynamic import ถ้าไม่โหลด -->
+<script src="/vendor/html2canvas.min.js" defer
+  onerror="console.warn('html2canvas self-host failed to load — will fallback to dynamic import');"></script>
 </head>
 <body>
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): h1 สำหรับ SEO (hidden visually, visible to crawlers) -->

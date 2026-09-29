@@ -8,11 +8,13 @@
 <title>Admin - Music Store</title>
 <link rel="stylesheet" href="style.css?v=20260922-batch10">
 
-<!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): html2canvas regular script (เหมือน index.html)
+<!-- 🔧 (2026-09-22 Batch 7 fix Bug #1) + 🔒 (Audit Fix H-13): Self-host html2canvas
      เดิม: orders.js ใช้ dynamic import ทุกครั้ง → ช้า + พังถ้า CDN ล่ม
-     ใหม่: โหลดครั้งเดียวตอน page load → cache ใน window.html2canvas -->
-<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer
-  onerror="console.warn('html2canvas CDN failed to load — will fallback to dynamic import');"></script>
+     ใหม่: โหลดครั้งเดียวตอน page load → cache ใน window.html2canvas
+     🔒 (H-13): ย้ายจาก cdn.jsdelivr.net → self-hosted /vendor/html2canvas.min.js
+       กัน supply-chain risk: ถ้า CDN ถูกแฮ็ก หรือ package ถูก hijack → โค้ดรันในแอดมิน context
+       ผลกระทบระบบเดิม: 0% — window.html2canvas ยังเหมือนเดิม, app-admin.js ใช้เหมือนเดิม -->
+<script src="/vendor/html2canvas.min.js" defer></script>
 </head>
 <body>
 
