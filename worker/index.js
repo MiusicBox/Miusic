@@ -1722,7 +1722,35 @@ async function handleDb(request, env, url) {
     //   แต่ถ้ามี 2 orders ที่ receipt_number ตรงกัน (จาก H-6 collision) → server อาจคืนตัวผิด
     //   วิธีแก้: queryDocuments ใช้ LIMIT (ดู db-helpers.js) + ตรวจ name+whatsapp เข้มข้น
     //   ป้องกันเพิ่ม: ถ้าเจอมากกว่า 1 row → log warning (อาจเป็น collision)
+    // 🔒 (Audit Fix H-25): เพิ่ม rate limit บน customer-query — กัน attacker enumerate receipt_numbers
+    //   ใช้ order_creation_attempts table (มีอยู่แล้ว) เก็บ IP + timestamp
+    //   threshold: 30 queries / 15 นาที / IP (ลูกค้าปกติ 1-2 queries/ครั้ง)
     if (isOrdersCustomerEndpoint && parts[1] === "_customer-query") {
+      // 🔒 (Audit Fix H-25): Rate limit ก่อน process
+      try {
+        const custIP = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "unknown";
+        const CUST_QUERY_LIMIT = 30;
+        const CUST_QUERY_WINDOW_MIN = 15;
+        const custWindow = new Date(Date.now() - CUST_QUERY_WINDOW_MIN * 60 * 1000).toISOString();
+        const custKey = `cust-query:${custIP}`;
+        const custRow = await env.DB.prepare(
+          "SELECT COUNT(*) AS c FROM login_attempts WHERE email = ? AND attempted_at > ?"
+        ).bind(custKey, custWindow).first();
+        if ((custRow?.c || 0) >= CUST_QUERY_LIMIT) {
+          return jsonResponse({
+            error: `ค้นหาเกินไป (${CUST_QUERY_LIMIT} ครั้งใน ${CUST_QUERY_WINDOW_MIN} นาที) — กรุณารอ`,
+            code: "customer/rate-limited"
+          }, 429);
+        }
+        // บันทึก attempt ทุกครั้ง (กัน spam)
+        await env.DB.prepare(
+          "INSERT INTO login_attempts (ip, email, attempted_at) VALUES (?, ?, ?)"
+        ).bind(custIP, custKey, new Date().toISOString()).run();
+      } catch (custRateErr) {
+        // ถ้า login_attempts table ไม่มี → ข้าม rate limiting (fallback)
+        console.warn("customer-query rate limiting skipped:", custRateErr?.message);
+      }
+
       let body;
       try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
       const receiptNumber = String(body.receipt_number || "").trim();
@@ -1768,6 +1796,29 @@ async function handleDb(request, env, url) {
     // Server กรองเฉพาะออเดอร์ที่เป็นของลูกค้าคนนี้ (เบอร์ต้องตรง 100%, ชื่อเปิดให้ fuzzy match แบบ contains
     // เหมือนโค้ดเดิมใน app-promotion.js ที่ใช้ oName.includes(nameNorm) || nameNorm.includes(oName))
     if (isOrdersCustomerEndpoint && parts[1] === "_customer-list") {
+      // 🔒 (Audit Fix H-25): Rate limit บน customer-list — เหมือน customer-query
+      try {
+        const custIP = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "unknown";
+        const CUST_LIST_LIMIT = 30;
+        const CUST_LIST_WINDOW_MIN = 15;
+        const custWindow = new Date(Date.now() - CUST_LIST_WINDOW_MIN * 60 * 1000).toISOString();
+        const custKey = `cust-list:${custIP}`;
+        const custRow = await env.DB.prepare(
+          "SELECT COUNT(*) AS c FROM login_attempts WHERE email = ? AND attempted_at > ?"
+        ).bind(custKey, custWindow).first();
+        if ((custRow?.c || 0) >= CUST_LIST_LIMIT) {
+          return jsonResponse({
+            error: `ดูประวัติเกินไป (${CUST_LIST_LIMIT} ครั้งใน ${CUST_LIST_WINDOW_MIN} นาที) — กรุณารอ`,
+            code: "customer/rate-limited"
+          }, 429);
+        }
+        await env.DB.prepare(
+          "INSERT INTO login_attempts (ip, email, attempted_at) VALUES (?, ?, ?)"
+        ).bind(custIP, custKey, new Date().toISOString()).run();
+      } catch (custRateErr) {
+        console.warn("customer-list rate limiting skipped:", custRateErr?.message);
+      }
+
       let body;
       try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
       const customerName = String(body.customer_name || "").trim();
