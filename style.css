@@ -4883,3 +4883,20 @@ body {
 .empty-state {
   padding-bottom: calc(var(--bottom-nav-h, 105px) + 100px + var(--safe-bottom, 0px)) !important;
 }
+
+/* Fix v3: เพลงสุดท้ายบัง — เพราะ :last-child เป็น sentinel ไม่ใช่ .song-card */
+/* เพิ่ม spacer div หลัง grid + ให้ .song-grid มีพื้นที่พอ */
+.song-grid {
+  padding-bottom: 220px !important;
+}
+
+/* เพิ่ม margin-bottom ให้ทุก .song-card ไม่ใช่แค่ :last-child */
+.song-card {
+  margin-bottom: 0 !important;
+}
+
+/* Spacer หลัง grid */
+#songGridSentinel {
+  height: 220px !important;
+  margin-top: 0 !important;
+}
