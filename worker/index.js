@@ -4245,6 +4245,34 @@ async function handleOrderZipFinalizeCompose(request, env) {
     }, 400);
   }
 
+  // 🔒 (Audit Fix H-23): re-check order status ก่อน compose — กัน finalize ZIP ของ cancelled order
+  //   ปัญหาเดิม: แอดมิน A กด Verify (เริ่ม ZIP build) → ระหว่างนั้นแอดมิน B ยกเลิก order
+  //   แต่ finalize-compose ยังทำงานต่อ → สร้าง ZIP ให้ order ที่ถูกยกเลิกแล้ว
+  //   → ลูกค้าได้ ZIP แม้ order cancelled (แต่ admin B ตั้งใจยกเลิก)
+  //   วิธีแก้: ดึง order doc → ถ้า status === 'cancelled' → abort + return error
+  //   ผลกระทบระบบเดิม: 0% — กรณีปกติ (status != cancelled) → ดำเนินการต่อ (เหมือนเดิม)
+  //   กรณี cancelled → return error + admin ต้องกด create ZIP ใหม่ ถ้าต้องการ
+  try {
+    const orderCheck = await getDocument(env, "orders", jobRow.order_id);
+    if (orderCheck?.data) {
+      const currentOrderStatus = String(orderCheck.data.status || "").toLowerCase();
+      if (currentOrderStatus === "cancelled") {
+        // cleanup partial upload + delete job row + return error
+        await cleanupLeftoverMultipart(env, jobId, jobRow.bucket_key);
+        if (state.partialBufferKey) await cleanupPartialBuffer(env, state);
+        await deleteOrderZipJob(env, jobId);
+        return jsonResponse({
+          error: "ออเดอร์นี้ถูกยกเลิกแล้ว — ไม่สามารถ finalize ZIP ได้ (ถ้าต้องการ ZIP กรุณาเปิดออเดอร์ใหม่ก่อน)",
+          code: "zip/order-cancelled",
+          order_id: jobRow.order_id,
+        }, 409);
+      }
+    }
+  } catch (orderCheckErr) {
+    // ถ้า fetch order fail → log + ดำเนินการต่อ (don't block on transient errors)
+    console.warn("[H-23] finalize-compose: failed to check order status, continuing:", orderCheckErr?.message);
+  }
+
   // Build CD + EOCD bytes
   const entries = songs.map((p) => ({
     filename: p.folderPath ? `${p.folderPath}/${p.filename}` : p.filename,
