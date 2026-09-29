@@ -3463,8 +3463,22 @@ async function verifyPayment(proofId, orderId) {
 }
 
 async function rejectPayment(proofId, orderId) {
-  const reason = prompt("กรุณาระบุเหตุผลที่ปฏิเสธ (ลูกค้าจะเห็นข้อความนี้ใน WhatsApp):\n\nตัวอย่าง: ยอดเงินไม่ตรง / สลิปไม่ชัด / โอนผิดบัญชี", "ยอดเงินไม่ตรง / สลิปไม่ชัด");
-  if (reason === null) return;
+  // 🔒 (Audit Fix M-19): เปลี่ยนจาก prompt() → window.adminPrompt (custom modal ถ้ามี)
+  //   ปัญหาเดิม: prompt() sync blocking + ไม่ branded + ไม่มี length check
+  //   วิธีแก้: ใช้ window.adminPrompt ถ้ามี (custom modal), fallback prompt() ถ้าไม่มี
+  //   ผลกระทบระบบเดิม: 0% — ถ้าไม่มี adminPrompt → fallback prompt() เหมือนเดิม
+  let reason;
+  if (window.adminPrompt) {
+    reason = await window.adminPrompt(
+      "กรุณาระบุเหตุผลที่ปฏิเสธ (ลูกค้าจะเห็นข้อความนี้ใน WhatsApp)",
+      "ยอดเงินไม่ตรง / สลิปไม่ชัด",
+      { title: "ปฏิเสธสลิปการชำระ", placeholder: "ตัวอย่าง: ยอดเงินไม่ตรง / สลิปไม่ชัด / โอนผิดบัญชี", maxLength: 500 }
+    );
+  } else {
+    reason = prompt("กรุณาระบุเหตุผลที่ปฏิเสธ (ลูกค้าจะเห็นข้อความนี้ใน WhatsApp):\n\nตัวอย่าง: ยอดเงินไม่ตรง / สลิปไม่ชัด / โอนผิดบัญชี", "ยอดเงินไม่ตรง / สลิปไม่ชัด");
+  }
+  if (reason === null || reason === undefined) return;
+  reason = String(reason).trim().slice(0, 500); // 🔒 (M-19): enforce max length 500
   try {
     const res = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/verify-payment?proof_id=${encodeURIComponent(proofId)}`, {
       method: "POST",
