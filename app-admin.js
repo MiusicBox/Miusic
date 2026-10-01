@@ -1250,6 +1250,21 @@ function findGroupDuplicateSongs(songName, target, excludeIds) {
   }
   return result;
 }
+// 🔧 (2026-10-01): โหลดรายการเพลงล่าสุดจากฐานข้อมูลก่อนตรวจเพลงซ้ำ (ข้าม TTL cache)
+// เดิม: ตรวจซ้ำจาก CACHE.songs ที่อาจว่าง (ถ้าไม่เคยเข้าหน้าจัดการเพลง) หรือเก่า (หลังอัปเสร็จไม่รีเฟรช) → เพลงซ้ำหลุด
+// คืน true ถ้าโหลดสำเร็จ / false ถ้าโหลดไม่ได้ (ผู้เรียกควรหยุดอัปโหลด เพราะตรวจซ้ำไม่ได้)
+async function refreshSongsForDupCheck() {
+  try {
+    const snap = await getDocsAdmin(collection(db, "songs"));
+    CACHE.songs = sortSongsByThaiName(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    CACHE_AT.songs = Date.now();
+    return true;
+  } catch (err) {
+    console.warn("refreshSongsForDupCheck failed:", err?.message || err);
+    return false;
+  }
+}
+
 // สร้างข้อความ toast จากผลลัพธ์ findGroupDuplicateSongs ด้านบน
 function groupDuplicateMessage(dupResult, songName) {
   const parts = [];
@@ -1814,6 +1829,7 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
 
   // 🔧 (2026-09-16): ตรวจเพลงซ้ำก่อนอัปโหลด — กันอัปเพลงชื่อเดียวกัน 2 ครั้ง (ฝั่ง single upload ห้ามซ้ำเด็ดขาด)
   // ถ้าเป็นการแก้ไขเพลงเดิม (editingSongId ไม่เป็น null) → ไม่เช็คตัวเอง
+  if (!(await refreshSongsForDupCheck())) { showToast("❌ ตรวจเพลงซ้ำไม่สำเร็จ (โหลดรายการเพลงไม่ได้) กรุณาลองใหม่", "error"); return; }
   const duplicates = findDuplicateSongsByName(name, editingSongId);
   if (duplicates.length > 0) {
     const dupNames = duplicates.slice(0, 3).map(d => `"${d.song_name}"`).join(", ");
@@ -2790,6 +2806,11 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
   // ตรวจ 2 แบบ: (1) ซ้ำกับเพลงที่มีอยู่ใน DB (CACHE.songs)  (2) ซ้ำกันในชุดไฟล์ที่เลือก
   // ถ้ามีเพลงซ้ำ → ถามผู้ใช้ว่าจะ "skip เพลงซ้ำและอัปเฉพาะเพลงใหม่" หรือ "ยกเลิกทั้งหมด"
   // ถ้าทุกเพลงในชุดซ้ำ → ไม่ต้องถาม บอกยกเลิกเลย
+  const skippedDupNames = []; // 🔧 (2026-10-01): ชื่อเพลงที่ถูกข้ามเพราะซ้ำ — ไว้สรุปท้ายงาน
+  btn.disabled = true; btn.textContent = "กำลังตรวจเพลงซ้ำ...";
+  const dupCheckReady = await refreshSongsForDupCheck();
+  btn.disabled = false; btn.textContent = "เริ่มอัปโหลดทั้งหมด";
+  if (!dupCheckReady) { showToast("❌ ตรวจเพลงซ้ำไม่สำเร็จ (โหลดรายการเพลงไม่ได้) กรุณาลองใหม่", "error"); return; }
   {
     const bulkSongNames = bulkFiles.map(f => cleanFileNameToSongName(f.name));
     const duplicatesInDb = [];
@@ -2799,13 +2820,16 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
     bulkSongNames.forEach((songName, i) => {
       // (1) ตรวจซ้ำกับ DB
       const dbDups = findDuplicateSongsByName(songName, null);
-      if (dbDups.length > 0) {
-        duplicatesInDb.push({ fileName: bulkFiles[i].name, songName, existingCount: dbDups.length });
+      const isDbDup = dbDups.length > 0;
+      if (isDbDup) {
+        duplicatesInDb.push({ idx: i, fileName: bulkFiles[i].name, songName, existingCount: dbDups.length });
       }
       // (2) ตรวจซ้ำในชุด (normalized)
       const norm = String(songName || "").trim().toLowerCase().replace(/\s+/g, " ");
       if (seenNames.has(norm)) {
-        duplicatesInBatch.push({
+        // นับเฉพาะที่ยังไม่ถูกนับเป็น "ซ้ำกับระบบ" — กันนับซ้ำสองรอบทำให้จำนวนเพลงใหม่เพี้ยน
+        if (!isDbDup) duplicatesInBatch.push({
+          idx: i,
           fileName: bulkFiles[i].name,
           songName,
           firstFileName: bulkFiles[seenNames.get(norm)].name,
@@ -2833,25 +2857,21 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
       }
 
       if (totalNew > 0) {
-        // มีเพลงใหม่ที่ไม่ซ้ำ → ถาม confirm ว่าจะ skip และอัปเฉพาะเพลงใหม่ หรือยกเลิก
-        msg += `\nต้องการ skip เพลงซ้ำ ${totalDup} เพลง และอัปเฉพาะเพลงใหม่ ${totalNew} เพลง หรือยกเลิกทั้งหมด?`;
-        // 🔧 (2026-09-18 v6 P3.2): ใช้ adminConfirm (modal) แทน window.confirm
-        const proceed = await adminConfirm(msg);
-        if (!proceed) {
-          showToast("ยกเลิกการอัปโหลดทั้งชุด", "info");
-          return;
-        }
-        // กรองไฟล์ที่ไม่ซ้ำออกมาอัปโหลดต่อ — ใช้ชื่อไฟล์เป็น key เพราะไม่ซ้ำกันใน OS
-        const duplicateFileNames = new Set([
-          ...duplicatesInDb.map(d => d.fileName),
-          ...duplicatesInBatch.map(d => d.fileName),
+        // 🔧 (2026-10-01): เตือนแล้วข้ามเฉพาะเพลงที่ซ้ำ อัปโหลดเพลงที่เหลือต่อทันที (ไม่ถามยกเลิกทั้งชุดอีกแล้ว)
+        msg += `\n⚠️ ระบบจะข้ามเพลงซ้ำ ${totalDup} เพลง (ไม่เพิ่มเข้าเว็บ) และอัปโหลดเฉพาะเพลงใหม่ ${totalNew} เพลงตามปกติ`;
+        await adminAlert(msg, { title: "พบเพลงซ้ำ", okText: "รับทราบ แล้วอัปโหลดต่อ" });
+        // กรองด้วย index (ไม่ใช้ชื่อไฟล์ — กันกรณีเลือกไฟล์ชื่อเดียวกันจากคนละโฟลเดอร์แล้วถูกตัดทิ้งทั้งคู่)
+        const dupIdx = new Set([
+          ...duplicatesInDb.map(d => d.idx),
+          ...duplicatesInBatch.map(d => d.idx),
         ]);
-        bulkFiles = bulkFiles.filter(f => !duplicateFileNames.has(f.name));
+        [...duplicatesInDb, ...duplicatesInBatch].forEach(d => skippedDupNames.push(d.songName));
+        bulkFiles = bulkFiles.filter((_, idx) => !dupIdx.has(idx));
         showToast(`ข้ามเพลงซ้ำ ${totalDup} เพลง — กำลังอัปโหลด ${bulkFiles.length} เพลงใหม่`, "info");
       } else {
-        // ทุกเพลงในชุดซ้ำ → ไม่ต้องถาม บอกยกเลิกเลย
+        // ทุกเพลงในชุดซ้ำ → ไม่มีอะไรให้อัปโหลด
         msg += `\nทุกเพลงในชุดซ้ำ — ไม่สามารถอัปโหลดได้ กรุณาเปลี่ยนชื่อหรือลบไฟล์ซ้ำออก`;
-        showToast(msg, "error");
+        await adminAlert(msg, { title: "เพลงซ้ำทั้งหมด", okText: "ตกลง" });
         return;
       }
     }
@@ -2918,9 +2938,16 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
     const bulkAutoPreviewEl = document.getElementById("bulkAutoPreviewChk");
     const shouldAnalyzePreview = bulkAutoPreviewEl ? bulkAutoPreviewEl.checked : true;
 
+    let savedCount = 0; // 🔧 (2026-10-01): จำนวนเพลงที่บันทึกลงเว็บจริง (ไม่นับเพลงที่ข้าม)
     for (let i = 0; i < bulkFiles.length; i++) {
       const file = bulkFiles[i];
       document.getElementById("bulkStatusText").textContent = `กำลังอัปโหลด ${i + 1}/${bulkFiles.length}: ${file.name}`;
+
+      // 🔧 (2026-10-01): ตรวจซ้ำอีกรอบก่อนอัปโหลดแต่ละเพลง (กันระหว่างอัปมีเพลงชื่อเดียวกันเข้าระบบ) — ถ้าซ้ำข้ามเพลงนี้ ไม่เสียเวลาอัปไฟล์
+      if (findDuplicateSongsByName(cleanFileNameToSongName(file.name), null).length > 0) {
+        skippedDupNames.push(cleanFileNameToSongName(file.name));
+        continue;
+      }
 
       // 🔧 (2026-09-22 Batch 7 fix Bug #8): อัปโหลด preview + full พร้อมกัน (parallel) แทน sequential
       //   เดิม: อัปโหลด preview (await) → analyze → อัปโหลด full (await) → save
@@ -3032,8 +3059,12 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
         }
       }
 
-      await addDoc(collection(db, "songs"), songPayload);
+      const savedRef = await addDoc(collection(db, "songs"), songPayload);
+      savedCount++;
+      // 🔧 (2026-10-01): ใส่เพลงที่เพิ่งบันทึกเข้า CACHE ทันที เพื่อให้การตรวจซ้ำรอบถัดไปเห็นเพลงนี้
+      CACHE.songs.push({ id: savedRef.id, ...songPayload });
     }
+    invalidateAdminCache("songs"); // 🔧 (2026-10-01): หน้าจัดการเพลงจะโหลดใหม่ครั้งถัดไป
 
     hideCancelButton("bulkProgressWrap");
     document.getElementById("bulkProgress").style.width = "100%";
@@ -3047,12 +3078,13 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
       ? ` | Auto Preview ล้มเหลว ${previewFailedNames.length}/${bulkFiles.length} เพลง: ${previewFailedNames.join(", ")} — ไปตั้ง Auto Preview เองได้ที่หน้าแก้ไขเพลง`
       : "";
     const destinationNote = playlistName ? ` เข้าเพลย์ลิสต์ "${playlistName}"` : "";
-    document.getElementById("bulkStatusText").textContent = `เสร็จแล้ว! เพิ่มเพลงสำเร็จ ${bulkFiles.length} เพลง${unmatchedNote}${previewFailedNote}`;
+    document.getElementById("bulkStatusText").textContent = `เสร็จแล้ว! เพิ่มเพลงสำเร็จ ${savedCount} เพลง${skippedDupNames.length ? ` | ข้ามเพลงซ้ำ ${skippedDupNames.length} เพลง: ${skippedDupNames.join(", ")}` : ""}${unmatchedNote}${previewFailedNote}`;
     const hasIssue = hasUnmatched || hasPreviewFailed;
-    showToast(`เพิ่มเพลง ${bulkFiles.length} เพลง${destinationNote} สำเร็จ${hasIssue ? ` — มีบางเพลงต้องแก้ไขเพิ่ม (ดูรายละเอียดด้านล่าง)` : ""}`, hasIssue ? "error" : "success");
+    const hasSkippedDup = skippedDupNames.length > 0; // ข้ามเพลงซ้ำ — ไม่ใช่ error แต่ค้างหน้าต่างไว้ให้อ่านรายชื่อ
+    showToast(`เพิ่มเพลง ${savedCount} เพลง${destinationNote} สำเร็จ${skippedDupNames.length ? ` (ข้ามเพลงซ้ำ ${skippedDupNames.length} เพลง)` : ""}${hasIssue ? ` — มีบางเพลงต้องแก้ไขเพิ่ม (ดูรายละเอียดด้านล่าง)` : ""}`, hasIssue ? "error" : "success");
     loadDashboard();
     // ถ้ามีเพลงจับคู่ไฟล์เต็มไม่ได้ หรือ Auto Preview ล้มเหลว ให้ค้างหน้าต่างไว้จนกว่าจะปิดเอง จะได้เห็นรายชื่อที่ต้องไปแก้ไขเพิ่ม
-    if (!hasIssue) {
+    if (!hasIssue && !hasSkippedDup) {
       setTimeout(() => { document.getElementById("bulkUploadBackdrop").classList.remove("show"); }, 1200);
     }
   } catch (err) {
