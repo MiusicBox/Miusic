@@ -470,6 +470,13 @@ async function showAdmin() {
   await withTimeout(loadDashboard(), 20000, "โหลดข้อมูล Dashboard นานเกินไป");
   // 🔧 (2026-09-16): อัปเดต badge ออเดอร์ "รอตรวจสอบการโอน" หลัง login (loadDashboard ก็เรียกอยู่แล้ว แต่ใส่ซ้ำเผื่อ clear)
   updateOrdersBadge();
+  // 🆕 (2026-10-01 fix bug badge สลิป): เรียก refreshPaymentsBadge() หลัง login เหมือน updateOrdersBadge
+  //   ปัญหา: ก่อนหน้านี้ refreshPaymentsBadge ถูกเรียกครั้งแรกตอน script load (บรรทัด 4620)
+  //          ซึ่งเป็นตอนที่ผู้ใช้ยังไม่ได้ login → endpoint คืน 401 → fetchPendingPaymentsCount
+  //          ได้ 0 → badge แสดง 0 ตลอดจนกว่าจะครบ 60 วิ (setInterval)
+  //   วิธีแก้: เรียก refreshPaymentsBadge() ทันทีหลัง login เหมือนที่เรียก updateOrdersBadge()
+  //   ผลกระทบระบบเดิม: 0% — เพิ่มบรรทัดเดียว ไม่แตะฟังก์ชันเดิม
+  if (typeof refreshPaymentsBadge === "function") refreshPaymentsBadge();
 }
 
 // ---------------- View switching ----------------
@@ -1507,6 +1514,11 @@ async function loadDashboard() {
   }
   // 🔧 (2026-09-16): อัปเดต badge ออเดอร์ "รอตรวจสอบการโอน" ทุกครั้งที่กลับหน้า dashboard
   updateOrdersBadge();
+  // 🆕 (2026-10-01 fix bug badge สลิป): refresh badge สลิปทุกครั้งที่กลับหน้า dashboard เหมือน updateOrdersBadge
+  //   ปัญหา: ก่อนหน้านี้ refreshPaymentsBadge ทำงานแค่ตอน setInterval 60 วิ → กลับ dashboard ใหม่ badge ยังเก่า
+  //   วิธีแก้: เรียก refreshPaymentsBadge() ทุกครั้งที่ loadDashboard (กลับ dashboard จาก view อื่น)
+  //   ผลกระทบระบบเดิม: 0% — เพิ่มบรรทัดเดียว
+  if (typeof refreshPaymentsBadge === "function") refreshPaymentsBadge();
 }
 
 // 🔧 (2026-09-18 v6 Full System): Helper สำหรับยิง _count-all endpoint
