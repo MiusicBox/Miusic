@@ -9,11 +9,6 @@ Disallow: /admin.html
 Disallow: /migrate-rate-limit.html
 # ห้าม index API endpoints
 Disallow: /api/
-# ห้าม index ไฟล์ internal
-Disallow: /firebase-init.js
-Disallow: /db-client.js
-Disallow: /auth-client.js
-Disallow: /storage-adapter.js
-Disallow: /song-analyzer.js
+# หมายเหตุ: ไม่บล็อกไฟล์ .js/.css — Googlebot ต้องโหลดเพื่อแสดงผลหน้าเว็บ
 # Sitemap location (อัปเดตอัตโนมัติจาก Worker — ดึงเพลง/เพลย์ลิสต์จาก D1)
 Sitemap: https://miusic-store.dj-remix.workers.dev/sitemap.xml
