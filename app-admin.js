@@ -631,54 +631,108 @@ function applyDateFilter(items, collection) {
   });
 }
 
-// 🆕 sync UI ของ date filter (ปุ่ม active + input value + info text) ตาม state ของ collection
+// 🆕 sync UI ของ date filter (ปุ่ม active + input value + status text บนปุ่ม toggle) ตาม state ของ collection
+//   🆕 (2026-10-01 dropdown): แทนที่ *DateFilterInfo (ของเดิม) ด้วย *DateFilterStatus (บนปุ่ม toggle)
+//     ปุ่ม toggle จะแสดงสถานะปัจจุบัน เช่น "ทั้งหมด" / "วันนี้" / "5 → 7"
 function syncDateFilterUI(collection) {
   const filter = dateFilterState[collection];
   if (!filter) return;
   // หา prefix ของ element IDs (song/cat/dj/playlist)
   const prefix = collection === "songs" ? "song" : collection === "categories" ? "cat" : collection === "djs" ? "dj" : "playlist";
-  // sync ปุ่มลัด
+  // sync ปุ่มลัด (ใน dropdown) — ทำสี active
   document.querySelectorAll(`[data-date-target="${collection}"]`).forEach(btn => {
     const isActive = btn.getAttribute("data-date-filter") === filter.range;
     btn.style.background = isActive ? "var(--accent)" : "";
     btn.style.color = isActive ? "#fff" : "";
     btn.style.borderColor = isActive ? "var(--accent)" : "";
   });
-  // sync input[type=date]
+  // sync input[type=date] (ใน dropdown)
   const fromEl = document.getElementById(`${prefix}DateFilterFrom`);
   const toEl = document.getElementById(`${prefix}DateFilterTo`);
   if (fromEl) fromEl.value = isoToDateInput(filter.fromDate);
   if (toEl) toEl.value = isoToDateInput(filter.toDate);
-  // sync info text
-  const infoEl = document.getElementById(`${prefix}DateFilterInfo`);
-  if (infoEl) {
-    if (filter.range === "all") infoEl.textContent = "";
+  // 🆕 (2026-10-01 dropdown): sync status text บนปุ่ม toggle (แทน info text ของเดิม)
+  const statusEl = document.getElementById(`${prefix}DateFilterStatus`);
+  if (statusEl) {
+    let statusText = "ทั้งหมด";  // default
+    if (filter.range === "today") statusText = "วันนี้";
+    else if (filter.range === "yesterday") statusText = "เมื่อวาน";
     else if (filter.range === "custom") {
       const fromStr = isoToDateInput(filter.fromDate);
       const toStr = isoToDateInput(filter.toDate);
-      if (fromStr && toStr && fromStr !== toStr) infoEl.textContent = `กรอง ${fromStr} → ${toStr}`;
-      else if (fromStr) infoEl.textContent = `กรอง ${fromStr}`;
-      else if (toStr) infoEl.textContent = `กรอง ${toStr}`;
-      else infoEl.textContent = "";
-    } else {
-      infoEl.textContent = filter.range === "today" ? "วันนี้" : filter.range === "yesterday" ? "เมื่อวาน" : "";
+      if (fromStr && toStr && fromStr !== toStr) statusText = `${fromStr} → ${toStr}`;
+      else if (fromStr) statusText = `ตั้งแต่ ${fromStr}`;
+      else if (toStr) statusText = `ถึง ${toStr}`;
+      else statusText = "ทั้งหมด";
     }
+    statusEl.textContent = statusText;
   }
 }
 
+// 🆕 (2026-10-01 dropdown): toggle dropdown — เปิด/ปิด dropdown ของ collection นั้น
+//   ถ้าเปิด collection A แล้วกดเปิด collection B → collection A จะปิดอัตโนมัติ (เปิดทีละอัน)
+//   ถ้ากดที่อื่นนอก dropdown → ปิดอัตโนมัติ
+function toggleDateFilterDropdown(collection) {
+  const prefix = collection === "songs" ? "song" : collection === "categories" ? "cat" : collection === "djs" ? "dj" : "playlist";
+  const dropdown = document.getElementById(`${prefix}DateFilterDropdown`);
+  const chevron = document.getElementById(`${prefix}DateFilterChevron`);
+  if (!dropdown) return;
+  const isOpen = dropdown.style.display !== "none";
+  // ปิด dropdown ของทุก collection ก่อน (เปิดทีละอัน)
+  ["songs", "categories", "djs", "playlists"].forEach((coll) => {
+    const p = coll === "songs" ? "song" : coll === "categories" ? "cat" : coll === "djs" ? "dj" : "playlist";
+    const d = document.getElementById(`${p}DateFilterDropdown`);
+    const c = document.getElementById(`${p}DateFilterChevron`);
+    if (d) d.style.display = "none";
+    if (c) c.style.transform = "";  // reset chevron
+  });
+  // ถ้า dropdown นี้ยังไม่เปิด → เปิด
+  if (!isOpen) {
+    dropdown.style.display = "block";
+    if (chevron) chevron.style.transform = "rotate(180deg)";
+  }
+}
+
+// 🆕 (2026-10-01 dropdown): ผูก toggle listener ให้ปุ่ม toggle ของทั้ง 4 collections
+["songs", "categories", "djs", "playlists"].forEach((coll) => {
+  const prefix = coll === "songs" ? "song" : coll === "categories" ? "cat" : coll === "djs" ? "dj" : "playlist";
+  const toggleBtn = document.getElementById(`${prefix}DateFilterToggle`);
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();  // กัน document click handler ปิด dropdown ทันที
+      toggleDateFilterDropdown(coll);
+    });
+  }
+});
+
+// 🆕 (2026-10-01 dropdown): กดที่อื่นนอก dropdown → ปิดทั้งหมด
+document.addEventListener("click", () => {
+  ["songs", "categories", "djs", "playlists"].forEach((coll) => {
+    const p = coll === "songs" ? "song" : coll === "categories" ? "cat" : coll === "djs" ? "dj" : "playlist";
+    const d = document.getElementById(`${p}DateFilterDropdown`);
+    const c = document.getElementById(`${p}DateFilterChevron`);
+    if (d) d.style.display = "none";
+    if (c) c.style.transform = "";
+  });
+});
+
 // 🆕 ผูก listeners สำหรับปุ่มลัด + ปุ่ม "ใช้ตัวกรอง" ของทั้ง 4 collections
-//   ปุ่มลัด: กด → เปลี่ยน state → sync UI → re-render list
-//   ปุ่ม "ใช้ตัวกรอง": อ่านค่า input[type=date] → เปลี่ยน state range=custom → sync UI → re-render
+//   ปุ่มลัด: กด → เปลี่ยน state → sync UI → ปิด dropdown → re-render list
+//   ปุ่ม "ใช้ตัวกรอง": อ่านค่า input[type=date] → เปลี่ยน state range=custom → sync UI → ปิด dropdown → re-render
+//   🆕 (2026-10-01 dropdown): ทุกปุ่มใน dropdown ต้อง e.stopPropagation() กัน document click ปิด dropdown ทันที
+//     และปิด dropdown หลังกด (เพราะกดแล้ว list refresh — dropdown ไม่ต้องเปิดอยู่)
 ["songs", "categories", "djs", "playlists"].forEach((coll) => {
   const prefix = coll === "songs" ? "song" : coll === "categories" ? "cat" : coll === "djs" ? "dj" : "playlist";
   // listeners สำหรับปุ่มลัด
   document.querySelectorAll(`[data-date-target="${coll}"]`).forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();  // กัน document click handler ปิด dropdown ทันที
       const preset = btn.getAttribute("data-date-filter");
       const { fromDate, toDate } = getDateFilterRange(preset);
       dateFilterState[coll] = { range: preset, fromDate, toDate };
       syncDateFilterUI(coll);
-      // re-render list (เรียก load ของแต่ละ collection — จะใช้ cache ถ้ายัง fresh)
+      // ปิด dropdown หลังกด (เพราะ list จะ refresh)
+      toggleDateFilterDropdown(coll);  // ถ้าเปิด → ปิด (toggle)
       if (coll === "songs") loadSongs();
       else if (coll === "categories") loadCategories();
       else if (coll === "djs") loadDjs();
@@ -688,7 +742,8 @@ function syncDateFilterUI(collection) {
   // listener สำหรับปุ่ม "ใช้ตัวกรอง"
   const applyBtn = document.getElementById(`${prefix}DateFilterApply`);
   if (applyBtn) {
-    applyBtn.addEventListener("click", () => {
+    applyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
       const fromEl = document.getElementById(`${prefix}DateFilterFrom`);
       const toEl = document.getElementById(`${prefix}DateFilterTo`);
       const from = fromEl?.value || "";
@@ -708,11 +763,18 @@ function syncDateFilterUI(collection) {
         };
       }
       syncDateFilterUI(coll);
+      // ปิด dropdown หลังกด
+      toggleDateFilterDropdown(coll);
       if (coll === "songs") loadSongs();
       else if (coll === "categories") loadCategories();
       else if (coll === "djs") loadDjs();
       else if (coll === "playlists") loadPlaylists();
     });
+  }
+  // 🆕 (2026-10-01 dropdown): กดที่ dropdown เอง → stopPropagation (กันปิดเวลากด input date / chevron ใน dropdown)
+  const dropdown = document.getElementById(`${prefix}DateFilterDropdown`);
+  if (dropdown) {
+    dropdown.addEventListener("click", (e) => e.stopPropagation());
   }
 });
 // ============================================================

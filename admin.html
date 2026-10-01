@@ -74,18 +74,30 @@
         <button class="icon-btn" id="songSelectModeBtn" title="เลือกหลายเพลง">☑️</button>
         <button class="icon-btn" id="addSongBtn" style="background:var(--accent);color:#fff;">＋</button>
       </div>
-      <!-- 🆕 (2026-10-01 date filter): ตัวกรองวันที่สำหรับเพลง — ใช้ filter ทั้ง created_at + updated_at
-           3 ปุ่มลัด (ทั้งหมด/วันนี้/เมื่อวาน) + ปฏิทินเลือกวัน ผลกระทบระบบเดิม: 0% -->
-      <div id="songDateFilterBar" style="padding:8px 16px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-        <button class="btn" data-date-filter="all" data-date-target="songs" style="padding:4px 10px;font-size:12px;border-radius:999px;">ทั้งหมด</button>
-        <button class="btn" data-date-filter="today" data-date-target="songs" style="padding:4px 10px;font-size:12px;border-radius:999px;">วันนี้</button>
-        <button class="btn" data-date-filter="yesterday" data-date-target="songs" style="padding:4px 10px;font-size:12px;border-radius:999px;">เมื่อวาน</button>
-        <span style="font-size:12px;color:var(--text-dim);">หรือเลือกวัน:</span>
-        <input type="date" id="songDateFilterFrom" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
-        <span style="font-size:12px;color:var(--text-dim);">→</span>
-        <input type="date" id="songDateFilterTo" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
-        <button class="btn secondary" id="songDateFilterApply" style="padding:4px 10px;font-size:12px;">🔍</button>
-        <span id="songDateFilterInfo" style="font-size:11px;color:var(--text-dim);"></span>
+      <!-- 🆕 (2026-10-01 date filter): ตัวกรองวันที่แบบ dropdown — กดที่ปุ่มจึงเปิดตัวเลือก
+           ปุ่มเดียวที่แสดงตลอด: "📅 กรองตามวันที่" + สถานะปัจจุบัน (เช่น "วันนี้" หรือ "5 → 7")
+           ผลกระทบระบบเดิม: 0% — เปลี่ยนจากแสดงตลอด → กดเพื่อเปิด dropdown -->
+      <div style="padding:8px 16px;position:relative;">
+        <button type="button" id="songDateFilterToggle" class="btn" style="padding:6px 12px;font-size:13px;border-radius:8px;display:flex;align-items:center;gap:6px;">
+          <span>📅</span>
+          <span id="songDateFilterLabel">กรองตามวันที่</span>
+          <span style="font-size:11px;color:var(--text-dim);" id="songDateFilterStatus">ทั้งหมด</span>
+          <span style="font-size:10px;transition:transform .2s;" id="songDateFilterChevron">▾</span>
+        </button>
+        <div id="songDateFilterDropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:16px;right:16px;background:var(--bg-card,#1f1f23);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:10px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.3);">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+            <button class="btn" data-date-filter="all" data-date-target="songs" style="padding:4px 10px;font-size:12px;border-radius:999px;">ทั้งหมด</button>
+            <button class="btn" data-date-filter="today" data-date-target="songs" style="padding:4px 10px;font-size:12px;border-radius:999px;">วันนี้</button>
+            <button class="btn" data-date-filter="yesterday" data-date-target="songs" style="padding:4px 10px;font-size:12px;border-radius:999px;">เมื่อวาน</button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--text-dim);">
+            <span>หรือเลือกวัน:</span>
+            <input type="date" id="songDateFilterFrom" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
+            <span style="font-size:12px;color:var(--text-dim);">→</span>
+            <input type="date" id="songDateFilterTo" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
+            <button class="btn secondary" id="songDateFilterApply" style="padding:4px 10px;font-size:12px;">🔍</button>
+          </div>
+        </div>
       </div>
       <div id="songBulkBar" style="display:none;padding:0 16px 10px;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim);">
@@ -109,17 +121,28 @@
         <button class="icon-btn" id="catSelectModeBtn" title="เลือกหลายหมวดหมู่">☑️</button>
         <button class="icon-btn" id="addCatBtn" style="background:var(--accent);color:#fff;">＋</button>
       </div>
-      <!-- 🆕 (2026-10-01 date filter): ตัวกรองวันที่สำหรับหมวดหมู่ — เหมือน view-songs -->
-      <div id="catDateFilterBar" style="padding:8px 16px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-        <button class="btn" data-date-filter="all" data-date-target="categories" style="padding:4px 10px;font-size:12px;border-radius:999px;">ทั้งหมด</button>
-        <button class="btn" data-date-filter="today" data-date-target="categories" style="padding:4px 10px;font-size:12px;border-radius:999px;">วันนี้</button>
-        <button class="btn" data-date-filter="yesterday" data-date-target="categories" style="padding:4px 10px;font-size:12px;border-radius:999px;">เมื่อวาน</button>
-        <span style="font-size:12px;color:var(--text-dim);">หรือเลือกวัน:</span>
-        <input type="date" id="catDateFilterFrom" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
-        <span style="font-size:12px;color:var(--text-dim);">→</span>
-        <input type="date" id="catDateFilterTo" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
-        <button class="btn secondary" id="catDateFilterApply" style="padding:4px 10px;font-size:12px;">🔍</button>
-        <span id="catDateFilterInfo" style="font-size:11px;color:var(--text-dim);"></span>
+      <!-- 🆕 (2026-10-01 date filter): dropdown ตัวกรองวันที่สำหรับหมวดหมู่ — เหมือน view-songs -->
+      <div style="padding:8px 16px;position:relative;">
+        <button type="button" id="catDateFilterToggle" class="btn" style="padding:6px 12px;font-size:13px;border-radius:8px;display:flex;align-items:center;gap:6px;">
+          <span>📅</span>
+          <span id="catDateFilterLabel">กรองตามวันที่</span>
+          <span style="font-size:11px;color:var(--text-dim);" id="catDateFilterStatus">ทั้งหมด</span>
+          <span style="font-size:10px;transition:transform .2s;" id="catDateFilterChevron">▾</span>
+        </button>
+        <div id="catDateFilterDropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:16px;right:16px;background:var(--bg-card,#1f1f23);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:10px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.3);">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+            <button class="btn" data-date-filter="all" data-date-target="categories" style="padding:4px 10px;font-size:12px;border-radius:999px;">ทั้งหมด</button>
+            <button class="btn" data-date-filter="today" data-date-target="categories" style="padding:4px 10px;font-size:12px;border-radius:999px;">วันนี้</button>
+            <button class="btn" data-date-filter="yesterday" data-date-target="categories" style="padding:4px 10px;font-size:12px;border-radius:999px;">เมื่อวาน</button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--text-dim);">
+            <span>หรือเลือกวัน:</span>
+            <input type="date" id="catDateFilterFrom" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
+            <span style="font-size:12px;color:var(--text-dim);">→</span>
+            <input type="date" id="catDateFilterTo" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
+            <button class="btn secondary" id="catDateFilterApply" style="padding:4px 10px;font-size:12px;">🔍</button>
+          </div>
+        </div>
       </div>
       <!-- 🆕 (2026-10-01 bulk): แถบเครื่องมือเลือกหลายรายการ — ลอก pattern จาก songBulkBar -->
       <div id="catBulkBar" style="display:none;padding:0 16px 10px;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
@@ -142,17 +165,28 @@
         <button class="icon-btn" id="djSelectModeBtn" title="เลือกหลาย DJ">☑️</button>
         <button class="icon-btn" id="addDjBtn" style="background:var(--accent);color:#fff;">＋</button>
       </div>
-      <!-- 🆕 (2026-10-01 date filter): ตัวกรองวันที่สำหรับ DJ -->
-      <div id="djDateFilterBar" style="padding:8px 16px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-        <button class="btn" data-date-filter="all" data-date-target="djs" style="padding:4px 10px;font-size:12px;border-radius:999px;">ทั้งหมด</button>
-        <button class="btn" data-date-filter="today" data-date-target="djs" style="padding:4px 10px;font-size:12px;border-radius:999px;">วันนี้</button>
-        <button class="btn" data-date-filter="yesterday" data-date-target="djs" style="padding:4px 10px;font-size:12px;border-radius:999px;">เมื่อวาน</button>
-        <span style="font-size:12px;color:var(--text-dim);">หรือเลือกวัน:</span>
-        <input type="date" id="djDateFilterFrom" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
-        <span style="font-size:12px;color:var(--text-dim);">→</span>
-        <input type="date" id="djDateFilterTo" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
-        <button class="btn secondary" id="djDateFilterApply" style="padding:4px 10px;font-size:12px;">🔍</button>
-        <span id="djDateFilterInfo" style="font-size:11px;color:var(--text-dim);"></span>
+      <!-- 🆕 (2026-10-01 date filter): dropdown ตัวกรองวันที่สำหรับ DJ — เหมือน view-songs -->
+      <div style="padding:8px 16px;position:relative;">
+        <button type="button" id="djDateFilterToggle" class="btn" style="padding:6px 12px;font-size:13px;border-radius:8px;display:flex;align-items:center;gap:6px;">
+          <span>📅</span>
+          <span id="djDateFilterLabel">กรองตามวันที่</span>
+          <span style="font-size:11px;color:var(--text-dim);" id="djDateFilterStatus">ทั้งหมด</span>
+          <span style="font-size:10px;transition:transform .2s;" id="djDateFilterChevron">▾</span>
+        </button>
+        <div id="djDateFilterDropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:16px;right:16px;background:var(--bg-card,#1f1f23);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:10px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.3);">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+            <button class="btn" data-date-filter="all" data-date-target="djs" style="padding:4px 10px;font-size:12px;border-radius:999px;">ทั้งหมด</button>
+            <button class="btn" data-date-filter="today" data-date-target="djs" style="padding:4px 10px;font-size:12px;border-radius:999px;">วันนี้</button>
+            <button class="btn" data-date-filter="yesterday" data-date-target="djs" style="padding:4px 10px;font-size:12px;border-radius:999px;">เมื่อวาน</button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--text-dim);">
+            <span>หรือเลือกวัน:</span>
+            <input type="date" id="djDateFilterFrom" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
+            <span style="font-size:12px;color:var(--text-dim);">→</span>
+            <input type="date" id="djDateFilterTo" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
+            <button class="btn secondary" id="djDateFilterApply" style="padding:4px 10px;font-size:12px;">🔍</button>
+          </div>
+        </div>
       </div>
       <!-- 🆕 (2026-10-01 bulk): แถบเครื่องมือเลือกหลายรายการ — ลอก pattern จาก songBulkBar -->
       <div id="djBulkBar" style="display:none;padding:0 16px 10px;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
@@ -175,17 +209,28 @@
         <button class="icon-btn" id="playlistSelectModeBtn" title="เลือกหลายเพลย์ลิสต์">☑️</button>
         <button class="icon-btn" id="addPlaylistBtn" style="background:var(--accent);color:#fff;">＋</button>
       </div>
-      <!-- 🆕 (2026-10-01 date filter): ตัวกรองวันที่สำหรับเพลย์ลิสต์ -->
-      <div id="playlistDateFilterBar" style="padding:8px 16px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-        <button class="btn" data-date-filter="all" data-date-target="playlists" style="padding:4px 10px;font-size:12px;border-radius:999px;">ทั้งหมด</button>
-        <button class="btn" data-date-filter="today" data-date-target="playlists" style="padding:4px 10px;font-size:12px;border-radius:999px;">วันนี้</button>
-        <button class="btn" data-date-filter="yesterday" data-date-target="playlists" style="padding:4px 10px;font-size:12px;border-radius:999px;">เมื่อวาน</button>
-        <span style="font-size:12px;color:var(--text-dim);">หรือเลือกวัน:</span>
-        <input type="date" id="playlistDateFilterFrom" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
-        <span style="font-size:12px;color:var(--text-dim);">→</span>
-        <input type="date" id="playlistDateFilterTo" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
-        <button class="btn secondary" id="playlistDateFilterApply" style="padding:4px 10px;font-size:12px;">🔍</button>
-        <span id="playlistDateFilterInfo" style="font-size:11px;color:var(--text-dim);"></span>
+      <!-- 🆕 (2026-10-01 date filter): dropdown ตัวกรองวันที่สำหรับเพลย์ลิสต์ — เหมือน view-songs -->
+      <div style="padding:8px 16px;position:relative;">
+        <button type="button" id="playlistDateFilterToggle" class="btn" style="padding:6px 12px;font-size:13px;border-radius:8px;display:flex;align-items:center;gap:6px;">
+          <span>📅</span>
+          <span id="playlistDateFilterLabel">กรองตามวันที่</span>
+          <span style="font-size:11px;color:var(--text-dim);" id="playlistDateFilterStatus">ทั้งหมด</span>
+          <span style="font-size:10px;transition:transform .2s;" id="playlistDateFilterChevron">▾</span>
+        </button>
+        <div id="playlistDateFilterDropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:16px;right:16px;background:var(--bg-card,#1f1f23);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:10px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.3);">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+            <button class="btn" data-date-filter="all" data-date-target="playlists" style="padding:4px 10px;font-size:12px;border-radius:999px;">ทั้งหมด</button>
+            <button class="btn" data-date-filter="today" data-date-target="playlists" style="padding:4px 10px;font-size:12px;border-radius:999px;">วันนี้</button>
+            <button class="btn" data-date-filter="yesterday" data-date-target="playlists" style="padding:4px 10px;font-size:12px;border-radius:999px;">เมื่อวาน</button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--text-dim);">
+            <span>หรือเลือกวัน:</span>
+            <input type="date" id="playlistDateFilterFrom" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
+            <span style="font-size:12px;color:var(--text-dim);">→</span>
+            <input type="date" id="playlistDateFilterTo" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
+            <button class="btn secondary" id="playlistDateFilterApply" style="padding:4px 10px;font-size:12px;">🔍</button>
+          </div>
+        </div>
       </div>
       <!-- 🆕 (2026-10-01 bulk): แถบเครื่องมือเลือกหลายรายการ — ลอก pattern จาก songBulkBar -->
       <div id="playlistBulkBar" style="display:none;padding:0 16px 10px;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
