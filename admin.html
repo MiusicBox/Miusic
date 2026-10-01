@@ -563,6 +563,32 @@
         <button class="btn" id="latestUpdatesManageCats" style="padding:10px 8px;font-size:13px;font-weight:700;">🗂️ จัดการหมวดหมู่</button>
       </div>
 
+      <!-- 🆕 (2026-10-01): ตัวกรองวันที่ — ปุ่มลัด + ปฏิทินเลือกวัน
+           ค่าเริ่มต้น: "วันนี้" (แสดงเฉพาะรายการของวันนี้)
+           ถ้าอยากดูวันอื่น → กดปุ่มลัด หรือเลือกวันจากปฏิทิน
+           ผลกระทบระบบเดิม: 0% — เพิ่ม element ใหม่ใน view-latest-updates เท่านั้น -->
+      <div style="padding:0 16px;margin:0 0 10px;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+          <button class="btn" data-latest-range="today" style="padding:6px 12px;font-size:12px;border-radius:999px;">วันนี้</button>
+          <button class="btn" data-latest-range="yesterday" style="padding:6px 12px;font-size:12px;border-radius:999px;">เมื่อวาน</button>
+          <button class="btn" data-latest-range="7days" style="padding:6px 12px;font-size:12px;border-radius:999px;">7 วัน</button>
+          <button class="btn" data-latest-range="30days" style="padding:6px 12px;font-size:12px;border-radius:999px;">30 วัน</button>
+          <button class="btn" data-latest-range="all" style="padding:6px 12px;font-size:12px;border-radius:999px;">ทั้งหมด</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--text-dim);">
+          <span>หรือเลือกวันเอง:</span>
+          <label style="display:flex;align-items:center;gap:4px;">
+            ตั้งแต่
+            <input type="date" id="latestFilterFromDate" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
+          </label>
+          <label style="display:flex;align-items:center;gap:4px;">
+            ถึง
+            <input type="date" id="latestFilterToDate" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;">
+          </label>
+          <button class="btn secondary" id="latestFilterApplyBtn" style="padding:6px 12px;font-size:12px;">🔍 ใช้ตัวกรอง</button>
+        </div>
+      </div>
+
       <!-- ===== กล่องแสดงเวลา "อัพเดทล่าสุด" ของทั้งระบบ ===== -->
       <div id="latestUpdatesSummary" style="padding:0 16px;margin:0 0 10px;font-size:12px;color:var(--text-dim);"></div>
 

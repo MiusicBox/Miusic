@@ -473,6 +473,12 @@ async function showAdmin() {
 }
 
 // ---------------- View switching ----------------
+// 🆕 (2026-10-01 navigation): viewHistory stack — เก็บลำดับ view ที่เข้า
+//   ทำให้ปุ่ม ← กลับไป view ก่อนหน้า ไม่ใช่กลับ dashboard เสมอ (ตามคำขอผู้ใช้)
+//   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่ม state ใหม่ + เปลี่ยน back-btn ให้เรียก goBack()
+//     ฟังก์ชัน showView เดิมทำงานเหมือนเดิม 100% (แค่เพิ่มการ push เข้า stack ถ้ามีการเปลี่ยน view)
+let viewHistory = [];
+
 function showView(id) {
   document.querySelectorAll(".view").forEach(v => v.style.display = "none");
   const el = document.getElementById(id);
@@ -484,8 +490,55 @@ function showView(id) {
   el.style.width = "100%";
   el.style.boxSizing = "border-box";
   el.style.maxWidth = "none";
+  // 🆕 (2026-10-01 navigation): push เข้า stack ถ้าเปลี่ยน view จริง ๆ (ไม่ใช่กดซ้ำ view เดิม)
+  //   กัน stack โต: ถ้าเข้า view-A แล้วกด showView("view-A") ซ้ำ → ไม่ push (เป็น no-op)
+  if (viewHistory[viewHistory.length - 1] !== id) {
+    viewHistory.push(id);
+    // กัน stack โตเกิน 20 (cap) — กัน memory leak ถ้าผู้ใช้กดไปมาเยอะ
+    if (viewHistory.length > 20) viewHistory = viewHistory.slice(-20);
+  }
 }
-document.querySelectorAll(".back-btn").forEach(b => b.addEventListener("click", () => { showView("view-dashboard"); loadDashboard(); }));
+
+// 🆕 (2026-10-01 navigation): goBack() — กลับ view ก่อนหน้า
+//   1. pop view ปัจจุบันออก
+//   2. ถ้ายังเหลือ view → ไป view ล่าสุด
+//   3. ถ้าว่าง → ไป dashboard (fallback เดิม)
+//   ถ้ากดกลับจากหน้าที่ push ผ่าน latestUpdatesManage* → stack จะมี view-latest-updates → กลับหน้านั้น
+async function goBack() {
+  // pop view ปัจจุบันออก
+  viewHistory.pop();
+  const prev = viewHistory[viewHistory.length - 1];
+  if (prev) {
+    // ไป view ก่อนหน้า (ไม่ push ซ้ำ เพราะมีอยู่แล้ว)
+    document.querySelectorAll(".view").forEach(v => v.style.display = "none");
+    const el = document.getElementById(prev);
+    if (el) {
+      el.style.display = "block";
+      el.style.width = "100%";
+      el.style.boxSizing = "border-box";
+      el.style.maxWidth = "none";
+      // เรียก load function ของ view นั้น (refresh ข้อมูล)
+      if (prev === "view-dashboard") loadDashboard();
+      else if (prev === "view-songs") loadSongs();
+      else if (prev === "view-categories") loadCategories();
+      else if (prev === "view-djs") loadDjs();
+      else if (prev === "view-playlists") loadPlaylists();
+      else if (prev === "view-latest-updates") loadLatestUpdates();
+      // view-orders, view-payments, view-settings, etc. มี load function เฉพาะ — ข้ามไปก็ได้ (ไม่ crash)
+      return;
+    }
+  }
+  // fallback: stack ว่าง → ไป dashboard (เหมือนพฤติกรรมเดิม)
+  viewHistory = ["view-dashboard"];
+  showView("view-dashboard");
+  loadDashboard();
+}
+
+// 🔧 (2026-10-01): เปลี่ยน back-btn จาก showView("view-dashboard") → goBack()
+//   ผลกระทบ: ปุ่ม ← ทุกหน้าจะกลับ view ก่อนหน้า แทนกลับ dashboard เสมอ
+//   กรณีเข้าจากแดชบอร์ด → stack มี [dashboard, view-X] → กด ← → pop → กลับ dashboard (เหมือนเดิม)
+//   กรณีเข้าจากอัพเดทล่าสุด → stack มี [dashboard, latest-updates, view-X] → กด ← → pop → กลับ latest-updates
+document.querySelectorAll(".back-btn").forEach(b => b.addEventListener("click", () => { goBack(); }));
 document.getElementById("qaAddSong").addEventListener("click", async () => { showView("view-songs"); await loadSongs(); openAddSong(); });
 document.getElementById("qaManageSongs").addEventListener("click", () => { showView("view-songs"); loadSongs(); });
 document.getElementById("qaManageCats").addEventListener("click", () => { showView("view-categories"); loadCategories(); });
@@ -745,20 +798,61 @@ function renderAuditPager() {
 // ============================================================
 
 const LATEST_UPDATES_COLLECTIONS = ["songs", "playlists", "djs", "categories"];
-const LATEST_UPDATES_PER_COLL = 8; // รายการล่าสุดต่อ collection
-let latestUpdatesState = { loading: false };
+const LATEST_UPDATES_PER_COLL = 50; // 🆕 (2026-10-01): เพิ่มจาก 8 → 50 เพราะต้องกรองตามวันที่ (เผื่อมีรายการในวันนั้นเยอะ)
+let latestUpdatesState = { loading: false, fromDate: null, toDate: null, range: "today" };
 
-// 🆕 (2026-10-01): เปิดหน้า "อัพเดทล่าสุด" — เรียกฟังก์ชันเดิม showView() เท่านั้น
+// 🆕 (2026-10-01): ตัวช่วยคำนวณ from/to date จาก preset
+//   คืน { fromDate, toDate } ในรูปแบบ "YYYY-MM-DD" (ส่งให้ endpoint ได้ตรง ๆ)
+//   - "today": วันนี้ (from = to = วันนี้)
+//   - "yesterday": เมื่อวาน (from = to = เมื่อวาน)
+//   - "7days": 7 วันล่าสุด (from = 6 วันที่แล้ว, to = วันนี้)
+//   - "30days": 30 วันล่าสุด (from = 29 วันที่แล้ว, to = วันนี้)
+//   - "all": ไม่ส่ง from/to (ดูทั้งหมด)
+//   ใช้ timezone เดียวกับ formatAuditTime (Asia/Vientiane) — เพื่อให้ "วันนี้" ตรงกับที่ผู้ใช้เห็น
+function getLatestRangeDates(range) {
+  const now = new Date();
+  // ปรับ timezone เป็น Asia/Vientiane (UTC+7) — ใช้ offset เพื่อกัน D1 query คนละวันกับ user view
+  //   วิธี: หา "วันนี้" ตาม local timezone → แปลงเป็น YYYY-MM-DD โดยใช้ toLocaleDateString
+  const todayStr = now.toLocaleDateString("en-CA", { timeZone: "Asia/Vientiane" });
+  function offsetDate(daysFromToday) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + daysFromToday);
+    return d.toLocaleDateString("en-CA", { timeZone: "Asia/Vientiane" });
+  }
+  if (range === "today") return { fromDate: todayStr, toDate: todayStr };
+  if (range === "yesterday") {
+    const yStr = offsetDate(-1);
+    return { fromDate: yStr, toDate: yStr };
+  }
+  if (range === "7days") return { fromDate: offsetDate(-6), toDate: todayStr };
+  if (range === "30days") return { fromDate: offsetDate(-29), toDate: todayStr };
+  // "all" หรือไม่ระบุ → ไม่ส่ง from/to (ดูทั้งหมด)
+  return { fromDate: null, toDate: null };
+}
+
+// 🆕 (2026-10-01): เปิดหน้า "อัพเดทล่าสุด" — ค่าเริ่มต้น "วันนี้" (ตามคำขอผู้ใช้)
 document.getElementById("qaLatestUpdates")?.addEventListener("click", () => {
   showView("view-latest-updates");
+  // reset ตัวกรองเป็น "วันนี้" (มติผู้ใช้: แสดงเฉพาะรายการของวันนี้)
+  latestUpdatesState.range = "today";
+  const { fromDate, toDate } = getLatestRangeDates("today");
+  latestUpdatesState.fromDate = fromDate;
+  latestUpdatesState.toDate = toDate;
+  // sync UI: ปุ่มลัด + input date
+  setActiveLatestRangeBtn("today");
+  const fromEl = document.getElementById("latestFilterFromDate");
+  const toEl = document.getElementById("latestFilterToDate");
+  if (fromEl) fromEl.value = fromDate || "";
+  if (toEl) toEl.value = toDate || "";
   loadLatestUpdates();
 });
 
-// 🆕 (2026-10-01): ปุ่ม refresh ในหน้า "อัพเดทล่าสุด"
+// 🆕 (2026-10-01): ปุ่ม refresh — ใช้ตัวกรองปัจจุบัน
 document.getElementById("latestUpdatesRefreshBtn")?.addEventListener("click", () => loadLatestUpdates());
 
 // 🆕 (2026-10-01): ปุ่มจัดการในหน้า "อัพเดทล่าสุด" — เรียกฟังก์ชันเดิม loadSongs/loadPlaylists/loadDjs/loadCategories
 //   ไม่สร้างฟังก์ชันใหม่ — แค่เรียกฟังก์ชันเดิมเหมือนปุ่ม qaManage* บนแดชบอร์ด
+//   (showView เดิมจะ push view-latest-updates เข้า stack ก่อน เพื่อให้กด ← กลับมาหน้านี้ — ทำงานผ่าน viewHistory อัตโนมัติ)
 document.getElementById("latestUpdatesManageSongs")?.addEventListener("click", () => {
   showView("view-songs"); loadSongs();
 });
@@ -772,9 +866,60 @@ document.getElementById("latestUpdatesManageCats")?.addEventListener("click", ()
   showView("view-categories"); loadCategories();
 });
 
+// 🆕 (2026-10-01): ปุ่มลัดวัน (วันนี้ / เมื่อวาน / 7 วัน / 30 วัน / ทั้งหมด)
+//   กดแล้วเปลี่ยน active button + อัปเดต state + โหลดใหม่ทันที
+function setActiveLatestRangeBtn(range) {
+  document.querySelectorAll("[data-latest-range]").forEach(btn => {
+    const isActive = btn.getAttribute("data-latest-range") === range;
+    btn.style.background = isActive ? "var(--accent)" : "";
+    btn.style.color = isActive ? "#fff" : "";
+    btn.style.borderColor = isActive ? "var(--accent)" : "";
+  });
+}
+document.querySelectorAll("[data-latest-range]")?.forEach(btn => {
+  btn.addEventListener("click", () => {
+    const range = btn.getAttribute("data-latest-range");
+    latestUpdatesState.range = range;
+    const { fromDate, toDate } = getLatestRangeDates(range);
+    latestUpdatesState.fromDate = fromDate;
+    latestUpdatesState.toDate = toDate;
+    // sync UI: ปุ่ม active + input date (ถ้าเป็น "all" ให้ว่าง)
+    setActiveLatestRangeBtn(range);
+    const fromEl = document.getElementById("latestFilterFromDate");
+    const toEl = document.getElementById("latestFilterToDate");
+    if (fromEl) fromEl.value = fromDate || "";
+    if (toEl) toEl.value = toDate || "";
+    loadLatestUpdates();
+  });
+});
+
+// 🆕 (2026-10-01): ปุ่ม "ใช้ตัวกรอง" — ใช้วันที่จาก input date (manual range)
+//   ถ้าผู้ใช้เลือกวันเอง → ปุ่มลัด active ถูกลบ (เพราะเป็น custom range)
+document.getElementById("latestFilterApplyBtn")?.addEventListener("click", () => {
+  const fromEl = document.getElementById("latestFilterFromDate");
+  const toEl = document.getElementById("latestFilterToDate");
+  const from = fromEl?.value || "";
+  const to = toEl?.value || "";
+  if (!from && !to) {
+    showToast("กรุณาเลือกวันที่อย่างน้อย 1 วัน", "error");
+    return;
+  }
+  // validate: from <= to
+  if (from && to && from > to) {
+    showToast("วันเริ่มต้นต้องไม่หลังวันสิ้นสุด", "error");
+    return;
+  }
+  latestUpdatesState.range = "custom";
+  latestUpdatesState.fromDate = from || null;
+  latestUpdatesState.toDate = to || null;
+  setActiveLatestRangeBtn(null);  // ลบ active ของปุ่มลัด
+  loadLatestUpdates();
+});
+
 // 🆕 (2026-10-01): โหลด audit_log ล่าสุดของทั้ง 4 collection แบบขนาน
-//   ใช้ endpoint เดิม /api/db/_meta/_audit-log-query — ส่ง collection ทีละตัว
+//   ใช้ endpoint เดิม /api/db/_meta/_audit-log-query — ส่ง collection ทีละตัว + from_date/to_date (จาก state)
 //   รวมผลทั้งหมด → sort ตาม created_at DESC → render แยกหมวด
+//   🆕 (2026-10-01): รองรับตัวกรองวันที่ — ส่ง from_date/to_date ไป endpoint (endpoint รองรับแล้ว ไม่ต้องแก้ worker)
 async function loadLatestUpdates() {
   if (latestUpdatesState.loading) return;
   latestUpdatesState.loading = true;
@@ -798,6 +943,9 @@ async function loadLatestUpdates() {
             limit: LATEST_UPDATES_PER_COLL,
             offset: 0,
             collection: coll,
+            // 🆕 (2026-10-01): ส่งตัวกรองวันที่ ถ้ามี (endpoint รองรับจาก worker/index.js บรรทัด 1598-1615)
+            from_date: latestUpdatesState.fromDate || "",
+            to_date: latestUpdatesState.toDate || "",
           }),
         }).then(async (res) => {
           if (res.status === 401) return { collection: coll, logs: [], total: 0, unauthorized: true };
