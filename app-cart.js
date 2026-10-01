@@ -1647,14 +1647,14 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
           <div style="font-size:24px;font-weight:800;color:var(--success);">${formatPrice(amount)}</div>
         </div>
         <div style="margin-bottom:8px;font-size:13px;font-weight:600;">รูปหลักฐานการโอนเงิน</div>
-        <input type="file" id="slipFileInput" accept="image/jpeg,image/png,image/webp" style="display:none;">
-        <label for="slipFileInput" style="display:block;border:2px dashed var(--border, #ccc);border-radius:10px;padding:24px;text-align:center;cursor:pointer;color:var(--text-dim);">
-          <div id="slipPreviewArea" style="margin:0 auto;">
+        <div style="position:relative;display:block;">
+          <input type="file" id="slipFileInput" accept="image/jpeg,image/png,image/webp" style="position:absolute;width:100%;height:100%;top:0;left:0;opacity:0;cursor:pointer;z-index:10;">
+          <div id="slipPreviewArea" style="position:relative;border:2px dashed var(--border, #ccc);border-radius:10px;padding:24px;text-align:center;color:var(--text-dim);overflow:hidden;">
             <div style="font-size:36px;">📷</div>
             <div style="font-size:13px;margin-top:4px;">คลิกเพื่อเลือกรูปสลิป</div>
             <div style="font-size:11px;margin-top:2px;color:var(--text-dim);">JPEG / PNG / WEBP • สูงสุด 5MB</div>
           </div>
-        </label>
+        </div>
         <div style="font-size:12px;color:var(--text-dim);margin-top:8px;display:flex;justify-content:space-between;">
           <span>ชื่อลูกค้า</span><strong>${escapeHtml(order?.customer_name || "")}</strong>
         </div>
