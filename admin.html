@@ -96,7 +96,19 @@
       <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
         <button class="icon-btn back-btn">←</button>
         <div style="flex:1;font-weight:800;">จัดการหมวดหมู่</div>
+        <!-- 🆕 (2026-10-01 bulk): ปุ่มเลือกหลายรายการ — ลอก pattern จาก songSelectModeBtn -->
+        <button class="icon-btn" id="catSelectModeBtn" title="เลือกหลายหมวดหมู่">☑️</button>
         <button class="icon-btn" id="addCatBtn" style="background:var(--accent);color:#fff;">＋</button>
+      </div>
+      <!-- 🆕 (2026-10-01 bulk): แถบเครื่องมือเลือกหลายรายการ — ลอก pattern จาก songBulkBar -->
+      <div id="catBulkBar" style="display:none;padding:0 16px 10px;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim);">
+          <input type="checkbox" id="catSelectAllChk"> เลือกทั้งหมด
+        </label>
+        <span id="catSelectedCount" style="font-size:13px;color:var(--text-dim);">เลือกแล้ว 0 หมวดหมู่</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn danger" id="catBulkDeleteBtn" style="padding:8px 14px;font-size:13px;" disabled>ลบที่เลือก</button>
+        </div>
       </div>
       <div id="catList"></div>
     </div>
@@ -105,7 +117,19 @@
       <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
         <button class="icon-btn back-btn">←</button>
         <div style="flex:1;font-weight:800;">จัดการ DJ</div>
+        <!-- 🆕 (2026-10-01 bulk): ปุ่มเลือกหลายรายการ — ลอก pattern จาก songSelectModeBtn -->
+        <button class="icon-btn" id="djSelectModeBtn" title="เลือกหลาย DJ">☑️</button>
         <button class="icon-btn" id="addDjBtn" style="background:var(--accent);color:#fff;">＋</button>
+      </div>
+      <!-- 🆕 (2026-10-01 bulk): แถบเครื่องมือเลือกหลายรายการ — ลอก pattern จาก songBulkBar -->
+      <div id="djBulkBar" style="display:none;padding:0 16px 10px;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim);">
+          <input type="checkbox" id="djSelectAllChk"> เลือกทั้งหมด
+        </label>
+        <span id="djSelectedCount" style="font-size:13px;color:var(--text-dim);">เลือกแล้ว 0 DJ</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn danger" id="djBulkDeleteBtn" style="padding:8px 14px;font-size:13px;" disabled>ลบที่เลือก</button>
+        </div>
       </div>
       <div id="djList"></div>
     </div>
@@ -114,7 +138,19 @@
       <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
         <button class="icon-btn back-btn">←</button>
         <div style="flex:1;font-weight:800;">จัดการเพลย์ลิสต์</div>
+        <!-- 🆕 (2026-10-01 bulk): ปุ่มเลือกหลายรายการ — ลอก pattern จาก songSelectModeBtn -->
+        <button class="icon-btn" id="playlistSelectModeBtn" title="เลือกหลายเพลย์ลิสต์">☑️</button>
         <button class="icon-btn" id="addPlaylistBtn" style="background:var(--accent);color:#fff;">＋</button>
+      </div>
+      <!-- 🆕 (2026-10-01 bulk): แถบเครื่องมือเลือกหลายรายการ — ลอก pattern จาก songBulkBar -->
+      <div id="playlistBulkBar" style="display:none;padding:0 16px 10px;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim);">
+          <input type="checkbox" id="playlistSelectAllChk"> เลือกทั้งหมด
+        </label>
+        <span id="playlistSelectedCount" style="font-size:13px;color:var(--text-dim);">เลือกแล้ว 0 เพลย์ลิสต์</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn danger" id="playlistBulkDeleteBtn" style="padding:8px 14px;font-size:13px;" disabled>ลบที่เลือก</button>
+        </div>
       </div>
       <div id="playlistList"></div>
     </div>

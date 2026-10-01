@@ -1771,6 +1771,215 @@ document.getElementById("songBulkDeleteBtn").addEventListener("click", () => {
   });
 });
 
+// ============================================================
+// 🆕 (2026-10-01 bulk): ตัวเลือกลบหลายรายการ สำหรับ DJ / หมวดหมู่ / เพลย์ลิสต์
+//   ลอก pattern จาก song bulk mode (บรรทัด 1350, 1485, 1710-1772) มาใช้กับ 3 collections
+//
+//   ตามมติผู้ใช้ (2026-10-01):
+//     - ข้อ 1=ข: ลบ row + cascade ลบเพลงทั้งหมด + ไฟล์ R2 (เหมือนลบเดี่ยว)
+//     - ข้อ 2=ก: ถามยืนยันครั้งเดียว → ลบทั้งหมดโดยไม่ถามซ้ำ
+//
+//   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่ม state + functions + event listeners ใหม่
+//     ไม่แก้ฟังก์ชันเดิม (loadCategories, loadDjs, loadPlaylists เดิมยังทำงาน — แค่เพิ่ม checkbox ใน render เมื่อ mode เปิด)
+//     ใช้ฟังก์ชัน cascade delete เดิม (deleteSongsFromCategory/Dj/Playlist ที่สร้างไว้ใน commit d47b341)
+// ============================================================
+
+// 🆕 state สำหรับ 3 collections (ลอก pattern จาก songSelectMode + selectedSongIds)
+let catSelectMode = false;
+let djSelectMode = false;
+let playlistSelectMode = false;
+const selectedCatIds = new Set();
+const selectedDjIds = new Set();
+const selectedPlaylistIds = new Set();
+
+// 🆕 ฟังก์ชันอัปเดต bulk bar สำหรับแต่ละ collection (ลอก pattern จาก updateSongBulkBar บรรทัด 1710)
+function updateCatBulkBar() {
+  document.getElementById("catSelectedCount").textContent = `เลือกแล้ว ${selectedCatIds.size} หมวดหมู่`;
+  document.getElementById("catBulkDeleteBtn").disabled = selectedCatIds.size === 0;
+  const allSelected = CACHE.categories.length > 0 && CACHE.categories.every(c => selectedCatIds.has(c.id));
+  document.getElementById("catSelectAllChk").checked = allSelected;
+}
+function updateDjBulkBar() {
+  document.getElementById("djSelectedCount").textContent = `เลือกแล้ว ${selectedDjIds.size} DJ`;
+  document.getElementById("djBulkDeleteBtn").disabled = selectedDjIds.size === 0;
+  const allSelected = CACHE.djs.length > 0 && CACHE.djs.every(d => selectedDjIds.has(d.id));
+  document.getElementById("djSelectAllChk").checked = allSelected;
+}
+function updatePlaylistBulkBar() {
+  document.getElementById("playlistSelectedCount").textContent = `เลือกแล้ว ${selectedPlaylistIds.size} เพลย์ลิสต์`;
+  document.getElementById("playlistBulkDeleteBtn").disabled = selectedPlaylistIds.size === 0;
+  const allSelected = CACHE.playlists.length > 0 && CACHE.playlists.every(p => selectedPlaylistIds.has(p.id));
+  document.getElementById("playlistSelectAllChk").checked = allSelected;
+}
+
+// 🆕 ปุ่ม toggle select mode — ลอก pattern จาก songSelectModeBtn (บรรทัด 1718)
+document.getElementById("catSelectModeBtn")?.addEventListener("click", () => {
+  catSelectMode = !catSelectMode;
+  selectedCatIds.clear();
+  document.getElementById("catBulkBar").style.display = catSelectMode ? "flex" : "none";
+  document.getElementById("catSelectModeBtn").style.background = catSelectMode ? "var(--accent)" : "";
+  document.getElementById("catSelectModeBtn").style.color = catSelectMode ? "#fff" : "";
+  updateCatBulkBar();
+  loadCategories();  // re-render เพื่อใส่/ถอด checkbox
+});
+document.getElementById("djSelectModeBtn")?.addEventListener("click", () => {
+  djSelectMode = !djSelectMode;
+  selectedDjIds.clear();
+  document.getElementById("djBulkBar").style.display = djSelectMode ? "flex" : "none";
+  document.getElementById("djSelectModeBtn").style.background = djSelectMode ? "var(--accent)" : "";
+  document.getElementById("djSelectModeBtn").style.color = djSelectMode ? "#fff" : "";
+  updateDjBulkBar();
+  loadDjs();
+});
+document.getElementById("playlistSelectModeBtn")?.addEventListener("click", () => {
+  playlistSelectMode = !playlistSelectMode;
+  selectedPlaylistIds.clear();
+  document.getElementById("playlistBulkBar").style.display = playlistSelectMode ? "flex" : "none";
+  document.getElementById("playlistSelectModeBtn").style.background = playlistSelectMode ? "var(--accent)" : "";
+  document.getElementById("playlistSelectModeBtn").style.color = playlistSelectMode ? "#fff" : "";
+  updatePlaylistBulkBar();
+  loadPlaylists();
+});
+
+// 🆕 ปุ่ม "เลือกทั้งหมด" — ลอก pattern จาก songSelectAllChk (บรรทัด 1727)
+document.getElementById("catSelectAllChk")?.addEventListener("change", (e) => {
+  if (e.target.checked) CACHE.categories.forEach(c => selectedCatIds.add(c.id));
+  else selectedCatIds.clear();
+  updateCatBulkBar();
+  loadCategories();
+});
+document.getElementById("djSelectAllChk")?.addEventListener("change", (e) => {
+  if (e.target.checked) CACHE.djs.forEach(d => selectedDjIds.add(d.id));
+  else selectedDjIds.clear();
+  updateDjBulkBar();
+  loadDjs();
+});
+document.getElementById("playlistSelectAllChk")?.addEventListener("change", (e) => {
+  if (e.target.checked) CACHE.playlists.forEach(p => selectedPlaylistIds.add(p.id));
+  else selectedPlaylistIds.clear();
+  updatePlaylistBulkBar();
+  loadPlaylists();
+});
+
+// 🆕 ปุ่ม "ลบที่เลือก" — ถามครั้งเดียว (มติ "ข้อ 2=ก") + ลบทีละรายการด้วย cascade delete เดิม
+//   ลอก pattern จาก songBulkDeleteBtn (บรรทัด 1738) — แต่ใช้ deleteSongsFromCategory/Dj/Playlist เดิม
+document.getElementById("catBulkDeleteBtn")?.addEventListener("click", () => {
+  const ids = Array.from(selectedCatIds);
+  if (ids.length === 0) return;
+  // นับจำนวนเพลงรวมที่จะถูกลบ (เพื่อแสดงใน dialog)
+  let totalSongs = 0;
+  for (const id of ids) totalSongs += (CACHE.songs || []).filter(s => s.category_id === id).length;
+  const msg = totalSongs > 0
+    ? `ลบหมวดหมู่ที่เลือก ${ids.length} รายการและเพลงทั้งหมด ${totalSongs} เพลงในหมวดเหล่านั้นหรือไม่?\n\n⚠️ การลบนี้จะลบไฟล์เพลง + รูปปกออกจาก Cloud (R2) ด้วย — ไม่สามารถย้อนกลับได้`
+    : `ลบหมวดหมู่ที่เลือก ${ids.length} รายการหรือไม่? (ไม่มีเพลงในหมวดเหล่านั้น)`;
+  openConfirm(msg, async () => {
+    let catsDeleted = 0, catsFailed = 0, songsDeleted = 0;
+    for (const catId of ids) {
+      try {
+        // cascade ลบเพลงในหมวดก่อน (ใช้ฟังก์ชันเดิมจาก commit d47b341)
+        const cascadeResult = await deleteSongsFromCategory(catId);
+        songsDeleted += cascadeResult.deleted;
+        // ลบ row หมวดหมู่ใน D1
+        await deleteDoc(doc(db, "categories", catId));
+        catsDeleted += 1;
+      } catch (err) {
+        console.error(`[bulk delete categories] failed for ${catId}:`, err?.message || err);
+        catsFailed += 1;
+      }
+    }
+    // reset state
+    selectedCatIds.clear();
+    catSelectMode = false;
+    document.getElementById("catBulkBar").style.display = "none";
+    document.getElementById("catSelectModeBtn").style.background = "";
+    document.getElementById("catSelectModeBtn").style.color = "";
+    // สรุปผล
+    const failNote = catsFailed > 0 ? `, ล้มเหลว ${catsFailed}` : "";
+    showToast(`ลบหมวดหมู่ ${catsDeleted} รายการ + ลบเพลง ${songsDeleted} เพลง${failNote}`, catsFailed > 0 ? "error" : "success");
+    invalidateAdminCache("categories");
+    invalidateAdminCache("songs");
+    loadCategories();
+    loadDashboard();
+  });
+});
+
+document.getElementById("djBulkDeleteBtn")?.addEventListener("click", () => {
+  const ids = Array.from(selectedDjIds);
+  if (ids.length === 0) return;
+  // นับจำนวนเพลงรวม (match ด้วย dj_name — ตามระบบเดิม)
+  let totalSongs = 0;
+  for (const djId of ids) {
+    const dj = CACHE.djs.find(x => x.id === djId);
+    if (dj) totalSongs += (CACHE.songs || []).filter(s => s.dj_name === dj.dj_name).length;
+  }
+  const msg = totalSongs > 0
+    ? `ลบ DJ ที่เลือก ${ids.length} รายการและเพลงทั้งหมด ${totalSongs} เพลงของ DJ เหล่านั้นหรือไม่?\n\n⚠️ การลบนี้จะลบไฟล์เพลง + รูปปกออกจาก Cloud (R2) ด้วย — ไม่สามารถย้อนกลับได้`
+    : `ลบ DJ ที่เลือก ${ids.length} รายการหรือไม่? (ไม่มีเพลงของ DJ เหล่านั้น)`;
+  openConfirm(msg, async () => {
+    let djsDeleted = 0, djsFailed = 0, songsDeleted = 0;
+    for (const djId of ids) {
+      try {
+        const cascadeResult = await deleteSongsFromDj(djId);
+        songsDeleted += cascadeResult.deleted;
+        await deleteDoc(doc(db, "djs", djId));
+        djsDeleted += 1;
+      } catch (err) {
+        console.error(`[bulk delete DJs] failed for ${djId}:`, err?.message || err);
+        djsFailed += 1;
+      }
+    }
+    selectedDjIds.clear();
+    djSelectMode = false;
+    document.getElementById("djBulkBar").style.display = "none";
+    document.getElementById("djSelectModeBtn").style.background = "";
+    document.getElementById("djSelectModeBtn").style.color = "";
+    const failNote = djsFailed > 0 ? `, ล้มเหลว ${djsFailed}` : "";
+    showToast(`ลบ DJ ${djsDeleted} รายการ + ลบเพลง ${songsDeleted} เพลง${failNote}`, djsFailed > 0 ? "error" : "success");
+    invalidateAdminCache("djs");
+    invalidateAdminCache("songs");
+    loadDjs();
+    loadDashboard();
+  });
+});
+
+document.getElementById("playlistBulkDeleteBtn")?.addEventListener("click", () => {
+  const ids = Array.from(selectedPlaylistIds);
+  if (ids.length === 0) return;
+  let totalSongs = 0;
+  for (const id of ids) totalSongs += (CACHE.songs || []).filter(s => s.playlist_id === id).length;
+  const msg = totalSongs > 0
+    ? `ลบเพลย์ลิสต์ที่เลือก ${ids.length} รายการและเพลงทั้งหมด ${totalSongs} เพลงในเพลย์ลิสต์เหล่านั้นหรือไม่?\n\n⚠️ การลบนี้จะลบไฟล์เพลง + รูปปกออกจาก Cloud (R2) ด้วย — ไม่สามารถย้อนกลับได้`
+    : `ลบเพลย์ลิสต์ที่เลือก ${ids.length} รายการหรือไม่? (ไม่มีเพลงในเพลย์ลิสต์เหล่านั้น)`;
+  openConfirm(msg, async () => {
+    let playlistsDeleted = 0, playlistsFailed = 0, songsDeleted = 0;
+    for (const playlistId of ids) {
+      try {
+        const cascadeResult = await deleteSongsFromPlaylist(playlistId);
+        songsDeleted += cascadeResult.deleted;
+        await deleteDoc(doc(db, "playlists", playlistId));
+        playlistsDeleted += 1;
+      } catch (err) {
+        console.error(`[bulk delete playlists] failed for ${playlistId}:`, err?.message || err);
+        playlistsFailed += 1;
+      }
+    }
+    selectedPlaylistIds.clear();
+    playlistSelectMode = false;
+    document.getElementById("playlistBulkBar").style.display = "none";
+    document.getElementById("playlistSelectModeBtn").style.background = "";
+    document.getElementById("playlistSelectModeBtn").style.color = "";
+    const failNote = playlistsFailed > 0 ? `, ล้มเหลว ${playlistsFailed}` : "";
+    showToast(`ลบเพลย์ลิสต์ ${playlistsDeleted} รายการ + ลบเพลง ${songsDeleted} เพลง${failNote}`, playlistsFailed > 0 ? "error" : "success");
+    invalidateAdminCache("playlists");
+    invalidateAdminCache("songs");
+    loadPlaylists();
+    loadDashboard();
+  });
+});
+// ============================================================
+// /🆕 bulk select mode สำหรับ Cat/DJ/Playlist — สิ้นสุดส่วนเพิ่มใหม่
+// ============================================================
+
 // ฟังก์ชันกรองและแสดงผลรายการเพลง
 const handleSongSearch = (e) => {
   const q = e.target.value.trim().toLowerCase();
@@ -2351,14 +2560,34 @@ async function loadCategories() {
   }
   const wrap = document.getElementById("catList");
   if (CACHE.categories.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีหมวดหมู่</div>'; return; }
+  // 🆕 (2026-10-01 bulk): ใส่ checkbox ด้านหน้า row ถ้า catSelectMode เปิด (ลอก pattern จาก song บรรทัด 1485)
   wrap.innerHTML = CACHE.categories.map(c => `
-    <div class="list-row" data-open="${c.id}" style="cursor:pointer;"><div class="info"><div class="n1">${escapeHtml(c.category_name)}</div>
+    <div class="list-row" data-open="${c.id}" style="cursor:pointer;">
+    ${catSelectMode ? `<input type="checkbox" class="cat-select-chk" data-id="${c.id}" ${selectedCatIds.has(c.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;margin-right:8px;">` : ""}
+    <div class="info"><div class="n1">${escapeHtml(c.category_name)}</div>
     <div class="n2">${escapeHtml(c.description || "")}</div></div>
     <div class="row-actions"><button class="icon-btn" data-edit="${c.id}">✎</button>
     <button class="icon-btn danger" data-del="${c.id}">🗑</button></div></div>`).join("");
+  // 🆕 (2026-10-01 bulk): listener สำหรับ checkbox — toggle selection
+  if (catSelectMode) {
+    wrap.querySelectorAll(".cat-select-chk").forEach(chk => chk.addEventListener("change", (e) => {
+      e.stopPropagation();
+      const id = chk.getAttribute("data-id");
+      if (chk.checked) selectedCatIds.add(id); else selectedCatIds.delete(id);
+      updateCatBulkBar();
+    }));
+  }
   // กดที่ตัวแถว (ไม่ใช่ปุ่มแก้ไข/ลบ) เพื่อดูเพลงที่อยู่จริงในหมวดหมู่นี้
   wrap.querySelectorAll("[data-open]").forEach(row => row.addEventListener("click", (e) => {
     if (e.target.closest(".row-actions")) return;
+    // 🆕 (2026-10-01 bulk): ถ้า mode เปิด → toggle selection แทนเปิด detail (ลอก pattern จาก song บรรทัด 1504)
+    if (catSelectMode) {
+      const id = row.getAttribute("data-open");
+      if (selectedCatIds.has(id)) selectedCatIds.delete(id); else selectedCatIds.add(id);
+      updateCatBulkBar();
+      loadCategories();
+      return;
+    }
     const c = CACHE.categories.find(x => x.id === row.getAttribute("data-open"));
     if (c) openDetailSongs("category", c.id, c.category_name);
   }));
@@ -2429,14 +2658,34 @@ async function loadDjs() {
   }
   const wrap = document.getElementById("djList");
   if (CACHE.djs.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มี DJ</div>'; return; }
+  // 🆕 (2026-10-01 bulk): ใส่ checkbox ด้านหน้า row ถ้า djSelectMode เปิด
   wrap.innerHTML = CACHE.djs.map(d => `
-    <div class="list-row" data-open="${d.id}" style="cursor:pointer;"><img src="${escapeHtml(d.image_url || "")}" loading="lazy" alt="">
+    <div class="list-row" data-open="${d.id}" style="cursor:pointer;">
+    ${djSelectMode ? `<input type="checkbox" class="dj-select-chk" data-id="${d.id}" ${selectedDjIds.has(d.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;margin-right:8px;">` : ""}
+    <img src="${escapeHtml(d.image_url || "")}" loading="lazy" alt="">
     <div class="info"><div class="n1">${escapeHtml(d.dj_name)}</div><div class="n2">${escapeHtml(d.description || "")}</div></div>
     <div class="row-actions"><button class="icon-btn" data-edit="${d.id}">✎</button>
     <button class="icon-btn danger" data-del="${d.id}">🗑</button></div></div>`).join("");
+  // 🆕 (2026-10-01 bulk): listener สำหรับ checkbox
+  if (djSelectMode) {
+    wrap.querySelectorAll(".dj-select-chk").forEach(chk => chk.addEventListener("change", (e) => {
+      e.stopPropagation();
+      const id = chk.getAttribute("data-id");
+      if (chk.checked) selectedDjIds.add(id); else selectedDjIds.delete(id);
+      updateDjBulkBar();
+    }));
+  }
   // กดที่ตัวแถว (ไม่ใช่ปุ่มแก้ไข/ลบ) เพื่อดูเพลงที่อยู่จริงในสังกัด DJ นี้
   wrap.querySelectorAll("[data-open]").forEach(row => row.addEventListener("click", (e) => {
     if (e.target.closest(".row-actions")) return;
+    // 🆕 (2026-10-01 bulk): ถ้า mode เปิด → toggle selection แทนเปิด detail
+    if (djSelectMode) {
+      const id = row.getAttribute("data-open");
+      if (selectedDjIds.has(id)) selectedDjIds.delete(id); else selectedDjIds.add(id);
+      updateDjBulkBar();
+      loadDjs();
+      return;
+    }
     const d = CACHE.djs.find(x => x.id === row.getAttribute("data-open"));
     if (d) openDetailSongs("dj", d.id, d.dj_name);
   }));
@@ -2540,14 +2789,34 @@ async function loadPlaylists() {
   }
   const wrap = document.getElementById("playlistList");
   if (CACHE.playlists.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีเพลย์ลิสต์</div>'; return; }
+  // 🆕 (2026-10-01 bulk): ใส่ checkbox ด้านหน้า row ถ้า playlistSelectMode เปิด
   wrap.innerHTML = CACHE.playlists.map(p => `
-    <div class="list-row" data-open="${p.id}" style="cursor:pointer;"><img src="${escapeHtml(p.cover_url || "")}" loading="lazy" alt="">
+    <div class="list-row" data-open="${p.id}" style="cursor:pointer;">
+    ${playlistSelectMode ? `<input type="checkbox" class="playlist-select-chk" data-id="${p.id}" ${selectedPlaylistIds.has(p.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;margin-right:8px;">` : ""}
+    <img src="${escapeHtml(p.cover_url || "")}" loading="lazy" alt="">
     <div class="info"><div class="n1">${escapeHtml(p.playlist_name)}</div><div class="n2">${escapeHtml(p.description || "")}${p.price ? ` · ${formatPrice(p.price)}` : ""}</div></div>
     <div class="row-actions"><button class="icon-btn" data-edit="${p.id}">✎</button>
     <button class="icon-btn danger" data-del="${p.id}">🗑</button></div></div>`).join("");
+  // 🆕 (2026-10-01 bulk): listener สำหรับ checkbox
+  if (playlistSelectMode) {
+    wrap.querySelectorAll(".playlist-select-chk").forEach(chk => chk.addEventListener("change", (e) => {
+      e.stopPropagation();
+      const id = chk.getAttribute("data-id");
+      if (chk.checked) selectedPlaylistIds.add(id); else selectedPlaylistIds.delete(id);
+      updatePlaylistBulkBar();
+    }));
+  }
   // กดที่ตัวแถว (ไม่ใช่ปุ่มแก้ไข/ลบ) เพื่อดูเพลงที่อยู่จริงในเพลย์ลิสต์นี้
   wrap.querySelectorAll("[data-open]").forEach(row => row.addEventListener("click", (e) => {
     if (e.target.closest(".row-actions")) return;
+    // 🆕 (2026-10-01 bulk): ถ้า mode เปิด → toggle selection แทนเปิด detail
+    if (playlistSelectMode) {
+      const id = row.getAttribute("data-open");
+      if (selectedPlaylistIds.has(id)) selectedPlaylistIds.delete(id); else selectedPlaylistIds.add(id);
+      updatePlaylistBulkBar();
+      loadPlaylists();
+      return;
+    }
     const p = CACHE.playlists.find(x => x.id === row.getAttribute("data-open"));
     if (p) openDetailSongs("playlist", p.id, p.playlist_name);
   }));
