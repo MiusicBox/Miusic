@@ -807,14 +807,16 @@ let latestUpdatesState = { loading: false, fromDate: null, toDate: null, range: 
 //
 //   🆕 (2026-10-01 fix timezone): คำนวณ "วันที่ 7 ของ Vientiane" ให้เป็น UTC range ที่ถูกต้อง
 //     - Vientiane = UTC+7 → วันที่ 7 ของ Vientiane = 2026-10-06T17:00:00Z ถึง 2026-10-07T17:00:00Z
-//     - ส่ง ISO แทน YYYY-MM-DD เพื่อให้ endpoint แปลงแล้วได้ UTC range ที่ถูกต้อง
-//     - ก่อนหน้านี้: ส่ง "2026-10-07" → endpoint แปลงเป็น 2026-10-07T00:00:00Z (UTC midnight)
-//       → ครอบเฉพาะ 07:00-23:59 ของ Vientiane (เที่ยงคืนถึงเที่ยงวัน) → รายการก่อน 7 โมงเช้า Vientiane ไม่แสดง
 //
-//   - "today": วันนี้ (ตาม timezone Vientiane)
-//   - "yesterday": เมื่อวาน
-//   - "7days": 7 วันล่าสุด (from = 6 วันที่แล้ว 00:00 Vientiane, to = พรุ่งนี้ 00:00 Vientiane — รวมวันนี้)
-//   - "30days": 30 วันล่าสุด
+//   🆕 (2026-10-01 fix endpoint +1 day): endpoint ทำ +1 วันกับ to_date เสมอ (บรรทัด 1611 ของ worker/index.js)
+//     วิธีแก้: ส่ง to_date เป็น "start of day วันสิ้นสุด" (ไม่ใช่ end of day) → endpoint +1 วันจะได้ "start ของวันถัดไป"
+//     ซึ่งเป็น upper bound ที่ถูกต้อง (exclusive)
+//     เช่น เลือก "วันที่ 7" → ส่ง to_date = start ของวันที่ 7 → endpoint +1 = start ของวันที่ 8 = end ของวันที่ 7 ✅
+//
+//   - "today": วันนี้ (ตาม timezone Vientiane) → from = start, to = start (เดียวกัน — endpoint +1)
+//   - "yesterday": เมื่อวาน → from = start, to = start
+//   - "7days": from = start 6 วันที่แล้ว, to = start วันนี้ (endpoint +1 = end ของวันนี้)
+//   - "30days": from = start 29 วันที่แล้ว, to = start วันนี้
 //   - "all": ไม่ส่ง from/to (ดูทั้งหมด)
 function getLatestRangeDates(range) {
   if (range === "all") return { fromDate: null, toDate: null };
@@ -825,16 +827,9 @@ function getLatestRangeDates(range) {
   const todayStr = now.toLocaleDateString("en-CA", { timeZone: "Asia/Vientiane" });
 
   // แปลง "YYYY-MM-DD" (วัน Vientiane) ให้เป็น ISO UTC ที่ start ของวัน Vientiane (00:00+07:00 = 17:00 UTC วันก่อน)
-  //   วิธี: สร้าง Date ที่ "วันนั้น 00:00 ตาม Vientiane" = "วันก่อน 17:00 UTC"
-  //   ใช้ trick: สร้าง Date จาก "YYYY-MM-DDT00:00:00+07:00" แล้ว .toISOString() → จะได้ UTC ที่ถูกต้อง
+  //   วิธี: สร้าง Date จาก "YYYY-MM-DDT00:00:00+07:00" แล้ว .toISOString() → จะได้ UTC ที่ถูกต้อง
   function startOfDayVientiane(yyyyMmDd) {
     return new Date(`${yyyyMmDd}T00:00:00+07:00`).toISOString();
-  }
-  // end of day Vientiane = start of next day Vientiane = "YYYY-MM-DD+1 00:00+07:00"
-  function endOfDayVientiane(yyyyMmDd) {
-    const d = new Date(`${yyyyMmDd}T00:00:00+07:00`);
-    d.setDate(d.getDate() + 1);
-    return d.toISOString();
   }
   // หา "วันที่ N วันที่แล้ว" ตาม Vientiane (YYYY-MM-DD)
   function offsetDateStr(daysFromToday) {
@@ -843,18 +838,22 @@ function getLatestRangeDates(range) {
     return d.toLocaleDateString("en-CA", { timeZone: "Asia/Vientiane" });
   }
 
+  // 🆕 (fix endpoint +1 day): ส่ง toDate เป็น "start of day ของวันสิ้นสุด" (ไม่ใช่ end of day)
+  //   endpoint +1 วันจะได้ start ของวันถัดไป = upper bound ที่ถูกต้อง
   if (range === "today") {
-    return { fromDate: startOfDayVientiane(todayStr), toDate: endOfDayVientiane(todayStr) };
+    const start = startOfDayVientiane(todayStr);
+    return { fromDate: start, toDate: start };  // to = start (เดียวกับ from) → endpoint +1 = end ของวันนี้
   }
   if (range === "yesterday") {
     const yStr = offsetDateStr(-1);
-    return { fromDate: startOfDayVientiane(yStr), toDate: endOfDayVientiane(yStr) };
+    const start = startOfDayVientiane(yStr);
+    return { fromDate: start, toDate: start };
   }
   if (range === "7days") {
-    return { fromDate: startOfDayVientiane(offsetDateStr(-6)), toDate: endOfDayVientiane(todayStr) };
+    return { fromDate: startOfDayVientiane(offsetDateStr(-6)), toDate: startOfDayVientiane(todayStr) };
   }
   if (range === "30days") {
-    return { fromDate: startOfDayVientiane(offsetDateStr(-29)), toDate: endOfDayVientiane(todayStr) };
+    return { fromDate: startOfDayVientiane(offsetDateStr(-29)), toDate: startOfDayVientiane(todayStr) };
   }
   // fallback (ไม่ควรเกิด)
   return { fromDate: null, toDate: null };
@@ -907,6 +906,7 @@ function setActiveLatestRangeBtn(range) {
 // 🆕 (2026-10-01): sync input[type=date] จาก ISO state → YYYY-MM-DD (เพราะ input[type=date] ไม่รองรับ ISO)
 //   ใช้ toLocaleDateString กับ timeZone Vientiane เพื่อหา "วัน" ที่ถูกต้องตามที่ผู้ใช้เห็น
 //   ถ้า fromDate/toDate เป็น null (กรณี "ทั้งหมด") → ว่าง input
+//   🆕 (fix endpoint +1 day): toDate เป็น start-of-day แล้ว (ไม่ใช่ end-of-day) → ไม่ต้อง -1 วัน
 function syncLatestDateInputs(fromDate, toDate) {
   const fromEl = document.getElementById("latestFilterFromDate");
   const toEl = document.getElementById("latestFilterToDate");
@@ -918,12 +918,9 @@ function syncLatestDateInputs(fromDate, toDate) {
     fromEl.value = "";
   }
   if (toDate) {
-    // toDate เป็น end-of-day (start ของวันถัดไป) → ลบ 1 วันเพื่อกลับเป็น "วันที่" ที่ผู้ใช้เลือก
-    try {
-      const d = new Date(toDate);
-      d.setDate(d.getDate() - 1);
-      toEl.value = d.toLocaleDateString("en-CA", { timeZone: "Asia/Vientiane" });
-    } catch { toEl.value = ""; }
+    // toDate เป็น start-of-day (เดียวกับ from_date สำหรับวันเดียว) → แปลงเป็น YYYY-MM-DD ตรง ๆ ไม่ต้อง -1 วัน
+    try { toEl.value = new Date(toDate).toLocaleDateString("en-CA", { timeZone: "Asia/Vientiane" }); }
+    catch { toEl.value = ""; }
   } else {
     toEl.value = "";
   }
@@ -946,8 +943,9 @@ document.querySelectorAll("[data-latest-range]")?.forEach(btn => {
 // 🆕 (2026-10-01): ปุ่ม "ใช้ตัวกรอง" — ใช้วันที่จาก input date (manual range)
 //   ถ้าผู้ใช้เลือกวันเอง → ปุ่มลัด active ถูกลบ (เพราะเป็น custom range)
 //   🆕 (2026-10-01 fix timezone): แปลง YYYY-MM-DD จาก input → ISO ตาม timezone Vientiane ก่อนเก็บ state
-//     ก่อนหน้านี้: เก็บ "2026-10-07" → endpoint แปลงเป็น UTC midnight → timezone ผิด
-//     ตอนนี้: แปลงเป็น "2026-10-06T17:00:00.000Z" (start of day Vientiane) ก่อนเก็บ
+//   🆕 (2026-10-01 fix endpoint +1 day): ส่ง to_date เป็น "start of day ของวันสิ้นสุด" (ไม่ใช่ end of day)
+//     เพราะ endpoint ทำ +1 วันกับ to_date เสมอ → ถ้าส่ง end-of-day จะกระโดดไปวันถัดไป
+//     วิธีแก้: ส่ง start-of-day → endpoint +1 = start ของวันถัดไป = upper bound ที่ถูกต้อง
 document.getElementById("latestFilterApplyBtn")?.addEventListener("click", () => {
   const fromEl = document.getElementById("latestFilterFromDate");
   const toEl = document.getElementById("latestFilterToDate");
@@ -962,19 +960,15 @@ document.getElementById("latestFilterApplyBtn")?.addEventListener("click", () =>
     showToast("วันเริ่มต้นต้องไม่หลังวันสิ้นสุด", "error");
     return;
   }
-  // 🆕 แปลง YYYY-MM-DD → ISO (start/end ของวัน Vientiane) ก่อนเก็บ state
-  //   ถ้าเลือกแค่ from ไม่มี to → to = end ของวัน from (เลือกเฉพาะวันเดียว)
+  // 🆕 แปลง YYYY-MM-DD → ISO (start of day Vientiane) ก่อนเก็บ state
+  //   to_date ใช้ startOfDayVientiane (ไม่ใช่ endOfDay) เพราะ endpoint +1 วันให้เอง
+  //   ถ้าเลือกแค่ from ไม่มี to → to = start ของวัน from (เลือกเฉพาะวันเดียว → endpoint +1 = end ของวัน from)
   //   ถ้าเลือกแค่ to ไม่มี from → from = start ของวัน to
   function startOfDayVientiane(yyyyMmDd) {
     return new Date(`${yyyyMmDd}T00:00:00+07:00`).toISOString();
   }
-  function endOfDayVientiane(yyyyMmDd) {
-    const d = new Date(`${yyyyMmDd}T00:00:00+07:00`);
-    d.setDate(d.getDate() + 1);
-    return d.toISOString();
-  }
   const fromDate = from ? startOfDayVientiane(from) : (to ? startOfDayVientiane(to) : null);
-  const toDate = to ? endOfDayVientiane(to) : (from ? endOfDayVientiane(from) : null);
+  const toDate = to ? startOfDayVientiane(to) : (from ? startOfDayVientiane(from) : null);
 
   latestUpdatesState.range = "custom";
   latestUpdatesState.fromDate = fromDate;
