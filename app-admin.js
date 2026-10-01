@@ -532,6 +532,193 @@ async function goBack() {
   loadDashboard();
 }
 
+// ============================================================
+// 🆕 (2026-10-01 date filter): ตัวกรองวันที่สำหรับ view เพลง/หมวด/DJ/เพลย์ลิสต์
+//   แต่ละ collection มี state แยกกัน เก็บ: { range, fromDate, toDate } (range: all/today/yesterday/custom)
+//   กรองทั้ง created_at + updated_at (item จะแสดงถ้าอย่างใดอย่างหนึ่งตรงวันที่เลือก)
+//   เรียงล่าสุดก่อน (item ที่แก้ไขล่าสุดอยู่บนสุด — ตามมติผู้ใช้ "ข้อ 3=ข")
+//   ผลกระทบระบบเดิม: 0% — เพิ่ม state + helper + listeners ใหม่
+// ============================================================
+
+const dateFilterState = {
+  songs:      { range: "all", fromDate: null, toDate: null },
+  categories: { range: "all", fromDate: null, toDate: null },
+  djs:        { range: "all", fromDate: null, toDate: null },
+  playlists:  { range: "all", fromDate: null, toDate: null },
+};
+
+// 🆕 คำนวณ fromDate/toDate (ISO 8601) จาก preset
+//   - "all": null, null (ดูทั้งหมด)
+//   - "today": start-of-day Vientiane → start-of-day Vientiane (เดียวกัน เพราะ endpoint +1 day)
+//   - "yesterday": start-of-day เมื่อวาน Vientiane → start-of-day เมื่อวาน Vientiane
+//   ใช้ timezone Asia/Vientiane (UTC+7)
+function getDateFilterRange(preset) {
+  if (preset === "all") return { fromDate: null, toDate: null };
+  const now = new Date();
+  const todayStr = now.toLocaleDateString("en-CA", { timeZone: "Asia/Vientiane" });
+  function offsetStr(days) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + days);
+    return d.toLocaleDateString("en-CA", { timeZone: "Asia/Vientiane" });
+  }
+  function startOfDay(yyyyMmDd) {
+    return new Date(`${yyyyMmDd}T00:00:00+07:00`).toISOString();
+  }
+  if (preset === "today") return { fromDate: startOfDay(todayStr), toDate: startOfDay(todayStr) };
+  if (preset === "yesterday") {
+    const y = offsetStr(-1);
+    return { fromDate: startOfDay(y), toDate: startOfDay(y) };
+  }
+  return { fromDate: null, toDate: null };
+}
+
+// 🆕 แปลง YYYY-MM-DD (input type=date) → ISO start-of-day Vientiane
+function dateInputToStartOfDay(yyyyMmDd) {
+  if (!yyyyMmDd) return null;
+  return new Date(`${yyyyMmDd}T00:00:00+07:00`).toISOString();
+}
+
+// 🆕 แปลง ISO state → YYYY-MM-DD สำหรับ input[type=date] (timezone Vientiane)
+function isoToDateInput(isoStr) {
+  if (!isoStr) return "";
+  try { return new Date(isoStr).toLocaleDateString("en-CA", { timeZone: "Asia/Vientiane" }); }
+  catch { return ""; }
+}
+
+// 🆕 ฟังก์ชันหลัก — filter + sort items ตาม state ของ collection นั้น
+//   รับ: items (array เดิมจาก CACHE), collection (songs/categories/djs/playlists)
+//   คืน: items ที่ผ่าน filter + เรียงล่าสุดก่อน (ตาม updated_at หรือ created_at)
+function applyDateFilter(items, collection) {
+  const filter = dateFilterState[collection];
+  if (!filter) return items;  // safety — ถ้าไม่มี state ให้ return เดิม
+  // Step 1: filter by date (ถ้า range != "all")
+  let filtered = items;
+  if (filter.fromDate || filter.toDate) {
+    // 🆕 (มติ "ข้อ 1=ค"): กรองทั้ง created_at + updated_at — item จะแสดงถ้าอย่างใดอย่างหนึ่งตรงวันที่เลือก
+    //  toDate ใช้สำหรับ upper bound (exclusive) — caller ส่ง start-of-day มาแล้ว +1 วันใน endpoint แต่ฝั่งนี้เป็น client filter
+    //   ต้อง +1 วัน toDate เองเพราะเป็น client-side filter (ไม่ผ่าน endpoint)
+    let toDateExclusive = null;
+    if (filter.toDate) {
+      const d = new Date(filter.toDate);
+      d.setDate(d.getDate() + 1);
+      toDateExclusive = d.toISOString();
+    }
+    filtered = items.filter(item => {
+      const createdAt = item.created_at || null;
+      const updatedAt = item.updated_at || null;
+      // เช็คอย่างใดอย่างหนึ่งตรง range — ถ้ามีเพียงอย่างเดียว ใช้อันนั้น
+      const inRange = (isoStr) => {
+        if (!isoStr) return false;
+        const d = new Date(isoStr);
+        if (isNaN(d.getTime())) return false;
+        if (filter.fromDate && d < new Date(filter.fromDate)) return false;
+        if (toDateExclusive && d >= new Date(toDateExclusive)) return false;
+        return true;
+      };
+      return inRange(createdAt) || inRange(updatedAt);
+    });
+  }
+  // Step 2: sort ล่าสุดก่อน (มติ "ข้อ 3=ข")
+  //   เรียงตาม updated_at DESC (ถ้ามี) ถ้าไม่มีใช้ created_at DESC
+  //   ถ้าไม่มีทั้งคู่ → ให้อยู่ท้ายสุด
+  return filtered.slice().sort((a, b) => {
+    const aTime = a.updated_at || a.created_at || "";
+    const bTime = b.updated_at || b.created_at || "";
+    if (!aTime && !bTime) return 0;
+    if (!aTime) return 1;  // a ไม่มีวัน → ไปท้าย
+    if (!bTime) return -1; // b ไม่มีวัน → ไปท้าย
+    return bTime.localeCompare(aTime);  // DESC (b มาก่อน a)
+  });
+}
+
+// 🆕 sync UI ของ date filter (ปุ่ม active + input value + info text) ตาม state ของ collection
+function syncDateFilterUI(collection) {
+  const filter = dateFilterState[collection];
+  if (!filter) return;
+  // หา prefix ของ element IDs (song/cat/dj/playlist)
+  const prefix = collection === "songs" ? "song" : collection === "categories" ? "cat" : collection === "djs" ? "dj" : "playlist";
+  // sync ปุ่มลัด
+  document.querySelectorAll(`[data-date-target="${collection}"]`).forEach(btn => {
+    const isActive = btn.getAttribute("data-date-filter") === filter.range;
+    btn.style.background = isActive ? "var(--accent)" : "";
+    btn.style.color = isActive ? "#fff" : "";
+    btn.style.borderColor = isActive ? "var(--accent)" : "";
+  });
+  // sync input[type=date]
+  const fromEl = document.getElementById(`${prefix}DateFilterFrom`);
+  const toEl = document.getElementById(`${prefix}DateFilterTo`);
+  if (fromEl) fromEl.value = isoToDateInput(filter.fromDate);
+  if (toEl) toEl.value = isoToDateInput(filter.toDate);
+  // sync info text
+  const infoEl = document.getElementById(`${prefix}DateFilterInfo`);
+  if (infoEl) {
+    if (filter.range === "all") infoEl.textContent = "";
+    else if (filter.range === "custom") {
+      const fromStr = isoToDateInput(filter.fromDate);
+      const toStr = isoToDateInput(filter.toDate);
+      if (fromStr && toStr && fromStr !== toStr) infoEl.textContent = `กรอง ${fromStr} → ${toStr}`;
+      else if (fromStr) infoEl.textContent = `กรอง ${fromStr}`;
+      else if (toStr) infoEl.textContent = `กรอง ${toStr}`;
+      else infoEl.textContent = "";
+    } else {
+      infoEl.textContent = filter.range === "today" ? "วันนี้" : filter.range === "yesterday" ? "เมื่อวาน" : "";
+    }
+  }
+}
+
+// 🆕 ผูก listeners สำหรับปุ่มลัด + ปุ่ม "ใช้ตัวกรอง" ของทั้ง 4 collections
+//   ปุ่มลัด: กด → เปลี่ยน state → sync UI → re-render list
+//   ปุ่ม "ใช้ตัวกรอง": อ่านค่า input[type=date] → เปลี่ยน state range=custom → sync UI → re-render
+["songs", "categories", "djs", "playlists"].forEach((coll) => {
+  const prefix = coll === "songs" ? "song" : coll === "categories" ? "cat" : coll === "djs" ? "dj" : "playlist";
+  // listeners สำหรับปุ่มลัด
+  document.querySelectorAll(`[data-date-target="${coll}"]`).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const preset = btn.getAttribute("data-date-filter");
+      const { fromDate, toDate } = getDateFilterRange(preset);
+      dateFilterState[coll] = { range: preset, fromDate, toDate };
+      syncDateFilterUI(coll);
+      // re-render list (เรียก load ของแต่ละ collection — จะใช้ cache ถ้ายัง fresh)
+      if (coll === "songs") loadSongs();
+      else if (coll === "categories") loadCategories();
+      else if (coll === "djs") loadDjs();
+      else if (coll === "playlists") loadPlaylists();
+    });
+  });
+  // listener สำหรับปุ่ม "ใช้ตัวกรอง"
+  const applyBtn = document.getElementById(`${prefix}DateFilterApply`);
+  if (applyBtn) {
+    applyBtn.addEventListener("click", () => {
+      const fromEl = document.getElementById(`${prefix}DateFilterFrom`);
+      const toEl = document.getElementById(`${prefix}DateFilterTo`);
+      const from = fromEl?.value || "";
+      const to = toEl?.value || "";
+      if (!from && !to) {
+        // ไม่เลือกวัน → เปลี่ยนเป็น "ทั้งหมด"
+        dateFilterState[coll] = { range: "all", fromDate: null, toDate: null };
+      } else {
+        if (from && to && from > to) {
+          showToast("วันเริ่มต้นต้องไม่หลังวันสิ้นสุด", "error");
+          return;
+        }
+        dateFilterState[coll] = {
+          range: "custom",
+          fromDate: dateInputToStartOfDay(from),
+          toDate: dateInputToStartOfDay(to),
+        };
+      }
+      syncDateFilterUI(coll);
+      if (coll === "songs") loadSongs();
+      else if (coll === "categories") loadCategories();
+      else if (coll === "djs") loadDjs();
+      else if (coll === "playlists") loadPlaylists();
+    });
+  }
+});
+// ============================================================
+// /🆕 date filter — สิ้นสุดส่วนเพิ่มใหม่
+// ============================================================
+
 // 🔧 (2026-10-01): เปลี่ยน back-btn จาก showView("view-dashboard") → goBack()
 //   ผลกระทบ: ปุ่ม ← ทุกหน้าจะกลับ view ก่อนหน้า แทนกลับ dashboard เสมอ
 //   กรณีเข้าจากแดชบอร์ด → stack มี [dashboard, view-X] → กด ← → pop → กลับ dashboard (เหมือนเดิม)
@@ -1258,7 +1445,10 @@ async function loadSongs() {
   populateSelect("fPlaylist", CACHE.playlists, "id", "playlist_name");
   selectedSongIds.clear();
   updateSongBulkBar();
-  renderSongList(CACHE.songs);
+  // 🆕 (2026-10-01 date filter): ใช้ applyDateFilter เพื่อ filter + sort ล่าสุดก่อน render (มติ "ข้อ 3=ข")
+  //   ถ้า filter range == "all" → applyDateFilter คืน items ทั้งหมดแต่เรียงล่าสุดก่อน (sort เท่านั้น)
+  //   ปุ่ม search เดิม handleSongSearch ยังใช้ได้เพราะ filter ทำตอน render ครั้งแรกเท่านั้น
+  renderSongList(applyDateFilter(CACHE.songs, "songs"));
 }
 
 // 🔧 (2026-09-16): Helper สำหรับตรวจเพลงซ้ำใน CACHE.songs
@@ -2426,8 +2616,11 @@ async function loadCategories() {
   }
   const wrap = document.getElementById("catList");
   if (CACHE.categories.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีหมวดหมู่</div>'; return; }
+  // 🆕 (2026-10-01 date filter): apply filter + sort ล่าสุดก่อน (มติ "ข้อ 3=ข") — เหมือน loadSongs
+  const catList = applyDateFilter(CACHE.categories, "categories");
+  if (catList.length === 0) { wrap.innerHTML = '<div class="empty-state">ไม่มีหมวดหมู่ตรงวันที่เลือก</div>'; return; }
   // 🆕 (2026-10-01 bulk): ใส่ checkbox ด้านหน้า row ถ้า catSelectMode เปิด (ลอก pattern จาก song บรรทัด 1485)
-  wrap.innerHTML = CACHE.categories.map(c => `
+  wrap.innerHTML = catList.map(c => `
     <div class="list-row" data-open="${c.id}" style="cursor:pointer;">
     ${catSelectMode ? `<input type="checkbox" class="cat-select-chk" data-id="${c.id}" ${selectedCatIds.has(c.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;margin-right:8px;">` : ""}
     <div class="info"><div class="n1">${escapeHtml(c.category_name)}</div>
@@ -2524,8 +2717,11 @@ async function loadDjs() {
   }
   const wrap = document.getElementById("djList");
   if (CACHE.djs.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มี DJ</div>'; return; }
+  // 🆕 (2026-10-01 date filter): apply filter + sort ล่าสุดก่อน (มติ "ข้อ 3=ข") — เหมือน loadSongs
+  const djList = applyDateFilter(CACHE.djs, "djs");
+  if (djList.length === 0) { wrap.innerHTML = '<div class="empty-state">ไม่มี DJ ตรงวันที่เลือก</div>'; return; }
   // 🆕 (2026-10-01 bulk): ใส่ checkbox ด้านหน้า row ถ้า djSelectMode เปิด
-  wrap.innerHTML = CACHE.djs.map(d => `
+  wrap.innerHTML = djList.map(d => `
     <div class="list-row" data-open="${d.id}" style="cursor:pointer;">
     ${djSelectMode ? `<input type="checkbox" class="dj-select-chk" data-id="${d.id}" ${selectedDjIds.has(d.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;margin-right:8px;">` : ""}
     <img src="${escapeHtml(d.image_url || "")}" loading="lazy" alt="">
@@ -2655,8 +2851,11 @@ async function loadPlaylists() {
   }
   const wrap = document.getElementById("playlistList");
   if (CACHE.playlists.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีเพลย์ลิสต์</div>'; return; }
+  // 🆕 (2026-10-01 date filter): apply filter + sort ล่าสุดก่อน (มติ "ข้อ 3=ข") — เหมือน loadSongs
+  const playlistList = applyDateFilter(CACHE.playlists, "playlists");
+  if (playlistList.length === 0) { wrap.innerHTML = '<div class="empty-state">ไม่มีเพลย์ลิสต์ตรงวันที่เลือก</div>'; return; }
   // 🆕 (2026-10-01 bulk): ใส่ checkbox ด้านหน้า row ถ้า playlistSelectMode เปิด
-  wrap.innerHTML = CACHE.playlists.map(p => `
+  wrap.innerHTML = playlistList.map(p => `
     <div class="list-row" data-open="${p.id}" style="cursor:pointer;">
     ${playlistSelectMode ? `<input type="checkbox" class="playlist-select-chk" data-id="${p.id}" ${selectedPlaylistIds.has(p.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;margin-right:8px;">` : ""}
     <img src="${escapeHtml(p.cover_url || "")}" loading="lazy" alt="">
