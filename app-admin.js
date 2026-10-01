@@ -2364,10 +2364,35 @@ async function loadCategories() {
   }));
   wrap.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => openEditCat(b.getAttribute("data-edit"))));
   wrap.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
-    openConfirm("ลบหมวดหมู่นี้หรือไม่?", async () => {
-      await deleteDoc(doc(db, "categories", b.getAttribute("data-del")));
-      showToast("ลบแล้ว", "success");
+    const catId = b.getAttribute("data-del");
+    const cat = CACHE.categories.find(x => x.id === catId);
+    const catName = cat?.category_name || "หมวดหมู่นี้";
+    // 🆕 (2026-10-01 Cascade): นับจำนวนเพลงในหมวดก่อนถาม เพื่อแสดงใน dialog ยืนยัน
+    //   ใช้ CACHE.songs ที่ loadSongs โหลดไว้ — ถ้ายังไม่ได้ load จะนับเป็น 0 (แสดงคำเตือนให้กด "จัดการเพลง" ก่อน)
+    const songsCount = (CACHE.songs || []).filter(s => s.category_id === catId).length;
+    const msg = songsCount > 0
+      ? `ลบหมวดหมู่ "${catName}" และเพลงทั้งหมด ${songsCount} เพลงในหมวดนี้หรือไม่?\n\n⚠️ การลบนี้จะลบไฟล์เพลง + รูปปกออกจาก Cloud (R2) ด้วย — ไม่สามารถย้อนกลับได้`
+      : `ลบหมวดหมู่ "${catName}" หรือไม่? (ไม่มีเพลงในหมวดนี้)`;
+    openConfirm(msg, async () => {
+      // 🆕 (2026-10-01 Cascade): ลบเพลงทั้งหมดในหมวดก่อน (พร้อมไฟล์ R2) — ใช้ฟังก์ชันใหม่
+      let cascadeResult = { deleted: 0, failed: 0, errors: [] };
+      if (songsCount > 0) {
+        try {
+          cascadeResult = await deleteSongsFromCategory(catId);
+        } catch (err) {
+          console.error("[ลบหมวดหมู่] cascade delete failed:", err?.message || err);
+        }
+      }
+      // ลบ row หมวดหมู่ใน D1 (เดิม — ไม่แก้)
+      await deleteDoc(doc(db, "categories", catId));
+      // แสดงผลรวม
+      if (cascadeResult.deleted > 0 || cascadeResult.failed > 0) {
+        showToast(`ลบหมวดหมู่แล้ว + ลบเพลง ${cascadeResult.deleted} เพลง${cascadeResult.failed > 0 ? ` (ล้มเหลว ${cascadeResult.failed})` : ""}`, cascadeResult.failed > 0 ? "error" : "success");
+      } else {
+        showToast("ลบแล้ว", "success");
+      }
       invalidateAdminCache("categories");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
+      invalidateAdminCache("songs");  // 🆕 (2026-10-01): ล้าง cache เพลงด้วยเพราะมีเพลงถูกลบ
       loadCategories(); loadDashboard();
     });
   }));
@@ -2417,10 +2442,35 @@ async function loadDjs() {
   }));
   wrap.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => openEditDj(b.getAttribute("data-edit"))));
   wrap.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
-    openConfirm("ลบ DJ นี้หรือไม่?", async () => {
-      await deleteDoc(doc(db, "djs", b.getAttribute("data-del")));
-      showToast("ลบแล้ว", "success");
+    const djId = b.getAttribute("data-del");
+    const dj = CACHE.djs.find(x => x.id === djId);
+    const djName = dj?.dj_name || "DJ นี้";
+    // 🆕 (2026-10-01 Cascade): นับจำนวนเพลงของ DJ นี้ (match ด้วย dj_name — ตามระบบเดิม)
+    //   ระบบเดิม: song.dj_name === dj.dj_name (ดู getSongsForDetail บรรทัด 2523-2527)
+    const songsCount = (CACHE.songs || []).filter(s => s.dj_name === djName).length;
+    const msg = songsCount > 0
+      ? `ลบ DJ "${djName}" และเพลงทั้งหมด ${songsCount} เพลงของ DJ นี้หรือไม่?\n\n⚠️ การลบนี้จะลบไฟล์เพลง + รูปปกออกจาก Cloud (R2) ด้วย — ไม่สามารถย้อนกลับได้`
+      : `ลบ DJ "${djName}" หรือไม่? (ไม่มีเพลงของ DJ นี้)`;
+    openConfirm(msg, async () => {
+      // 🆕 (2026-10-01 Cascade): ลบเพลงทั้งหมดของ DJ ก่อน (พร้อมไฟล์ R2)
+      let cascadeResult = { deleted: 0, failed: 0, errors: [] };
+      if (songsCount > 0) {
+        try {
+          cascadeResult = await deleteSongsFromDj(djId);
+        } catch (err) {
+          console.error("[ลบ DJ] cascade delete failed:", err?.message || err);
+        }
+      }
+      // ลบ row DJ ใน D1 (เดิม — ไม่แก้)
+      await deleteDoc(doc(db, "djs", djId));
+      // แสดงผลรวม
+      if (cascadeResult.deleted > 0 || cascadeResult.failed > 0) {
+        showToast(`ลบ DJ แล้ว + ลบเพลง ${cascadeResult.deleted} เพลง${cascadeResult.failed > 0 ? ` (ล้มเหลว ${cascadeResult.failed})` : ""}`, cascadeResult.failed > 0 ? "error" : "success");
+      } else {
+        showToast("ลบแล้ว", "success");
+      }
       invalidateAdminCache("djs");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
+      invalidateAdminCache("songs");  // 🆕 (2026-10-01): ล้าง cache เพลงด้วยเพราะมีเพลงถูกลบ
       loadDjs(); loadDashboard();
     });
   }));
@@ -2503,10 +2553,35 @@ async function loadPlaylists() {
   }));
   wrap.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => openEditPlaylist(b.getAttribute("data-edit"))));
   wrap.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
-    openConfirm("ลบเพลย์ลิสต์นี้หรือไม่? (เพลงในเพลย์ลิสต์จะไม่ถูกลบ แค่ไม่ได้อยู่ในเพลย์ลิสต์นี้อีก)", async () => {
-      await deleteDoc(doc(db, "playlists", b.getAttribute("data-del")));
-      showToast("ลบแล้ว", "success");
+    const playlistId = b.getAttribute("data-del");
+    const playlist = CACHE.playlists.find(x => x.id === playlistId);
+    const playlistName = playlist?.playlist_name || "เพลย์ลิสต์นี้";
+    // 🆕 (2026-10-01 Cascade): นับจำนวนเพลงในเพลย์ลิสต์ก่อนถาม
+    //   ใช้ CACHE.songs ที่ loadSongs โหลดไว้ — filter song.playlist_id === playlistId
+    const songsCount = (CACHE.songs || []).filter(s => s.playlist_id === playlistId).length;
+    const msg = songsCount > 0
+      ? `ลบเพลย์ลิสต์ "${playlistName}" และเพลงทั้งหมด ${songsCount} เพลงในเพลย์ลิสต์นี้หรือไม่?\n\n⚠️ การลบนี้จะลบไฟล์เพลง + รูปปกออกจาก Cloud (R2) ด้วย — ไม่สามารถย้อนกลับได้`
+      : `ลบเพลย์ลิสต์ "${playlistName}" หรือไม่? (ไม่มีเพลงในเพลย์ลิสต์นี้)`;
+    openConfirm(msg, async () => {
+      // 🆕 (2026-10-01 Cascade): ลบเพลงทั้งหมดในเพลย์ลิสต์ก่อน (พร้อมไฟล์ R2)
+      let cascadeResult = { deleted: 0, failed: 0, errors: [] };
+      if (songsCount > 0) {
+        try {
+          cascadeResult = await deleteSongsFromPlaylist(playlistId);
+        } catch (err) {
+          console.error("[ลบเพลย์ลิสต์] cascade delete failed:", err?.message || err);
+        }
+      }
+      // ลบ row เพลย์ลิสต์ใน D1 (เดิม — ไม่แก้)
+      await deleteDoc(doc(db, "playlists", playlistId));
+      // แสดงผลรวม
+      if (cascadeResult.deleted > 0 || cascadeResult.failed > 0) {
+        showToast(`ลบเพลย์ลิสต์แล้ว + ลบเพลง ${cascadeResult.deleted} เพลง${cascadeResult.failed > 0 ? ` (ล้มเหลว ${cascadeResult.failed})` : ""}`, cascadeResult.failed > 0 ? "error" : "success");
+      } else {
+        showToast("ลบแล้ว", "success");
+      }
       invalidateAdminCache("playlists");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
+      invalidateAdminCache("songs");  // 🆕 (2026-10-01): ล้าง cache เพลงด้วยเพราะมีเพลงถูกลบ
       loadPlaylists(); loadDashboard();
     });
   }));
@@ -2684,6 +2759,134 @@ async function deleteSongFromDetailView(id) {
     loadDashboard();
   });
 }
+
+// ============================================================
+// 🆕 (2026-10-01): Cascade Delete — ลบเพลงทั้งหมดใน DJ/หมวดหมู่/เพลย์ลิสต์ + ไฟล์ R2
+//   เพิ่มใหม่ ไม่แตะฟังก์ชันเดิม — ใช้ deleteSongFilesFromStorage เดิมเพื่อลบไฟล์ R2
+//
+//   ตามมติผู้ใช้ (2026-10-01):
+//     - ข้อ 1=ข: ถามยืนยันครั้งเดียวตอนลบ DJ/Cat/Playlist → ลบเพลงทั้งหมดโดยไม่ถามซ้ำ
+//     - ข้อ 2=ข: ลบไฟล์ R2 ทั้งหมด ไม่ว่าจะมีออเดอร์อ้างถึงหรือไม่
+//     - ข้อ 3=ก: สำหรับการลบออเดอร์ → ลบเพลง hidden เฉพาะเมื่อไม่มีออเดอร์อื่นอ้างถึง (ปลอดภัย 100%)
+//
+//   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่มฟังก์ชันใหม่ + expose ผ่าน window.__
+//     ไม่แก้ฟังก์ชันเดิม (deleteSongFilesFromStorage, songHasOrders, confirmDeleteSong)
+// ============================================================
+
+// 🆕 forceDeleteSong(id): ลบเพลงแบบถาวร — ข้ามเช็ค hasOrders (เพราะผู้ใช้เลือก "ข้อ 2=ข")
+//   ลบ D1 row + ลบไฟล์ R2 (ผ่าน deleteSongFilesFromStorage เดิม)
+//   คืน { ok, songName } เพื่อให้ caller เก็บสถิติ
+//   ถ้า song ไม่มี → คืน { ok: false, skipped: true }
+async function forceDeleteSong(id) {
+  try {
+    const songSnap = await getDoc(doc(db, "songs", id));
+    if (!songSnap.exists()) return { ok: false, skipped: true, reason: "not_found" };
+    const songData = songSnap.data();
+    const songName = songData?.song_name || id;
+    await deleteDoc(doc(db, "songs", id));
+    // ลบไฟล์ cloud แบบ background — ใช้ฟังก์ชันเดิม (มีเช็ค _check-cover-used กันลบรูปที่ใช้ร่วม)
+    deleteSongFilesFromStorage(songData);
+    // ลบออกจาก CACHE ฝั่ง client ด้วย (เพื่อ refresh UI ทันที)
+    CACHE.songs = CACHE.songs.filter(x => x.id !== id);
+    return { ok: true, songName };
+  } catch (err) {
+    console.error(`[forceDeleteSong] failed for ${id}:`, err?.message || err);
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
+
+// 🆕 deleteSongsFromCategory(catId, catName): ลบเพลงทั้งหมดในหมวดหมู่ (filter from CACHE.songs)
+//   ใช้ CACHE.songs เดิม (loadSongs โหลดไว้แล้วตอนเข้าหน้าจัดการ)
+//   คืน { deleted: N, failed: M, errors: [...] }
+async function deleteSongsFromCategory(catId) {
+  const songs = (CACHE.songs || []).filter(s => s.category_id === catId);
+  const result = { deleted: 0, failed: 0, errors: [] };
+  for (const song of songs) {
+    const r = await forceDeleteSong(song.id);
+    if (r.ok) result.deleted += 1;
+    else if (!r.skipped) { result.failed += 1; result.errors.push(r.error || r.reason); }
+  }
+  return result;
+}
+
+// 🆕 deleteSongsFromPlaylist(playlistId): ลบเพลงทั้งหมดในเพลย์ลิสต์
+//   ใช้ CACHE.songs เดิม (filter song.playlist_id === playlistId)
+async function deleteSongsFromPlaylist(playlistId) {
+  const songs = (CACHE.songs || []).filter(s => s.playlist_id === playlistId);
+  const result = { deleted: 0, failed: 0, errors: [] };
+  for (const song of songs) {
+    const r = await forceDeleteSong(song.id);
+    if (r.ok) result.deleted += 1;
+    else if (!r.skipped) { result.failed += 1; result.errors.push(r.error || r.reason); }
+  }
+  return result;
+}
+
+// 🆕 deleteSongsFromDj(djId): ลบเพลงทั้งหมดของ DJ (match ด้วย dj_name — ตามระบบเดิม)
+//   ระบบเดิม: song.dj_name (string) === dj.dj_name (string) — ไม่ใช้ dj_id (ดูบรรทัด 2516-2527)
+//   ดังนั้นต้อง query DJ doc ก่อนเพื่อเอา dj_name → แล้ว filter CACHE.songs ด้วยชื่อ
+async function deleteSongsFromDj(djId) {
+  // หา DJ doc เพื่อเอา dj_name (ใช้ CACHE.djs ก่อน ถ้าไม่มี fallback query D1)
+  let djName = null;
+  const djFromCache = (CACHE.djs || []).find(x => x.id === djId);
+  if (djFromCache) {
+    djName = djFromCache.dj_name;
+  } else {
+    try {
+      const djSnap = await getDoc(doc(db, "djs", djId));
+      if (djSnap.exists()) djName = djSnap.data()?.dj_name;
+    } catch (err) {
+      console.warn(`[deleteSongsFromDj] getDoc(djs, ${djId}) failed:`, err?.message || err);
+    }
+  }
+  if (!djName) return { deleted: 0, failed: 0, errors: ["DJ not found"], skipped: true };
+  // filter songs ด้วย dj_name (string match — ตามระบบเดิม getSongsForDetail บรรทัด 2523-2527)
+  const songs = (CACHE.songs || []).filter(s => s.dj_name === djName);
+  const result = { deleted: 0, failed: 0, errors: [] };
+  for (const song of songs) {
+    const r = await forceDeleteSong(song.id);
+    if (r.ok) result.deleted += 1;
+    else if (!r.skipped) { result.failed += 1; result.errors.push(r.error || r.reason); }
+  }
+  return result;
+}
+
+// 🆕 deleteHiddenSongIfNoOtherOrders(songId): ใช้ตอนลบออเดอร์ — ลบเพลง hidden เฉพาะเมื่อไม่มีออเดอร์อื่นอ้างถึง
+//   ตามมติ "ข้อ 3=ก" — ปลอดภัย 100%
+//   Flow:
+//     1. getDoc(songs, songId) → ถ้าไม่มี → return { skipped: true }
+//     2. ถ้า song.status !== "hidden" → return { skipped: true, reason: "not_hidden" } (ปล่อยเพลงปกติไว้)
+//     3. songHasOrders(songId) → ถ้า true → return { skipped: true, reason: "other_orders" }
+//     4. ลบเพลง + ลบไฟล์ R2 (ใช้ forceDeleteSong เดิม)
+//   expose ผ่าน window.__deleteHiddenSongIfNoOtherOrders ให้ orders.js เรียกได้
+async function deleteHiddenSongIfNoOtherOrders(songId) {
+  try {
+    const songSnap = await getDoc(doc(db, "songs", songId));
+    if (!songSnap.exists()) return { skipped: true, reason: "not_found" };
+    const songData = songSnap.data();
+    if (songData?.status !== "hidden") return { skipped: true, reason: "not_hidden" };
+    // เช็คมีออเดอร์อื่นอ้างถึงหรือไม่ (หลังจากออเดอร์ปัจจุบันถูกลบไปแล้ว — caller ต้องลบออเดอร์ก่อนเรียก)
+    const hasOrders = await songHasOrders(songId);
+    if (hasOrders) return { skipped: true, reason: "other_orders" };
+    // ปลอดภัย → ลบเพลง + ลบไฟล์ R2
+    const r = await forceDeleteSong(songId);
+    return r;
+  } catch (err) {
+    console.error(`[deleteHiddenSongIfNoOtherOrders] failed for ${songId}:`, err?.message || err);
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
+
+// 🆕 expose ฟังก์ชัน cascade delete ผ่าน window.__ ให้ orders.js เรียกได้
+//   (ใช้ pattern เดียวกับ window.__showToast, window.__openConfirm ที่มีอยู่แล้ว)
+window.__deleteHiddenSongIfNoOtherOrders = deleteHiddenSongIfNoOtherOrders;
+window.__forceDeleteSong = forceDeleteSong;
+window.__deleteSongsFromCategory = deleteSongsFromCategory;
+window.__deleteSongsFromPlaylist = deleteSongsFromPlaylist;
+window.__deleteSongsFromDj = deleteSongsFromDj;
+// ============================================================
+// /🆕 Cascade Delete — สิ้นสุดส่วนเพิ่มใหม่
+// ============================================================
 document.getElementById("listSongsClose").addEventListener("click", () => {
   document.getElementById("listSongsBackdrop").classList.remove("show");
   currentDetailContext = null;

@@ -3001,6 +3001,75 @@ async function handleDeleteOrderZip(orderId) {
 }
 
 /* ---------------- ลบออเดอร์ ---------------- */
+
+/* ============================================================
+ * 🆕 (2026-10-01): deleteHiddenSongsFromOrder(orderData)
+ *   เพิ่มใหม่ — ไม่แตะฟังก์ชันเดิมใด ๆ ใน orders.js
+ *
+ *   จุดประสงค์: หลังแอดมินลบออเดอร์ → ระบบจะลบเพลงที่ถูก "hidden" เพราะออเดอร์นี้
+ *   ตามมติผู้ใช้ "ข้อ 3=ก" — ปลอดภัย 100%:
+ *     - ลบเฉพาะเพลงที่ status === "hidden"
+ *     - ลบเฉพาะเพลงที่ไม่มีออเดอร์อื่นอ้างถึง (หลังออเดอร์ปัจจุบันถูกลบไปแล้ว)
+ *     - เพลง status อื่น ๆ (active/hidden ที่มีออเดอร์อื่น) จะไม่ถูกแตะ
+ *
+ *   รับ: orderData (object ของออเดอร์ที่กำลังจะถูกลบ หรือถูกลบไปแล้ว)
+ *     - ดึง song IDs จาก items[*].song_id (single) และ items[*].song_ids (playlist group)
+ *   คืน: { deleted: N, skipped: M, errors: [...] }
+ *
+ *   ใช้ฟังก์ชัน window.__deleteHiddenSongIfNoOtherOrders ที่ app-admin.js expose ไว้
+ *   (ดู app-admin.js บรรทัด ~2787) — ใช้ pattern เดียวกับ window.__showToast/adminAlert
+ *   ผลกระทบระบบเดิม: 0% — เพิ่มฟังก์ชันใหม่ + เรียกหลัง deleteDoc (ขั้นตอนเดิมยังครบ)
+ * ============================================================ */
+async function deleteHiddenSongsFromOrder(orderData) {
+  const result = { deleted: 0, skipped: 0, errors: [] };
+  if (!orderData || !Array.isArray(orderData.items) || orderData.items.length === 0) {
+    return result;
+  }
+  // ดึง song IDs จาก items — รองรับทั้ง single song (song_id) และ playlist group (song_ids)
+  //   pattern เดียวกับ orders.js บรรทัด 331 + 400 (extractSongIdsFromOrder)
+  const songIds = new Set();
+  for (const item of orderData.items) {
+    if (item?.song_id) songIds.add(String(item.song_id));
+    if (Array.isArray(item?.song_ids)) {
+      for (const sid of item.song_ids) {
+        if (sid) songIds.add(String(sid));
+      }
+    }
+  }
+  if (songIds.size === 0) return result;
+
+  // ใช้ฟังก์ชันจาก app-admin.js ที่ expose ผ่าน window.__deleteHiddenSongIfNoOtherOrders
+  //   ถ้า app-admin.js ยังไม่โหลด (กรณีแปลก ๆ) → fallback เก็บ error แล้วข้ามไป (ไม่ block การลบออเดอร์)
+  const deleteHiddenFn = window.__deleteHiddenSongIfNoOtherOrders;
+  if (typeof deleteHiddenFn !== "function") {
+    console.warn("[deleteHiddenSongsFromOrder] window.__deleteHiddenSongIfNoOtherOrders not available — skip");
+    result.errors.push("app-admin.js not loaded");
+    return result;
+  }
+
+  // วนลบทีละเพลง (sequential — กัน D1 rate limit)
+  //   แต่ละเพลงใช้เวลา ~200ms (2 D1 reads + 1 delete) — ถ้ามี 20 เพลง = 4 วินาที
+  //   ทำแบบ background (ไม่ block UI) ผ่าน caller ที่ await ฟังก์ชันนี้
+  for (const songId of songIds) {
+    try {
+      const r = await deleteHiddenFn(songId);
+      if (r?.ok) {
+        result.deleted += 1;
+      } else if (r?.skipped) {
+        result.skipped += 1;
+      } else {
+        result.failed += 1;
+        result.errors.push(r?.error || r?.reason || "unknown");
+      }
+    } catch (err) {
+      console.warn(`[deleteHiddenSongsFromOrder] failed for ${songId}:`, err?.message || err);
+      result.failed = (result.failed || 0) + 1;
+      result.errors.push(String(err?.message || err));
+    }
+  }
+  return result;
+}
+
 async function handleDeleteOrder(orderId) {
   if (!isMainAdmin()) {
     // 🎨 (2026-09-26): ใช้ adminAlert แทน alert() — สไตล์เดียวกับเว็บ
@@ -3096,6 +3165,35 @@ async function handleDeleteOrder(orderId) {
         console.error("[deleteOrder] R2 delete background task crashed:", err?.message || err);
       });
     }
+
+    // 🆕 (2026-10-01 Cascade): ลบเพลง hidden ที่ถูกซ่อนเพราะออเดอร์นี้ — ถ้าไม่มีออเดอร์อื่นอ้างถึง
+    //   ตามมติผู้ใช้ "ข้อ 3=ก" — ปลอดภัย 100%
+    //   ทำแบบ background (ไม่ block UI) — เหมือน pattern ZIP cleanup เดิม (บรรทัด 3147)
+    //   ถ้า app-admin.js ไม่โหลด → deleteHiddenSongsFromOrder เก็บ error แล้ว return ไม่ block
+    //   ผลกระทบระบบเดิม: 0% — เพิ่มขั้นตอนใหม่หลัง ZIP cleanup, ก่อน removeOrderFromState
+    //                   — ถ้า cascade ล้ม ออเดอร์ยังถูกลบปกติ (cascade ไม่ block การลบออเดอร์)
+    if (orderData && Array.isArray(orderData.items) && orderData.items.length > 0) {
+      (async () => {
+        try {
+          const cascadeResult = await deleteHiddenSongsFromOrder(orderData);
+          if (cascadeResult?.deleted > 0) {
+            console.log(`[deleteOrder] cascade: deleted ${cascadeResult.deleted} hidden songs, skipped ${cascadeResult.skipped || 0}${cascadeResult.failed ? `, failed ${cascadeResult.failed}` : ""}`);
+            // แสดง toast แจ้งผู้ใช้ (เหมือน pattern orderToast ที่มีอยู่)
+            const skipNote = cascadeResult.skipped > 0 ? `, ข้าม ${cascadeResult.skipped} เพลง (ยังมีออเดอร์อื่น)` : "";
+            const failNote = cascadeResult.failed > 0 ? `, ล้มเหลว ${cascadeResult.failed}` : "";
+            const msg = `ลบเพลง hidden ที่ถูกซ่อนเพราะออเดอร์นี้: ${cascadeResult.deleted} เพลง${skipNote}${failNote}`;
+            if (window.__showToast) window.__showToast(msg, cascadeResult.failed > 0 ? "error" : "success");
+          } else if (cascadeResult?.skipped > 0) {
+            console.log(`[deleteOrder] cascade: 0 deleted, ${cascadeResult.skipped} skipped (all songs have other orders or are not hidden)`);
+          }
+        } catch (err) {
+          console.error("[deleteOrder] cascade delete hidden songs crashed:", err?.message || err);
+        }
+      })().catch((err) => {
+        console.error("[deleteOrder] cascade background task crashed:", err?.message || err);
+      });
+    }
+
     // 🔧 (2026-09-17 Phase 2): ลบ order ออกจาก state ฝั่ง client แทน re-fetch (ลด D1 reads)
     removeOrderFromState(orderId);
     renderFromState();
