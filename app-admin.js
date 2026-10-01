@@ -808,6 +808,137 @@ document.getElementById("qaPromotions").addEventListener("click", () => {
   showView("view-promotions"); initPromotionsView();
 });
 
+// ============================================================
+// 🆕 (2026-10-01 dashboard reorg): listeners สำหรับปุ่มใหม่ใน 4 cards
+//   - ปุ่มใหม่ทั้งหมดเรียกฟังก์ชัน/พฤติกรรมเดียวกับปุ่มเดิม (ผ่าน click event หรือเรียกตรง)
+//   - popup เลือก "เพิ่มเพลงเดี่ยว / Bulk" และ "จัดออเดอร์ / ตรวจสลิป"
+//   - ปุ่มเดิม (qaAddSong, qaOrders ฯลฯ) ซ่อนไว้ แต่ listener เดิมยังทำงาน (safety)
+//   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่ม listeners ใหม่ ไม่แก้ของเดิม
+// ============================================================
+
+// 🆕 ปุ่ม Card 1: คลังเพลง
+document.getElementById("qaManageSongsNew")?.addEventListener("click", () => {
+  showView("view-songs"); loadSongs();
+});
+document.getElementById("qaManagePlaylistsNew")?.addEventListener("click", () => {
+  showView("view-playlists"); loadPlaylists();
+});
+document.getElementById("qaManageCatsNew")?.addEventListener("click", () => {
+  showView("view-categories"); loadCategories();
+});
+document.getElementById("qaManageDjsNew")?.addEventListener("click", () => {
+  showView("view-djs"); loadDjs();
+});
+document.getElementById("qaManageSongsSub")?.addEventListener("click", () => {
+  openBulkUpload();
+});
+
+// 🆕 ปุ่ม "เพิ่มเพลง" → เปิด popup เลือก เดี่ยว / Bulk
+document.getElementById("qaAddSongNew")?.addEventListener("click", () => {
+  document.getElementById("addSongChoiceBackdrop").classList.add("show");
+  document.getElementById("addSongChoiceBackdrop").style.display = "flex";
+});
+document.getElementById("addSongChoiceClose")?.addEventListener("click", () => {
+  document.getElementById("addSongChoiceBackdrop").classList.remove("show");
+  document.getElementById("addSongChoiceBackdrop").style.display = "none";
+});
+document.getElementById("addSongChoiceSingle")?.addEventListener("click", async () => {
+  document.getElementById("addSongChoiceBackdrop").classList.remove("show");
+  document.getElementById("addSongChoiceBackdrop").style.display = "none";
+  // ใช้พฤติกรรมเดียวกับ qaAddSong เดิม — เข้าหน้าจัดเพลง + openAddSong
+  showView("view-songs");
+  await loadSongs();
+  openAddSong();
+});
+document.getElementById("addSongChoiceBulk")?.addEventListener("click", () => {
+  document.getElementById("addSongChoiceBackdrop").classList.remove("show");
+  document.getElementById("addSongChoiceBackdrop").style.display = "none";
+  openBulkUpload();
+});
+
+// 🆕 ปุ่ม Card 2: ออเดอร์ & การเงิน
+//   ปุ่มหลัก "จัดการออเดอร์" → เปิด popup เลือก (กดตรง popup จะเหมือนกดปุ่ม qaOrdersDirect)
+document.getElementById("qaOrdersPayments")?.addEventListener("click", () => {
+  document.getElementById("ordersChoiceBackdrop").classList.add("show");
+  document.getElementById("ordersChoiceBackdrop").style.display = "flex";
+});
+document.getElementById("ordersChoiceClose")?.addEventListener("click", () => {
+  document.getElementById("ordersChoiceBackdrop").classList.remove("show");
+  document.getElementById("ordersChoiceBackdrop").style.display = "none";
+});
+document.getElementById("ordersChoiceList")?.addEventListener("click", () => {
+  document.getElementById("ordersChoiceBackdrop").classList.remove("show");
+  document.getElementById("ordersChoiceBackdrop").style.display = "none";
+  showView("view-orders"); initOrdersView();
+});
+document.getElementById("ordersChoiceSlip")?.addEventListener("click", () => {
+  document.getElementById("ordersChoiceBackdrop").classList.remove("show");
+  document.getElementById("ordersChoiceBackdrop").style.display = "none";
+  showView("view-payments"); initPaymentsView();
+});
+// 🆕 ปุ่มลูก "รายการออเดอร์" + "ตรวจสลิป" — เข้าตรง ไม่ต้องผ่าน popup
+document.getElementById("qaOrdersDirect")?.addEventListener("click", () => {
+  showView("view-orders"); initOrdersView();
+});
+document.getElementById("qaPaymentsDirect")?.addEventListener("click", () => {
+  showView("view-payments"); initPaymentsView();
+});
+
+// 🆕 ปุ่ม Card 3: การตลาด
+document.getElementById("qaDiscountsNew")?.addEventListener("click", () => {
+  showView("view-discounts"); initDiscountsView();
+});
+document.getElementById("qaPromotionsNew")?.addEventListener("click", () => {
+  showView("view-promotions"); initPromotionsView();
+});
+
+// 🆕 ปุ่ม Card 4: ระบบ
+document.getElementById("qaSettingsNew")?.addEventListener("click", () => {
+  showView("view-settings"); loadSettings();
+});
+document.getElementById("qaManageAdminsNew")?.addEventListener("click", () => {
+  if (currentAdminRole !== "main") { showToast("เฉพาะแอดมินหลักเท่านั้นที่เข้าหน้านี้ได้", "error"); return; }
+  showView("view-admins"); initAdminsView();
+});
+document.getElementById("qaAuditLogNew")?.addEventListener("click", () => {
+  // เรียกพฤติกรรมเดียวกับ qaAuditLog เดิม (trigger click บนปุ่มเดิม)
+  document.getElementById("qaAuditLog")?.click();
+});
+
+// 🆕 sync visibility ของปุ่ม "👤 แอดมิน" ใน Card 4 ตาม role
+//   (เดิมอยู่ใน showAdminUI บรรทัด 463 — แต่ที่นั่นตั้ง display ให้ qaManageAdmins เดิม
+//    ที่นี่ตั้ง display ให้ qaManageAdminsNew ด้วย)
+function syncAdminButtonVisibility() {
+  const showAdmin = currentAdminRole === "main";
+  const oldBtn = document.getElementById("qaManageAdmins");
+  const newBtn = document.getElementById("qaManageAdminsNew");
+  if (oldBtn) oldBtn.style.display = showAdmin ? "" : "none";
+  if (newBtn) newBtn.style.display = showAdmin ? "" : "none";
+}
+// เรียกทันที (ถ้า currentAdminRole ถูกตั้งแล้ว)
+syncAdminButtonVisibility();
+
+// 🆕 sync badges ใน Card 2 — ให้ badge ใหม่ (ordersBadgeNew/paymentsBadgeNew) แสดงค่าเดียวกับ badge เดิม
+//   เรียกหลัง updateOrdersBadge + updatePaymentsBadge (ฟังก์ชันเดิม)
+//   แต่เพื่อความปลอดภัย — ใช้ MutationObserver หรือ polling เบา ๆ (ทุก 2 วิ) แทน ไม่แตะฟังก์ชันเดิม
+setInterval(() => {
+  try {
+    const oldOrders = document.getElementById("ordersBadge");
+    const newOrders = document.getElementById("ordersBadgeNew");
+    const choiceOrders = document.getElementById("ordersBadgeChoice");
+    if (oldOrders && newOrders) newOrders.textContent = oldOrders.textContent;
+    if (oldOrders && choiceOrders) choiceOrders.textContent = oldOrders.textContent;
+    const oldPayments = document.getElementById("paymentsBadge");
+    const newPayments = document.getElementById("paymentsBadgeNew");
+    const choicePayments = document.getElementById("paymentsBadgeChoice");
+    if (oldPayments && newPayments) newPayments.textContent = oldPayments.textContent;
+    if (oldPayments && choicePayments) choicePayments.textContent = oldPayments.textContent;
+  } catch (_) {}
+}, 2000);
+// ============================================================
+// /🆕 dashboard reorg — สิ้นสุดส่วนเพิ่มใหม่
+// ============================================================
+
 // ===== ประวัติร้าน (Audit Log) — Bug #2 UI =====
 //   หน้านี้ใช้ดู audit_log table ที่ worker บันทึกไว้
 //   ทุกแอดมินที่ login แล้วเข้าดูได้ (ตาม model "เพื่อนๆ ช่วยกันดูแล" ที่ผู้ใช้ระบุ)

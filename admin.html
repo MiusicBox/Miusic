@@ -50,7 +50,100 @@
         <div class="stat-card"><div class="num" id="statDjs">0</div><div class="label">DJ</div></div>
         <div class="stat-card"><div class="num" id="statPlaylists">0</div><div class="label">เพลย์ลิสต์</div></div>
       </div>
-      <div class="quick-actions">
+
+      <!-- 🆕 (2026-10-01 dashboard reorg): จัดกลุ่มปุ่มเป็น 4 cards ตามมติผู้ใช้
+           - Card 1: คลังเพลง (รวมเพิ่มเดี่ยว+Bulk → popup เลือก)
+           - Card 2: ออเดอร์ & การเงิน (รวม จัดออเดอร์+ตรวจสลิป → 1 ปุ่ม badge 2 ตัว)
+           - Card 3: การตลาด (ลดราคา+โปรโมชั่น)
+           - Card 4: ระบบ (ตั้งค่า+แอดมิน+ประวัติร้าน)
+           ปุ่มเดิม (qaAddSong, qaBulkUpload, qaOrders, qaPayments ฯลฯ) ซ่อนไว้ display:none
+           แต่ listener เดิมยังทำงาน — ปุ่มใหม่เรียกฟังก์ชันเดิมผ่าน listener ใหม่ -->
+      <div style="padding:14px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">
+
+        <!-- 🎵 Card 1: คลังเพลง -->
+        <div style="background:var(--bg-card,#1a1a1f);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-weight:700;font-size:15px;">
+            <span style="font-size:18px;">🎵</span> คลังเพลง
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">
+            <!-- ปุ่มเพิ่มเพลง (รวมเดี่ยว+Bulk) — กดแล้ว popup เลือก -->
+            <button id="qaAddSongNew" style="padding:12px 8px;font-size:13px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;">➕ เพิ่มเพลง</button>
+            <button id="qaManageSongsNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">🎵 จัดการเพลง</button>
+            <button id="qaManagePlaylistsNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">🎶 เพลย์ลิสต์</button>
+            <button id="qaManageCatsNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">🗂️ หมวดหมู่</button>
+            <button id="qaManageDjsNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">🎧 DJ</button>
+            <button id="qaManageSongsSub" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">📦 Bulk Upload</button>
+          </div>
+        </div>
+
+        <!-- 🧾 Card 2: ออเดอร์ & การเงิน -->
+        <div style="background:var(--bg-card,#1a1a1f);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-weight:700;font-size:15px;">
+            <span style="font-size:18px;">🧾</span> ออเดอร์ & การเงิน
+          </div>
+          <div style="display:grid;grid-template-columns:1fr;gap:8px;">
+            <!-- ปุ่มเดียวที่รวมออเดอร์+สลิป — กดแล้ว popup เลือก หรือกดตรงๆเข้าจัดออเดอร์ -->
+            <button id="qaOrdersPayments" style="padding:14px 10px;font-size:14px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;">
+              <span>🧾 จัดการออเดอร์</span>
+              <span class="badge" id="ordersBadgeNew" style="background:rgba(0,0,0,.25);">0</span>
+              <span style="font-size:11px;opacity:.8;">สลิป</span>
+              <span class="badge" id="paymentsBadgeNew" style="background:rgba(0,0,0,.25);">0</span>
+            </button>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <button id="qaOrdersDirect" style="padding:10px 8px;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">📋 รายการออเดอร์</button>
+              <button id="qaPaymentsDirect" style="padding:10px 8px;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">🧾 ตรวจสลิป</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 🎁 Card 3: การตลาด -->
+        <div style="background:var(--bg-card,#1a1a1f);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-weight:700;font-size:15px;">
+            <span style="font-size:18px;">🎁</span> การตลาด
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <button id="qaDiscountsNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">🏷️ ลดราคา</button>
+            <button id="qaPromotionsNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">🎁 โปรโมชั่น</button>
+          </div>
+        </div>
+
+        <!-- ⚙️ Card 4: ระบบ -->
+        <div style="background:var(--bg-card,#1a1a1f);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-weight:700;font-size:15px;">
+            <span style="font-size:18px;">⚙️</span> ระบบ
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">
+            <button id="qaSettingsNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">🔧 ตั้งค่า</button>
+            <button id="qaManageAdminsNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;display:none;">👤 แอดมิน</button>
+            <button id="qaAuditLogNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;grid-column:1 / -1;">📜 ประวัติร้าน</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 🆕 (2026-10-01 dashboard reorg): popup เลือก "เพิ่มเพลงเดี่ยว / หลายไฟล์" -->
+      <div class="modal-backdrop" id="addSongChoiceBackdrop" style="display:none;">
+        <div class="modal" style="max-width:360px;">
+          <div class="modal-header"><h3>เพิ่มเพลง</h3><button class="modal-close" id="addSongChoiceClose">✕</button></div>
+          <div style="padding:14px;display:grid;gap:10px;">
+            <button id="addSongChoiceSingle" style="padding:14px;font-size:14px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;">🎵 เพิ่มเพลงเดี่ยว</button>
+            <button id="addSongChoiceBulk" style="padding:14px;font-size:14px;font-weight:600;border:1px solid var(--accent);background:rgba(122,92,255,.08);color:var(--accent);border-radius:8px;cursor:pointer;">📦 เพิ่มเพลงหลายไฟล์ (Bulk)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 🆕 (2026-10-01 dashboard reorg): popup เลือก "จัดออเดอร์ / ตรวจสลิป" -->
+      <div class="modal-backdrop" id="ordersChoiceBackdrop" style="display:none;">
+        <div class="modal" style="max-width:360px;">
+          <div class="modal-header"><h3>ออเดอร์ & การเงิน</h3><button class="modal-close" id="ordersChoiceClose">✕</button></div>
+          <div style="padding:14px;display:grid;gap:10px;">
+            <button id="ordersChoiceList" style="padding:14px;font-size:14px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;">📋 จัดการออเดอร์ <span class="badge" id="ordersBadgeChoice" style="background:rgba(0,0,0,.25);">0</span></button>
+            <button id="ordersChoiceSlip" style="padding:14px;font-size:14px;font-weight:600;border:1px solid var(--accent);background:rgba(122,92,255,.08);color:var(--accent);border-radius:8px;cursor:pointer;">🧾 ตรวจสลิป <span class="badge" id="paymentsBadgeChoice" style="background:rgba(0,0,0,.25);">0</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ปุ่มเดิมทั้งหมด — ซ่อนไว้ แต่ listener เดิมยังทำงาน (เผื่อระบบอื่นยังอ้างถึง ID) -->
+      <div class="quick-actions" style="display:none;">
         <button id="qaAddSong">➕<br>เพิ่มเพลง</button>
         <button id="qaManageSongs">🎵<br>จัดการเพลง</button>
         <button id="qaManagePlaylists">🎶<br>จัดการเพลย์ลิสต์</button>
