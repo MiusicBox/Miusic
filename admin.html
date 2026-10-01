@@ -64,6 +64,10 @@
         <button id="qaSettings">🔧<br>ตั้งค่าเว็บไซต์</button>
         <button id="qaManageAdmins" style="display:none;">👤<br>จัดการแอดมิน</button>
         <button id="qaAuditLog">📜<br>ประวัติร้าน</button>
+        <!-- 🆕 (2026-10-01): ปุ่ม "อัพเดทล่าสุด" — ดูการเพิ่ม/แก้ไข/ลบ ล่าสุดของเพลง/เพลย์ลิสต์/DJ/หมวดหมู่
+             ใช้ข้อมูลจาก audit_log เดียวกับหน้า "ประวัติร้าน" แต่กรองเฉพาะ 4 collection นี้
+             ผลกระทบระบบเดิม: 0% — เป็นการเพิ่มปุ่มใหม่ ไม่แตะปุ่มเดิมใด ๆ -->
+        <button id="qaLatestUpdates">🆕<br>อัพเดทล่าสุด</button>
       </div>
     </div>
 
@@ -496,6 +500,38 @@
 
       <!-- ===== Pagination ===== -->
       <div id="auditLogPager" style="padding:0 16px 24px;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;"></div>
+    </div>
+
+    <!-- ================================================== -->
+    <!-- 🆕 (2026-10-01): view "อัพเดทล่าสุด" — เพิ่มใหม่ ไม่แตะ view เดิม -->
+    <!--   แสดงรายการ action ล่าสุดของ: เพลง / เพลย์ลิสต์ / DJ / หมวดหมู่ -->
+    <!--   ดึงข้อมูลจาก audit_log ผ่าน endpoint _audit-log-query เดิม -->
+    <!--   มีปุ่ม "จัดการเพลง/เพลย์ลิสต์/DJ/หมวดหมู่" เพื่อเข้าหน้าจัดการเดิมได้ทันที -->
+    <!--   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่ม view ใหม่ ไม่แก้ view อื่นใด ๆ -->
+    <!-- ================================================== -->
+    <div id="view-latest-updates" class="view" style="display:none;">
+      <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
+        <button class="icon-btn back-btn">←</button>
+        <div style="flex:1;font-weight:800;">🆕 อัพเดทล่าสุด</div>
+        <button class="icon-btn" id="latestUpdatesRefreshBtn" title="โหลดใหม่">🔄</button>
+      </div>
+      <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">
+        ดูว่ามีการเพิ่ม / แก้ไข / ลบ เพลง · เพลย์ลิสต์ · DJ · หมวดหมู่ ล่าสุดเมื่อไหร่ พร้อมปุ่มเข้าหน้าจัดการแต่ละหมวด
+      </p>
+
+      <!-- ===== ปุ่มจัดการแต่ละหมวด (เรียกฟังก์ชันเดิม loadSongs/loadPlaylists/loadDjs/loadCategories) ===== -->
+      <div style="padding:0 16px;margin:14px 0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">
+        <button class="btn" id="latestUpdatesManageSongs" style="padding:10px 8px;font-size:13px;font-weight:700;">🎵 จัดการเพลง</button>
+        <button class="btn" id="latestUpdatesManagePlaylists" style="padding:10px 8px;font-size:13px;font-weight:700;">🎶 จัดการเพลย์ลิสต์</button>
+        <button class="btn" id="latestUpdatesManageDjs" style="padding:10px 8px;font-size:13px;font-weight:700;">🎧 จัดการ DJ</button>
+        <button class="btn" id="latestUpdatesManageCats" style="padding:10px 8px;font-size:13px;font-weight:700;">🗂️ จัดการหมวดหมู่</button>
+      </div>
+
+      <!-- ===== กล่องแสดงเวลา "อัพเดทล่าสุด" ของทั้งระบบ ===== -->
+      <div id="latestUpdatesSummary" style="padding:0 16px;margin:0 0 10px;font-size:12px;color:var(--text-dim);"></div>
+
+      <!-- ===== รายการ updates แยกตาม collection ===== -->
+      <div id="latestUpdatesList" class="container" style="padding:0 16px 24px;"></div>
     </div>
   </div>
 

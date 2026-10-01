@@ -737,6 +737,192 @@ function renderAuditPager() {
   pagerEl.appendChild(nextBtn);
 }
 
+// ============================================================
+// 🆕 (2026-10-01): หน้า "อัพเดทล่าสุด" — เพิ่มใหม่ ไม่แตะฟังก์ชันเดิม
+//   ดึงรายการ audit_log ล่าสุดของ 4 collection: songs / playlists / djs / categories
+//   ใช้ endpoint เดิม (_audit-log-query) — ยิง 4 ครั้งแบบขนาน แล้วรวมผล
+//   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่มฟังก์ชัน + state ใหม่ ไม่แก้ของเดิม
+// ============================================================
+
+const LATEST_UPDATES_COLLECTIONS = ["songs", "playlists", "djs", "categories"];
+const LATEST_UPDATES_PER_COLL = 8; // รายการล่าสุดต่อ collection
+let latestUpdatesState = { loading: false };
+
+// 🆕 (2026-10-01): เปิดหน้า "อัพเดทล่าสุด" — เรียกฟังก์ชันเดิม showView() เท่านั้น
+document.getElementById("qaLatestUpdates")?.addEventListener("click", () => {
+  showView("view-latest-updates");
+  loadLatestUpdates();
+});
+
+// 🆕 (2026-10-01): ปุ่ม refresh ในหน้า "อัพเดทล่าสุด"
+document.getElementById("latestUpdatesRefreshBtn")?.addEventListener("click", () => loadLatestUpdates());
+
+// 🆕 (2026-10-01): ปุ่มจัดการในหน้า "อัพเดทล่าสุด" — เรียกฟังก์ชันเดิม loadSongs/loadPlaylists/loadDjs/loadCategories
+//   ไม่สร้างฟังก์ชันใหม่ — แค่เรียกฟังก์ชันเดิมเหมือนปุ่ม qaManage* บนแดชบอร์ด
+document.getElementById("latestUpdatesManageSongs")?.addEventListener("click", () => {
+  showView("view-songs"); loadSongs();
+});
+document.getElementById("latestUpdatesManagePlaylists")?.addEventListener("click", () => {
+  showView("view-playlists"); loadPlaylists();
+});
+document.getElementById("latestUpdatesManageDjs")?.addEventListener("click", () => {
+  showView("view-djs"); loadDjs();
+});
+document.getElementById("latestUpdatesManageCats")?.addEventListener("click", () => {
+  showView("view-categories"); loadCategories();
+});
+
+// 🆕 (2026-10-01): โหลด audit_log ล่าสุดของทั้ง 4 collection แบบขนาน
+//   ใช้ endpoint เดิม /api/db/_meta/_audit-log-query — ส่ง collection ทีละตัว
+//   รวมผลทั้งหมด → sort ตาม created_at DESC → render แยกหมวด
+async function loadLatestUpdates() {
+  if (latestUpdatesState.loading) return;
+  latestUpdatesState.loading = true;
+
+  const listEl = document.getElementById("latestUpdatesList");
+  const summaryEl = document.getElementById("latestUpdatesSummary");
+
+  // Loading state
+  listEl.innerHTML = `<div style="text-align:center;padding:30px 0;color:var(--text-dim);font-size:13px;">⏳ กำลังโหลดอัพเดทล่าสุด...</div>`;
+  summaryEl.textContent = "";
+
+  try {
+    // ยิง 4 ครั้งแบบขนาน (เหมือน pattern loadDashboard ที่ใช้ Promise.all)
+    const results = await Promise.all(
+      LATEST_UPDATES_COLLECTIONS.map((coll) =>
+        fetch("/api/db/_meta/_audit-log-query", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            limit: LATEST_UPDATES_PER_COLL,
+            offset: 0,
+            collection: coll,
+          }),
+        }).then(async (res) => {
+          if (res.status === 401) return { collection: coll, logs: [], total: 0, unauthorized: true };
+          if (!res.ok) return { collection: coll, logs: [], total: 0, error: `HTTP ${res.status}` };
+          const body = await res.json();
+          // กรณีตารางยังไม่ถูกสร้าง → ส่ง empty list (ไม่ crash)
+          if (body && body.needs_schema) return { collection: coll, logs: [], total: 0, needs_schema: true };
+          return { collection: coll, logs: body.logs || [], total: Number(body.total) || 0 };
+        }).catch((err) => ({ collection: coll, logs: [], total: 0, error: String(err?.message || err) }))
+      )
+    );
+
+    // ตรวจดูว่าทั้ง 4 ล้มเหลวด้วย 401 ไหม → แสดง hint login ใหม่
+    if (results.every((r) => r.unauthorized)) {
+      listEl.innerHTML = `<div style="text-align:center;padding:30px 16px;color:var(--text-dim);font-size:13px;">กรุณาเข้าสู่ระบบใหม่</div>`;
+      return;
+    }
+    // ตรวจดูว่าทั้ง 4 ล้มเหลวด้วย needs_schema ไหม → แสดง hint ให้รัน schema.sql
+    if (results.every((r) => r.needs_schema)) {
+      listEl.innerHTML = `<div style="text-align:center;padding:30px 16px;color:var(--text-dim);font-size:13px;">
+        ⚠️ ตาราง audit_log ยังไม่ถูกสร้าง<br>
+        <span style="font-size:12px;">รัน schema.sql ล่าสุดใน D1 Console → แล้วกด 🔄 โหลดใหม่</span>
+      </div>`;
+      return;
+    }
+
+    renderLatestUpdates(results);
+  } catch (err) {
+    console.error("[latestUpdates] load failed:", err);
+    listEl.innerHTML = `<div style="text-align:center;padding:30px 16px;color:#ff6b6b;font-size:13px;">โหลดอัพเดทล่าสุดไม่สำเร็จ — ลองอีกครั้ง</div>`;
+    showToast("โหลดอัพเดทล่าสุดไม่สำเร็จ", "error");
+  } finally {
+    latestUpdatesState.loading = false;
+  }
+}
+
+// 🆕 (2026-10-01): render หน้า "อัพเดทล่าสุด" — แยก section ตาม collection
+//   ใช้ helper เดิม: formatAuditTime, AUDIT_ACTION_LABELS, AUDIT_COLLECTION_LABELS, escapeHtml
+//   ไม่เรียก helper ใหม่ใด ๆ ทั้งสิ้น
+function renderLatestUpdates(results) {
+  const listEl = document.getElementById("latestUpdatesList");
+  const summaryEl = document.getElementById("latestUpdatesSummary");
+
+  // หาเวลา "อัพเดทล่าสุด" ของทั้งระบบ (เอา created_at ล่าสุดจากทุก log)
+  let latestTime = null;
+  let latestLabel = "";
+  for (const r of results) {
+    for (const log of r.logs) {
+      if (!log.created_at) continue;
+      const d = new Date(log.created_at);
+      if (isNaN(d.getTime())) continue;
+      if (!latestTime || d > latestTime) {
+        latestTime = d;
+        latestLabel = `${AUDIT_COLLECTION_LABELS[r.collection] || r.collection}: ${log.target_name || log.target_id || "—"}`;
+      }
+    }
+  }
+  if (latestTime) {
+    // แสดงเวลาแบบเต็ม วัน-เดือน-ปี-เวลา (เรียก formatAuditTime เดิม)
+    summaryEl.innerHTML = `📅 <strong>อัพเดทล่าสุด:</strong> ${escapeHtml(formatAuditTime(latestTime.toISOString()))} — ${escapeHtml(latestLabel)}`;
+  } else {
+    summaryEl.textContent = "ยังไม่มีการอัพเดทล่าสุด";
+  }
+
+  // สร้าง section ตาม collection — เรียงตามลำดับ LATEST_UPDATES_COLLECTIONS
+  const frag = document.createDocumentFragment();
+  let anyLogs = false;
+
+  for (const coll of LATEST_UPDATES_COLLECTIONS) {
+    const r = results.find((x) => x.collection === coll);
+    if (!r) continue;
+    const label = AUDIT_COLLECTION_LABELS[coll] || coll;
+
+    const section = document.createElement("div");
+    section.style.cssText = "margin-bottom:18px;border:1px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden;";
+
+    const header = document.createElement("div");
+    header.style.cssText = "padding:10px 14px;background:rgba(255,255,255,.04);font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;";
+    header.innerHTML = `<span>${coll === "songs" ? "🎵" : coll === "playlists" ? "🎶" : coll === "djs" ? "🎧" : "🗂️"}</span> ${escapeHtml(label)} <span style="margin-left:auto;font-size:12px;color:var(--text-dim);font-weight:400;">ล่าสุด ${r.logs.length} รายการ${r.total > r.logs.length ? ` (รวม ${r.total})` : ""}</span>`;
+    section.appendChild(header);
+
+    if (!r.logs.length) {
+      const empty = document.createElement("div");
+      empty.style.cssText = "padding:16px 14px;color:var(--text-dim);font-size:13px;text-align:center;";
+      empty.textContent = "ยังไม่มีการเปลี่ยนแปลง";
+      section.appendChild(empty);
+    } else {
+      anyLogs = true;
+      for (const log of r.logs) {
+        const row = document.createElement("div");
+        row.style.cssText = "padding:10px 14px;border-top:1px solid rgba(255,255,255,.05);display:flex;align-items:flex-start;gap:8px;";
+
+        const actionLabel = AUDIT_ACTION_LABELS[log.action] || log.action || "—";
+        const actionClass = `audit-action-${log.action || "other"}`;
+        const time = formatAuditTime(log.created_at);
+
+        const name = log.target_name || log.target_id || "—";
+
+        // แสดง action pill + ชื่อ + เวลา + admin email
+        row.innerHTML = `
+          <span class="audit-action-pill ${actionClass}" style="margin-top:1px;flex-shrink:0;">${escapeHtml(actionLabel)}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;color:var(--text);line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(name)}</div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              ${escapeHtml(log.admin_email || "unknown")} · ${escapeHtml(time)}
+            </div>
+          </div>
+        `;
+        section.appendChild(row);
+      }
+    }
+    frag.appendChild(section);
+  }
+
+  listEl.innerHTML = "";
+  listEl.appendChild(frag);
+
+  if (!anyLogs) {
+    listEl.innerHTML = `<div style="text-align:center;padding:30px 16px;color:var(--text-dim);font-size:13px;">ยังไม่มีการเพิ่ม / แก้ไข / ลบ ใน 4 หมวดนี้</div>`;
+  }
+}
+// ============================================================
+// /🆕 หน้า "อัพเดทล่าสุด" — สิ้นสุดส่วนเพิ่มใหม่
+// ============================================================
+
 function formatAuditTime(isoStr) {
   if (!isoStr) return "—";
   try {
