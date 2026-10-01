@@ -83,11 +83,11 @@
           </div>
           <div style="display:grid;grid-template-columns:1fr;gap:8px;">
             <!-- ปุ่มเดียวที่รวมออเดอร์+สลิป — กดแล้ว popup เลือก หรือกดตรงๆเข้าจัดออเดอร์ -->
-            <button id="qaOrdersPayments" style="padding:14px 10px;font-size:14px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;">
+            <button id="qaOrdersPayments" style="position:relative;padding:14px 10px;font-size:14px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;">
               <span>🧾 จัดการออเดอร์</span>
-              <span class="badge" id="ordersBadgeNew" style="background:rgba(0,0,0,.25);">0</span>
+              <span class="badge" id="ordersBadgeNew" style="position:relative;top:auto;right:auto;display:inline-block;margin:0 2px;">0</span>
               <span style="font-size:11px;opacity:.8;">สลิป</span>
-              <span class="badge" id="paymentsBadgeNew" style="background:rgba(0,0,0,.25);">0</span>
+              <span class="badge" id="paymentsBadgeNew" style="position:relative;top:auto;right:auto;display:inline-block;margin:0 2px;">0</span>
             </button>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
               <button id="qaOrdersDirect" style="padding:10px 8px;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">📋 รายการออเดอร์</button>
@@ -136,8 +136,8 @@
         <div class="modal" style="max-width:360px;">
           <div class="modal-header"><h3>ออเดอร์ & การเงิน</h3><button class="modal-close" id="ordersChoiceClose">✕</button></div>
           <div style="padding:14px;display:grid;gap:10px;">
-            <button id="ordersChoiceList" style="padding:14px;font-size:14px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;">📋 จัดการออเดอร์ <span class="badge" id="ordersBadgeChoice" style="background:rgba(0,0,0,.25);">0</span></button>
-            <button id="ordersChoiceSlip" style="padding:14px;font-size:14px;font-weight:600;border:1px solid var(--accent);background:rgba(122,92,255,.08);color:var(--accent);border-radius:8px;cursor:pointer;">🧾 ตรวจสลิป <span class="badge" id="paymentsBadgeChoice" style="background:rgba(0,0,0,.25);">0</span></button>
+            <button id="ordersChoiceList" style="position:relative;padding:14px;font-size:14px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;">📋 จัดการออเดอร์ <span class="badge" id="ordersBadgeChoice" style="position:relative;top:auto;right:auto;display:inline-block;margin-left:6px;">0</span></button>
+            <button id="ordersChoiceSlip" style="position:relative;padding:14px;font-size:14px;font-weight:600;border:1px solid var(--accent);background:rgba(122,92,255,.08);color:var(--accent);border-radius:8px;cursor:pointer;">🧾 ตรวจสลิป <span class="badge" id="paymentsBadgeChoice" style="position:relative;top:auto;right:auto;display:inline-block;margin-left:6px;">0</span></button>
           </div>
         </div>
       </div>

@@ -928,18 +928,33 @@ syncAdminButtonVisibility();
 // 🆕 sync badges ใน Card 2 — ให้ badge ใหม่ (ordersBadgeNew/paymentsBadgeNew) แสดงค่าเดียวกับ badge เดิม
 //   เรียกหลัง updateOrdersBadge + updatePaymentsBadge (ฟังก์ชันเดิม)
 //   แต่เพื่อความปลอดภัย — ใช้ MutationObserver หรือ polling เบา ๆ (ทุก 2 วิ) แทน ไม่แตะฟังก์ชันเดิม
+//
+//   🆕 (2026-10-01 fix bug badge ไม่แสดง): sync ทั้ง textContent + classList (show/warn/alert/critical)
+//     ปัญหา: เดิม sync แค่ textContent → badge ใหม่ไม่มี class 'show' → display:none ตลอด → ไม่แสดง
+//     วิธีแก้: copy classList ด้วย (เพิ่ม/ลบ show/warn/alert/critical ให้ตรงกับ badge เดิม)
 setInterval(() => {
   try {
+    // helper: sync badge classes + textContent จาก src → target
+    function syncBadgeClasses(src, target) {
+      if (!src || !target) return;
+      // sync textContent
+      target.textContent = src.textContent;
+      // sync classes ที่เกี่ยวข้อง (show/warn/alert/critical)
+      const classesToSync = ["show", "warn", "alert", "critical"];
+      for (const cls of classesToSync) {
+        if (src.classList.contains(cls)) {
+          target.classList.add(cls);
+        } else {
+          target.classList.remove(cls);
+        }
+      }
+    }
     const oldOrders = document.getElementById("ordersBadge");
-    const newOrders = document.getElementById("ordersBadgeNew");
-    const choiceOrders = document.getElementById("ordersBadgeChoice");
-    if (oldOrders && newOrders) newOrders.textContent = oldOrders.textContent;
-    if (oldOrders && choiceOrders) choiceOrders.textContent = oldOrders.textContent;
+    syncBadgeClasses(oldOrders, document.getElementById("ordersBadgeNew"));
+    syncBadgeClasses(oldOrders, document.getElementById("ordersBadgeChoice"));
     const oldPayments = document.getElementById("paymentsBadge");
-    const newPayments = document.getElementById("paymentsBadgeNew");
-    const choicePayments = document.getElementById("paymentsBadgeChoice");
-    if (oldPayments && newPayments) newPayments.textContent = oldPayments.textContent;
-    if (oldPayments && choicePayments) choicePayments.textContent = oldPayments.textContent;
+    syncBadgeClasses(oldPayments, document.getElementById("paymentsBadgeNew"));
+    syncBadgeClasses(oldPayments, document.getElementById("paymentsBadgeChoice"));
   } catch (_) {}
 }, 2000);
 // ============================================================
