@@ -1671,6 +1671,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     backdrop.setAttribute("aria-hidden", "false");
 
     let selectedFile = null;
+    let selectedObjectURL = null;  // 🆕 (2026-10-01 fix preview): เก็บ object URL เพื่อ revoke ตอนปิด modal (กัน memory leak)
     const fileInput = document.getElementById("slipFileInput");
     const previewArea = document.getElementById("slipPreviewArea");
     const confirmBtn = document.getElementById("uploadSlipConfirmBtn");
@@ -1692,13 +1693,49 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         return;
       }
       selectedFile = file;
-      // show preview
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        previewArea.innerHTML = `<img src="${e.target.result}" alt="รูปสลิปตัวอย่าง" style="display:block;margin:0 auto;max-width:100%;max-height:240px;border-radius:6px;border:1px solid var(--border, #eee);">`;
-      };
-      reader.readAsDataURL(file);
-      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.style.opacity = "1"; }
+      // 🆕 (2026-10-01 fix preview): แสดง loading state ทันที (กันลูกค้าคิดว่ารูปไม่แสดง)
+      if (previewArea) {
+        previewArea.innerHTML = `<div style="font-size:13px;color:var(--text-dim);padding:20px;">⏳ กำลังโหลดรูป...</div>`;
+      }
+      // 🆕 (2026-10-01 fix preview): ใช้ URL.createObjectURL แทน FileReader.readAsDataURL
+      //   ปัญหาเดิม: FileReader.readAsDataURL เป็น async → ในบางกรณี (iOS Safari / ไฟล์ใหญ่) onload ไม่ trigger
+      //   → preview ไม่แสดง + ไม่มี loading indicator → ลูกค้าคิดว่า "รูปไม่แสดง"
+      //   วิธีแก้: URL.createObjectURL ทำงานทันที (sync) + เร็วกว่า + กิน memory น้อยกว่า
+      //   ต้อง revoke URL หลังใช้เพื่อกัน memory leak
+      try {
+        // revoke object URL เก่าถ้ามี (กัน leak ถ้าลูกค้าเลือกรูปใหม่)
+        if (selectedObjectURL) {
+          try { URL.revokeObjectURL(selectedObjectURL); } catch (_) {}
+        }
+        selectedObjectURL = URL.createObjectURL(file);
+        // 🆕 (2026-10-01 fix preview): เก็บ URL ใน backdrop.dataset เพื่อ revoke ตอนปิด modal
+        //   (เพราะ selectedObjectURL อยู่ใน closure ของ openUploadSlipModal → closeUploadSlipModal ไม่เข้าถึง)
+        try {
+          const backdropEl = document.getElementById("uploadSlipBackdrop");
+          if (backdropEl) backdropEl.dataset.slipObjectUrl = selectedObjectURL;
+        } catch (_) {}
+        if (previewArea) {
+          previewArea.innerHTML = `<img src="${selectedObjectURL}" alt="รูปสลิปตัวอย่าง" style="display:block;margin:0 auto;max-width:100%;max-height:240px;border-radius:6px;border:1px solid var(--border, #eee);"><div style="font-size:11px;color:var(--text-dim);margin-top:6px;text-align:center;">✅ เลือกรูปแล้ว — กด "ยืนยันการชำระเงิน" ด้านล่าง</div>`;
+        }
+        if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.style.opacity = "1"; }
+      } catch (err) {
+        // fallback: ถ้า URL.createObjectURL ล้มเหลว → ลอง FileReader (เหมือนเดิม)
+        console.warn("[slip preview] URL.createObjectURL failed, fallback to FileReader:", err);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          if (previewArea) {
+            previewArea.innerHTML = `<img src="${e.target.result}" alt="รูปสลิปตัวอย่าง" style="display:block;margin:0 auto;max-width:100%;max-height:240px;border-radius:6px;border:1px solid var(--border, #eee);"><div style="font-size:11px;color:var(--text-dim);margin-top:6px;text-align:center;">✅ เลือกรูปแล้ว — กด "ยืนยันการชำระเงิน" ด้านล่าง</div>`;
+          }
+          if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.style.opacity = "1"; }
+        };
+        reader.onerror = () => {
+          if (previewArea) {
+            previewArea.innerHTML = `<div style="font-size:13px;color:var(--danger);padding:20px;">❌ โหลดรูปไม่สำเร็จ — กรุณาเลือกรูปใหม่</div>`;
+          }
+          showToast("โหลดรูปไม่สำเร็จ — กรุณาเลือกรูปใหม่", "error");
+        };
+        reader.readAsDataURL(file);
+      }
     };
 
     if (confirmBtn) confirmBtn.onclick = async () => {
@@ -1713,6 +1750,17 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   function closeUploadSlipModal() {
     const backdrop = document.getElementById("uploadSlipBackdrop");
     if (backdrop) { backdrop.classList.remove("show"); backdrop.setAttribute("aria-hidden", "true"); }
+    // 🆕 (2026-10-01 fix preview): revoke object URL ตอนปิด modal (กัน memory leak)
+    //   เก็บ URL ในตัวแปร module-level ผ่าน dataset ของ backdrop (เพราะ selectedObjectURL อยู่ใน closure ของ openUploadSlipModal)
+    //   วิธี: เก็บ URL ใน backdrop.dataset.slipObjectUrl ตอน onchange → revoke ตอนปิด
+    try {
+      const backdrop2 = document.getElementById("uploadSlipBackdrop");
+      const oldUrl = backdrop2?.dataset?.slipObjectUrl;
+      if (oldUrl) {
+        try { URL.revokeObjectURL(oldUrl); } catch (_) {}
+        delete backdrop2.dataset.slipObjectUrl;
+      }
+    } catch (_) {}
   }
 
   async function uploadSlipToServer(order, receiptNumber, file) {
