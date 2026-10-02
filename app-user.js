@@ -2064,10 +2064,10 @@ async function loadCustomerAccountData() {
       //   หยุด event propagation เพื่อกันคลิกปุ่มนี้แล้วเปิด detail ด้วย
       const canDownload = order.zip_download_url && (order.status === "processing" || order.status === "completed");
       const downloadBtnHtml = canDownload
-        ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" data-account-download="${index}" class="btn" style="display:inline-block;padding:6px 12px;font-size:12px;font-weight:600;background:linear-gradient(145deg, #4ade80 0%, #16a34a 50%, #14532d 100%);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:8px;text-decoration:none;cursor:pointer;margin-top:6px;box-shadow:0 4px 12px rgba(22,163,74,.45);">⬇️ ดาวน์โหลดเพลง</a>`
+        ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" data-account-download="${index}" class="btn list-download-btn">⬇️ ดาวน์โหลดเพลง</a>`
         : "";
       return `
-        <button class="track-order-all-card" type="button" data-account-order-index="${index}" style="width:100%;text-align:left;">
+        <div class="track-order-all-card" role="button" tabindex="0" data-account-order-index="${index}" style="width:100%;text-align:left;">
           <div class="track-order-all-card-top">
             <span class="track-order-all-card-id">${escapeHtml(order.receipt_number || "")}</span>
             <span class="track-order-all-card-status" style="color:${cfg.color};background:${cfg.bg};">${cfg.emoji} ${escapeHtml(cfg.label)}</span>
@@ -2078,7 +2078,7 @@ async function loadCustomerAccountData() {
           </div>
           ${paymentBadgeHtml ? `<div style="margin-top:4px;">${paymentBadgeHtml}</div>` : ""}
           ${downloadBtnHtml}
-        </button>`;
+        </div>`;
     }).join("");
     ordersListEl.innerHTML = accountOrdersHtml || '<div class="empty-state">ยังไม่มีออเดอร์</div>';
     // 🆕 (v7): ปุ่ม "ดาวน์โหลดเพลง" — หยุด event propagation กันเปิด detail พร้อมกัน
@@ -2778,10 +2778,10 @@ function renderTrackOrderAllList(orders) {
     // 🆕 (2026-10-02 v7): ปุ่ม "⬇️ ดาวน์โหลดเพลง" — แสดงเฉพาะออเดอร์สำเร็จที่มี zip_download_url
     const canDownload = order.zip_download_url && (order.status === "processing" || order.status === "completed");
     const downloadBtnHtml = canDownload
-      ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" data-track-download="${index}" class="btn" style="display:inline-block;padding:6px 12px;font-size:12px;font-weight:600;background:linear-gradient(145deg, #4ade80 0%, #16a34a 50%, #14532d 100%);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:8px;text-decoration:none;cursor:pointer;margin-top:6px;box-shadow:0 4px 12px rgba(22,163,74,.45);">⬇️ ดาวน์โหลดเพลง</a>`
+      ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" data-track-download="${index}" class="btn list-download-btn">⬇️ ดาวน์โหลดเพลง</a>`
       : "";
     return `
-      <button class="track-order-all-card" type="button" data-track-all-index="${index}">
+      <div class="track-order-all-card" role="button" tabindex="0" data-track-all-index="${index}">
         <div class="track-order-all-card-top">
           <span class="track-order-all-card-id">${escapeHtml(order.receipt_number || "")}</span>
           <span class="track-order-all-card-status" style="color:${cfg.color};background:${cfg.bg};">${cfg.emoji} ${escapeHtml(cfg.label)}</span>
@@ -2792,7 +2792,7 @@ function renderTrackOrderAllList(orders) {
           <span>${formatPrice(order.total)}</span>
         </div>
         ${downloadBtnHtml}
-      </button>
+      </div>
     `;
   }).join("");
   listEl.hidden = false;
