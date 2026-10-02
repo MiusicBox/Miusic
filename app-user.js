@@ -2738,6 +2738,31 @@ function switchTrackOrderMode(mode) {
 
   // ออกจากโหมด "ทั้งหมด" แล้ว ให้ปิด listener เรียลไทม์เพื่อไม่ให้ทำงานเปล่าๆ เบื้องหลัง
   if (!isAll) stopTrackOrderAllListener();
+
+  // 🆕 (2026-10-02 v7): ถ้าโหมด "all" + ลูกค้า login แล้ว → auto-fill ชื่อ+เบอร์จาก customer session + auto-submit
+  //   ลูกค้า login แล้วไม่ต้องกรอกชื่อ+เบอร์อีก (เพราะระบบรู้ข้อมูลแล้ว)
+  if (isAll) {
+    const isLoggedIn = (window.isCustomerLoggedIn && window.isCustomerLoggedIn()) || (!!localStorage.getItem("miusic_customer_session"));
+    if (isLoggedIn) {
+      // ดึงข้อมูลลูกค้าจาก localStorage (customer-auth.js เก็บไว้ใน miusic_customer_session)
+      let customer = null;
+      try {
+        const raw = localStorage.getItem("miusic_customer_session");
+        if (raw) customer = JSON.parse(raw);
+      } catch (_) {}
+      if (customer && (customer.display_name || customer.email) && (customer.whatsapp || customer.email)) {
+        const nameInput = document.getElementById("trackOrderAllName");
+        const phoneInput = document.getElementById("trackOrderAllPhone");
+        // auto-fill ชื่อ + เบอร์ (ใช้ whatsapp ถ้ามี, ถ้าไม่มีใช้ email)
+        if (nameInput) nameInput.value = customer.display_name || customer.email || "";
+        if (phoneInput) phoneInput.value = customer.whatsapp || customer.email || "";
+        // auto-submit หลัง 100ms (ให้ UI render เสร็จก่อน)
+        setTimeout(() => {
+          handleTrackOrderAllSubmit();
+        }, 100);
+      }
+    }
+  }
 }
 
 // 🔧 (2026-09-26) เพิ่มใหม่: เปิด modal "ติดตามออเดอร์" ตรงไปที่โหมด "ออเดอร์ทั้งหมดของฉัน" ทันที
