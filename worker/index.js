@@ -2244,6 +2244,19 @@ async function handleDb(request, env, url) {
           //   admin จะเห็นออเดอร์นี้ใน "รอตรวจสอบ" เสมอ → ต้องเช็คเงินโอนเองทุกครั้ง
           const data = body.data || {};
 
+          // 🆕 (2026-10-02): ตั้ง customer_id อัตโนมัติจาก customer session cookie
+          //   ปัญหา: frontend (app-cart.js) บางครั้งส่ง customer_id = null เพราะ ES module timing issue
+          //   → order ไม่ผูกบัญชี → หน้า "บัญชีของฉัน" ดึงไม่เจอ
+          //   วิธีแก้: ให้ Worker เป็นคนตั้ง customer_id จาก session cookie (HttpOnly)
+          //   → ไม่พึ่ง frontend เลย → ทำงานเสมอ
+          //   ถ้าไม่ login → customer_id = null (เหมือนเดิม ระบบ track order ด้วยชื่อ+เบอร์ยังทำงาน)
+          try {
+            const customer = await getCustomerSession(request, env);
+            if (customer) {
+              data.customer_id = customer.id;
+            }
+          } catch (_) { /* ถ้า customer_sessions table ไม่มี → ข้าม */ }
+
           // ตรวจ required fields — กันสคริปต์ส่งข้อมูลไม่ครบ
           if (!data.customer_name || typeof data.customer_name !== "string" || !data.customer_name.trim()) {
             return jsonResponse({ error: "ข้อมูลไม่ครบ — ต้องมี customer_name" }, 400);
