@@ -4811,7 +4811,21 @@ async function handleCustomerAuth(request, env, url) {
         "INSERT INTO customers (id, email, whatsapp, password_hash, display_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
       ).bind(id, email, whatsapp, passwordHash, displayName, now, now).run();
     } catch (err) {
-      return jsonResponse({ error: safeError("สมัครสมาชิกไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+      // 🆕 (2026-10-01 debug): ส่ง error จริงกลับไปด้วย เพื่อให้ผู้ใช้เห็นสาเหตุ (เดิม safeError ซ่อน error)
+      //   ปัญหาที่พบบ่อย: table customers ยังไม่ได้รัน schema ใหม่ (ไม่มี column updated_at)
+      //   หรือ UNIQUE constraint ล้ม (email/whatsapp ซ้ำ — แต่ถูกเช็คก่อนหน้านี้แล้ว)
+      const errMsg = String(err?.message || String(err));
+      console.error("[customer register] INSERT failed:", errMsg);
+      // ถ้าเป็น "no such table" → แสดง hint ให้รัน SQL
+      if (errMsg.includes("no such table")) {
+        return jsonResponse({ error: "ระบบสมาชิกยังไม่พร้อม — กรุณารัน schema.sql ล่าสุดใน D1 Console เพื่อสร้างตาราง customers" }, 500);
+      }
+      // ถ้าเป็น UNIQUE constraint → แสดงว่า email/whatsapp ซ้ำ
+      if (errMsg.toLowerCase().includes("unique constraint") || errMsg.toLowerCase().includes("unique")) {
+        return jsonResponse({ error: "อีเมลหรือเบอร์ WhatsApp นี้ถูกใช้สมัครแล้ว" }, 409);
+      }
+      // กรณีอื่น → ส่ง error จริงกลับไป (เพื่อ debug)
+      return jsonResponse({ error: "สมัครสมาชิกไม่สำเร็จ: " + errMsg }, 500);
     }
     // สร้าง session
     const token = await createCustomerSession(env, id);
