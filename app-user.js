@@ -2485,7 +2485,7 @@ function renderTrackOrderResult(order) {
     ${(order.zip_download_url && (order.status === "processing" || order.status === "completed"))
       ? `<div class="track-order-zip" style="margin-top:10px;padding:10px;background:rgba(16,185,129,.08);border-radius:10px;">
           <div style="font-size:12px;color:var(--success);font-weight:600;margin-bottom:6px;">📦 ไฟล์เพลงพร้อมดาวน์โหลด</div>
-          <a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" class="btn" style="display:inline-block;padding:8px 16px;font-size:13px;font-weight:600;text-decoration:none;background:linear-gradient(145deg, #4ade80 0%, #16a34a 50%, #14532d 100%);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:8px;box-shadow:0 4px 12px rgba(22,163,74,.45),inset 0 1px 0 rgba(255,255,255,.22);text-shadow:0 1px 2px rgba(0,0,0,.30);">⬇️ ดาวน์โหลด ZIP (${escapeHtml(order.zip_file_name || 'Order.zip')})</a>
+          <a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" class="btn zip-download-btn"><span class="zip-download-label">⬇️ ดาวน์โหลด ZIP</span><span class="zip-download-name">${escapeHtml(order.zip_file_name || 'Order.zip')}</span></a>
         </div>`
       : (order.status === "processing")
         ? `<div style="margin-top:10px;font-size:12px;color:var(--accent);">⏳ แอดมินกำลังเตรียมไฟล์ ZIP ส่งให้คุณ — รอสักครู่</div>`
@@ -2856,7 +2856,7 @@ function openTrackOrderAllDetail(order) {
     ${(order.zip_download_url && (order.status === "processing" || order.status === "completed"))
       ? `<div class="track-order-zip" style="margin-top:10px;padding:10px;background:rgba(16,185,129,.08);border-radius:10px;">
           <div style="font-size:12px;color:var(--success);font-weight:600;margin-bottom:6px;">📦 ไฟล์เพลงพร้อมดาวน์โหลด</div>
-          <a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" class="btn" style="display:inline-block;padding:8px 16px;font-size:13px;font-weight:600;text-decoration:none;background:linear-gradient(145deg, #4ade80 0%, #16a34a 50%, #14532d 100%);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:8px;box-shadow:0 4px 12px rgba(22,163,74,.45),inset 0 1px 0 rgba(255,255,255,.22);text-shadow:0 1px 2px rgba(0,0,0,.30);">⬇️ ดาวน์โหลด ZIP (${escapeHtml(order.zip_file_name || 'Order.zip')})</a>
+          <a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" class="btn zip-download-btn"><span class="zip-download-label">⬇️ ดาวน์โหลด ZIP</span><span class="zip-download-name">${escapeHtml(order.zip_file_name || 'Order.zip')}</span></a>
         </div>`
       : (order.status === "processing")
         ? `<div style="margin-top:10px;font-size:12px;color:var(--accent);">⏳ แอดมินกำลังเตรียมไฟล์ ZIP ส่งให้คุณ — รอสักครู่</div>`
