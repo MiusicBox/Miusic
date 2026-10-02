@@ -355,3 +355,44 @@ CREATE INDEX IF NOT EXISTS idx_order_status_history_order
   ON order_status_history(order_id, id);
 CREATE INDEX IF NOT EXISTS idx_order_status_history_created
   ON order_status_history(created_at);
+
+-- ===================================================
+-- 🆕 (2026-10-01): ระบบสมาชิกลูกค้า (Customer Account)
+--   ลูกค้าเลือกสมัคร/เข้าสู่ระบบได้ (optional — ไม่ login ก็ซื้อได้)
+--   รองรับ login ด้วย email หรือ WhatsApp (เลือกอย่างใดอย่างหนึ่ง)
+--
+--   การออกแบบ:
+--   - แยกจากระบบแอดมิน (admin_users + sessions) โดยสิ้นเชิง
+--   - ใช้ PBKDF2-SHA256 เหมือนแอดมิน (ปลอดภัย)
+--   - ใช้ cookie ชื่อ customer_session_token (แยกจาก session_token ของแอดมิน)
+--   - ถ้าลูกค้า login ตอน checkout → order จะผูก customer_id (optional)
+--
+--   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่ม tables ใหม่ ไม่แตะ tables เดิม
+--     ถ้า tables นี้ไม่มี (DB เก่า) → customer endpoints จะ return error (graceful)
+--     ระบบเดิม (track order / my orders ด้วยชื่อ+เบอร์) ยังทำงานเหมือนเดิม
+-- ===================================================
+
+CREATE TABLE IF NOT EXISTS customers (
+  id            TEXT PRIMARY KEY,           -- crypto.randomUUID()
+  email         TEXT UNIQUE,                 -- email สำหรับ login (optional ถ้าใช้ WhatsApp)
+  whatsapp      TEXT UNIQUE,                 -- เบอร์ WhatsApp สำหรับ login (optional ถ้าใช้ email)
+  password_hash TEXT NOT NULL,              -- PBKDF2-SHA256 (เหมือน admin_users)
+  display_name  TEXT,                        -- ชื่อที่แสดง
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+
+-- index สำหรับค้นหาด้วย email หรือ whatsapp ตอน login (เร็ว + กัน scan ทั้งตาราง)
+CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
+CREATE INDEX IF NOT EXISTS idx_customers_whatsapp ON customers(whatsapp);
+
+-- ตาราง customer_sessions (เหมือน sessions ของแอดมิน แต่แยก)
+CREATE TABLE IF NOT EXISTS customer_sessions (
+  token       TEXT PRIMARY KEY,           -- สุ่ม 32 ไบต์
+  customer_id TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT NOT NULL               -- TTL 7 วัน (เหมือนแอดมิน)
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_sessions_customer ON customer_sessions(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_sessions_expires ON customer_sessions(expires_at);

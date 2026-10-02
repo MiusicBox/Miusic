@@ -546,6 +546,8 @@
           <svg class="cart-icon-svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
           <span id="cartBadge" class="cart-badge" hidden>0</span>
         </button>
+        <!-- 🆕 (2026-10-01): ปุ่มสมัคร/เข้าสู่ระบบลูกค้า — แสดงปุ่ม login หรือชื่อลูกค้า + ปุ่มออกจากระบบ (sync โดย customer-auth.js) -->
+        <span id="customerAuthBtnArea" style="display:flex;align-items:center;gap:4px;"></span>
       </div>
     </div>
     <div class="container" style="padding-bottom:10px;">
@@ -1062,5 +1064,73 @@
   <!-- 🔧 v=20260917-p0: P0 แก้ Bug 1 (ลูกค้าตั้ง status เองไม่ได้) + Sec 1 (change-password ต้อง verify เดิม) -->
   <!-- 🔧 v=20260917-polling-fix: Phase 0 ยกเลิก polling ทุก 4 วิ + Phase 1 จุด 5 (admin view cache) + Phase 2 จุด 1 (state ฝั่ง client) -->
   <script type="module" src="app-user.js?v=20260929-wa-datetime-v16"></script>
+  <!-- 🆕 (2026-10-01): ระบบสมาชิกลูกค้า — โหลดทีหลัง app-user.js เพื่อให้ showToast พร้อมใช้ -->
+  <!--   ผลกระทบระบบเดิม: 0% — ไฟล์ใหม่ ไม่แตะ app-user.js/app-cart.js -->
+  <script type="module" src="customer-auth.js?v=20261001-customer-auth-v1"></script>
+
+  <!-- 🆕 (2026-10-01): Modal สมัคร/เข้าสู่ระบบลูกค้า -->
+  <div class="modal-backdrop" id="customerAuthBackdrop" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal" style="max-width:380px;">
+      <div class="modal-header">
+        <h3>👤 บัญชีลูกค้า</h3>
+        <button class="modal-close" id="customerAuthClose" type="button">✕</button>
+      </div>
+      <div style="padding:14px;">
+        <!-- tab เลือก login/register -->
+        <div style="display:flex;gap:6px;margin-bottom:14px;border-bottom:1px solid rgba(255,255,255,.1);padding-bottom:8px;">
+          <button type="button" id="customerAuthTabLogin" class="track-order-mode-btn active" style="flex:1;padding:8px;font-size:13px;font-weight:600;border:none;background:transparent;color:var(--text);cursor:pointer;border-bottom:2px solid var(--accent);">เข้าสู่ระบบ</button>
+          <button type="button" id="customerAuthTabRegister" class="track-order-mode-btn" style="flex:1;padding:8px;font-size:13px;font-weight:600;border:none;background:transparent;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;">สมัครสมาชิก</button>
+        </div>
+        <!-- error message -->
+        <div id="customerAuthError" style="color:var(--danger);font-size:12px;margin-bottom:8px;min-height:14px;"></div>
+        <!-- login view -->
+        <div id="customerAuthLoginView">
+          <div class="field" style="margin-bottom:10px;">
+            <label style="font-size:12px;color:var(--text-dim);">อีเมล หรือ เบอร์ WhatsApp</label>
+            <input id="customerAuthLogin" type="text" placeholder="email@example.com หรือ 02012345678" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
+          </div>
+          <div class="field" style="margin-bottom:14px;">
+            <label style="font-size:12px;color:var(--text-dim);">รหัสผ่าน</label>
+            <input id="customerAuthPassword" type="password" placeholder="รหัสผ่าน (อย่างน้อย 6 ตัว)" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
+          </div>
+          <button class="btn" id="customerAuthLoginBtn" type="button" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">เข้าสู่ระบบ</button>
+        </div>
+        <!-- register view -->
+        <div id="customerAuthRegisterView" style="display:none;">
+          <div class="field" style="margin-bottom:10px;">
+            <label style="font-size:12px;color:var(--text-dim);">อีเมล หรือ เบอร์ WhatsApp (สำหรับ login)</label>
+            <input id="customerAuthLoginReg" type="text" placeholder="email@example.com หรือ 02012345678" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;" oninput="document.getElementById('customerAuthLogin').value = this.value;">
+          </div>
+          <div class="field" style="margin-bottom:10px;">
+            <label style="font-size:12px;color:var(--text-dim);">ชื่อที่แสดง</label>
+            <input id="customerAuthDisplayName" type="text" placeholder="ชื่อเล่น หรือชื่อจริง" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
+          </div>
+          <div class="field" style="margin-bottom:10px;">
+            <label style="font-size:12px;color:var(--text-dim);">เบอร์ WhatsApp (ถ้า login ด้วย email ใส่เบอร์เพิ่มเพื่อรับการแจ้งเตือน)</label>
+            <input id="customerAuthWhatsapp" type="text" placeholder="02012345678 (ไม่บังคับ)" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
+          </div>
+          <div class="field" style="margin-bottom:14px;">
+            <label style="font-size:12px;color:var(--text-dim);">รหัสผ่าน</label>
+            <input id="customerAuthPasswordReg" type="password" placeholder="รหัสผ่าน (อย่างน้อย 6 ตัว)" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;" oninput="document.getElementById('customerAuthPassword').value = this.value;">
+          </div>
+          <button class="btn" id="customerAuthRegisterBtn" type="button" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">สมัครสมาชิก</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🆕 (2026-10-01): view "บัญชีของฉัน" — สำหรับลูกค้า login แล้ว (ดูออเดอร์ทั้งหมด + ข้อมูลบัญชี) -->
+  <div id="myAccountView" class="container" style="display:none;padding:14px 16px 100px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <button class="icon-btn" id="myAccountBackBtn" type="button" aria-label="ย้อนกลับ" style="padding:6px 10px;">←</button>
+      <div style="flex:1;font-weight:800;font-size:16px;">👤 บัญชีของฉัน</div>
+      <button class="icon-btn" id="myAccountRefreshBtn" type="button" aria-label="รีเฟรช" style="padding:6px 10px;">🔄</button>
+    </div>
+    <!-- ข้อมูลบัญชี -->
+    <div id="myAccountProfile" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px;margin-bottom:14px;"></div>
+    <!-- รายการออเดอร์ -->
+    <div style="font-weight:700;font-size:14px;margin-bottom:8px;">📦 ออเดอร์ทั้งหมดของฉัน</div>
+    <div id="myAccountOrdersList" style="display:grid;gap:10px;"></div>
+  </div>
 </body>
 </html>

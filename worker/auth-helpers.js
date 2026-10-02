@@ -173,3 +173,82 @@ export async function cleanupExpiredSessions(env) {
     console.error("cleanupExpiredSessions error:", err?.message || String(err));
   }
 }
+
+// ===================================================
+// 🆕 (2026-10-01): ระบบสมาชิกลูกค้า (Customer Account) — helpers
+//   แยกจากระบบแอดมินโดยสิ้นเชิง — ใช้ cookie ชื่อ customer_session_token
+//   ใช้ PBKDF2-SHA256 เหมือนแอดมิน (hashPassword/verifyPassword ใช้ร่วมกันได้)
+//   ผลกระทบระบบเดิม: 0% — เพิ่ม functions ใหม่ ไม่แตะของเดิม
+// ===================================================
+
+export function buildCustomerSessionCookie(token) {
+  return `customer_session_token=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}`;
+}
+export function buildClearCustomerCookie() {
+  return `customer_session_token=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+}
+
+// 🆕 สร้าง customer session (เหมือน createSession ของแอดมิน แต่เก็บใน customer_sessions table)
+export async function createCustomerSession(env, customerId) {
+  const token = bytesToBase64(crypto.getRandomValues(new Uint8Array(32))).replace(/[+/=]/g, "");
+  const now = new Date();
+  const expires = new Date(now.getTime() + SESSION_TTL_SECONDS * 1000);
+  await env.DB.prepare(
+    "INSERT INTO customer_sessions (token, customer_id, created_at, expires_at) VALUES (?, ?, ?, ?)"
+  ).bind(token, customerId, now.toISOString(), expires.toISOString()).run();
+  return token;
+}
+
+// 🆕 ลบ customer session (เหมือน deleteSession ของแอดมิน)
+export async function deleteCustomerSession(env, token) {
+  if (!token) return;
+  await env.DB.prepare("DELETE FROM customer_sessions WHERE token = ?").bind(token).run();
+}
+
+// 🆕 ดึง customer จาก session (เหมือน getSessionAdmin ของแอดมิน)
+//   คืน customer row (id, email, whatsapp, display_name, created_at) หรือ null ถ้าไม่ได้ login/หมดอายุ
+//   มี sliding session renewal เหมือนแอดมิน (ถ้าเหลือ < 1 วัน → ต่ออายุ 7 วัน)
+export async function getCustomerSession(request, env) {
+  const token = getCookie(request, "customer_session_token");
+  if (!token) return null;
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const customer = await env.DB.prepare(
+    "SELECT c.id, c.email, c.whatsapp, c.display_name, c.created_at, s.expires_at " +
+    "FROM customer_sessions s " +
+    "JOIN customers c ON s.customer_id = c.id " +
+    "WHERE s.token = ? AND s.expires_at > ?"
+  ).bind(token, nowIso).first();
+  if (!customer) return null;
+
+  // Sliding session renewal (เหมือนแอดมิน)
+  try {
+    if (customer.expires_at) {
+      const expiresAt = new Date(customer.expires_at);
+      const msRemaining = expiresAt.getTime() - now.getTime();
+      const oneDayMs = 24 * 60 * 60 * 1000;
+      if (msRemaining < oneDayMs) {
+        const newExpiresAt = new Date(now.getTime() + SESSION_TTL_SECONDS * 1000).toISOString();
+        await env.DB.prepare(
+          "UPDATE customer_sessions SET expires_at = ? WHERE token = ?"
+        ).bind(newExpiresAt, token).run();
+      }
+    }
+  } catch (renewErr) {
+    console.warn("Customer session renewal failed:", renewErr?.message || renewErr);
+  }
+
+  // ลบ expires_at ออกจาก customer object ที่ return
+  const { expires_at, ...customerWithoutExpiresAt } = customer;
+  return customerWithoutExpiresAt;
+}
+
+// 🆕 cleanup customer sessions ที่หมดอายุ (เหมือน cleanupExpiredSessions ของแอดมิน)
+export async function cleanupExpiredCustomerSessions(env) {
+  try {
+    await env.DB.prepare("DELETE FROM customer_sessions WHERE expires_at < ?")
+      .bind(new Date().toISOString()).run();
+  } catch (err) {
+    console.error("cleanupExpiredCustomerSessions error:", err?.message || String(err));
+  }
+}

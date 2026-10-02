@@ -23,7 +23,7 @@
 //     ฟังก์ชัน onSnapshot/listenCustomerOrders ยัง export อยู่ใน db-client.js ตามกฎ
 //     "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน" — เผื่ออนาคตต้องการ realtime กลับมา
 // ===================================================
-import { hashPassword, verifyPassword, getSessionAdmin, createSession, deleteSession, buildSessionCookie, buildClearCookie, getCookie, cleanupExpiredSessions } from "./auth-helpers.js";
+import { hashPassword, verifyPassword, getSessionAdmin, createSession, deleteSession, buildSessionCookie, buildClearCookie, getCookie, cleanupExpiredSessions, getCustomerSession, createCustomerSession, deleteCustomerSession, buildCustomerSessionCookie, buildClearCustomerCookie, cleanupExpiredCustomerSessions } from "./auth-helpers.js";
 import { getDocument, listDocuments, queryDocuments, setDocument, updateDocument, deleteDocument, countDocuments, getDocumentsByIds, countDocumentsAll, findDuplicateSongsByName } from "./db-helpers.js";
 // 🔧 (2026-09-18): ZIP streaming helpers สำหรับสร้างไฟล์ ZIP ฝั่ง Worker
 // ทำไมต้องใช้: Worker request body limit 100MB → สร้าง ZIP > 100MB ผ่าน R2 Multipart Upload ทีละเพลง
@@ -4753,6 +4753,172 @@ async function handleOrderZipAbort(request, env) {
   return jsonResponse({ ok: true, aborted: true, orderId: jobRow.order_id });
 }
 
+// ===================================================
+// 🆕 (2026-10-01): /api/customer/* — ระบบสมาชิกลูกค้า (Customer Account)
+//   ลูกค้าเลือกสมัคร/เข้าสู่ระบบ (optional — ไม่ login ก็ซื้อได้)
+//   รองรับ login ด้วย email หรือ WhatsApp (เลือกอย่างใดอย่างหนึ่ง)
+//
+//   Endpoints:
+//     POST /api/customer/register — สมัคร (email หรือ whatsapp + password + display_name)
+//     POST /api/customer/login    — เข้าสู่ระบบ (login ด้วย email หรือ whatsapp + password)
+//     POST /api/customer/logout   — ออกจากระบบ (ลบ session)
+//     GET  /api/customer/me        — ดูข้อมูลตัวเอง (ถ้า login แล้ว)
+//     GET  /api/customer/orders    — ดูออเดอร์ทั้งหมดของ customer_id นี้
+//
+//   ผลกระทบระบบเดิม: 0% — endpoints ใหม่ทั้งหมด ไม่แตะ /api/auth/* หรือ /api/db/*
+// ===================================================
+async function handleCustomerAuth(request, env, url) {
+  const path = url.pathname.slice("/api/customer/".length);
+
+  // ---------- POST /api/customer/register ----------
+  // รับ: { email?, whatsapp?, password, display_name }
+  // ต้องมี email หรือ whatsapp อย่างน้อย 1 อย่าง + password (>=6 ตัว) + display_name
+  if (path === "register" && request.method === "POST") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+    const email = String(body.email || "").trim().toLowerCase() || null;
+    const whatsapp = String(body.whatsapp || "").trim() || null;
+    const password = String(body.password || "");
+    const displayName = String(body.display_name || "").trim();
+    // validate
+    if (!email && !whatsapp) return jsonResponse({ error: "กรุณากรอกอีเมลหรือเบอร์ WhatsApp อย่างน้อย 1 อย่าง" }, 400);
+    if (password.length < 6) return jsonResponse({ error: "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร" }, 400);
+    if (!displayName) return jsonResponse({ error: "กรุณากรอกชื่อที่แสดง" }, 400);
+    // เช็คซ้ำ — email หรือ whatsapp ต้องไม่ซ้ำกับที่มีอยู่
+    try {
+      if (email) {
+        const exists = await env.DB.prepare("SELECT id FROM customers WHERE email = ?").bind(email).first();
+        if (exists) return jsonResponse({ error: "อีเมลนี้ถูกใช้สมัครแล้ว" }, 409);
+      }
+      if (whatsapp) {
+        const exists = await env.DB.prepare("SELECT id FROM customers WHERE whatsapp = ?").bind(whatsapp).first();
+        if (exists) return jsonResponse({ error: "เบอร์ WhatsApp นี้ถูกใช้สมัครแล้ว" }, 409);
+      }
+    } catch (err) {
+      // ถ้าตาราง customers ยังไม่ถูกสร้าง → return error (graceful)
+      if (String(err?.message || "").includes("no such table")) {
+        return jsonResponse({ error: "ระบบสมาชิกยังไม่พร้อม — กรุณารัน schema.sql ล่าสุดใน D1 Console" }, 500);
+      }
+      return jsonResponse({ error: safeError("ตรวจสอบข้อมูลไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+    }
+    // สร้าง customer
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const passwordHash = await hashPassword(password);
+    try {
+      await env.DB.prepare(
+        "INSERT INTO customers (id, email, whatsapp, password_hash, display_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      ).bind(id, email, whatsapp, passwordHash, displayName, now, now).run();
+    } catch (err) {
+      return jsonResponse({ error: safeError("สมัครสมาชิกไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+    }
+    // สร้าง session
+    const token = await createCustomerSession(env, id);
+    // ส่ง cookie + ข้อมูล customer (ไม่ส่ง password_hash)
+    return new Response(JSON.stringify({
+      ok: true,
+      customer: { id, email, whatsapp, display_name: displayName, created_at: now }
+    }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Set-Cookie": buildCustomerSessionCookie(token),
+      },
+    });
+  }
+
+  // ---------- POST /api/customer/login ----------
+  // รับ: { login, password } — login คือ email หรือ whatsapp (ตรวจทั้งสอง)
+  if (path === "login" && request.method === "POST") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+    const login = String(body.login || "").trim();
+    const password = String(body.password || "");
+    if (!login || !password) return jsonResponse({ error: "กรุณากรอกอีเมล/เบอร์ WhatsApp และรหัสผ่าน" }, 400);
+    // ค้นหา customer ด้วย email หรือ whatsapp (ลองทั้งสองแบบ)
+    const loginLower = login.toLowerCase();
+    let customer;
+    try {
+      customer = await env.DB.prepare(
+        "SELECT id, email, whatsapp, password_hash, display_name, created_at FROM customers WHERE email = ? OR whatsapp = ?"
+      ).bind(loginLower, login).first();
+    } catch (err) {
+      if (String(err?.message || "").includes("no such table")) {
+        return jsonResponse({ error: "ระบบสมาชิกยังไม่พร้อม — กรุณารัน schema.sql ล่าสุดใน D1 Console" }, 500);
+      }
+      return jsonResponse({ error: safeError("เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+    }
+    if (!customer) return jsonResponse({ error: "ไม่พบบัญชีนี้ — กรุณาตรวจสอบอีเมล/เบอร์ WhatsApp" }, 401);
+    // ตรวจรหัสผ่าน
+    const valid = await verifyPassword(password, customer.password_hash);
+    if (!valid) return jsonResponse({ error: "รหัสผ่านไม่ถูกต้อง" }, 401);
+    // สร้าง session
+    const token = await createCustomerSession(env, customer.id);
+    // ส่ง cookie + ข้อมูล customer (ไม่ส่ง password_hash)
+    const { password_hash, ...customerSafe } = customer;
+    return new Response(JSON.stringify({
+      ok: true,
+      customer: customerSafe
+    }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Set-Cookie": buildCustomerSessionCookie(token),
+      },
+    });
+  }
+
+  // ---------- POST /api/customer/logout ----------
+  if (path === "logout" && request.method === "POST") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const token = getCookie(request, "customer_session_token");
+    if (token) await deleteCustomerSession(env, token);
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Set-Cookie": buildClearCustomerCookie(),
+      },
+    });
+  }
+
+  // ---------- GET /api/customer/me ----------
+  // ตรวจ session → คืนข้อมูล customer ถ้า login แล้ว
+  if (path === "me" && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const customer = await getCustomerSession(request, env);
+    if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    return jsonResponse({ ok: true, customer });
+  }
+
+  // ---------- GET /api/customer/orders ----------
+  // ดึงออเดอร์ทั้งหมดของ customer_id นี้ (เรียงจากล่าสุดก่อน)
+  // ใช้ customer_id จาก session → ค้นใน documents WHERE collection='orders' AND customer_id = ?
+  if (path === "orders" && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const customer = await getCustomerSession(request, env);
+    if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    try {
+      // ค้น orders ที่ผูกกับ customer_id นี้ (ใช้ json_extract เพราะ customer_id เก็บใน JSON blob)
+      const { results } = await env.DB.prepare(
+        "SELECT id, data FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ? ORDER BY created_at DESC LIMIT 200"
+      ).bind(customer.id).all();
+      const orders = (results || []).map(row => {
+        let data;
+        try { data = JSON.parse(row.data); } catch { data = {}; }
+        return { id: row.id, ...data };
+      });
+      return jsonResponse({ ok: true, orders });
+    } catch (err) {
+      return jsonResponse({ error: safeError("โหลดออเดอร์ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+    }
+  }
+
+  return jsonResponse({ error: "ไม่พบ endpoint นี้" }, 404);
+}
+
 export default {
   // 🔧 (2026-09-22 fix Bug #2 UI v6): เพิ่ม ctx parameter → ใช้ ctx.waitUntil() รัน audit log
   //   ใน background → ไม่บล็อก response (กัน UI ค้าง "กำลังอัปโหลด..." ถ้า audit_log INSERT ช้า/hang)
@@ -5903,6 +6069,13 @@ export default {
     if (url.pathname.startsWith("/api/auth/")) {
       if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
       return handleAuth(request, env, url);
+    }
+
+    // 🆕 (2026-10-01): /api/customer/* — ระบบสมาชิกลูกค้า (register/login/logout/me/orders)
+    //   ผลกระทบระบบเดิม: 0% — path ใหม่ ไม่แตะ /api/auth/* (แอดมิน) หรือ /api/db/*
+    if (url.pathname.startsWith("/api/customer/")) {
+      if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
+      return handleCustomerAuth(request, env, url);
     }
 
     if (url.pathname.startsWith("/api/db/")) {

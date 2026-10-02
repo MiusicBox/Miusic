@@ -2064,6 +2064,10 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
           // 🔧 แก้บั๊ก (2026-09-18): normalize เบอร์ Laos ก่อนเก็บลง DB
           //   เพื่อให้ track order ตามเบอร์รูปแบบใดก็เจอ (020 / 20 / +85620 ฯลฯ)
           whatsapp: normalizePhoneForStorage(whatsapp),
+          // 🆕 (2026-10-01): ผูก customer_id ถ้าลูกค้า login แล้ว (optional — ไม่ login ก็ซื้อได้)
+          //   ใช้สำหรับหน้า "บัญชีของฉัน" ดึงออเดอร์ทั้งหมดของ customer_id นี้
+          //   ถ้าไม่ login → customer_id = null (ระบบเดิม track order ด้วย ชื่อ+เบอร์ ยังทำงาน)
+          customer_id: (window.getCurrentCustomer && window.getCurrentCustomer()) ? window.getCurrentCustomer().id : null,
           items: resolved.items, // Order Items ทั้งหมดของตะกร้า ณ ขณะสั่งซื้อ
           total: resolved.total, // ← ยอดสุดท้าย (final_total) — เก็บเหมือนเดิมเพื่อ back-compat กับ orders.js เดิม
           order_type: resolved.orderType, // "single" | "playlist" | "mixed"

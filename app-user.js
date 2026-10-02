@@ -1806,6 +1806,138 @@ function hideMyOrdersView() {
   if (myOrdersView) myOrdersView.style.display = "none";
 }
 
+// ============================================================
+// 🆕 (2026-10-01): หน้า "บัญชีของฉัน" สำหรับลูกค้า login แล้ว
+//   แสดงข้อมูลบัญชี + ออเดอร์ทั้งหมด (ดึงจาก /api/customer/orders)
+//   ไม่แตะระบบเดิม (track order / myOrdersView ด้วย ชื่อ+เบอร์) — ใช้ view ใหม่ #myAccountView
+// ============================================================
+
+// 🆕 แสดงหน้าบัญชีของฉัน (ซ่อน view อื่น + ดึง orders ใหม่)
+async function showCustomerAccountView() {
+  // ซ่อน view อื่น
+  ["#gridTitle", "#songGrid", "#emptyState"].forEach(selector => {
+    const el = document.querySelector(selector);
+    if (el) el.style.display = "none";
+  });
+  const categoryChips = document.getElementById("categoryChips");
+  const djSection = document.getElementById("djSection");
+  if (categoryChips) categoryChips.style.display = "none";
+  if (djSection) djSection.style.display = "none";
+  const playlistsContainer = document.getElementById("playlistsContainer");
+  if (playlistsContainer) playlistsContainer.classList.add("is-closed");
+  const myOrdersView = document.getElementById("myOrdersView");
+  if (myOrdersView) myOrdersView.style.display = "none";
+  // แสดง account view
+  const myAccountView = document.getElementById("myAccountView");
+  if (myAccountView) myAccountView.style.display = "block";
+  // ดึงข้อมูล customer + orders
+  await loadCustomerAccountData();
+}
+
+// 🆕 ซ่อนหน้าบัญชีของฉัน (กลับหน้าหลัก)
+function hideCustomerAccountView() {
+  const myAccountView = document.getElementById("myAccountView");
+  if (myAccountView) myAccountView.style.display = "none";
+}
+
+// 🆕 ดึงข้อมูลบัญชี + ออเดอร์จาก /api/customer/me + /api/customer/orders
+async function loadCustomerAccountData() {
+  const profileEl = document.getElementById("myAccountProfile");
+  const ordersListEl = document.getElementById("myAccountOrdersList");
+  if (!profileEl || !ordersListEl) return;
+  profileEl.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:14px;">⏳ กำลังโหลด...</div>`;
+  ordersListEl.innerHTML = "";
+  try {
+    // ดึงข้อมูล customer (จาก customer-auth.js state)
+    const customer = window.getCurrentCustomer ? window.getCurrentCustomer() : null;
+    if (!customer) {
+      profileEl.innerHTML = `<div style="color:var(--danger);">⚠️ ยังไม่ได้เข้าสู่ระบบ</div>`;
+      return;
+    }
+    // แสดง profile
+    profileEl.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+        <div style="width:40px;height:40px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;">${escapeHtml((customer.display_name || customer.email || "?").charAt(0).toUpperCase())}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:15px;">${escapeHtml(customer.display_name || "ลูกค้า")}</div>
+          <div style="font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(customer.email || customer.whatsapp || "")}</div>
+        </div>
+      </div>
+      ${customer.email ? `<div style="font-size:12px;color:var(--text-dim);margin-top:4px;">📧 ${escapeHtml(customer.email)}</div>` : ""}
+      ${customer.whatsapp ? `<div style="font-size:12px;color:var(--text-dim);margin-top:2px;">📱 ${escapeHtml(customer.whatsapp)}</div>` : ""}
+      <div style="font-size:11px;color:var(--text-dim);margin-top:6px;">สมาชิกตั้งแต่: ${customer.created_at ? new Date(customer.created_at).toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" }) : "-"}</div>
+    `;
+    // ดึงออเดอร์
+    ordersListEl.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:14px;">⏳ กำลังโหลดออเดอร์...</div>`;
+    const res = await fetch("/api/customer/orders", { credentials: "same-origin" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      ordersListEl.innerHTML = `<div style="color:var(--danger);text-align:center;padding:14px;">โหลดออเดอร์ไม่สำเร็จ: ${escapeHtml(err?.error || res.statusText)}</div>`;
+      return;
+    }
+    const data = await res.json();
+    const orders = Array.isArray(data?.orders) ? data.orders : [];
+    if (orders.length === 0) {
+      ordersListEl.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:20px;">ยังไม่มีออเดอร์ — ไปเลือกเพลงแล้วสั่งซื้อได้เลย 🎵</div>`;
+      return;
+    }
+    // render orders
+    ordersListEl.innerHTML = orders.map(order => {
+      const status = String(order.status || "pending_verify");
+      const total = Number(order.final_total ?? order.total ?? 0);
+      const createdAt = order.created_at ? new Date(order.created_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "-";
+      const receipt = order.receipt_number || (order.id || "").slice(0, 8);
+      // status badge color
+      let statusColor = "var(--text-dim)";
+      let statusLabel = status;
+      if (status === "pending_verify") { statusColor = "#F5B400"; statusLabel = "🟡 รอตรวจสอบ"; }
+      else if (status === "processing") { statusColor = "#3B82F6"; statusLabel = "🔵 กำลังเตรียม ZIP"; }
+      else if (status === "completed") { statusColor = "#10B981"; statusLabel = "✅ เสร็จสิ้น"; }
+      else if (status === "cancelled") { statusColor = "var(--danger)"; statusLabel = "❌ ยกเลิก"; }
+      // download button (ถ้ามี zip_download_url และ status=completed)
+      const downloadBtn = (status === "completed" && order.zip_download_url)
+        ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" style="display:inline-block;padding:6px 12px;background:var(--accent);color:#fff;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;margin-top:6px;">⬇️ ดาวน์โหลด ZIP</a>`
+        : "";
+      return `
+        <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:700;font-size:13px;">#${escapeHtml(receipt)}</div>
+              <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${escapeHtml(createdAt)}</div>
+            </div>
+            <span style="font-size:11px;font-weight:700;color:${statusColor};">${escapeHtml(statusLabel)}</span>
+          </div>
+          <div style="font-size:12px;margin-top:8px;">ยอดรวม: <strong>${formatPrice(total)}</strong></div>
+          ${order.items ? `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">เพลง ${order.items.length} เพลง</div>` : ""}
+          ${downloadBtn}
+        </div>
+      `;
+    }).join("");
+  } catch (err) {
+    profileEl.innerHTML = `<div style="color:var(--danger);">⚠️ โหลดไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
+    ordersListEl.innerHTML = "";
+  }
+}
+
+// 🆕 expose ให้ customer-auth.js เรียก (ตอนกดปุ่ม "👤 บัญชี")
+window.showCustomerAccountView = showCustomerAccountView;
+
+// 🆕 ผูก listeners สำหรับปุ่มใน myAccountView
+document.getElementById("myAccountBackBtn")?.addEventListener("click", () => {
+  hideCustomerAccountView();
+  // กลับหน้าหลัก (แสดง grid + category chips + dj)
+  ["#gridTitle", "#songGrid"].forEach(s => { const el = document.querySelector(s); if (el) el.style.display = ""; });
+  const categoryChips = document.getElementById("categoryChips");
+  const djSection = document.getElementById("djSection");
+  if (categoryChips) categoryChips.style.display = "";
+  if (djSection) djSection.style.display = "";
+  const emptyState = document.getElementById("emptyState");
+  if (emptyState) emptyState.style.display = "none";
+});
+document.getElementById("myAccountRefreshBtn")?.addEventListener("click", () => {
+  loadCustomerAccountData();
+});
+
 // ===== เพิ่มใหม่: ติดตามออเดอร์ (ฝั่งลูกค้า ไม่ต้อง Login) — ไม่แตะระบบเดิม =====
 // ลูกค้ากรอกเลข Order + ชื่อ + เบอร์โทร เพื่อค้นหาและตรวจสอบสถานะออเดอร์ของตัวเอง
 function normalizePhone(v) {
