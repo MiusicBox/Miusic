@@ -504,6 +504,18 @@ function showView(id) {
     // กัน stack โตเกิน 20 (cap) — กัน memory leak ถ้าผู้ใช้กดไปมาเยอะ
     if (viewHistory.length > 20) viewHistory = viewHistory.slice(-20);
   }
+  // 🆕 (2026-10-02 v4 defense-in-depth): ถ้าเข้า view-customers → โหลดคำขารีเซ็ตด้วย (defense-in-depth)
+  //   เหตุผล: ถ้ามี code path อื่นเรียก showView("view-customers") โดยไม่เรียก loadPasswordResetRequests() → คำขาจะไม่แสดง
+  //   วิธีแก้: showView ตรวจเองว่าถ้าเป็น view-customers → เรียก load ทั้ง customers + pw reset requests
+  //   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่ม if branch ใหม่ ไม่ลบ logic เดิม
+  if (id === "view-customers" && typeof loadCustomers === "function" && typeof loadPasswordResetRequests === "function") {
+    try {
+      loadCustomers();
+      loadPasswordResetRequests(document.getElementById("pwResetFilter")?.value || "pending");
+    } catch (err) {
+      console.warn("[showView view-customers] auto-load failed:", err);
+    }
+  }
 }
 
 // 🆕 (2026-10-01 navigation): goBack() — กลับ view ก่อนหน้า
@@ -529,6 +541,11 @@ async function goBack() {
       else if (prev === "view-categories") loadCategories();
       else if (prev === "view-djs") loadDjs();
       else if (prev === "view-playlists") loadPlaylists();
+      // 🆕 (2026-10-02 v4 fix): เพิ่ม view-customers → โหลดคำขารีเซ็ตด้วย (เดิมไม่มี → กด back เข้ามาจะไม่เห็นคำขา)
+      else if (prev === "view-customers") {
+        loadCustomers();
+        loadPasswordResetRequests(document.getElementById("pwResetFilter")?.value || "pending");
+      }
       // view-orders, view-payments, view-settings, etc. มี load function เฉพาะ — ข้ามไปก็ได้ (ไม่ crash)
       return;
     }
