@@ -134,7 +134,7 @@ function buildWhatsAppLink(number, text) {
 }
 
 function debounce(fn, wait) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), wait); }; }
-const { loadCart, bindCartEvents, addToCart, getLastOrderRecord, showReceipt, updatePendingPaymentInfo, getOrderPaymentState } = initCart({
+const { loadCart, bindCartEvents, addToCart, getLastOrderRecord, showReceipt, updatePendingPaymentInfo, getOrderPaymentState, openPaymentModal } = initCart({
   state: STATE,
   showToast,
   escapeHtml,
@@ -145,6 +145,12 @@ const { loadCart, bindCartEvents, addToCart, getLastOrderRecord, showReceipt, up
   //   (function declaration ถูก hoisted จึงอ้างอิงได้แม้นิยามอยู่ถัดไปในไฟล์)
   openTrackOrderAllPicker: () => openPendingPaymentPicker()
 });
+
+// 🆕 (2026-10-02 fix): expose showReceipt + openPaymentModal ไป window
+//   ให้ app-promotion.js ใช้ในปุ่ม "ชำระเงิน" ในรายละเอียดออเดอร์
+//   (showReceipt/openPaymentModal มาจาก initCart return → อยู่ใน module scope ของ app-user.js)
+window.showReceipt = showReceipt;
+window.openPaymentModal = openPaymentModal;
 
 // 💙 (2026-09-20): สไตล์ C2 Vivid Cyan — แยกตัวอักษรชื่อร้านเป็น span.char
 //   แต่ละตัวได้สีฟ้าไล่จากสว่าง→มืด + animation-delay ต่างกัน → กระโดดทีละตัว

@@ -2486,11 +2486,18 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     // 🛡️ (added 2026-09-26 prevent double payment): export helper สำหรับ app-user.js
     //   เพื่อใช้ใน renderTrackOrderResult / openTrackOrderAllDetail / renderTrackOrderAllList
     //   ทำให้ frontend ทุกส่วนใช้สถานะเดียวกัน (synced) — กัน inconsistency
-    getOrderPaymentState
+    getOrderPaymentState,
+    // 🆕 (2026-10-02): expose openPaymentModal ให้ app-user.js ใช้
+    openPaymentModal
   };
 }
 
 // 🆕 (2026-10-02): expose showReceipt + openPaymentModal ให้ app-promotion.js ใช้ได้
 //   ใช้ในปุ่ม "ชำระเงิน" ในรายละเอียดออเดอร์ (หน้า my orders)
-window.showReceipt = showReceipt;
-window.openPaymentModal = openPaymentModal;
+//   ⚠️ showReceipt/openPaymentModal อยู่ใน closure ของ initCart → ไม่สามารถ expose ที่ท้ายไฟล์ได้
+//   วิธีแก้: ใช้ window.__exposeFunctions ที่ initCart เรียกตอนเริ่มต้น เพื่อ expose หลังจากที่ functions ถูกสร้าง
+//   แต่เพื่อความปลอดภัย — ใช้ fallback ที่ไม่พัง: ถ้าไม่เจอ function → ไม่ทำอะไร (no-op)
+//   app-promotion.js จะเรียกผ่าน window.showReceipt ซึ่งถูก set ใน initCart (ดูบรรทัดใน initCart)
+//   ที่นี่: ตั้งค่าเริ่มต้นเป็น noop เพื่อกัน ReferenceError
+if (typeof window.showReceipt !== "function") window.showReceipt = function() { console.warn("showReceipt not ready yet"); };
+if (typeof window.openPaymentModal !== "function") window.openPaymentModal = function() { console.warn("openPaymentModal not ready yet"); };
