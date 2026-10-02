@@ -2492,7 +2492,7 @@ function renderTrackOrderResult(order) {
           ? `<div style="margin-top:10px;font-size:12px;color:var(--text-dim);">⏳ รอแอดมินตรวจสอบการโอนเงิน — หลังยืนยันแล้วไฟล์จะถูกเตรียมให้</div>`
           : ""}
     <div class="track-order-actions">
-      <button class="btn" type="button" id="trackOrderReceiptBtn" style="background:linear-gradient(145deg, #4ade80 0%, #16a34a 50%, #14532d 100%);color:#fff;border:1px solid rgba(255,255,255,.25);box-shadow:0 4px 12px rgba(22,163,74,.45),inset 0 1px 0 rgba(255,255,255,.22);">📄 ดูใบเสร็จ</button>
+      <button class="btn" type="button" id="trackOrderReceiptBtn" style="background:linear-gradient(145deg, #38bdf8 0%, #2563eb 50%, #4338ca 100%);color:#fff;border:1px solid rgba(255,255,255,.25);box-shadow:0 4px 12px rgba(37,99,235,.45),inset 0 1px 0 rgba(255,255,255,.22);text-shadow:0 1px 2px rgba(0,0,0,.30);">📄 ดูใบเสร็จ</button>
       ${/* 🛡️ (added 2026-09-26): ซ่อนปุ่ม "ชำระเงิน" เมื่อ state เป็น paid / pending_review / verified_awaiting_zip */ ""}
       ${/*   ปุ่มยังแสดงเมื่อ state เป็น unpaid / rejected / cancelled (ลูกค้ายังชำระ/ส่งสลิปใหม่ได้) */ ""}
       ${paymentState.showPayButton ? `<button class="btn" type="button" id="trackOrderPayBtn" style="background:var(--accent);color:#fff;">💳 ชำระเงิน</button>` : ""}
@@ -2877,7 +2877,7 @@ function openTrackOrderAllDetail(order) {
           ? `<div style="margin-top:10px;font-size:12px;color:var(--text-dim);">⏳ รอแอดมินตรวจสอบการโอนเงิน — หลังยืนยันแล้วไฟล์จะถูกเตรียมให้</div>`
           : ""}
     <div class="track-order-actions">
-      <button class="btn" type="button" id="trackOrderAllReceiptBtn" style="background:linear-gradient(145deg, #4ade80 0%, #16a34a 50%, #14532d 100%);color:#fff;border:1px solid rgba(255,255,255,.25);box-shadow:0 4px 12px rgba(22,163,74,.45),inset 0 1px 0 rgba(255,255,255,.22);">📄 ดูใบเสร็จ</button>
+      <button class="btn" type="button" id="trackOrderAllReceiptBtn" style="background:linear-gradient(145deg, #38bdf8 0%, #2563eb 50%, #4338ca 100%);color:#fff;border:1px solid rgba(255,255,255,.25);box-shadow:0 4px 12px rgba(37,99,235,.45),inset 0 1px 0 rgba(255,255,255,.22);text-shadow:0 1px 2px rgba(0,0,0,.30);">📄 ดูใบเสร็จ</button>
       ${/* 🛡️ (added 2026-09-26): ซ่อนปุ่ม "ชำระเงิน" เมื่อ state เป็น paid/pending_review/verified_awaiting_zip */ ""}
       ${paymentState.showPayButton ? `<button class="btn" type="button" id="trackOrderAllPayBtn" style="background:var(--accent);color:#fff;">💳 ชำระเงิน</button>` : ""}
       <button class="btn" type="button" id="trackOrderAllWhatsappBtn">ติดต่อแอดมินผ่าน WhatsApp</button>
