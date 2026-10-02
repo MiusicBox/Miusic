@@ -475,17 +475,36 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       const whatsappInput = document.getElementById("checkoutCustomerWhatsapp");
       if (nameInput) nameInput.value = customer.display_name || "";
       if (whatsappInput) whatsappInput.value = customer.whatsapp || customer.email || "";
-      // แสดงข้อความแจ้งลูกค้าว่าใช้ข้อมูลจากบัญชี (read-only feel)
+      // 🆕 (2026-10-02 fix): ซ่อนฟอร์มกรอกชื่อ+เบอร์ ถ้า login แล้ว
+      //   แสดงแค่ข้อความ "ใช้ข้อมูลจากบัญชี" + ปุ่มยืนยัน
+      //   ลูกค้าไม่ต้องกรอกชื่อ+เบอร์เอง → ป้องกันการแก้ข้อมูลผิด
+      const nameField = nameInput?.closest(".field");
+      const whatsappField = whatsappInput?.closest(".field");
+      if (nameField) nameField.style.display = "none";
+      if (whatsappField) whatsappField.style.display = "none";
+      // แสดงข้อความแจ้งลูกค้าว่าใช้ข้อมูลจากบัญชี
       if (feedback) {
-        feedback.textContent = `👤 ใช้ข้อมูลจากบัญชี: ${customer.display_name || ""} (${customer.whatsapp || customer.email || ""})`;
-        feedback.style.color = "var(--accent)";
+        feedback.innerHTML = `
+          <div style="background:rgba(139,92,246,.1);border:1px solid var(--accent);border-radius:8px;padding:12px;margin-bottom:8px;">
+            <div style="font-size:14px;font-weight:600;color:var(--accent);">👤 ใช้ข้อมูลจากบัญชี</div>
+            <div style="font-size:13px;margin-top:4px;">ชื่อ: <strong>${escapeHtml(customer.display_name || "")}</strong></div>
+            <div style="font-size:13px;">เบอร์: <strong>${escapeHtml(customer.whatsapp || customer.email || "")}</strong></div>
+          </div>
+        `;
+        feedback.style.color = "var(--text)";
       }
     } else {
-      // ไม่ login → ใช้ข้อมูลที่เคยบันทึกไว้ในเครื่อง (เหมือนเดิม)
+      // ไม่ login → แสดงฟอร์มกรอกชื่อ+เบอร์ (เหมือนเดิม)
+      // 🆕 (2026-10-02 fix): ต้องแสดงฟอร์มกลับมา (กันกรณีเคย login แล้ว logout → ฟอร์มยังซ่อน)
+      const nameInput = document.getElementById("checkoutCustomerName");
+      const whatsappInput = document.getElementById("checkoutCustomerWhatsapp");
+      const nameField = nameInput?.closest(".field");
+      const whatsappField = whatsappInput?.closest(".field");
+      if (nameField) nameField.style.display = "";
+      if (whatsappField) whatsappField.style.display = "";
+      // ใช้ข้อมูลที่เคยบันทึกไว้ในเครื่อง (เหมือนเดิม)
       const savedInfo = loadCustomerInfo();
       if (savedInfo) {
-        const nameInput = document.getElementById("checkoutCustomerName");
-        const whatsappInput = document.getElementById("checkoutCustomerWhatsapp");
         if (nameInput && !nameInput.value.trim() && savedInfo.customerName) nameInput.value = savedInfo.customerName;
         if (whatsappInput && !whatsappInput.value.trim() && savedInfo.whatsapp) whatsappInput.value = savedInfo.whatsapp;
       }
