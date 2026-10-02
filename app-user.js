@@ -2362,6 +2362,14 @@ function openTrackOrder() {
   } else if (quickEl) {
     quickEl.hidden = true;
   }
+  // 🆕 (2026-10-02 v7): preload ชื่อ+เบอร์ ของ mode "ออเดอร์ทั้งหมดของฉัน" จาก localStorage
+  //   เพื่อให้ลูกค้าไม่ต้องกรอกใหม่ทุกครั้ง
+  const savedNameAll = localStorage.getItem("miusic_track_all_name");
+  const savedPhoneAll = localStorage.getItem("miusic_track_all_phone");
+  const allNameInput = document.getElementById("trackOrderAllName");
+  const allPhoneInput = document.getElementById("trackOrderAllPhone");
+  if (allNameInput && savedNameAll) allNameInput.value = savedNameAll;
+  if (allPhoneInput && savedPhoneAll) allPhoneInput.value = savedPhoneAll;
 }
 function closeTrackOrder() {
   const backdrop = document.getElementById("trackOrderBackdrop");
@@ -3128,6 +3136,12 @@ async function handleTrackOrderAllSubmit() {
     setTrackOrderAllFeedback("กรุณากรอกชื่อและเบอร์โทรให้ครบ");
     return;
   }
+
+  // 🆕 (2026-10-02 v7): บันทึกชื่อ+เบอร์ลง localStorage เพื่อ preload ครั้งต่อไป (เก็บในเครื่องของลูกค้า)
+  try {
+    localStorage.setItem("miusic_track_all_name", name);
+    localStorage.setItem("miusic_track_all_phone", phoneRaw);
+  } catch (_) {} // localStorage อาจถูก block ในบาง browser → ข้ามไป
 
   btn.disabled = true;
   btn.textContent = "กำลังโหลด...";
