@@ -882,12 +882,29 @@ function renderPlaylists() {
               <div class="playlist-folder-price-block">
                 ${renderDiscountedPriceForPlaylist(pl)}
               </div>
-              <button type="button" class="cart-add-btn playlist-folder-buy-btn" data-add-cart-playlist="${pl.id}" aria-label="ซื้อเพลย์ลิสต์ ${escapeHtml(pl.playlist_name)}">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
-                <span>ซื้อทั้งเพลย์ลิสต์</span>
-              </button>
+              <div class="song-actions-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <button class="btn-like-tiktok" type="button" data-like-btn="${pl.id}" data-like-type="playlist" aria-label="ถูกใจเพลย์ลิสต์นี้" title="ถูกใจ">
+                  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                  <span class="like-count" data-like-count>0</span>
+                </button>
+                <button class="btn-icon-mini" type="button" data-favorite-btn="${pl.id}" data-favorite-type="playlist" data-song-name="${escapeHtml(pl.playlist_name)}" aria-label="เพิ่มเพลย์ลิสต์ในรายการโปรด" title="เพิ่มในรายการโปรด"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
+                <button type="button" class="cart-add-btn playlist-folder-buy-btn" data-add-cart-playlist="${pl.id}" aria-label="ซื้อเพลย์ลิสต์ ${escapeHtml(pl.playlist_name)}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
+                  <span>ซื้อทั้งเพลย์ลิสต์</span>
+                </button>
+              </div>
             </div>
-            ` : ""}
+            ` : `
+            <div class="playlist-folder-bottom">
+              <div class="song-actions-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <button class="btn-like-tiktok" type="button" data-like-btn="${pl.id}" data-like-type="playlist" aria-label="ถูกใจเพลย์ลิสต์นี้" title="ถูกใจ">
+                  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                  <span class="like-count" data-like-count>0</span>
+                </button>
+                <button class="btn-icon-mini" type="button" data-favorite-btn="${pl.id}" data-favorite-type="playlist" data-song-name="${escapeHtml(pl.playlist_name)}" aria-label="เพิ่มเพลย์ลิสต์ในรายการโปรด" title="เพิ่มในรายการโปรด"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
+              </div>
+            </div>
+            `}
           </div>
           <svg class="playlist-folder-arrow${finalIsOpen ? "" : " is-closed"}" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c7.2 0 9 1.8 9 9s-1.8 9 -9 9s-9 -1.8 -9 -9s1.8 -9 9 -9z"/><path d="M8 10l4 4l4 -4"/></svg>
         </div>
@@ -911,10 +928,17 @@ function renderPlaylists() {
                     <div class="song-price-block">
                       ${renderDiscountedPriceForSong(s)}
                     </div>
-                    <button class="cart-add-btn playlist-add-cart cart-add-btn-row" type="button" data-add-cart-song="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
-                      <span>เพิ่มลงตะกร้า</span>
-                    </button>
+                    <div class="song-actions-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                      <button class="btn-like-tiktok" type="button" data-like-btn="${s.id}" aria-label="ถูกใจเพลงนี้" title="ถูกใจ">
+                        <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                        <span class="like-count" data-like-count>0</span>
+                      </button>
+                      <button class="btn-icon-mini" type="button" data-favorite-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="เพิ่มในรายการโปรด" title="เพิ่มในรายการโปรด"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
+                      <button class="cart-add-btn playlist-add-cart cart-add-btn-row" type="button" data-add-cart-song="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
+                        <span>เพิ่มลงตะกร้า</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -974,6 +998,52 @@ function renderPlaylists() {
   container.querySelectorAll("[data-play]").forEach(el => {
     el.addEventListener("click", (ev) => { ev.stopPropagation(); unlockAudio(); playSong(el.getAttribute("data-play")); });
   });
+
+  // 🆕 (2026-10-02 v7): ปุ่ม ❤️ ถูกใจ ใน playlist header + song row
+  container.querySelectorAll("[data-like-btn]").forEach(el => {
+    if (el.dataset._listenerAttached) return;
+    el.dataset._listenerAttached = "1";
+    el.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      const songId = el.getAttribute("data-like-btn");
+      if (typeof window.toggleLike === "function") {
+        await window.toggleLike(songId);
+      }
+    });
+    // โหลดจำนวน like + สถานะเริ่มต้น
+    const songId = el.getAttribute("data-like-btn");
+    if (typeof window.loadLikeStatus === "function") {
+      window.loadLikeStatus(songId).then(({ like_count, is_liked }) => {
+        const countEl = el.querySelector("[data-like-count]");
+        if (countEl) countEl.textContent = like_count;
+        if (is_liked) el.classList.add("is-liked");
+      });
+    }
+  });
+
+  // 🆕 (2026-10-02 v7): ปุ่ม 📌 รายการโปรด ใน playlist header + song row
+  container.querySelectorAll("[data-favorite-btn]").forEach(el => {
+    if (el.dataset._listenerAttached) return;
+    el.dataset._listenerAttached = "1";
+    el.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      const songId = el.getAttribute("data-favorite-btn");
+      if (typeof window.toggleFavorite === "function") {
+        await window.toggleFavorite(songId);
+      }
+    });
+    // โหลดสถานะ favorite เริ่มต้น (ถ้า login แล้ว) → bookmark fill (ม่วง)
+    const songId = el.getAttribute("data-favorite-btn");
+    if (typeof window.checkFavoriteStatus === "function" && typeof window.isCustomerLoggedIn === "function" && window.isCustomerLoggedIn()) {
+      window.checkFavoriteStatus(songId).then(isFav => {
+        if (isFav) {
+          el.classList.add("is-favorite");
+          el.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
+        }
+      });
+    }
+  });
+
   container.querySelectorAll(".playlist-song-row").forEach(el => {
     el.addEventListener("click", () => openSongModal(el.getAttribute("data-id")));
   });
