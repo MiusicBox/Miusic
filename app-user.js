@@ -1812,33 +1812,68 @@ function hideMyOrdersView() {
 //   ไม่แตะระบบเดิม (track order / myOrdersView ด้วย ชื่อ+เบอร์) — ใช้ view ใหม่ #myAccountView
 // ============================================================
 
-// 🆕 แสดงหน้าบัญชีของฉัน (full-screen overlay — ลอยเหนือเนื้อหาทั้งหมด)
-//   🆕 (2026-10-02 fix): myAccountView ใช้ position:fixed + z-index:60 → ลอยเหนือทุกอย่าง
-//   ไม่ต้องซ่อน view อื่นแล้ว (เพราะมันอยู่ด้านล่าง z-index ต่ำกว่า)
+// 🆕 แสดงหน้าบัญชีของฉัน (ใช้ #myOrdersView เดิม — เหมือนลูกค้าไม่ login)
+//   🆕 (2026-10-02): เปลี่ยนจาก myAccountView ใหม่ → ใช้ myOrdersView เดิม
+//   - ถ้า login → auto-fill ชื่อ+เบอร์จากบัญชี + ซ่อนฟอร์มกรอก + โหลดออเดอร์ทันที
+//   - ใช้ fetchMyOrdersOnce (จาก app-promotion.js) เพื่อดึงออเดอร์
+//   - ซ่อนฟอร์มกรอกชื่อ+เบอร์ (เพราะ login แล้วไม่ต้องกรอก)
 async function showCustomerAccountView() {
-  // ปิด customerAuthBackdrop ก่อน (กัน modal ค้างเปิดบัง)
+  // ปิด modal อื่น ๆ ก่อน (กันบัง)
   const authBackdrop = document.getElementById("customerAuthBackdrop");
   if (authBackdrop) { authBackdrop.classList.remove("show"); authBackdrop.setAttribute("aria-hidden", "true"); }
-  // ปิด modal อื่น ๆ ที่อาจค้างเปิดอยู่ด้วย
   ["songModalBackdrop", "cartBackdrop", "checkoutBackdrop", "trackOrderBackdrop", "receiptBackdrop", "paymentBackdrop", "uploadSlipBackdrop", "confirmBackdrop"].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.classList.remove("show"); el.setAttribute("aria-hidden", "true"); }
   });
-  // แสดง account view (position:fixed → ลอยเหนือเนื้อหาทั้งหมด ไม่ต้องซ่อน view อื่น)
-  const myAccountView = document.getElementById("myAccountView");
-  if (myAccountView) {
-    myAccountView.style.display = "block";
-    myAccountView.scrollTop = 0; // scroll ไปด้านบนของ overlay
+  // อ่าน customer จาก localStorage (ไม่พึ่ง customer-auth.js timing)
+  let customer = null;
+  try {
+    const raw = localStorage.getItem("miusic_customer_session");
+    if (raw) customer = JSON.parse(raw);
+  } catch (_) {}
+  if (!customer) {
+    // ไม่ login → เปิด track order modal เดิม
+    openTrackOrder();
+    return;
   }
-  // ดึงข้อมูล customer + orders
-  await loadCustomerAccountData();
+  // login แล้ว → ตั้งค่า MY_ORDERS_STATE ด้วยข้อมูลจากบัญชี
+  if (typeof MY_ORDERS_STATE !== "undefined") {
+    MY_ORDERS_STATE.customerName = customer.display_name || "";
+    MY_ORDERS_STATE.customerWhatsapp = customer.whatsapp || "";
+  }
+  // แสดง #myOrdersView เดิม
+  if (typeof showMyOrdersView === "function") showMyOrdersView();
+  // ซ่อนฟอร์มกรอกชื่อ+เบอร์ (เพราะ login แล้วไม่ต้องกรอก)
+  setTimeout(() => {
+    const nameInput = document.getElementById("myOrdersName");
+    const whatsappInput = document.getElementById("myOrdersWhatsapp");
+    const nameField = nameInput?.closest(".field");
+    const whatsappField = whatsappInput?.closest(".field");
+    if (nameField) nameField.style.display = "none";
+    if (whatsappField) whatsappField.style.display = "none";
+    // แสดงข้อความแจ้งว่าใช้ข้อมูลจากบัญชี
+    const feedback = document.getElementById("myOrdersFeedback");
+    if (feedback) {
+      feedback.innerHTML = `<div style="background:rgba(139,92,246,.1);border:1px solid var(--accent);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px;">👤 ใช้ข้อมูลจากบัญชี: <strong>${(customer.display_name || "")}</strong> (${(customer.whatsapp || customer.email || "")})</div>`;
+      feedback.style.color = "var(--text)";
+    }
+    // โหลดออเดอร์ทันที (ไม่ต้องกดปุ่มค้นหา)
+    if (typeof fetchMyOrdersOnce === "function") fetchMyOrdersOnce();
+  }, 100);
 }
 
-// 🆕 ซ่อนหน้าบัญชีของฉัน (กลับหน้าหลัก)
-//   🆕 (2026-10-02 fix): ไม่ต้องแสดง view อื่นกลับมาแล้ว (เพราะไม่ได้ซ่อนไว้ — overlay ลอยอยู่เหนือ)
+// 🆕 ซ่อนหน้าบัญชีของฉัน (ใช้ hideMyOrdersView เดิม + แสดงฟอร์มกลับมา)
 function hideCustomerAccountView() {
-  const myAccountView = document.getElementById("myAccountView");
-  if (myAccountView) myAccountView.style.display = "none";
+  if (typeof hideMyOrdersView === "function") hideMyOrdersView();
+  // แสดงฟอร์มกรอกชื่อ+เบอร์กลับมา (กันกรณี logout)
+  setTimeout(() => {
+    const nameInput = document.getElementById("myOrdersName");
+    const whatsappInput = document.getElementById("myOrdersWhatsapp");
+    const nameField = nameInput?.closest(".field");
+    const whatsappField = whatsappInput?.closest(".field");
+    if (nameField) nameField.style.display = "";
+    if (whatsappField) whatsappField.style.display = "";
+  }, 100);
 }
 
 // 🆕 ดึงข้อมูลบัญชี + ออเดอร์จาก /api/customer/me + /api/customer/orders
