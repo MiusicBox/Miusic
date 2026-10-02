@@ -2104,7 +2104,12 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
           // 🆕 (2026-10-01): ผูก customer_id ถ้าลูกค้า login แล้ว (optional — ไม่ login ก็ซื้อได้)
           //   ใช้สำหรับหน้า "บัญชีของฉัน" ดึงออเดอร์ทั้งหมดของ customer_id นี้
           //   ถ้าไม่ login → customer_id = null (ระบบเดิม track order ด้วย ชื่อ+เบอร์ ยังทำงาน)
-          customer_id: (window.getCurrentCustomer && window.getCurrentCustomer()) ? window.getCurrentCustomer().id : null,
+          // 🆕 (2026-10-02 debug): เพิ่ม log เพื่อตรวจว่า customer_id ถูกบันทึกจริงไหม
+          customer_id: (() => {
+            const c = (window.getCurrentCustomer && window.getCurrentCustomer()) ? window.getCurrentCustomer() : null;
+            console.log("[checkout] customer login status:", c ? `YES (id: ${c.id})` : "NO");
+            return c ? c.id : null;
+          })(),
           items: resolved.items, // Order Items ทั้งหมดของตะกร้า ณ ขณะสั่งซื้อ
           total: resolved.total, // ← ยอดสุดท้าย (final_total) — เก็บเหมือนเดิมเพื่อ back-compat กับ orders.js เดิม
           order_type: resolved.orderType, // "single" | "playlist" | "mixed"
