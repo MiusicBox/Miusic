@@ -42,7 +42,8 @@ function syncCustomerAuthUI() {
     // ผูก listeners
     document.getElementById("customerAccountBtn")?.addEventListener("click", () => {
       // เปิดหน้า "ออเดอร์ของฉัน" (function ใน app-user.js)
-      if (typeof showCustomerAccountView === "function") showCustomerAccountView();
+      // 🔧 ใช้ window.* เพราะ app-user.js เป็น ES module (ฟังก์ชันอยู่ใน scope ของ module ไม่ใช่ global)
+      if (typeof window.showCustomerAccountView === "function") window.showCustomerAccountView();
     });
     document.getElementById("customerLogoutBtn")?.addEventListener("click", async () => {
       if (!confirm("ต้องการออกจากระบบใช่ไหม?")) return;
@@ -228,7 +229,9 @@ function escapeHtmlCustomer(str) {
 window.isCustomerLoggedIn = isCustomerLoggedIn;
 window.getCurrentCustomer = getCurrentCustomer;
 window.initCustomerAuth = initCustomerAuth;
-window.showCustomerAccountView = null; // จะถูกเซ็ตโดย app-user.js
+// 🔧 FIX: เดิมบรรทัดนี้เซ็ต window.showCustomerAccountView = null ทับค่าที่ app-user.js เซ็งไว้ (customer-auth.js โหลดทีหลัง)
+//   ทำให้ปุ่มบัญชี/ดูออเดอร์ตอน login แล้วไม่ทำงาน → ตั้งเป็น null เฉพาะเมื่อยังไม่มีค่าเท่านั้น
+if (typeof window.showCustomerAccountView !== "function") window.showCustomerAccountView = null;
 
 // 🆕 เรียก init ตอน page load (หลัง DOM ready)
 if (document.readyState === "loading") {
