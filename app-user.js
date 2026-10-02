@@ -2763,6 +2763,11 @@ function renderTrackOrderAllList(orders) {
     } else if (pState.state === "rejected") {
       paymentBadgeHtml = `<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(239,68,68,.15);color:var(--danger);font-weight:600;">⚠️ สลิปถูกปฏิเสธ</span>`;
     }
+    // 🆕 (2026-10-02 v7): ปุ่ม "⬇️ ดาวน์โหลดเพลง" — แสดงเฉพาะออเดอร์สำเร็จที่มี zip_download_url
+    const canDownload = order.zip_download_url && (order.status === "processing" || order.status === "completed");
+    const downloadBtnHtml = canDownload
+      ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" data-track-download="${index}" class="btn" style="display:inline-block;padding:6px 12px;font-size:12px;font-weight:600;background:linear-gradient(145deg, #4ade80 0%, #16a34a 50%, #14532d 100%);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:8px;text-decoration:none;cursor:pointer;margin-top:6px;box-shadow:0 4px 12px rgba(22,163,74,.45);">⬇️ ดาวน์โหลดเพลง</a>`
+      : "";
     return `
       <button class="track-order-all-card" type="button" data-track-all-index="${index}">
         <div class="track-order-all-card-top">
@@ -2774,10 +2779,21 @@ function renderTrackOrderAllList(orders) {
           <span>${escapeHtml(dateStr)}</span>
           <span>${formatPrice(order.total)}</span>
         </div>
+        ${downloadBtnHtml}
       </button>
     `;
   }).join("");
   listEl.hidden = false;
+
+  // 🆕 (v7): ปุ่ม "ดาวน์โหลดเพลง" — หยุด event propagation กันเปิด detail พร้อมกัน
+  listEl.querySelectorAll("[data-track-download]").forEach(btn => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      const url = btn.getAttribute("href");
+      if (url) window.open(url, "_blank", "noopener");
+    });
+  });
 
   listEl.querySelectorAll("[data-track-all-index]").forEach((btn) => {
     btn.addEventListener("click", () => {
