@@ -437,22 +437,19 @@ CREATE INDEX IF NOT EXISTS idx_customer_favorites_customer ON customer_favorites
 CREATE INDEX IF NOT EXISTS idx_customer_favorites_song ON customer_favorites(song_id);
 
 -- ===================================================
--- 🆕 (2026-10-02 v6 — ฟีเจอร์ #12): ตาราง song_reviews — รีวิว + ให้คะแนนเพลง
---   ลูกค้าที่ซื้อเพลงแล้ว → ให้คะแนน 1-5 ดาว + รีวิว → แสดงในหน้าเพลง
---   กฎ: 1 ลูกค้าต่อ 1 เพลง = 1 รีวิว (UNIQUE constraint + UPSERT)
---        ต้องซื้อเพลงแล้ว (status='completed') ถึงจะรีวิวได้ (ตรวจใน worker ไม่ใช่ DB)
---   ผลกระทบระบบเดิม: 0% — ตารางใหม่
+-- 🆕 (2026-10-02 v7 — ฟีเจอร์ #12 ใหม่): ตาราง song_likes — ถูกใจเพลงแบบ TikTok
+--   ลูกค้ากด ❤️ ในเพลง → นับจำนวน like + แสดง "X คนถูกใจ"
+--   กฎ: 1 ลูกค้าต่อ 1 เพลง = 1 like (UNIQUE constraint)
+--   รองรับ anonymous like (customer_id = 'anon:<fingerprint>') เพื่อให้ลูกค้าที่ยังไม่ login กดได้
+--   ผลกระทบระบบเดิม: 0% — ตารางใหม่ (แทนที่ song_reviews ที่ลบไป)
 -- ===================================================
-CREATE TABLE IF NOT EXISTS song_reviews (
+CREATE TABLE IF NOT EXISTS song_likes (
   id          TEXT PRIMARY KEY,           -- crypto.randomUUID()
-  customer_id TEXT NOT NULL,
+  customer_id TEXT NOT NULL,               -- ลูกค้า login หรือ 'anon:<fingerprint>' สำหรับ anonymous
   song_id     TEXT NOT NULL,
-  rating      INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
-  review      TEXT,                        -- nullable: ลูกค้าอาจให้แค่คะแนน ไม่เขียนรีวิว
   created_at  TEXT NOT NULL,
-  updated_at  TEXT NOT NULL,
-  UNIQUE(customer_id, song_id)            -- 1 ลูกค้าต่อ 1 เพลง = 1 รีวิว
+  UNIQUE(customer_id, song_id)            -- กันซ้ำ: 1 ลูกค้าต่อ 1 เพลง = 1 like
 );
 
-CREATE INDEX IF NOT EXISTS idx_song_reviews_song ON song_reviews(song_id);
-CREATE INDEX IF NOT EXISTS idx_song_reviews_customer ON song_reviews(customer_id);
+CREATE INDEX IF NOT EXISTS idx_song_likes_song ON song_likes(song_id);
+CREATE INDEX IF NOT EXISTS idx_song_likes_customer ON song_likes(customer_id);

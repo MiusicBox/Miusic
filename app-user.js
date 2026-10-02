@@ -669,8 +669,11 @@ function renderSongGrid() {
                 ${renderDiscountedPriceForSong(s)}
               </div>
               <div class="song-actions-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                <button class="btn-icon-mini" type="button" data-favorite-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="เพิ่มในรายการโปรด" title="เพิ่มในรายการโปรด"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
-                <button class="btn-icon-mini" type="button" data-review-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="รีวิวเพลง" title="รีวิวเพลง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
+                <button class="btn-like-tiktok" type="button" data-like-btn="${s.id}" aria-label="ถูกใจเพลงนี้" title="ถูกใจ">
+                  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                  <span class="like-count" data-like-count>0</span>
+                </button>
+                <button class="btn-icon-mini" type="button" data-favorite-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="เพิ่มในรายการโปรด" title="เพิ่มในรายการโปรด"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
                 <button class="cart-add-btn cart-add-btn-row" type="button" data-add-cart="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
                   <span>เพิ่มลงตะกร้า</span>
@@ -705,7 +708,28 @@ function renderSongGrid() {
         }
       });
     });
-    // 🆕 (2026-10-02 v6): ปุ่ม ❤️ — toggle favorite
+    // 🆕 (2026-10-02 v7): ปุ่ม ❤️ ถูกใจ (TikTok style) — toggle like + แสดงจำนวน
+    grid.querySelectorAll("[data-like-btn]").forEach(el => {
+      if (el.dataset._listenerAttached) return;
+      el.dataset._listenerAttached = "1";
+      el.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        const songId = el.getAttribute("data-like-btn");
+        if (typeof window.toggleLike === "function") {
+          await window.toggleLike(songId);
+        }
+      });
+      // 🆕 โหลดจำนวน like + สถานะเริ่มต้น
+      const songId = el.getAttribute("data-like-btn");
+      if (typeof window.loadLikeStatus === "function") {
+        window.loadLikeStatus(songId).then(({ like_count, is_liked }) => {
+          const countEl = el.querySelector("[data-like-count]");
+          if (countEl) countEl.textContent = like_count;
+          if (is_liked) el.classList.add("is-liked");
+        });
+      }
+    });
+    // 🆕 (2026-10-02 v7): ปุ่ม 📌 รายการโปรด (favorites) — เดิมเป็น ❤️ เปลี่ยนเป็น bookmark icon
     grid.querySelectorAll("[data-favorite-btn]").forEach(el => {
       if (el.dataset._listenerAttached) return;
       el.dataset._listenerAttached = "1";
@@ -716,29 +740,16 @@ function renderSongGrid() {
           await window.toggleFavorite(songId);
         }
       });
-      // 🆕 โหลดสถานะ favorite เริ่มต้น (ถ้า login แล้ว) → เปลี่ยนเป็น heart เต็ม (fill สีแดง)
+      // 🆕 โหลดสถานะ favorite เริ่มต้น (ถ้า login แล้ว) → เปลี่ยนเป็น bookmark เต็ม (fill)
       const songId = el.getAttribute("data-favorite-btn");
       if (typeof window.checkFavoriteStatus === "function" && typeof window.isCustomerLoggedIn === "function" && window.isCustomerLoggedIn()) {
         window.checkFavoriteStatus(songId).then(isFav => {
           if (isFav) {
             el.classList.add("is-favorite");
-            el.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+            el.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
           }
         });
       }
-    });
-    // 🆕 (2026-10-02 v6): ปุ่ม ⭐ — เปิด modal รีวิว
-    grid.querySelectorAll("[data-review-btn]").forEach(el => {
-      if (el.dataset._listenerAttached) return;
-      el.dataset._listenerAttached = "1";
-      el.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const songId = el.getAttribute("data-review-btn");
-        const songName = el.getAttribute("data-song-name") || "";
-        if (typeof window.openSongReviewModal === "function") {
-          window.openSongReviewModal(songId, songName);
-        }
-      });
     });
     grid.querySelectorAll(".song-card").forEach(el => {
       if (el.dataset._cardListenerAttached) return;
@@ -2080,10 +2091,10 @@ document.getElementById("myAccountRefreshBtn")?.addEventListener("click", () => 
   loadCustomerAccountData();
 });
 
-// 🆕 (2026-10-02): tab switching สำหรับหน้าบัญชี — โปรไฟล์ / ออเดอร์ / รายการโปรด / รีวิว / ตั้งค่า
+// 🆕 (2026-10-02): tab switching สำหรับหน้าบัญชี — โปรไฟล์ / ออเดอร์ / รายการโปรด / ตั้งค่า
 function switchAccountTab(tab) {
-  const tabs = { profile: "accountTabProfile", orders: "accountTabOrders", favorites: "accountTabFavorites", reviews: "accountTabReviews", settings: "accountTabSettings" };
-  const sections = { profile: "accountSectionProfile", orders: "accountSectionOrders", favorites: "accountSectionFavorites", reviews: "accountSectionReviews", settings: "accountSectionSettings" };
+  const tabs = { profile: "accountTabProfile", orders: "accountTabOrders", favorites: "accountTabFavorites", settings: "accountTabSettings" };
+  const sections = { profile: "accountSectionProfile", orders: "accountSectionOrders", favorites: "accountSectionFavorites", settings: "accountSectionSettings" };
   for (const [key, tabId] of Object.entries(tabs)) {
     const tabBtn = document.getElementById(tabId);
     const section = document.getElementById(sections[key]);
@@ -2105,11 +2116,8 @@ document.getElementById("accountTabOrders")?.addEventListener("click", () => {
 document.getElementById("accountTabFavorites")?.addEventListener("click", () => {
   switchAccountTab("favorites");
   if (typeof loadCustomerFavorites === "function") loadCustomerFavorites();
-});
-// 🆕 (2026-10-02 v6): tab รีวิว → โหลด reviews
-document.getElementById("accountTabReviews")?.addEventListener("click", () => {
-  switchAccountTab("reviews");
-  if (typeof loadCustomerReviews === "function") loadCustomerReviews();
+  // 🆕 (v7): ถ้า expose ผ่าน window (มาจาก customer-auth.js) → เรียกผ่าน window
+  else if (typeof window.loadCustomerFavorites === "function") window.loadCustomerFavorites();
 });
 document.getElementById("accountTabSettings")?.addEventListener("click", () => switchAccountTab("settings"));
 

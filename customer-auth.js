@@ -391,21 +391,20 @@ async function toggleFavorite(songId) {
       // อัปเดต cache
       if (isFav) customerFavoritesCache.delete(songId);
       else customerFavoritesCache.add(songId);
-      // อัปเดต UI ปุ่ม ❤️ ของเพลงนี้ทั้งหมด (อาจมีหลายจุดในหน้า)
-      // 🆕 (v6 fix): ใช้ SVG icon แทน emoji + toggle class is-favorite (CSS จะเปลี่ยนสีให้)
-      const heartSvg = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+      // 🆕 (v7): favorites ใช้ bookmark icon แทน heart (เพราะ heart สำหรับถูกใจแล้ว)
+      //   toggle ระหว่าง bookmark outline (ยังไม่โปรด) ↔ bookmark fill (เป็นโปรด)
+      const bookmarkFill = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
+      const bookmarkOutline = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
       document.querySelectorAll(`[data-favorite-btn="${songId}"]`).forEach(btn => {
         if (isFav) {
           btn.classList.remove("is-favorite");
-          // ใช้ stroke (ว่าง) แทน fill (เต็ม)
-          btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+          btn.innerHTML = bookmarkOutline;
         } else {
           btn.classList.add("is-favorite");
-          // ใช้ fill (เต็มสีแดง)
-          btn.innerHTML = heartSvg;
+          btn.innerHTML = bookmarkFill;
         }
       });
-      if (typeof showToast === "function") showToast(isFav ? "ลบจากรายการโปรดแล้ว" : "❤️ เพิ่มในรายการโปรดแล้ว", isFav ? "info" : "success");
+      if (typeof showToast === "function") showToast(isFav ? "ลบจากรายการโปรดแล้ว" : "📌 เพิ่มในรายการโปรดแล้ว", isFav ? "info" : "success");
     } else {
       if (typeof showToast === "function") showToast(data?.error || "ไม่สำเร็จ", "error");
     }
@@ -475,7 +474,6 @@ async function loadCustomerFavorites() {
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
             <button class="btn-icon-mini is-favorite" data-favorite-btn="${escapeHtmlCustomer(f.song_id)}" data-song-name="${songName}" aria-label="ลบจากรายการโปรด" title="ลบจากรายการโปรด"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
-            <button class="btn-icon-mini" data-review-btn="${escapeHtmlCustomer(f.song_id)}" data-song-name="${songName}" aria-label="รีวิวเพลง" title="รีวิวเพลง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
             <button class="btn-icon-mini" data-fav-buy="${escapeHtmlCustomer(f.song_id)}" aria-label="เพิ่มลงตะกร้า" title="เพิ่มลงตะกร้า"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg></button>
           </div>
         </div>`;
@@ -486,14 +484,6 @@ async function loadCustomerFavorites() {
         const songId = btn.getAttribute("data-favorite-btn");
         await toggleFavorite(songId);
         loadCustomerFavorites(); // refresh
-      });
-    });
-    // ผูกปุ่ม ⭐ (เปิด modal รีวิว)
-    wrap.querySelectorAll("[data-review-btn]").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const songId = btn.getAttribute("data-review-btn");
-        const songName = btn.getAttribute("data-song-name") || "";
-        if (typeof openSongReviewModal === "function") openSongReviewModal(songId, songName);
       });
     });
     // ผูกปุ่มลบ (สำหรับเพลงที่ถูกลบ)
@@ -543,202 +533,89 @@ async function checkFavoriteStatus(songId) {
 }
 
 // ============================================================
-// 🆕 (2026-10-02 v6 — ฟีเจอร์ #12): รีวิว + ให้คะแนนเพลง — frontend helpers
-//   - openSongReviewModal(songId, songName) → เปิด modal เขียนรีวิว
-//   - submitSongReview() → ส่งรีวิว (POST /api/customer/reviews)
-//   - loadCustomerReviews() → โหลดรีวิวของลูกค้าในหน้าบัญชี
-//   - deleteCustomerReview(songId) → ลบรีวิว
-//   ผลกระทบระบบเดิม: 0% — ฟังก์ชันใหม่
+// 🆕 (2026-10-02 v7 — ฟีเจอร์ #12 ใหม่): ถูกใจเพลงแบบ TikTok — frontend helpers
+//   - getAnonymousFingerprint() → สร้าง/ดึง fingerprint สำหรับ anonymous like
+//   - toggleLike(songId) → toggle like (เพิ่ม/ลด) + อัปเดตจำนวน
+//   - loadLikeStatus(songId) → ดึงจำนวน like + สถานะของลูกค้า
+//   ผลกระทบระบบเดิม: 0% — ฟังก์ชันใหม่ (แทนที่ระบบรีวิวเดิม)
 // ============================================================
-let currentReviewSongId = null;
-let currentReviewSongName = null;
 
-// 🆕 เปิด modal รีวิว
-async function openSongReviewModal(songId, songName) {
-  if (!isCustomerLoggedIn()) {
-    if (typeof showToast === "function") showToast("กรุณาเข้าสู่ระบบเพื่อรีวิว", "info");
-    else alert("กรุณาเข้าสู่ระบบเพื่อรีวิว");
-    return;
+// 🆕 สร้าง fingerprint สำหรับ anonymous like (เก็บใน localStorage ถ้ามี)
+//   ถ้าลูกค้า login → ใช้ customer.id แทน fingerprint
+//   ถ้าไม่ login → ใช้ fingerprint จาก localStorage (สร้างครั้งแรก + reuse)
+function getAnonymousFingerprint() {
+  const key = "miusic_anon_fingerprint";
+  let fp = localStorage.getItem(key);
+  if (!fp) {
+    // สร้าง fingerprint แบบง่าย: random UUID + timestamp (ไม่ซับซ้อนเท่า IP hash แต่พอใช้)
+    fp = crypto.randomUUID() + "-" + Date.now();
+    localStorage.setItem(key, fp);
   }
-  currentReviewSongId = songId;
-  currentReviewSongName = songName || "";
-  // แสดง info เพลง
-  const infoEl = document.getElementById("songReviewSongInfo");
-  if (infoEl) infoEl.textContent = `เพลง: ${songName || songId}`;
-  // reset form
-  document.getElementById("songReviewRating").value = "0";
-  document.getElementById("songReviewText").value = "";
-  document.getElementById("songReviewResult").textContent = "";
-  // reset ดาว
-  document.querySelectorAll("#songReviewStars [data-star]").forEach(s => s.style.color = "rgba(255,255,255,.2)");
-  // ตรวจว่าเคยรีวิวแล้ว → preload รีวิวเดิม
-  try {
-    const res = await fetch("/api/customer/reviews", { credentials: "same-origin" });
-    if (res.ok) {
-      const data = await res.json();
-      const existing = (data.reviews || []).find(r => r.song_id === songId);
-      if (existing) {
-        document.getElementById("songReviewRating").value = String(existing.rating);
-        document.getElementById("songReviewText").value = existing.review || "";
-        // แสดงดาวที่เคยให้
-        document.querySelectorAll("#songReviewStars [data-star]").forEach(s => {
-          const star = Number(s.getAttribute("data-star"));
-          s.style.color = star <= existing.rating ? "#F5B400" : "rgba(255,255,255,.2)";
-        });
-      }
-    }
-  } catch (_) {}
-  // แสดง modal
-  document.getElementById("songReviewBackdrop").style.display = "flex";
+  return fp;
 }
 
-function closeSongReviewModal() {
-  document.getElementById("songReviewBackdrop").style.display = "none";
-  currentReviewSongId = null;
-  currentReviewSongName = null;
-}
-
-// 🆕 ส่งรีวิว
-async function submitSongReview() {
-  if (!currentReviewSongId) return;
-  const rating = Number(document.getElementById("songReviewRating").value || 0);
-  const review = document.getElementById("songReviewText").value.trim();
-  const resultEl = document.getElementById("songReviewResult");
-  if (resultEl) resultEl.textContent = "";
-  if (rating < 1 || rating > 5) {
-    if (resultEl) { resultEl.textContent = "กรุณาเลือกคะแนน 1-5 ดาว"; resultEl.style.color = "var(--danger)"; }
-    return;
-  }
-  const btn = document.getElementById("songReviewSubmitBtn");
-  if (btn) { btn.disabled = true; btn.textContent = "กำลังส่ง..."; }
+// 🆕 toggle like — เพิ่ม/ลด like ของเพลง + อัปเดตจำนวนใน UI
+async function toggleLike(songId) {
+  if (!songId) return;
+  // ถ้า login → ใช้ customer.id, ถ้าไม่ login → ใช้ fingerprint (anonymous like)
+  const fingerprint = isCustomerLoggedIn() ? null : getAnonymousFingerprint();
   try {
-    const res = await fetch("/api/customer/reviews", {
+    const res = await fetch(`/api/songs/${encodeURIComponent(songId)}/like`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
-      body: JSON.stringify({ song_id: currentReviewSongId, rating, review }),
+      body: JSON.stringify({ fingerprint }),
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      if (resultEl) { resultEl.textContent = "✅ " + (data?.message || "ส่งรีวิวแล้ว"); resultEl.style.color = "var(--success)"; }
-      if (typeof showToast === "function") showToast("✅ ส่งรีวิวแล้ว", "success");
-      setTimeout(closeSongReviewModal, 1000);
+      const newCount = data.like_count || 0;
+      const isLiked = data.is_liked;
+      // อัปเดต UI ปุ่ม ❤️ ของเพลงนี้ทั้งหมด (อาจมีหลายจุดในหน้า)
+      document.querySelectorAll(`[data-like-btn="${songId}"]`).forEach(btn => {
+        if (isLiked) {
+          btn.classList.add("is-liked");
+        } else {
+          btn.classList.remove("is-liked");
+        }
+        // อัปเดตจำนวน (อยู่ใน [data-like-count])
+        const countEl = btn.querySelector("[data-like-count]");
+        if (countEl) countEl.textContent = newCount;
+      });
+      if (typeof showToast === "function") showToast(isLiked ? "❤️ ถูกใจแล้ว" : "ยกเลิกถูกใจ", isLiked ? "success" : "info");
     } else {
-      if (resultEl) { resultEl.textContent = data?.error || "ส่งรีวิวไม่สำเร็จ"; resultEl.style.color = "var(--danger)"; }
-      if (btn) { btn.disabled = false; btn.textContent = "ส่งรีวิว"; }
+      if (typeof showToast === "function") showToast(data?.error || "ไม่สำเร็จ", "error");
     }
   } catch (err) {
-    if (resultEl) { resultEl.textContent = "เกิดข้อผิดพลาด: " + (err.message || String(err)); resultEl.style.color = "var(--danger)"; }
-    if (btn) { btn.disabled = false; btn.textContent = "ส่งรีวิว"; }
+    if (typeof showToast === "function") showToast("เกิดข้อผิดพลาด: " + (err.message || String(err)), "error");
   }
 }
 
-// 🆕 โหลดรีวิวของลูกค้า → หน้าบัญชี
-async function loadCustomerReviews() {
-  const wrap = document.getElementById("myAccountReviewsList");
-  if (!wrap) return;
-  if (!isCustomerLoggedIn()) {
-    wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">กรุณาเข้าสู่ระบบ</div>';
-    return;
-  }
-  wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">⏳ กำลังโหลด...</div>';
+// 🆕 โหลดจำนวน like + สถานะของลูกค้า → แสดงในปุ่ม ❤️ ของเพลง
+async function loadLikeStatus(songId) {
+  if (!songId) return { like_count: 0, is_liked: false };
+  const fingerprint = isCustomerLoggedIn() ? null : getAnonymousFingerprint();
+  const query = fingerprint ? `?fingerprint=${encodeURIComponent(fingerprint)}` : "";
   try {
-    const res = await fetch("/api/customer/reviews", { credentials: "same-origin" });
+    const res = await fetch(`/api/songs/${encodeURIComponent(songId)}/likes${query}`, { credentials: "same-origin" });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      wrap.innerHTML = `<div style="color:var(--danger);font-size:13px;padding:10px;">${escapeHtmlCustomer(data?.error || "โหลดไม่สำเร็จ")}</div>`;
-      return;
-    }
-    const reviews = data.reviews || [];
-    if (reviews.length === 0) {
-      wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">ยังไม่มีรีวิว — ซื้อเพลงแล้วรีวิวได้</div>';
-      return;
-    }
-    // 🆕 (v6 fix): render พร้อมชื่อเพลง + cover (ถ้าเพลงถูกลบ → แสดง song_id แทน)
-    wrap.innerHTML = reviews.map(r => {
-      const stars = "★".repeat(r.rating) + "☆".repeat(5 - r.rating);
-      const date = r.updated_at ? new Date(r.updated_at).toLocaleDateString("th-TH") : "-";
-      const s = r.song;
-      const songName = s ? escapeHtmlCustomer(s.song_name || "ไม่มีชื่อ") : `เพลง ID: ${escapeHtmlCustomer(r.song_id)}`;
-      const coverUrl = s ? escapeHtmlCustomer(s.cover_url || "default-song-cover.svg") : "default-song-cover.svg";
-      const djName = s && s.dj_name ? escapeHtmlCustomer(s.dj_name) : "";
-      const artist = s && s.artist ? escapeHtmlCustomer(s.artist) : "";
-      const deletedBadge = !s ? `<span style="color:var(--danger);font-size:11px;"> (ถูกลบแล้ว)</span>` : "";
-      return `
-        <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;display:flex;gap:10px;align-items:flex-start;">
-          <div style="width:40px;height:40px;border-radius:6px;overflow:hidden;flex-shrink:0;">
-            <img src="${coverUrl}" loading="lazy" alt="${songName}" onerror="this.src='default-song-cover.svg'" style="width:100%;height:100%;object-fit:cover;">
-          </div>
-          <div style="flex:1;min-width:0;">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px;">
-              <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${songName}${deletedBadge}</div>
-              <span style="color:#F5B400;font-size:14px;flex-shrink:0;">${stars}</span>
-            </div>
-            ${(djName || artist) ? `<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">${djName ? `🎧 ${djName}` : ""}${djName && artist ? " · " : ""}${artist ? artist : ""}</div>` : ""}
-            ${r.review ? `<div style="font-size:12px;color:var(--text);margin-bottom:6px;line-height:1.4;">${escapeHtmlCustomer(r.review)}</div>` : ""}
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:11px;color:var(--text-dim);">${escapeHtmlCustomer(date)}</span>
-              <div style="display:flex;gap:6px;">
-                ${s ? `<button class="btn" data-review-edit="${escapeHtmlCustomer(r.song_id)}" data-song-name="${songName}" style="padding:4px 8px;font-size:11px;background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:4px;cursor:pointer;">✎ แก้ไข</button>` : ""}
-                <button class="btn" data-review-delete="${escapeHtmlCustomer(r.song_id)}" style="padding:4px 8px;font-size:11px;background:transparent;color:var(--danger);border:1px solid rgba(239,68,68,.3);border-radius:4px;cursor:pointer;">🗑 ลบ</button>
-              </div>
-            </div>
-          </div>
-        </div>`;
-    }).join("");
-    // ผูกปุ่มแก้ไข
-    wrap.querySelectorAll("[data-review-edit]").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const songId = btn.getAttribute("data-review-edit");
-        const songName = btn.getAttribute("data-song-name") || "";
-        openSongReviewModal(songId, songName);
-      });
-    });
-    // ผูกปุ่มลบ
-    wrap.querySelectorAll("[data-review-delete]").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const songId = btn.getAttribute("data-review-delete");
-        if (!confirm("ต้องการลบรีวิวนี้ใช่ไหม?")) return;
-        await deleteCustomerReview(songId);
-        loadCustomerReviews();
-      });
-    });
-  } catch (err) {
-    wrap.innerHTML = `<div style="color:var(--danger);font-size:13px;padding:10px;">โหลดไม่สำเร็จ: ${escapeHtmlCustomer(err.message || String(err))}</div>`;
-  }
-}
-
-// 🆕 ลบรีวิว
-async function deleteCustomerReview(songId) {
-  try {
-    const res = await fetch(`/api/customer/reviews/${encodeURIComponent(songId)}`, {
-      method: "DELETE",
-      credentials: "same-origin",
-    });
     if (res.ok) {
-      if (typeof showToast === "function") showToast("ลบรีวิวแล้ว", "info");
-    } else {
-      const data = await res.json().catch(() => ({}));
-      if (typeof showToast === "function") showToast(data?.error || "ลบไม่สำเร็จ", "error");
+      return { like_count: data.like_count || 0, is_liked: !!data.is_liked };
     }
-  } catch (err) {
-    if (typeof showToast === "function") showToast("ลบไม่สำเร็จ: " + (err.message || String(err)), "error");
-  }
+  } catch (_) {}
+  return { like_count: 0, is_liked: false };
 }
 
 // 🆕 expose ให้ app-user.js / app-cart.js เรียกใช้
 window.isCustomerLoggedIn = isCustomerLoggedIn;
 window.getCurrentCustomer = getCurrentCustomer;
 window.initCustomerAuth = initCustomerAuth;
-// 🆕 (2026-10-02 v6): favorites + reviews
+// 🆕 (2026-10-02 v7): favorites + like
 window.toggleFavorite = toggleFavorite;
 window.loadCustomerFavorites = loadCustomerFavorites;
 window.checkFavoriteStatus = checkFavoriteStatus;
-window.openSongReviewModal = openSongReviewModal;
-window.closeSongReviewModal = closeSongReviewModal;
-window.submitSongReview = submitSongReview;
-window.loadCustomerReviews = loadCustomerReviews;
-window.deleteCustomerReview = deleteCustomerReview;
+window.toggleLike = toggleLike;
+window.loadLikeStatus = loadLikeStatus;
+window.getAnonymousFingerprint = getAnonymousFingerprint;
 // 🔧 FIX: เดิมบรรทัดนี้เซ็ต window.showCustomerAccountView = null ทับค่าที่ app-user.js เซ็งไว้ (customer-auth.js โหลดทีหลัง)
 //   ทำให้ปุ่มบัญชี/ดูออเดอร์ตอน login แล้วไม่ทำงาน → ตั้งเป็น null เฉพาะเมื่อยังไม่มีค่าเท่านั้น
 if (typeof window.showCustomerAccountView !== "function") window.showCustomerAccountView = null;
@@ -789,42 +666,5 @@ document.addEventListener("DOMContentLoaded", () => {
   // Enter ในช่อง forgot password → submit
   document.getElementById("forgotPasswordLogin")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") submitForgotPassword();
-  });
-
-  // 🆕 (2026-10-02 v6 — ฟีเจอร์ #12): listeners สำหรับ modal รีวิว
-  // ปุ่มปิด modal รีวิว
-  document.getElementById("songReviewClose")?.addEventListener("click", closeSongReviewModal);
-  // กดพื้นหลัง modal รีวิว → ปิด
-  document.getElementById("songReviewBackdrop")?.addEventListener("click", (e) => {
-    if (e.target.id === "songReviewBackdrop") closeSongReviewModal();
-  });
-  // ปุ่ม submit รีวิว
-  document.getElementById("songReviewSubmitBtn")?.addEventListener("click", submitSongReview);
-  // คลิกดาว → เลือกคะแนน
-  document.querySelectorAll("#songReviewStars [data-star]").forEach(star => {
-    star.addEventListener("click", () => {
-      const rating = Number(star.getAttribute("data-star"));
-      document.getElementById("songReviewRating").value = String(rating);
-      // อัปเดตสีดาว
-      document.querySelectorAll("#songReviewStars [data-star]").forEach(s => {
-        const sStar = Number(s.getAttribute("data-star"));
-        s.style.color = sStar <= rating ? "#F5B400" : "rgba(255,255,255,.2)";
-      });
-    });
-    // hover effect
-    star.addEventListener("mouseenter", () => {
-      const rating = Number(star.getAttribute("data-star"));
-      document.querySelectorAll("#songReviewStars [data-star]").forEach(s => {
-        const sStar = Number(s.getAttribute("data-star"));
-        s.style.color = sStar <= rating ? "#F5B400" : "rgba(255,255,255,.2)";
-      });
-    });
-  });
-  document.getElementById("songReviewStars")?.addEventListener("mouseleave", () => {
-    const rating = Number(document.getElementById("songReviewRating").value || 0);
-    document.querySelectorAll("#songReviewStars [data-star]").forEach(s => {
-      const sStar = Number(s.getAttribute("data-star"));
-      s.style.color = sStar <= rating ? "#F5B400" : "rgba(255,255,255,.2)";
-    });
   });
 });
