@@ -2393,9 +2393,14 @@ function buildTrackOrderWhatsAppText(order) {
   ].join("\n");
 }
 
-// ---- เพิ่มใหม่: ลูกค้าลบออเดอร์ของตัวเองได้ (เฉพาะสถานะ "รอตรวจสอบการโอน" กันลบออเดอร์ที่แอดมินเริ่มดำเนินการแล้ว) ----
+// ---- เพิ่มใหม่: ลูกค้าลบออเดอร์ของตัวเองได้ ----
+// 🆕 (2026-10-02 v7): เปลี่ยนให้ลูกค้าลบได้ทุกสถานะ (เดิมเฉพาะ pending_verify)
+//   - ถ้าเป็น completed/processing → เตือนก่อนว่าไฟล์ ZIP จะไม่สามารถดาวน์โหลดได้อีก
+//   - ถ้าเป็น cancelled/pending_verify → ลบได้ปกติ
 function canCustomerDeleteOrder(order) {
-  return !!order && order.status === "pending_verify";
+  // ลบได้ทุกสถานะ (pending_verify, processing, completed, cancelled)
+  // เงื่อนไขเดียว: ต้องมี order (null/undefined → false)
+  return !!order;
 }
 
 async function handleCustomerDeleteOrder(order, onDeleted) {
@@ -2403,9 +2408,16 @@ async function handleCustomerDeleteOrder(order, onDeleted) {
     showToast("ไม่พบข้อมูลออเดอร์นี้ กรุณาลองใหม่", "error");
     return;
   }
+  // 🆕 (2026-10-02 v7): ข้อความเตือนตามสถานะออเดอร์
+  //   - completed/processing → เตือนว่าไฟล์ ZIP จะไม่สามารถดาวน์โหลดได้อีก
+  //   - สถานะอื่น → เตือนปกติ
+  const isCompletedOrProcessing = (order.status === "completed" || order.status === "processing");
+  const warningText = isCompletedOrProcessing
+    ? `ต้องการลบ Order ${order.receipt_number || ""} ใช่หรือไม่?\n\n⚠️ ออเดอร์นี้มีไฟล์เพลงพร้อมดาวน์โหลด — เมื่อลบแล้วจะไม่สามารถดาวน์โหลดไฟล์ ZIP ได้อีก\n\nเมื่อลบแล้วจะไม่สามารถกู้คืนได้`
+    : `ต้องการลบ Order ${order.receipt_number || ""} ใช่หรือไม่?\n\nเมื่อลบแล้วจะไม่สามารถกู้คืนได้`;
   // 🎨 (2026-09-26): ใช้ customConfirm แทน window.confirm() — สไตล์เดียวกับเว็บ
   const confirmed = await window.customConfirm(
-    `ต้องการลบ Order ${order.receipt_number || ""} ใช่หรือไม่?\n\nเมื่อลบแล้วจะไม่สามารถกู้คืนได้`,
+    warningText,
     { title: "ยืนยันการลบออเดอร์", okText: "ลบ", danger: true }
   );
   if (!confirmed) return;
