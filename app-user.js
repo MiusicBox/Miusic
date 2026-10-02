@@ -1916,71 +1916,54 @@ async function loadCustomerAccountData() {
       ordersListEl.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:20px;">ยังไม่มีออเดอร์ — ไปเลือกเพลงแล้วสั่งซื้อได้เลย 🎵</div>`;
       return;
     }
-    // 🆕 (2026-10-02): ใช้ renderOneOrderCard จาก app-promotion.js (มี expand/collapse + ปุ่มต่าง ๆ)
-    //   แทนการ render แบบง่าย ๆ เดิม → กดดูรายละเอียดได้ + ปุ่มชำระ/ลบ/ฟังเพลง/ZIP
-    if (typeof window.renderOneOrderCard === "function") {
-      // เพิ่ม _docId ให้แต่ละ order (renderOneOrderCard ต้องการ)
-      orders.forEach(o => { if (!o._docId) o._docId = o.id || ""; });
-      // เก็บ orders ไว้ใน MY_ORDERS_STATE (สำหรับ event listeners ใช้ค้นหา)
-      if (window.MY_ORDERS_STATE) window.MY_ORDERS_STATE.myOrders = orders;
-      // render
-      ordersListEl.innerHTML = orders.map(o => window.renderOneOrderCard(o)).join("");
-      // bind event listeners (เหมือน renderMyOrdersList ใน app-promotion.js)
-      // toggle expand/collapse
-      // 🆕 (2026-10-02 fix): แยก function เพื่อ re-bind ได้หลัง re-render (กันกดปิดไม่ได้)
-      function bindToggle() {
-        ordersListEl.querySelectorAll("[data-toggle-order]").forEach(btn => {
-          btn.addEventListener("click", () => {
-            const id = btn.getAttribute("data-toggle-order");
-            if (window.MY_ORDERS_STATE && window.MY_ORDERS_STATE.expandedOrderIds) {
-              if (window.MY_ORDERS_STATE.expandedOrderIds.has(id)) {
-                window.MY_ORDERS_STATE.expandedOrderIds.delete(id);
-              } else {
-                window.MY_ORDERS_STATE.expandedOrderIds.add(id);
-              }
-              // re-render + re-bind ทุก event ใหม่ (toggle + ปุ่มต่าง ๆ)
-              ordersListEl.innerHTML = orders.map(o => window.renderOneOrderCard(o)).join("");
-              bindToggle();
-              bindAccountOrderEvents(ordersListEl, orders);
-            }
-          });
-        });
-      }
-      bindToggle();
-      // bind ปุ่มอื่น ๆ
-      bindAccountOrderEvents(ordersListEl, orders);
-    } else {
-      // fallback: render แบบง่าย ๆ (ถ้า renderOneOrderCard ไม่พร้อม)
-      ordersListEl.innerHTML = orders.map(order => {
-        const status = String(order.status || "pending_verify");
-        const total = Number(order.final_total ?? order.total ?? 0);
-        const createdAt = order.created_at ? new Date(order.created_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "-";
-        const receipt = order.receipt_number || (order.id || "").slice(0, 8);
-        let statusColor = "var(--text-dim)";
-        let statusLabel = status;
-        if (status === "pending_verify") { statusColor = "#F5B400"; statusLabel = "🟡 รอตรวจสอบ"; }
-        else if (status === "processing") { statusColor = "#3B82F6"; statusLabel = "🔵 กำลังเตรียม ZIP"; }
-        else if (status === "completed") { statusColor = "#10B981"; statusLabel = "✅ เสร็จสิ้น"; }
-        else if (status === "cancelled") { statusColor = "var(--danger)"; statusLabel = "❌ ยกเลิก"; }
-        const downloadBtn = (status === "completed" && order.zip_download_url)
-          ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" style="display:inline-block;padding:6px 12px;background:var(--accent);color:#fff;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;margin-top:6px;">⬇️ ดาวน์โหลด ZIP</a>`
-          : "";
-        return `
-          <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px;">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
-              <div style="flex:1;min-width:0;">
-                <div style="font-weight:700;font-size:13px;">#${escapeHtml(receipt)}</div>
-                <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${escapeHtml(createdAt)}</div>
-              </div>
-              <span style="font-size:11px;font-weight:700;color:${statusColor};">${escapeHtml(statusLabel)}</span>
-            </div>
-            <div style="font-size:12px;margin-top:8px;">ยอดรวม: <strong>${formatPrice(total)}</strong></div>
-            ${order.items ? `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">เพลง ${order.items.length} เพลง</div>` : ""}
-            ${downloadBtn}
+    // 🆕 (2026-10-02): ใช้ renderTrackOrderAllList + openTrackOrderAllDetail เหมือนลูกค้าไม่ login
+    //   → รายละเอียดครบ: เลข Order, ชื่อ, เบอร์, รายการเพลง, ยอดรวม, banner สถานะ,
+    //   ปุ่ม 💳 ชำระเงิน, ติดต่อ WhatsApp, ลบออเดอร์, ดาวน์โหลด ZIP
+    //   เก็บ orders ไว้ใน trackOrderAllOrders (ใช้โดย renderTrackOrderAllList + openTrackOrderAllDetail)
+    orders.forEach(o => { if (!o._docId) o._docId = o.id || ""; });
+    trackOrderAllOrders = orders;
+    // แสดง list ใน myAccountOrdersList (แทน trackOrderAllList เดิม)
+    //   ใช้ renderTrackOrderAllList แต่ส่ง listEl ของเราเอง
+    const accountOrdersHtml = orders.map((order, index) => {
+      const cfg = TRACK_STATUS_CONFIG[order.status] || TRACK_STATUS_CONFIG.pending_verify;
+      const dateStr = order.created_at ? new Date(order.created_at).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
+      const pState = getOrderPaymentState(order);
+      let paymentBadgeHtml = "";
+      if (pState.state === "paid") paymentBadgeHtml = `<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(41,204,113,.15);color:var(--success);font-weight:600;">✅ ชำระแล้ว</span>`;
+      else if (pState.state === "verified_awaiting_zip") paymentBadgeHtml = `<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(41,204,113,.15);color:var(--success);font-weight:600;">✅ ยืนยันแล้ว</span>`;
+      else if (pState.state === "pending_review") paymentBadgeHtml = `<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(245,180,0,.15);color:#F5B400;font-weight:600;">📸 ส่งสลิปแล้ว</span>`;
+      else if (pState.state === "rejected") paymentBadgeHtml = `<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(239,68,68,.15);color:var(--danger);font-weight:600;">⚠️ สลิปถูกปฏิเสธ</span>`;
+      const finalTotal = (order.final_total != null) ? Number(order.final_total) : Number(order.total || 0);
+      return `
+        <button class="track-order-all-card" type="button" data-account-order-index="${index}" style="width:100%;text-align:left;">
+          <div class="track-order-all-card-top">
+            <span class="track-order-all-card-id">${escapeHtml(order.receipt_number || "")}</span>
+            <span class="track-order-all-card-status" style="color:${cfg.color};background:${cfg.bg};">${cfg.emoji} ${escapeHtml(cfg.label)}</span>
           </div>
-        `;
-      }).join("");
-    }
+          <div class="track-order-all-card-mid">
+            <span>${escapeHtml(dateStr)}</span>
+            <span>${formatPrice(finalTotal)}</span>
+          </div>
+          ${paymentBadgeHtml ? `<div style="margin-top:4px;">${paymentBadgeHtml}</div>` : ""}
+        </button>`;
+    }).join("");
+    ordersListEl.innerHTML = accountOrdersHtml || '<div class="empty-state">ยังไม่มีออเดอร์</div>';
+    // bind click → openTrackOrderAllDetail (เหมือนลูกค้าไม่ login)
+    ordersListEl.querySelectorAll("[data-account-order-index]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.getAttribute("data-account-order-index"));
+        const order = orders[idx];
+        if (order) {
+          // ปิด account view → เปิด track order detail (ใช้ระบบเดิม)
+          const accountView = document.getElementById("myAccountView");
+          if (accountView) accountView.style.display = "none";
+          openTrackOrderAllDetail(order);
+          // เปิด track order backdrop (ที่มี detail)
+          const trackAllBackdrop = document.getElementById("trackOrderAllBackdrop");
+          if (trackAllBackdrop) { trackAllBackdrop.classList.add("show"); trackAllBackdrop.setAttribute("aria-hidden", "false"); }
+        }
+      });
+    });
   } catch (err) {
     profileEl.innerHTML = `<div style="color:var(--danger);">⚠️ โหลดไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
     ordersListEl.innerHTML = "";
