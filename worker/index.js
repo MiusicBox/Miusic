@@ -2026,7 +2026,14 @@ async function handleDb(request, env, url) {
         // 🔒 (2026-09-22 fix Bug #5): exact match แทน fuzzy — กัน enumerate ออเดอร์คนอื่น
         //   เดิม: oName.includes(queryName) → พิมพ์ "a" ก็เจอทุกออเดอร์ที่มี "a" ในชื่อ
         //   ใหม่: oName === queryName → ต้องตรงเป๊ะ (case-insensitive เพราะ normalizeNameServer lowercase แล้ว)
-        return oName === queryName;
+        if (oName !== queryName) return false;
+        // 🆕 (2026-10-02 v10 — fix แยก login/guest ชัดเจน):
+        //   กรองเฉพาะ guest orders (ไม่มี customer_id) → ไม่แสดง login orders
+        //   - ถ้า order มี customer_id → เป็น order ที่ลูกค้า login ซื้อ → ไม่แสดงใน guest search
+        //   - ถ้า order ไม่มี customer_id → เป็น guest order → แสดง
+        //   ทำให้ guest + login ที่เบอร์ WhatsApp ตรงกัน ไม่เห็นออเดอร์ของกัน
+        if (d.data?.customer_id) return false;
+        return true;
       });
       return jsonResponse({ docs: matched });
     }
@@ -5182,52 +5189,30 @@ async function handleCustomerAuth(request, env, url) {
   }
 
   // ---------- GET /api/customer/orders ----------
-  // ดึงออเดอร์ทั้งหมดของลูกค้า (เรียงจากล่าสุดก่อน)
+  // ดึงออเดอร์ทั้งหมดของลูกค้า login (เรียงจากล่าสุดก่อน)
   //
-  // 🆕 (2026-10-02 v8 — fix สับสน login vs guest):
-  //   เดิม: รวม login + guest ใน array เดียว → ลูกค้าสับสน ตัวเลขปนกัน
-  //   ใหม่: แยกเป็น 2 arrays:
-  //     - orders_login: ออเดอร์ที่ซื้อตอน login (มี customer_id ตรงกับลูกค้า)
-  //     - orders_guest: ออเดอร์ที่ซื้อแบบ guest (ไม่มี customer_id แต่เบอร์ WhatsApp ตรง)
-  //   ผลกระทบระบบเดิม: ต่ำ — เปลี่ยน response shape จาก { ok, orders } → { ok, orders_login, orders_guest }
-  //                      frontend ต้องอัปเดตให้รองรับด้วย
+  // 🆕 (2026-10-02 v10 — fix แยก login/guest ชัดเจน):
+  //   เดิม (v6-v8): query ด้วย customer_id OR customer_whatsapp → login เห็น guest ปนกัน
+  //   ใหม่ (v10): query เฉพาะ customer_id → login เห็นเฉพาะออเดอร์ที่ login ซื้อ
+  //   - ลูกค้า login ดูผ่าน session cookie (HttpOnly) → ดึง customer.id จาก session
+  //   - ไม่ใช้ whatsapp ในการดึงออเดอร์ทั้งหมด → ปลอดภัยกว่า (กัน cross-account access)
+  //   - ถ้าลูกค้าต้องการดูออเดอร์ที่ซื้อแบบ guest → ใช้ modal "ติดตามออเดอร์" + กรอกชื่อ+เบอร์
+  //   ผลกระทบระบบเดิม: ต่ำ — response shape กลับเป็น { ok, orders } แบบเดิม (compat)
   if (path === "orders" && request.method === "GET") {
     if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
     const customer = await getCustomerSession(request, env);
     if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
     try {
-      const customerWhatsapp = customer.whatsapp || "";
-      // ค้นออเดอร์ทั้งหมด (login + guest) — ใช้ query เดียวกันเพื่อกันซ้ำ
-      let sql, binds;
-      if (customerWhatsapp) {
-        sql = "SELECT DISTINCT id, data, created_at FROM documents WHERE collection = 'orders' AND (json_extract(data, '$.customer_id') = ? OR json_extract(data, '$.customer_whatsapp') = ?) ORDER BY created_at DESC LIMIT 200";
-        binds = [customer.id, customerWhatsapp];
-      } else {
-        sql = "SELECT id, data FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ? ORDER BY created_at DESC LIMIT 200";
-        binds = [customer.id];
-      }
-      const { results } = await env.DB.prepare(sql).bind(...binds).all();
-      const allOrders = (results || []).map(row => {
+      // 🆕 (v10): query เฉพาะ customer_id = customer.id (เห็นเฉพาะออเดอร์ที่ login ซื้อ)
+      const { results } = await env.DB.prepare(
+        "SELECT id, data FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ? ORDER BY created_at DESC LIMIT 200"
+      ).bind(customer.id).all();
+      const orders = (results || []).map(row => {
         let data;
         try { data = JSON.parse(row.data); } catch { data = {}; }
         return { id: row.id, ...data };
       });
-      // 🆕 (v8): แยก login vs guest โดยใช้ customer_id เป็นเกณฑ์
-      //   - ถ้า order.customer_id == customer.id → orders_login (ซื้อตอน login บัญชีนี้)
-      //   - ถ้า order.customer_id != customer.id (หรือไม่มี) → orders_guest (ซื้อแบบ guest ก่อน login)
-      const orders_login = allOrders.filter(o => o.customer_id === customer.id);
-      const orders_guest = allOrders.filter(o => o.customer_id !== customer.id);
-      return jsonResponse({
-        ok: true,
-        orders: allOrders, // 🆕 (compat): เก็บไว้สำหรับ frontend เดิมที่ยังใช้ orders
-        orders_login,
-        orders_guest,
-        counts: {
-          login: orders_login.length,
-          guest: orders_guest.length,
-          total: allOrders.length,
-        },
-      });
+      return jsonResponse({ ok: true, orders });
     } catch (err) {
       return jsonResponse({ error: safeError("โหลดออเดอร์ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }

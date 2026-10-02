@@ -2036,22 +2036,21 @@ async function loadCustomerAccountData() {
       return;
     }
     const data = await res.json();
-    // 🆕 (2026-10-02 v8): แยก login vs guest — ถ้า backend ส่ง orders_login/orders_guest มา ใช้ตรง
-    //   ถ้า backend เดิม (ยังไม่ deploy v8) → ใช้ orders รวม (compat)
-    const ordersLogin = Array.isArray(data?.orders_login) ? data.orders_login : [];
-    const ordersGuest = Array.isArray(data?.orders_guest) ? data.orders_guest : [];
-    const ordersAll = ordersLogin.concat(ordersGuest);
-    if (ordersAll.length === 0) {
+    // 🆕 (2026-10-02 v10): backend ส่งกลับแค่ orders (login ทั้งหมด) — ไม่มี orders_login/orders_guest อีก
+    //   เพราะ login จะเห็นเฉพาะออเดอร์ที่ login ซื้อ (ไม่เห็น guest)
+    //   ถ้าลูกค้าต้องการดู guest orders → ใช้ modal "ติดตามออเดอร์" + กรอกชื่อ+เบอร์
+    const orders = Array.isArray(data?.orders) ? data.orders : [];
+    if (orders.length === 0) {
       ordersListEl.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:20px;">ยังไม่มีออเดอร์ — ไปเลือกเพลงแล้วสั่งซื้อได้เลย 🎵</div>`;
       return;
     }
-    // เก็บ orders ทั้งหมดไว้ใน trackOrderAllOrders (ใช้โดย openTrackOrderAllDetail)
-    ordersAll.forEach(o => { if (!o._docId) o._docId = o.id || ""; });
-    trackOrderAllOrders = ordersAll;
+    // เก็บ orders ไว้ใน trackOrderAllOrders (ใช้โดย openTrackOrderAllDetail)
+    orders.forEach(o => { if (!o._docId) o._docId = o.id || ""; });
+    trackOrderAllOrders = orders;
 
-    // 🆕 (v9): helper function สร้าง HTML ของ order card — ไม่มี badge ที่มา (กลับเป็นแบบเดิม)
-    //   ใช้ data-account-order-source + data-account-order-idx ในการค้น order ที่ถูกต้อง
-    function buildOrderCardHtml(order, indexInSource, source) {
+    // 🆕 (v10): แสดง list เรียงตามวันที่ (ล่าสุดก่อน) — ไม่มีสรุปด้านบน + ไม่มี badge ที่มา
+    //   เพราะ login เห็นเฉพาะ login orders ทั้งหมดอยู่แล้ว (ไม่มีการแยก source)
+    const accountOrdersHtml = orders.map((order, index) => {
       const cfg = TRACK_STATUS_CONFIG[order.status] || TRACK_STATUS_CONFIG.pending_verify;
       const dateStr = order.created_at ? new Date(order.created_at).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
       const pState = getOrderPaymentState(order);
@@ -2063,10 +2062,10 @@ async function loadCustomerAccountData() {
       const finalTotal = (order.final_total != null) ? Number(order.final_total) : Number(order.total || 0);
       const canDownload = order.zip_download_url && (order.status === "processing" || order.status === "completed");
       const downloadBtnHtml = canDownload
-        ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" data-account-download="${escapeHtml(source)}-${indexInSource}" class="btn list-download-btn">⬇️ ดาวน์โหลดเพลง</a>`
+        ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" data-account-download="${index}" class="btn list-download-btn">⬇️ ดาวน์โหลดเพลง</a>`
         : "";
       return `
-        <div class="track-order-all-card" role="button" tabindex="0" data-account-order-source="${escapeHtml(source)}" data-account-order-idx="${indexInSource}" style="width:100%;text-align:left;">
+        <div class="track-order-all-card" role="button" tabindex="0" data-account-order-index="${index}" style="width:100%;text-align:left;">
           <div class="track-order-all-card-top">
             <span class="track-order-all-card-id">${escapeHtml(order.receipt_number || "")}</span>
             <span class="track-order-all-card-status" style="color:${cfg.color};background:${cfg.bg};">${cfg.emoji} ${escapeHtml(cfg.label)}</span>
@@ -2078,28 +2077,10 @@ async function loadCustomerAccountData() {
           ${paymentBadgeHtml ? `<div style="margin-top:4px;">${paymentBadgeHtml}</div>` : ""}
           ${downloadBtnHtml}
         </div>`;
-    }
+    }).join("");
+    ordersListEl.innerHTML = accountOrdersHtml || '<div class="empty-state">ยังไม่มีออเดอร์</div>';
 
-    // 🆕 (v9): รวมทุกออเดอร์ใน array เดียว เรียงตามวันที่ (ล่าสุดก่อน) — ไม่มีสรุปด้านบน + ไม่มี badge ที่มา
-    const allOrdersMerged = [
-      ...ordersLogin.map((order, i) => ({ order, source: "login", idx: i })),
-      ...ordersGuest.map((order, i) => ({ order, source: "guest", idx: i })),
-    ].sort((a, b) => {
-      const aTime = a.order.created_at ? new Date(a.order.created_at).getTime() : 0;
-      const bTime = b.order.created_at ? new Date(b.order.created_at).getTime() : 0;
-      return bTime - aTime;
-    });
-
-    // 🆕 (v9): แสดง list รวมเรียงตามวันที่ (เหมือน modal เดิม) — ไม่มีสรุปด้านบน + ไม่มี badge ที่มา
-    const listHtml = allOrdersMerged.length > 0
-      ? `<div style="display:grid;gap:10px;">
-          ${allOrdersMerged.map(item => buildOrderCardHtml(item.order, item.idx, item.source)).join("")}
-        </div>`
-      : '<div class="empty-state">ยังไม่มีออเดอร์</div>';
-
-    ordersListEl.innerHTML = listHtml;
-
-    // 🆕 (v8): ปุ่ม "ดาวน์โหลดเพลง" — ใช้ selector เดิม แต่ data-account-download มี source-index
+    // 🆕 (v10): ปุ่ม "ดาวน์โหลดเพลง"
     ordersListEl.querySelectorAll("[data-account-download]").forEach(btn => {
       btn.addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -2109,12 +2090,11 @@ async function loadCustomerAccountData() {
       });
     });
 
-    // 🆕 (v8): bind click → เปิด detail — แยก login/guest เพื่อหา order ที่ถูกต้อง
-    ordersListEl.querySelectorAll("[data-account-order-source]").forEach(btn => {
+    // 🆕 (v10): bind click → เปิด detail — ไม่มี source แล้ว (login ทั้งหมด)
+    ordersListEl.querySelectorAll("[data-account-order-index]").forEach(btn => {
       btn.addEventListener("click", () => {
-        const source = btn.getAttribute("data-account-order-source");
-        const idx = Number(btn.getAttribute("data-account-order-idx"));
-        const order = source === "login" ? ordersLogin[idx] : ordersGuest[idx];
+        const idx = Number(btn.getAttribute("data-account-order-index"));
+        const order = orders[idx];
         if (order) {
           const accountView = document.getElementById("myAccountView");
           if (accountView) accountView.style.display = "none";
