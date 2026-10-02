@@ -1916,38 +1916,66 @@ async function loadCustomerAccountData() {
       ordersListEl.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:20px;">ยังไม่มีออเดอร์ — ไปเลือกเพลงแล้วสั่งซื้อได้เลย 🎵</div>`;
       return;
     }
-    // render orders
-    ordersListEl.innerHTML = orders.map(order => {
-      const status = String(order.status || "pending_verify");
-      const total = Number(order.final_total ?? order.total ?? 0);
-      const createdAt = order.created_at ? new Date(order.created_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "-";
-      const receipt = order.receipt_number || (order.id || "").slice(0, 8);
-      // status badge color
-      let statusColor = "var(--text-dim)";
-      let statusLabel = status;
-      if (status === "pending_verify") { statusColor = "#F5B400"; statusLabel = "🟡 รอตรวจสอบ"; }
-      else if (status === "processing") { statusColor = "#3B82F6"; statusLabel = "🔵 กำลังเตรียม ZIP"; }
-      else if (status === "completed") { statusColor = "#10B981"; statusLabel = "✅ เสร็จสิ้น"; }
-      else if (status === "cancelled") { statusColor = "var(--danger)"; statusLabel = "❌ ยกเลิก"; }
-      // download button (ถ้ามี zip_download_url และ status=completed)
-      const downloadBtn = (status === "completed" && order.zip_download_url)
-        ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" style="display:inline-block;padding:6px 12px;background:var(--accent);color:#fff;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;margin-top:6px;">⬇️ ดาวน์โหลด ZIP</a>`
-        : "";
-      return `
-        <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
-            <div style="flex:1;min-width:0;">
-              <div style="font-weight:700;font-size:13px;">#${escapeHtml(receipt)}</div>
-              <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${escapeHtml(createdAt)}</div>
+    // 🆕 (2026-10-02): ใช้ renderOneOrderCard จาก app-promotion.js (มี expand/collapse + ปุ่มต่าง ๆ)
+    //   แทนการ render แบบง่าย ๆ เดิม → กดดูรายละเอียดได้ + ปุ่มชำระ/ลบ/ฟังเพลง/ZIP
+    if (typeof window.renderOneOrderCard === "function") {
+      // เพิ่ม _docId ให้แต่ละ order (renderOneOrderCard ต้องการ)
+      orders.forEach(o => { if (!o._docId) o._docId = o.id || ""; });
+      // เก็บ orders ไว้ใน MY_ORDERS_STATE (สำหรับ event listeners ใช้ค้นหา)
+      if (window.MY_ORDERS_STATE) window.MY_ORDERS_STATE.myOrders = orders;
+      // render
+      ordersListEl.innerHTML = orders.map(o => window.renderOneOrderCard(o)).join("");
+      // bind event listeners (เหมือน renderMyOrdersList ใน app-promotion.js)
+      // toggle expand/collapse
+      ordersListEl.querySelectorAll("[data-toggle-order]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const id = btn.getAttribute("data-toggle-order");
+          if (window.MY_ORDERS_STATE && window.MY_ORDERS_STATE.expandedOrderIds) {
+            if (window.MY_ORDERS_STATE.expandedOrderIds.has(id)) {
+              window.MY_ORDERS_STATE.expandedOrderIds.delete(id);
+            } else {
+              window.MY_ORDERS_STATE.expandedOrderIds.add(id);
+            }
+            // re-render
+            ordersListEl.innerHTML = orders.map(o => window.renderOneOrderCard(o)).join("");
+            bindAccountOrderEvents(ordersListEl, orders);
+          }
+        });
+      });
+      // bind ปุ่มอื่น ๆ
+      bindAccountOrderEvents(ordersListEl, orders);
+    } else {
+      // fallback: render แบบง่าย ๆ (ถ้า renderOneOrderCard ไม่พร้อม)
+      ordersListEl.innerHTML = orders.map(order => {
+        const status = String(order.status || "pending_verify");
+        const total = Number(order.final_total ?? order.total ?? 0);
+        const createdAt = order.created_at ? new Date(order.created_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "-";
+        const receipt = order.receipt_number || (order.id || "").slice(0, 8);
+        let statusColor = "var(--text-dim)";
+        let statusLabel = status;
+        if (status === "pending_verify") { statusColor = "#F5B400"; statusLabel = "🟡 รอตรวจสอบ"; }
+        else if (status === "processing") { statusColor = "#3B82F6"; statusLabel = "🔵 กำลังเตรียม ZIP"; }
+        else if (status === "completed") { statusColor = "#10B981"; statusLabel = "✅ เสร็จสิ้น"; }
+        else if (status === "cancelled") { statusColor = "var(--danger)"; statusLabel = "❌ ยกเลิก"; }
+        const downloadBtn = (status === "completed" && order.zip_download_url)
+          ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" style="display:inline-block;padding:6px 12px;background:var(--accent);color:#fff;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;margin-top:6px;">⬇️ ดาวน์โหลด ZIP</a>`
+          : "";
+        return `
+          <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:700;font-size:13px;">#${escapeHtml(receipt)}</div>
+                <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${escapeHtml(createdAt)}</div>
+              </div>
+              <span style="font-size:11px;font-weight:700;color:${statusColor};">${escapeHtml(statusLabel)}</span>
             </div>
-            <span style="font-size:11px;font-weight:700;color:${statusColor};">${escapeHtml(statusLabel)}</span>
+            <div style="font-size:12px;margin-top:8px;">ยอดรวม: <strong>${formatPrice(total)}</strong></div>
+            ${order.items ? `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">เพลง ${order.items.length} เพลง</div>` : ""}
+            ${downloadBtn}
           </div>
-          <div style="font-size:12px;margin-top:8px;">ยอดรวม: <strong>${formatPrice(total)}</strong></div>
-          ${order.items ? `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">เพลง ${order.items.length} เพลง</div>` : ""}
-          ${downloadBtn}
-        </div>
-      `;
-    }).join("");
+        `;
+      }).join("");
+    }
   } catch (err) {
     profileEl.innerHTML = `<div style="color:var(--danger);">⚠️ โหลดไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
     ordersListEl.innerHTML = "";
@@ -1960,6 +1988,49 @@ window.loadCustomerAccountData = loadCustomerAccountData;
 // 🆕 (2026-10-02 fix): expose showMyOrdersView + hideMyOrdersView ให้ customer-auth.js fallback ใช้ได้
 window.showMyOrdersView = showMyOrdersView;
 window.hideMyOrdersView = hideMyOrdersView;
+
+// 🆕 (2026-10-02): bind event listeners สำหรับปุ่มในรายละเอียดออเดอร์ (หน้าบัญชี)
+//   ใช้กับ orders ที่ render ผ่าน renderOneOrderCard จาก app-promotion.js
+function bindAccountOrderEvents(listEl, orders) {
+  if (!listEl || !orders) return;
+  // ปุ่มชำระเงิน
+  listEl.querySelectorAll("[data-order-pay]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute("data-order-pay");
+      const order = orders.find(o => (o._docId || o.id || "") === orderId);
+      if (!order) return;
+      const receiptNumber = order.receipt_number || orderId.slice(0, 8);
+      if (typeof window.showReceipt === "function") {
+        window.showReceipt(order, receiptNumber, order.store_name || "Music Store");
+      }
+    });
+  });
+  // ปุ่มลบออเดอร์
+  listEl.querySelectorAll("[data-order-delete]").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute("data-order-delete");
+      const order = orders.find(o => (o._docId || o.id || "") === orderId);
+      if (!order) return;
+      if (typeof window.handleCustomerDeleteOrder === "function") {
+        await window.handleCustomerDeleteOrder(order, () => {
+          loadCustomerAccountData();
+        });
+      }
+    });
+  });
+  // ปุ่มฟังเพลง
+  listEl.querySelectorAll("[data-order-play]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const songId = btn.getAttribute("data-order-play");
+      if (typeof window.playSong === "function") {
+        window.playSong(songId);
+      }
+    });
+  });
+}
 
 // 🆕 ผูก listeners สำหรับปุ่มใน myAccountView
 document.getElementById("myAccountBackBtn")?.addEventListener("click", () => {

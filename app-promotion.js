@@ -2031,3 +2031,7 @@ export function cleanupMyOrdersView() {
 // 🆕 (2026-10-02 fix): expose fetchMyOrdersOnce + MY_ORDERS_STATE ให้ customer-auth.js ใช้ได้
 window.fetchMyOrdersOnce = fetchMyOrdersOnce;
 window.MY_ORDERS_STATE = MY_ORDERS_STATE;
+
+// 🆕 (2026-10-02): expose renderOneOrderCard + renderMyOrdersList ให้ app-user.js ใช้
+window.renderOneOrderCard = renderOneOrderCard;
+window.renderMyOrdersList = renderMyOrdersList;
