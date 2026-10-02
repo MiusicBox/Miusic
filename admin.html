@@ -1228,14 +1228,40 @@
         <div id="bulkFullFilesMeta" style="font-size:12px;color:var(--text-dim);margin-top:4px;display:none;"></div>
       </div>
 
-      <div class="field"><label>DJ (ใช้กับทุกเพลงในชุดนี้ — ไม่ระบุก็ได้)</label><select id="bulkDj"><option value="">— ไม่ระบุ —</option></select></div>
-      <!-- 🆕 (2026-10-01): ช่องสร้าง DJ ใหม่ภายใน bulk upload — pattern เดียวกับ bulkNewPlaylistName -->
-      <!--   ถ้ากรอกช่องนี้ → สร้าง DJ ใหม่ + ใช้กับทุกเพลงในชุด (ชนะ select เดิม) -->
-      <!--   ถ้าเว้นว่าง → ใช้ select เดิม (เหมือนเดิม) -->
-      <div class="field"><label>หรือสร้าง DJ ใหม่ (ไม่บังคับ — ถ้ากรอกจะสร้าง DJ ใหม่และใช้กับทุกเพลง)</label><input id="bulkNewDjName" placeholder="ชื่อ DJ ใหม่"></div>
-      <div class="field"><label>หมวดหมู่ (ใช้กับทุกเพลงในชุดนี้ — ไม่ระบุก็ได้)</label><select id="bulkCategory"><option value="">— ไม่ระบุ —</option></select></div>
-      <!-- 🆕 (2026-10-01): ช่องสร้างหมวดหมู่ใหม่ภายใน bulk upload — pattern เดียวกับ bulkNewPlaylistName -->
-      <div class="field"><label>หรือสร้างหมวดหมู่ใหม่ (ไม่บังคับ — ถ้ากรอกจะสร้างหมวดหมู่ใหม่และใช้กับทุกเพลง)</label><input id="bulkNewCatName" placeholder="ชื่อหมวดหมู่ใหม่"></div>
+      <!-- 🆕 (2026-10-01 dropdown): รวม DJ select + สร้างใหม่ เป็น dropdown เดียว เพื่อความเป็นระเบียบ
+           ปุ่มเดียวที่แสดงตลอด: "🎧 DJ: [ชื่อ DJ ที่เลือก/สร้างใหม่] ▾"
+           กดปุ่ม → dropdown เปิด → มี select เดิม + input สร้างใหม่
+           select + input ยังอยู่ใน DOM → logic เดิมยังอ่านค่าได้ปกติ -->
+      <div class="field" style="position:relative;">
+        <label>DJ (ใช้กับทุกเพลงในชุดนี้ — ไม่ระบุก็ได้)</label>
+        <button type="button" id="bulkDjToggle" class="btn" style="width:100%;padding:10px 12px;font-size:13px;border:1px solid var(--border,#ccc);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;">
+          <span id="bulkDjLabel" style="flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">— ไม่ระบุ —</span>
+          <span style="font-size:10px;transition:transform .2s;" id="bulkDjChevron">▾</span>
+        </button>
+        <div id="bulkDjDropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--bg-card,#1f1f23);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:10px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.3);">
+          <div style="margin-bottom:8px;font-size:11px;color:var(--text-dim);font-weight:600;">เลือกจาก DJ ที่มีอยู่:</div>
+          <select id="bulkDj" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:8px 10px;font-size:13px;"><option value="">— ไม่ระบุ —</option></select>
+          <div style="margin:10px 0 4px;font-size:11px;color:var(--text-dim);font-weight:600;">หรือสร้าง DJ ใหม่:</div>
+          <input id="bulkNewDjName" placeholder="ชื่อ DJ ใหม่" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:8px 10px;font-size:13px;">
+          <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">ถ้ากรอกช่องนี้ → สร้าง DJ ใหม่ + ใช้กับทุกเพลง (ชนะ select เดิม)</div>
+        </div>
+      </div>
+
+      <!-- 🆕 (2026-10-01 dropdown): รวมหมวดหมู่ select + สร้างใหม่ เป็น dropdown เดียว -->
+      <div class="field" style="position:relative;">
+        <label>หมวดหมู่ (ใช้กับทุกเพลงในชุดนี้ — ไม่ระบุก็ได้)</label>
+        <button type="button" id="bulkCatToggle" class="btn" style="width:100%;padding:10px 12px;font-size:13px;border:1px solid var(--border,#ccc);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;">
+          <span id="bulkCatLabel" style="flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">— ไม่ระบุ —</span>
+          <span style="font-size:10px;transition:transform .2s;" id="bulkCatChevron">▾</span>
+        </button>
+        <div id="bulkCatDropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--bg-card,#1f1f23);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:10px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.3);">
+          <div style="margin-bottom:8px;font-size:11px;color:var(--text-dim);font-weight:600;">เลือกจากหมวดหมู่ที่มีอยู่:</div>
+          <select id="bulkCategory" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:8px 10px;font-size:13px;"><option value="">— ไม่ระบุ —</option></select>
+          <div style="margin:10px 0 4px;font-size:11px;color:var(--text-dim);font-weight:600;">หรือสร้างหมวดหมู่ใหม่:</div>
+          <input id="bulkNewCatName" placeholder="ชื่อหมวดหมู่ใหม่" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);color:var(--text);border-radius:6px;padding:8px 10px;font-size:13px;">
+          <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">ถ้ากรอกช่องนี้ → สร้างหมวดหมู่ใหม่ + ใช้กับทุกเพลง (ชนะ select เดิม)</div>
+        </div>
+      </div>
       <div class="field"><label>ราคาต่อเพลง (LAK — ใช้กับทุกเพลงในชุดนี้)</label><input id="bulkPrice" type="number" min="0"></div>
       <div class="field">
         <label>รูปปก (ใช้กับทุกเพลงในชุดนี้ — ไม่บังคับ)</label>

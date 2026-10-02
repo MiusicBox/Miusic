@@ -3561,11 +3561,127 @@ async function openBulkUpload() {
   populateSelect("bulkCategory", CACHE.categories, "id", "category_name");
   populateSelect("bulkDj", CACHE.djs, "id", "dj_name");
   populateSelect("bulkPlaylist", CACHE.playlists, "id", "playlist_name");
+  // 🆕 (2026-10-01 dropdown): sync label ของปุ่ม toggle หลัง populate select (เห็น "— ไม่ระบุ —" ค่าเริ่มต้น)
+  syncBulkDjToggleLabel();
+  syncBulkCatToggleLabel();
 }
 document.getElementById("bulkUploadClose").addEventListener("click", () => {
   if (bulkUploadController) { bulkUploadController.abort(); bulkUploadController = null; } // ปิดหน้าต่างระหว่างอัปโหลด ต้องยกเลิกอัปโหลดจริงด้วย ไม่ปล่อยค้างเบื้องหลัง
   document.getElementById("bulkUploadBackdrop").classList.remove("show");
+  // 🆕 (2026-10-01 dropdown): ปิด dropdown DJ/หมวด ด้วยตอนปิด modal bulk upload (กัน dropdown ค้างเปิด)
+  closeBulkDjDropdown();
+  closeBulkCatDropdown();
 });
+
+// ============================================================
+// 🆕 (2026-10-01 dropdown): toggle dropdown สำหรับ DJ/หมวดหมู่ใน bulk upload
+//   รวม select + input "สร้างใหม่" เป็น dropdown เดียว เพื่อความเป็นระเบียบ
+//   pattern เดียวกับ date filter dropdown ที่ทำก่อนหน้านี้
+//   ผลกระทบระบบเดิม: 0% — select/input ยังอยู่ใน DOM → logic เดิมยังอ่านค่าได้ปกติ
+// ============================================================
+
+// 🆕 sync label ของปุ่ม toggle DJ → แสดงค่าปัจจุบัน (DJ ที่เลือก / สร้างใหม่ / ไม่ระบุ)
+function syncBulkDjToggleLabel() {
+  const labelEl = document.getElementById("bulkDjLabel");
+  if (!labelEl) return;
+  const newDjName = (document.getElementById("bulkNewDjName")?.value || "").trim();
+  const djSel = document.getElementById("bulkDj");
+  if (newDjName) {
+    labelEl.textContent = `🎧 DJ ใหม่: ${newDjName}`;
+    labelEl.style.color = "var(--accent)";
+  } else if (djSel && djSel.value) {
+    labelEl.textContent = `🎧 ${djSel.options[djSel.selectedIndex]?.text || "— ไม่ระบุ —"}`;
+    labelEl.style.color = "var(--text)";
+  } else {
+    labelEl.textContent = "— ไม่ระบุ —";
+    labelEl.style.color = "var(--text-dim)";
+  }
+}
+
+// 🆕 sync label ของปุ่ม toggle หมวดหมู่
+function syncBulkCatToggleLabel() {
+  const labelEl = document.getElementById("bulkCatLabel");
+  if (!labelEl) return;
+  const newCatName = (document.getElementById("bulkNewCatName")?.value || "").trim();
+  const catSel = document.getElementById("bulkCategory");
+  if (newCatName) {
+    labelEl.textContent = `🗂️ หมวดใหม่: ${newCatName}`;
+    labelEl.style.color = "var(--accent)";
+  } else if (catSel && catSel.value) {
+    labelEl.textContent = `🗂️ ${catSel.options[catSel.selectedIndex]?.text || "— ไม่ระบุ —"}`;
+    labelEl.style.color = "var(--text)";
+  } else {
+    labelEl.textContent = "— ไม่ระบุ —";
+    labelEl.style.color = "var(--text-dim)";
+  }
+}
+
+// 🆕 เปิด/ปิด dropdown DJ
+function toggleBulkDjDropdown() {
+  const dropdown = document.getElementById("bulkDjDropdown");
+  const chevron = document.getElementById("bulkDjChevron");
+  if (!dropdown) return;
+  const isOpen = dropdown.style.display !== "none";
+  // ปิด dropdown ของหมวดด้วย (เปิดทีละอัน)
+  closeBulkCatDropdown();
+  if (!isOpen) {
+    dropdown.style.display = "block";
+    if (chevron) chevron.style.transform = "rotate(180deg)";
+  }
+}
+function closeBulkDjDropdown() {
+  const dropdown = document.getElementById("bulkDjDropdown");
+  const chevron = document.getElementById("bulkDjChevron");
+  if (dropdown) dropdown.style.display = "none";
+  if (chevron) chevron.style.transform = "";
+}
+
+// 🆕 เปิด/ปิด dropdown หมวดหมู่
+function toggleBulkCatDropdown() {
+  const dropdown = document.getElementById("bulkCatDropdown");
+  const chevron = document.getElementById("bulkCatChevron");
+  if (!dropdown) return;
+  const isOpen = dropdown.style.display !== "none";
+  // ปิด dropdown ของ DJ ด้วย (เปิดทีละอัน)
+  closeBulkDjDropdown();
+  if (!isOpen) {
+    dropdown.style.display = "block";
+    if (chevron) chevron.style.transform = "rotate(180deg)";
+  }
+}
+function closeBulkCatDropdown() {
+  const dropdown = document.getElementById("bulkCatDropdown");
+  const chevron = document.getElementById("bulkCatChevron");
+  if (dropdown) dropdown.style.display = "none";
+  if (chevron) chevron.style.transform = "";
+}
+
+// 🆕 ผูก listeners สำหรับปุ่ม toggle + sync label เมื่อ select/input เปลี่ยน
+document.getElementById("bulkDjToggle")?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleBulkDjDropdown();
+});
+document.getElementById("bulkCatToggle")?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleBulkCatDropdown();
+});
+// sync label เมื่อ select DJ/หมวด เปลี่ยน
+document.getElementById("bulkDj")?.addEventListener("change", syncBulkDjToggleLabel);
+document.getElementById("bulkCategory")?.addEventListener("change", syncBulkCatToggleLabel);
+// sync label เมื่อ input สร้างใหม่ เปลี่ยน (ทุก keystroke)
+document.getElementById("bulkNewDjName")?.addEventListener("input", syncBulkDjToggleLabel);
+document.getElementById("bulkNewCatName")?.addEventListener("input", syncBulkCatToggleLabel);
+// 🆕 กดที่ dropdown เอง → stopPropagation (กันปิดเวลากด select/input ใน dropdown)
+document.getElementById("bulkDjDropdown")?.addEventListener("click", (e) => e.stopPropagation());
+document.getElementById("bulkCatDropdown")?.addEventListener("click", (e) => e.stopPropagation());
+// 🆕 กดที่อื่นนอก dropdown → ปิดทั้งสอง
+document.addEventListener("click", () => {
+  closeBulkDjDropdown();
+  closeBulkCatDropdown();
+});
+// ============================================================
+// /🆕 dropdown DJ/หมวดใน bulk upload — สิ้นสุดส่วนเพิ่มใหม่
+// ============================================================
 
 // 🔧 (2026-09-19): เพิ่มช่อง "ราคาเพลย์ลิสต์" ใน Bulk Upload (dynamically — ไม่ต้องแก้ admin.html)
 //   แทรกหลังช่อง "ชื่อเพลย์ลิสต์ใหม่" → admin ตั้งราคาเพลย์ลิสต์ได้ตอนสร้างใหม่เลย
