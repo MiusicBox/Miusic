@@ -6361,6 +6361,16 @@ export default {
       return handleCustomerAuth(request, env, url);
     }
 
+    // 🆕 (2026-10-02 v4 fix — CRITICAL BUG): /api/admin/customers และ /api/admin/password-reset-requests
+    //   เดิม: endpoints เหล่านี้ถูกวางไว้ใน handleCustomerAuth() แต่ routing หลักเรียก handleCustomerAuth()
+    //   เฉพาะเมื่อ path ขึ้นต้นด้วย /api/customer/ (เอกพจน์) → /api/admin/* จึงไม่เคยถูกเรียก → 404
+    //   แก้: เพิ่ม routing สำหรับ /api/admin/customers และ /api/admin/password-reset-requests ให้เรียก handleCustomerAuth()
+    //   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่ม routing ใหม่ ไม่ลบ/เปลี่ยน routing เดิม
+    if (url.pathname.startsWith("/api/admin/customers") || url.pathname.startsWith("/api/admin/password-reset-requests")) {
+      if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
+      return handleCustomerAuth(request, env, url);
+    }
+
     if (url.pathname.startsWith("/api/db/")) {
       if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
       return handleDb(request, env, url);
