@@ -1964,6 +1964,9 @@ async function loadCustomerAccountData() {
 
 // 🆕 expose ให้ customer-auth.js เรียก (ตอนกดปุ่ม "👤 บัญชี")
 window.showCustomerAccountView = showCustomerAccountView;
+// 🆕 (2026-10-02 fix): expose showMyOrdersView + hideMyOrdersView ให้ customer-auth.js fallback ใช้ได้
+window.showMyOrdersView = showMyOrdersView;
+window.hideMyOrdersView = hideMyOrdersView;
 
 // 🆕 ผูก listeners สำหรับปุ่มใน myAccountView
 document.getElementById("myAccountBackBtn")?.addEventListener("click", () => {

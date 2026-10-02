@@ -1953,3 +1953,7 @@ export function cleanupMyOrdersView() {
     MY_ORDERS_STATE._visibilityHandler = null;
   }
 }
+
+// 🆕 (2026-10-02 fix): expose fetchMyOrdersOnce + MY_ORDERS_STATE ให้ customer-auth.js ใช้ได้
+window.fetchMyOrdersOnce = fetchMyOrdersOnce;
+window.MY_ORDERS_STATE = MY_ORDERS_STATE;
