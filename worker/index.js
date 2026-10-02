@@ -4920,6 +4920,38 @@ async function handleCustomerAuth(request, env, url) {
     });
   }
 
+  // 🆕 (2026-10-02): POST /api/customer/change-password
+  //   รับ: { old_password, new_password } → ตรวจรหัสเดิม → อัปเดตรหัสใหม่
+  if (path === "change-password" && request.method === "POST") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const customer = await getCustomerSession(request, env);
+    if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+    const oldPwd = String(body.old_password || "");
+    const newPwd = String(body.new_password || "");
+    if (newPwd.length < 6) return jsonResponse({ error: "รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัว" }, 400);
+    try {
+      const row = await env.DB.prepare("SELECT password_hash FROM customers WHERE id = ?").bind(customer.id).first();
+      if (!row) return jsonResponse({ error: "ไม่พบบัญชี" }, 404);
+      const valid = await verifyPassword(oldPwd, row.password_hash);
+      if (!valid) return jsonResponse({ error: "รหัสผ่านเดิมไม่ถูกต้อง" }, 401);
+      const newHash = await hashPassword(newPwd);
+      await env.DB.prepare("UPDATE customers SET password_hash = ?, updated_at = ? WHERE id = ?")
+        .bind(newHash, new Date().toISOString(), customer.id).run();
+      return jsonResponse({ ok: true });
+    } catch (err) {
+      return jsonResponse({ error: safeError("เปลี่ยนรหัสผ่านไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // 🆕 (2026-10-02): POST /api/customer/reset-password (placeholder)
+  //   รับ: { login } → ค้นหาบัญชี → ส่งรหัสผ่านใหม่ผ่าน WhatsApp (ยังไม่ได้ implement WhatsApp API)
+  //   ตอนนี้: คืนข้อความว่า "ยังไม่พร้อม" (ต้องเพิ่ม WhatsApp API ภายหลัง)
+  if (path === "reset-password" && request.method === "POST") {
+    return jsonResponse({ error: "ฟีเจอร์ลืมรหัสผ่านยังไม่พร้อม — กรุณาติดต่อแอดมินผ่าน WhatsApp เพื่อรีเซ็ตรหัสผ่าน" }, 501);
+  }
+
   // ---------- GET /api/customer/me ----------
   // ตรวจ session → คืนข้อมูล customer ถ้า login แล้ว
   if (path === "me" && request.method === "GET") {

@@ -2036,6 +2036,104 @@ document.getElementById("myAccountRefreshBtn")?.addEventListener("click", () => 
   loadCustomerAccountData();
 });
 
+// 🆕 (2026-10-02): tab switching สำหรับหน้าบัญชี — โปรไฟล์ / ออเดอร์ / ตั้งค่า
+function switchAccountTab(tab) {
+  const tabs = { profile: "accountTabProfile", orders: "accountTabOrders", settings: "accountTabSettings" };
+  const sections = { profile: "accountSectionProfile", orders: "accountSectionOrders", settings: "accountSectionSettings" };
+  for (const [key, tabId] of Object.entries(tabs)) {
+    const tabBtn = document.getElementById(tabId);
+    const section = document.getElementById(sections[key]);
+    if (key === tab) {
+      if (tabBtn) { tabBtn.style.color = "var(--text)"; tabBtn.style.borderBottom = "2px solid var(--accent)"; }
+      if (section) section.style.display = "block";
+    } else {
+      if (tabBtn) { tabBtn.style.color = "var(--text-dim)"; tabBtn.style.borderBottom = "2px solid transparent"; }
+      if (section) section.style.display = "none";
+    }
+  }
+}
+document.getElementById("accountTabProfile")?.addEventListener("click", () => switchAccountTab("profile"));
+document.getElementById("accountTabOrders")?.addEventListener("click", () => {
+  switchAccountTab("orders");
+  loadCustomerAccountData(); // โหลดออเดอร์เมื่อกด tab
+});
+document.getElementById("accountTabSettings")?.addEventListener("click", () => switchAccountTab("settings"));
+
+// 🆕 (2026-10-02): ปุ่มออกจากระบบในหน้าบัญชี
+document.getElementById("myAccountLogoutBtn")?.addEventListener("click", async () => {
+  if (!confirm("ต้องการออกจากระบบใช่ไหม?")) return;
+  // ซ่อน account view
+  const accountView = document.getElementById("myAccountView");
+  if (accountView) accountView.style.display = "none";
+  // เรียก logout จาก customer-auth.js
+  try {
+    await fetch("/api/customer/logout", { method: "POST", credentials: "same-origin" });
+  } catch (_) {}
+  // ล้าง localStorage
+  try { localStorage.removeItem("miusic_customer_session"); } catch (_) {}
+  // แสดง view หลักกลับมา
+  ["#gridTitle", "#songGrid"].forEach(s => { const el = document.querySelector(s); if (el) el.style.display = ""; });
+  const categoryChips = document.getElementById("categoryChips");
+  const djSection = document.getElementById("djSection");
+  if (categoryChips) categoryChips.style.display = "";
+  if (djSection) djSection.style.display = "";
+  // refresh UI ของ customer-auth.js
+  if (typeof window.__refreshCustomerAuthUI === "function") window.__refreshCustomerAuthUI();
+  else location.reload();
+});
+
+// 🆕 (2026-10-02): เปลี่ยนรหัสผ่าน — เรียก endpoint ใหม่
+document.getElementById("customerChangePasswordBtn")?.addEventListener("click", async () => {
+  const oldPwd = document.getElementById("customerChangeOldPassword")?.value || "";
+  const newPwd = document.getElementById("customerChangeNewPassword")?.value || "";
+  const resultEl = document.getElementById("customerChangePasswordResult");
+  if (resultEl) resultEl.textContent = "";
+  if (oldPwd.length < 1) { if (resultEl) resultEl.textContent = "กรุณากรอกรหัสผ่านเดิม"; return; }
+  if (newPwd.length < 6) { if (resultEl) resultEl.textContent = "รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัว"; return; }
+  try {
+    const res = await fetch("/api/customer/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ old_password: oldPwd, new_password: newPwd }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      if (resultEl) { resultEl.textContent = "✅ เปลี่ยนรหัสผ่านสำเร็จ"; resultEl.style.color = "var(--success)"; }
+      document.getElementById("customerChangeOldPassword").value = "";
+      document.getElementById("customerChangeNewPassword").value = "";
+    } else {
+      if (resultEl) { resultEl.textContent = data?.error || "เปลี่ยนรหัสผ่านไม่สำเร็จ"; resultEl.style.color = "var(--danger)"; }
+    }
+  } catch (err) {
+    if (resultEl) { resultEl.textContent = "เกิดข้อผิดพลาด: " + (err.message || String(err)); resultEl.style.color = "var(--danger)"; }
+  }
+});
+
+// 🆕 (2026-10-02): ลืมรหัสผ่าน — ส่งรหัสผ่านใหม่ผ่าน WhatsApp (placeholder — ต้องเพิ่ม endpoint ภายหลัง)
+document.getElementById("customerResetPasswordBtn")?.addEventListener("click", async () => {
+  const login = document.getElementById("customerResetLogin")?.value?.trim() || "";
+  const resultEl = document.getElementById("customerResetPasswordResult");
+  if (resultEl) resultEl.textContent = "";
+  if (!login) { if (resultEl) resultEl.textContent = "กรุณากรอกอีเมลหรือเบอร์ WhatsApp"; return; }
+  try {
+    const res = await fetch("/api/customer/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ login }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      if (resultEl) { resultEl.textContent = data?.message || "✅ ส่งรหัสผ่านใหม่แล้ว — ตรวจสอบ WhatsApp ของคุณ"; resultEl.style.color = "var(--success)"; }
+    } else {
+      if (resultEl) { resultEl.textContent = data?.error || "ส่งรหัสผ่านใหม่ไม่สำเร็จ"; resultEl.style.color = "var(--danger)"; }
+    }
+  } catch (err) {
+    if (resultEl) { resultEl.textContent = "เกิดข้อผิดพลาด: " + (err.message || String(err)); resultEl.style.color = "var(--danger)"; }
+  }
+});
+
 // ===== เพิ่มใหม่: ติดตามออเดอร์ (ฝั่งลูกค้า ไม่ต้อง Login) — ไม่แตะระบบเดิม =====
 // ลูกค้ากรอกเลข Order + ชื่อ + เบอร์โทร เพื่อค้นหาและตรวจสอบสถานะออเดอร์ของตัวเอง
 function normalizePhone(v) {

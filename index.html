@@ -1129,11 +1129,53 @@
       <div style="flex:1;font-weight:800;font-size:16px;">👤 บัญชีของฉัน</div>
       <button class="icon-btn" id="myAccountRefreshBtn" type="button" aria-label="รีเฟรช" style="padding:6px 10px;flex-shrink:0;">🔄</button>
     </div>
-    <!-- ข้อมูลบัญชี -->
-    <div id="myAccountProfile" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px;margin-bottom:14px;max-width:600px;margin-left:auto;margin-right:auto;"></div>
-    <!-- รายการออเดอร์ -->
-    <div style="font-weight:700;font-size:14px;margin-bottom:8px;max-width:600px;margin-left:auto;margin-right:auto;">📦 ออเดอร์ทั้งหมดของฉัน</div>
-    <div id="myAccountOrdersList" style="display:grid;gap:10px;max-width:600px;margin-left:auto;margin-right:auto;"></div>
+
+    <!-- 🆕 (2026-10-02): tab เลือก โปรไฟล์ / ออเดอร์ / ตั้งค่า -->
+    <div style="display:flex;gap:6px;margin-bottom:14px;max-width:600px;margin-left:auto;margin-right:auto;border-bottom:1px solid rgba(255,255,255,.1);padding-bottom:8px;">
+      <button type="button" id="accountTabProfile" style="flex:1;padding:8px;font-size:13px;font-weight:600;border:none;background:transparent;color:var(--text);cursor:pointer;border-bottom:2px solid var(--accent);">👤 โปรไฟล์</button>
+      <button type="button" id="accountTabOrders" style="flex:1;padding:8px;font-size:13px;font-weight:600;border:none;background:transparent;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;">📦 ออเดอร์</button>
+      <button type="button" id="accountTabSettings" style="flex:1;padding:8px;font-size:13px;font-weight:600;border:none;background:transparent;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;">⚙️ ตั้งค่า</button>
+    </div>
+
+    <!-- 🆕 (2026-10-02): แยก section — โปรไฟล์ -->
+    <div id="accountSectionProfile" style="max-width:600px;margin-left:auto;margin-right:auto;">
+      <div id="myAccountProfile" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px;margin-bottom:14px;"></div>
+      <!-- 🆕 ปุ่มออกจากระบบ -->
+      <button class="btn" id="myAccountLogoutBtn" type="button" style="width:100%;padding:12px;background:rgba(239,68,68,.12);color:var(--danger);border:1px solid rgba(239,68,68,.25);border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;">⎋ ออกจากระบบ</button>
+    </div>
+
+    <!-- 🆕 (2026-10-02): แยก section — ออเดอร์ (ซ่อนไว้) -->
+    <div id="accountSectionOrders" style="display:none;max-width:600px;margin-left:auto;margin-right:auto;">
+      <div style="font-weight:700;font-size:14px;margin-bottom:8px;">📦 ออเดอร์ทั้งหมดของฉัน</div>
+      <div id="myAccountOrdersList" style="display:grid;gap:10px;"></div>
+    </div>
+
+    <!-- 🆕 (2026-10-02): แยก section — ตั้งค่า (เปลี่ยน/ลืมรหัสผ่าน) -->
+    <div id="accountSectionSettings" style="display:none;max-width:600px;margin-left:auto;margin-right:auto;">
+      <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px;margin-bottom:14px;">
+        <div style="font-weight:700;font-size:14px;margin-bottom:12px;">🔑 เปลี่ยนรหัสผ่าน</div>
+        <div class="field" style="margin-bottom:10px;">
+          <label style="font-size:12px;color:var(--text-dim);">รหัสผ่านเดิม</label>
+          <input id="customerChangeOldPassword" type="password" placeholder="รหัสผ่านเดิม" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
+        </div>
+        <div class="field" style="margin-bottom:10px;">
+          <label style="font-size:12px;color:var(--text-dim);">รหัสผ่านใหม่</label>
+          <input id="customerChangeNewPassword" type="password" placeholder="รหัสผ่านใหม่ (อย่างน้อย 6 ตัว)" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
+        </div>
+        <button class="btn" id="customerChangePasswordBtn" type="button" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">เปลี่ยนรหัสผ่าน</button>
+        <div id="customerChangePasswordResult" style="font-size:12px;margin-top:8px;min-height:14px;"></div>
+      </div>
+
+      <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px;">
+        <div style="font-weight:700;font-size:14px;margin-bottom:8px;">🔑 ลืมรหัสผ่าน?</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">กรอกอีเมลหรือเบอร์ WhatsApp ที่ใช้สมัคร → ระบบจะส่งรหัสผ่านใหม่ให้คุณผ่าน WhatsApp</div>
+        <div class="field" style="margin-bottom:10px;">
+          <input id="customerResetLogin" type="text" placeholder="อีเมล หรือ เบอร์ WhatsApp" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
+        </div>
+        <button class="btn" id="customerResetPasswordBtn" type="button" style="width:100%;padding:10px;background:rgba(139,92,246,.12);color:var(--accent);border:1px solid var(--accent);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">ส่งรหัสผ่านใหม่</button>
+        <div id="customerResetPasswordResult" style="font-size:12px;margin-top:8px;min-height:14px;"></div>
+      </div>
+    </div>
   </div>
 </body>
 </html>
