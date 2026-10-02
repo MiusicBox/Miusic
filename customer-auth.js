@@ -24,17 +24,18 @@ function getCurrentCustomer() {
 }
 
 // 🆕 sync UI ตามสถานะ login — แสดง/ซ่อนปุ่ม + ชื่อลูกค้า
+//   🆕 (2026-10-01 styling): ใช้ CSS class (จาก style.css) แทน inline style — สวย + เข้ากับธีม
 function syncCustomerAuthUI() {
   const btnArea = document.getElementById("customerAuthBtnArea");
   if (!btnArea) return;
   if (currentCustomer) {
     // login แล้ว — แสดงชื่อ + ปุ่มออกจากระบบ + ปุ่มบัญชี
     btnArea.innerHTML = `
-      <button class="icon-btn customer-account-btn" id="customerAccountBtn" type="button" aria-label="บัญชีของฉัน" title="บัญชีของฉัน" style="font-size:13px;padding:0 8px;gap:4px;">
+      <button class="customer-account-btn" id="customerAccountBtn" type="button" aria-label="บัญชีของฉัน" title="บัญชีของฉัน">
         <span>👤</span>
         <span style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtmlCustomer(currentCustomer.display_name || currentCustomer.email || currentCustomer.whatsapp || "ลูกค้า")}</span>
       </button>
-      <button class="icon-btn customer-logout-btn" id="customerLogoutBtn" type="button" aria-label="ออกจากระบบ" title="ออกจากระบบ">
+      <button class="customer-logout-btn" id="customerLogoutBtn" type="button" aria-label="ออกจากระบบ" title="ออกจากระบบ">
         ⎋
       </button>
     `;
@@ -48,9 +49,9 @@ function syncCustomerAuthUI() {
       await customerLogout();
     });
   } else {
-    // ยังไม่ login — แสดงปุ่มสมัคร/เข้าสู่ระบบ
+    // ยังไม่ login — แสดงปุ่มสมัคร/เข้าสู่ระบบ (gradient ม่วงสวย)
     btnArea.innerHTML = `
-      <button class="icon-btn customer-login-btn" id="customerLoginBtn" type="button" aria-label="เข้าสู่ระบบ" title="เข้าสู่ระบบ / สมัครสมาชิก" style="font-size:13px;padding:0 8px;gap:4px;">
+      <button class="customer-login-btn" id="customerLoginBtn" type="button" aria-label="เข้าสู่ระบบ" title="เข้าสู่ระบบ / สมัครสมาชิก">
         <span>👤</span>
         <span>เข้าสู่ระบบ</span>
       </button>

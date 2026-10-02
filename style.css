@@ -2007,6 +2007,120 @@ button:active {
   background: rgba(239, 68, 68, 0.2);
 }
 
+/* ============================================================
+   🆕 (2026-10-01): ปุ่ม customer login/register + account สไตล์ธีมม่วง
+   เข้ากับ dark theme + accent color (#8b5cf6) + accent-2 (#ec4899)
+   ผลกระทบระบบเดิม: 0% — เพิ่ม CSS ใหม่ ไม่แตะ .icon-btn เดิม
+   ============================================================ */
+
+/* ปุ่ม "👤 เข้าสู่ระบบ" — gradient ม่วง + glow นุ่ม ๆ */
+.customer-login-btn {
+  height: 45px;
+  padding: 0 14px !important;
+  border-radius: 12px !important;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%) !important;
+  border: none !important;
+  color: #fff !important;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px var(--accent-glow);
+  transition: transform .2s, box-shadow .2s, opacity .2s;
+  white-space: nowrap;
+}
+.customer-login-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px var(--accent-glow), 0 4px 12px var(--accent-2-glow);
+  opacity: 0.95;
+}
+.customer-login-btn:active {
+  transform: translateY(0);
+}
+.customer-login-btn span:first-child {
+  font-size: 16px;
+}
+
+/* ปุ่ม "👤 [ชื่อ]" — login แล้ว, มีเส้นบางสีม่วง */
+.customer-account-btn {
+  height: 45px;
+  padding: 0 12px !important;
+  border-radius: 12px !important;
+  background: var(--surface-2) !important;
+  border: 1.5px solid var(--accent) !important;
+  color: var(--text) !important;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: transform .2s, background .2s, box-shadow .2s;
+  white-space: nowrap;
+  max-width: 140px;
+}
+.customer-account-btn:hover {
+  transform: translateY(-2px);
+  background: var(--surface-hover) !important;
+  box-shadow: 0 4px 12px var(--accent-glow);
+}
+.customer-account-btn:active {
+  transform: translateY(0);
+}
+.customer-account-btn span:first-child {
+  font-size: 16px;
+  filter: drop-shadow(0 0 4px var(--accent-glow));
+}
+
+/* ปุ่ม "⎋ ออกจากระบบ" — สีแดงอ่อน */
+.customer-logout-btn {
+  height: 45px;
+  width: 45px;
+  border-radius: 12px !important;
+  background: rgba(239, 68, 68, 0.12) !important;
+  border: 1.5px solid rgba(239, 68, 68, 0.25) !important;
+  color: var(--danger) !important;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform .2s, background .2s;
+}
+.customer-logout-btn:hover {
+  transform: translateY(-2px);
+  background: rgba(239, 68, 68, 0.2) !important;
+}
+.customer-logout-btn:active {
+  transform: translateY(0);
+}
+
+/* container เก็บปุ่ม — ให้มี gap + transition */
+#customerAuthBtnArea {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all .2s;
+}
+
+/* responsive — บนจอมือถือ ซ่อนชื่อลูกค้า แสดงแค่ไอคอน */
+@media (max-width: 480px) {
+  .customer-login-btn span:last-child {
+    display: none;
+  }
+  .customer-account-btn span:last-child {
+    display: none;
+  }
+  .customer-login-btn, .customer-account-btn {
+    width: 45px;
+    padding: 0 !important;
+  }
+}
+
 .progress-outer {
   background: var(--surface-2);
   border-radius: var(--radius-full);
