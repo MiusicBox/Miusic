@@ -1780,6 +1780,51 @@ function renderMyOrdersList(orders) {
       renderMyOrdersList(MY_ORDERS_STATE.myOrders);
     });
   });
+
+  // 🆕 (2026-10-02): ปุ่มชำระเงิน — เรียก openPaymentModal (จาก app-cart.js)
+  listEl.querySelectorAll("[data-order-pay]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute("data-order-pay");
+      const order = MY_ORDERS_STATE.myOrders.find(o => (o._docId || "") === orderId);
+      if (!order) return;
+      const receiptNumber = order.receipt_number || orderId.slice(0, 8);
+      // เรียก window.openPaymentModal (expose จาก app-cart.js) หรือ showReceipt
+      if (typeof window.showReceipt === "function") {
+        window.showReceipt(order, receiptNumber, order.store_name || "Music Store");
+      } else if (typeof window.openPaymentModal === "function") {
+        window.openPaymentModal(order, receiptNumber);
+      }
+    });
+  });
+
+  // 🆕 (2026-10-02): ปุ่มลบออเดอร์ — เรียก handleCustomerDeleteOrder (จาก app-user.js)
+  listEl.querySelectorAll("[data-order-delete]").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute("data-order-delete");
+      const order = MY_ORDERS_STATE.myOrders.find(o => (o._docId || "") === orderId);
+      if (!order) return;
+      if (typeof window.handleCustomerDeleteOrder === "function") {
+        await window.handleCustomerDeleteOrder(order, () => {
+          // หลังลบ → รีเฟรช list
+          MY_ORDERS_STATE.myOrders = MY_ORDERS_STATE.myOrders.filter(o => (o._docId || "") !== orderId);
+          renderMyOrdersList(MY_ORDERS_STATE.myOrders);
+        });
+      }
+    });
+  });
+
+  // 🆕 (2026-10-02): ปุ่มฟังเพลง — เรียก playSong (จาก app-user.js)
+  listEl.querySelectorAll("[data-order-play]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const songId = btn.getAttribute("data-order-play");
+      if (typeof window.playSong === "function") {
+        window.playSong(songId);
+      }
+    });
+  });
 }
 
 function renderOneOrderCard(order) {
@@ -1892,6 +1937,34 @@ function renderOneOrderCard(order) {
       zipInfo = `<div style="margin-top:10px;font-size:12px;color:var(--text-dim);">⏳ รอแอดมินตรวจสอบการโอนเงิน — หลังยืนยันแล้วไฟล์จะถูกเตรียมให้</div>`;
     }
 
+    // 🆕 (2026-10-02): ปุ่มต่าง ๆ ในรายละเอียดออเดอร์
+    //   - ปุ่มชำระเงิน (ถ้ายังไม่ชำระ: pending_verify)
+    //   - ปุ่มลบออเดอร์ (ถ้ายังไม่ยืนยัน: pending_verify)
+    //   - ปุ่มฟังเพลง (preview เพลงในออเดอร์)
+    let actionButtons = "";
+    // ปุ่มชำระเงิน — แสดงถ้ายังไม่ชำระ (pending_verify และยังไม่มี payment_proof_status='pending')
+    const showPayBtn = (order.status === "pending_verify" && (!order.payment_proof_status || order.payment_proof_status === "rejected"));
+    if (showPayBtn) {
+      actionButtons += `<button type="button" class="btn" data-order-pay="${myOrders_escapeHtml(orderId)}" style="display:inline-block;padding:8px 14px;font-size:13px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;margin-top:8px;margin-right:6px;">💳 ชำระเงิน</button>`;
+    }
+    // ปุ่มลบออเดอร์ — แสดงถ้ายังไม่ยืนยัน (pending_verify)
+    if (order.status === "pending_verify") {
+      actionButtons += `<button type="button" class="btn" data-order-delete="${myOrders_escapeHtml(orderId)}" style="display:inline-block;padding:8px 14px;font-size:13px;background:rgba(239,68,68,.12);color:var(--danger);border:1px solid rgba(239,68,68,.25);border-radius:8px;cursor:pointer;margin-top:8px;">🗑 ลบออเดอร์</button>`;
+    }
+    // ปุ่มฟังเพลง — แสดงเสมอสำหรับเพลงในออเดอร์ (ฟัง preview ได้)
+    if (items.length > 0) {
+      // ดึง song_id จาก items (item.song_id หรือ item.song_ids)
+      const songIds = [];
+      for (const item of items) {
+        if (item.song_id) songIds.push(item.song_id);
+        if (Array.isArray(item.song_ids)) songIds.push(...item.song_ids);
+      }
+      if (songIds.length > 0) {
+        const firstSongId = songIds[0];
+        actionButtons += `<button type="button" class="btn" data-order-play="${myOrders_escapeHtml(firstSongId)}" style="display:inline-block;padding:8px 14px;font-size:13px;background:rgba(139,92,246,.12);color:var(--accent);border:1px solid var(--accent);border-radius:8px;cursor:pointer;margin-top:8px;margin-left:6px;">🎵 ฟังเพลง</button>`;
+      }
+    }
+
     expandedHtml = `
       <div class="my-order-detail" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
         <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">รายการสินค้า (${items.length})</div>
@@ -1902,6 +1975,7 @@ function renderOneOrderCard(order) {
           <strong style="color:var(--success);">${myOrders_formatPrice(finalTotal)}</strong>
         </div>
         ${zipInfo}
+        ${actionButtons ? `<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;">${actionButtons}</div>` : ""}
       </div>`;
   }
 

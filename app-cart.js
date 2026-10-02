@@ -2489,3 +2489,8 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     getOrderPaymentState
   };
 }
+
+// 🆕 (2026-10-02): expose showReceipt + openPaymentModal ให้ app-promotion.js ใช้ได้
+//   ใช้ในปุ่ม "ชำระเงิน" ในรายละเอียดออเดอร์ (หน้า my orders)
+window.showReceipt = showReceipt;
+window.openPaymentModal = openPaymentModal;

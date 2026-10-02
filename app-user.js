@@ -2907,6 +2907,9 @@ initTrackOrderBadgeListener();
 // Export ให้ app-promotion.js เรียกเพื่อ refresh badge หลัง customer enters/clears My Orders info
 window.__updateTrackOrderBadge = updateTrackOrderBadge;
 window.__refreshTrackOrderBadge = initTrackOrderBadgeListener;
+// 🆕 (2026-10-02): expose ให้ app-promotion.js เรียกจากปุ่มในรายละเอียดออเดอร์
+window.playSong = playSong;
+window.handleCustomerDeleteOrder = handleCustomerDeleteOrder;
 
 init().catch(err => showToast("โหลดข้อมูลไม่สำเร็จ: " + err.message, "error"));
 
