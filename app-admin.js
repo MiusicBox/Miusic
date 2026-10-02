@@ -921,8 +921,12 @@ let customerSearchTimeout = null;
 document.getElementById("qaManageCustomersNew")?.addEventListener("click", () => {
   showView("view-customers");
   loadCustomers();
+  loadPasswordResetRequests(); // 🆕 (2026-10-02 v2): โหลดคำขารีเซ็ตพร้อมกัน
 });
-document.getElementById("customerRefreshBtn")?.addEventListener("click", () => loadCustomers());
+document.getElementById("customerRefreshBtn")?.addEventListener("click", () => {
+  loadCustomers();
+  loadPasswordResetRequests();
+});
 document.getElementById("customerSearch")?.addEventListener("input", (e) => {
   clearTimeout(customerSearchTimeout);
   customerSearchTimeout = setTimeout(() => loadCustomers(e.target.value.trim()), 300);
@@ -1064,6 +1068,194 @@ async function openCustomerDetail(customerId) {
 }
 // ============================================================
 // /🆕 จัดการลูกค้า — สิ้นสุด
+// ============================================================
+
+// ============================================================
+// 🆕 (2026-10-02 v2): จัดการคำขารีเซ็ตรหัสผ่าน — เริ่มต้น
+//   - loadPasswordResetRequests(status?) → GET /api/admin/password-reset-requests
+//   - openCustomerPwResetModal(reqId) → เปิด modal ให้แอดมินพิมพ์รหัสใหม่
+//   - confirmCustomerPwReset() → POST /api/admin/password-reset-requests/:id/resolve
+//   - dismissPasswordResetRequest(reqId) → POST /api/admin/password-reset-requests/:id/dismiss
+//   ผลกระทบระบบเดิม: 0% — เป็นฟังก์ชันใหม่ทั้งหมด ไม่แตะฟังก์ชันเดิม
+// ============================================================
+let currentPwResetRequestId = null;
+
+async function loadPasswordResetRequests(status = "pending") {
+  const wrap = document.getElementById("passwordResetList");
+  if (!wrap) return;
+  wrap.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-dim);font-size:12px;">⏳ กำลังโหลด...</div>';
+  try {
+    const url = `/api/admin/password-reset-requests${status ? `?status=${encodeURIComponent(status)}` : ""}`;
+    const res = await fetch(url, { credentials: "same-origin" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      wrap.innerHTML = `<div style="color:var(--danger);font-size:12px;padding:10px;">${escapeHtml(err?.error || "โหลดไม่สำเร็จ")}</div>`;
+      return;
+    }
+    const data = await res.json();
+    const requests = data?.requests || [];
+    if (requests.length === 0) {
+      wrap.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-dim);font-size:12px;">ไม่มีคำขาในสถานะนี้</div>';
+      return;
+    }
+    wrap.innerHTML = requests.map(r => {
+      const created = r.created_at ? new Date(r.created_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "-";
+      const resolved = r.resolved_at ? new Date(r.resolved_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "";
+      const statusColor = r.status === "pending" ? "#F5B400" : (r.status === "resolved" ? "#10B981" : "var(--text-dim)");
+      const statusLabel = r.status === "pending" ? "🟡 รอดำเนินการ" : (r.status === "resolved" ? "✅ ดำเนินการแล้ว" : "⚫ ยกเลิก");
+      const customerInfo = r.customer_id
+        ? `${escapeHtml(r.customer_name || "—")}${r.customer_email ? " · " + escapeHtml(r.customer_email) : ""}${r.customer_whatsapp ? " · 📱 " + escapeHtml(r.customer_whatsapp) : ""}`
+        : `<span style="color:var(--danger);">⚠️ ไม่พบบัญชี (อาจเป็นเบอร์/อีเมลที่ไม่ได้สมัคร)</span>`;
+      return `
+        <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:700;font-size:13px;">${escapeHtml(r.contact || "—")}</div>
+              <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${customerInfo}</div>
+            </div>
+            <span style="font-size:11px;font-weight:700;color:${statusColor};white-space:nowrap;">${escapeHtml(statusLabel)}</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-dim);">ส่งคำขา: ${escapeHtml(created)}${resolved ? " · ดำเนินการ: " + escapeHtml(resolved) : ""}</div>
+          ${r.note ? `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;padding:4px 6px;background:rgba(255,255,255,.04);border-radius:4px;">📝 ${escapeHtml(r.note)}</div>` : ""}
+          ${r.status === "pending" ? `
+            <div style="display:flex;gap:6px;margin-top:8px;">
+              ${r.customer_id ? `<button class="btn" data-pw-reset="${escapeHtml(r.id)}" style="padding:6px 12px;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;">🔑 รีเซ็ตรหัสผ่าน</button>` : ""}
+              <button class="btn" data-pw-dismiss="${escapeHtml(r.id)}" style="padding:6px 12px;font-size:12px;background:transparent;color:var(--text-dim);border:1px solid rgba(255,255,255,.15);border-radius:6px;cursor:pointer;">ยกเลิกคำขา</button>
+            </div>
+          ` : ""}
+        </div>`;
+    }).join("");
+
+    // ผูกปุ่มรีเซ็ต
+    wrap.querySelectorAll("[data-pw-reset]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const reqId = btn.getAttribute("data-pw-reset");
+        openCustomerPwResetModal(reqId);
+      });
+    });
+    // ผูกปุ่มยกเลิก
+    wrap.querySelectorAll("[data-pw-dismiss]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const reqId = btn.getAttribute("data-pw-dismiss");
+        const note = prompt("ยกเลิกคำขานี้\nหมายเหตุ (ไม่บังคับ):", "");
+        if (note === null) return; // กด cancel ใน prompt
+        try {
+          const res = await fetch(`/api/admin/password-reset-requests/${encodeURIComponent(reqId)}/dismiss`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ note: note || "" }),
+          });
+          if (res.ok) {
+            showToast("ยกเลิกคำขาแล้ว", "success");
+            loadPasswordResetRequests(document.getElementById("pwResetFilter")?.value || "pending");
+          } else {
+            const err = await res.json().catch(() => ({}));
+            showToast(err?.error || "ยกเลิกไม่สำเร็จ", "error");
+          }
+        } catch (err) {
+          showToast("ยกเลิกไม่สำเร็จ: " + (err.message || String(err)), "error");
+        }
+      });
+    });
+  } catch (err) {
+    wrap.innerHTML = `<div style="color:var(--danger);font-size:12px;padding:10px;">โหลดไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
+  }
+}
+
+// 🆕 (2026-10-02 v2): เปิด modal รีเซ็ตรหัสผ่านลูกค้า — แอดมินพิมพ์รหัสเอง
+async function openCustomerPwResetModal(reqId) {
+  currentPwResetRequestId = reqId;
+  // ดึงข้อมูล request เพื่อแสดงใน info box
+  let infoText = "";
+  try {
+    const res = await fetch(`/api/admin/password-reset-requests`, { credentials: "same-origin" });
+    if (res.ok) {
+      const data = await res.json();
+      const req = (data?.requests || []).find(r => r.id === reqId);
+      if (req) {
+        infoText = `ลูกค้า: ${req.customer_name || "—"}\nติดต่อ: ${req.contact || "—"}${req.customer_whatsapp ? "\nWhatsApp: " + req.customer_whatsapp : ""}`;
+      }
+    }
+  } catch (_) {}
+  const infoEl = document.getElementById("customerPwResetInfo");
+  if (infoEl) infoEl.textContent = infoText || "—";
+  const newEl = document.getElementById("customerPwResetNew");
+  if (newEl) newEl.value = "";
+  const noteEl = document.getElementById("customerPwResetNote");
+  if (noteEl) noteEl.value = "";
+  const resultEl = document.getElementById("customerPwResetResult");
+  if (resultEl) resultEl.textContent = "";
+  const backdrop = document.getElementById("customerPwResetBackdrop");
+  if (backdrop) backdrop.style.display = "flex";
+  if (newEl) newEl.focus();
+}
+
+function closeCustomerPwResetModal() {
+  const backdrop = document.getElementById("customerPwResetBackdrop");
+  if (backdrop) backdrop.style.display = "none";
+  currentPwResetRequestId = null;
+}
+
+// 🆕 (2026-10-02 v2): ยืนยันรีเซ็ตรหัสผ่าน → POST /resolve
+async function confirmCustomerPwReset() {
+  if (!currentPwResetRequestId) return;
+  const newPwd = document.getElementById("customerPwResetNew")?.value || "";
+  const note = document.getElementById("customerPwResetNote")?.value || "";
+  const resultEl = document.getElementById("customerPwResetResult");
+  if (resultEl) resultEl.textContent = "";
+  if (newPwd.length < 6) {
+    if (resultEl) { resultEl.textContent = "รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร"; resultEl.style.color = "var(--danger)"; }
+    return;
+  }
+  const confirmBtn = document.getElementById("customerPwResetConfirm");
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "กำลังรีเซ็ต..."; }
+  try {
+    const res = await fetch(`/api/admin/password-reset-requests/${encodeURIComponent(currentPwResetRequestId)}/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ new_password: newPwd, note }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      if (resultEl) { resultEl.textContent = data?.message || "✅ รีเซ็ตรหัสผ่านสำเร็จ — กรุณาติดต่อลูกค้าทาง WhatsApp"; resultEl.style.color = "var(--success)"; }
+      showToast("✅ รีเซ็ตรหัสผ่านสำเร็จ — กรุณาติดต่อลูกค้าทาง WhatsApp", "success");
+      // ปิด modal หลัง 1.5 วินาที + refresh
+      setTimeout(() => {
+        closeCustomerPwResetModal();
+        loadPasswordResetRequests(document.getElementById("pwResetFilter")?.value || "pending");
+      }, 1500);
+    } else {
+      if (resultEl) { resultEl.textContent = data?.error || "รีเซ็ตไม่สำเร็จ"; resultEl.style.color = "var(--danger)"; }
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "✅ รีเซ็ตรหัสผ่าน"; }
+    }
+  } catch (err) {
+    if (resultEl) { resultEl.textContent = "เกิดข้อผิดพลาด: " + (err.message || String(err)); resultEl.style.color = "var(--danger)"; }
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "✅ รีเซ็ตรหัสผ่าน"; }
+  }
+}
+
+// 🆕 (2026-10-02 v2): ผูก listeners ของ modal รีเซ็ต + filter + refresh
+document.getElementById("pwResetRefreshBtn")?.addEventListener("click", () => {
+  loadPasswordResetRequests(document.getElementById("pwResetFilter")?.value || "pending");
+});
+document.getElementById("pwResetFilter")?.addEventListener("change", (e) => {
+  loadPasswordResetRequests(e.target.value || "");
+});
+document.getElementById("customerPwResetClose")?.addEventListener("click", closeCustomerPwResetModal);
+document.getElementById("customerPwResetCancel")?.addEventListener("click", closeCustomerPwResetModal);
+document.getElementById("customerPwResetConfirm")?.addEventListener("click", confirmCustomerPwReset);
+// กดพื้นหลัง modal → ปิด
+document.getElementById("customerPwResetBackdrop")?.addEventListener("click", (e) => {
+  if (e.target.id === "customerPwResetBackdrop") closeCustomerPwResetModal();
+});
+// Enter ในช่องรหัสผ่าน → submit
+document.getElementById("customerPwResetNew")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") confirmCustomerPwReset();
+});
+// ============================================================
+// 🆕 (2026-10-02 v2): จัดการคำขารีเซ็ตรหัสผ่าน — สิ้นสุด
 // ============================================================
 
 // 🆕 sync visibility ของปุ่ม "👤 แอดมิน" ใน Card 4 ตาม role

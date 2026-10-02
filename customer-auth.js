@@ -199,6 +199,12 @@ async function customerRegister() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
+      // 🆕 (2026-10-02 v2): ถ้า code เป็น EMAIL_EXISTS หรือ WHATSAPP_EXISTS → แสดง modal ยืนยัน "ซ้ำ → login / ลืมรหัส"
+      if (data?.code === "EMAIL_EXISTS" || data?.code === "WHATSAPP_EXISTS") {
+        const existingField = data.existing_field || (data.code === "EMAIL_EXISTS" ? "email" : "whatsapp");
+        showDuplicateAccountModal(login, existingField);
+        return;
+      }
       if (errEl) errEl.textContent = data?.error || "สมัครสมาชิกไม่สำเร็จ";
       return;
     }
@@ -212,6 +218,83 @@ async function customerRegister() {
     }
   } catch (err) {
     if (errEl) errEl.textContent = "เกิดข้อผิดพลาด: " + (err.message || String(err));
+  }
+}
+
+// 🆕 (2026-10-02 v2): showDuplicateAccountModal — แจ้งว่าบัญชีซ้ำ + ปุ่มไป login / ลืมรหัสผ่าน
+//   เรียกเมื่อ register ได้ 409 + code = EMAIL_EXISTS | WHATSAPP_EXISTS
+//   ไม่แตะ modal เดิม — ใช้ confirm() + switch tab (UX เรียบง่าย ไม่สร้าง modal ใหม่)
+function showDuplicateAccountModal(loginValue, existingField) {
+  const fieldLabel = existingField === "whatsapp" ? "เบอร์ WhatsApp" : "อีเมล";
+  const msg = `⚠️ ${fieldLabel} "${loginValue}" ถูกใช้สมัครแล้ว\n\nคุณต้อการทำอะไรต่อ?\n• ตกลง = เข้าสู่ระบบด้วยบัญชีนี้\n• ยกเลิก = ปิด (ถ้าลืมรหัสผ่าน → กด "ลืมรหัสผ่าน?" ใต้ช่อง login)`;
+  const goLogin = confirm(msg);
+  if (goLogin) {
+    // switch ไป tab login + กรอก login ให้อัตโนมัติ
+    switchCustomerAuthTab("login");
+    const loginInput = document.getElementById("customerAuthLogin");
+    if (loginInput) loginInput.value = loginValue;
+    const errEl = document.getElementById("customerAuthError");
+    if (errEl) errEl.textContent = `ℹ️ ${fieldLabel}นี้มีบัญชีแล้ว — กรอกรหัสผ่านเพื่อเข้าสู่ระบบ (หรือกด "ลืมรหัสผ่าน?" ถ้าจำไม่ได้)`;
+    // focus ที่ password
+    const pwdInput = document.getElementById("customerAuthPassword");
+    if (pwdInput) pwdInput.focus();
+  }
+}
+
+// 🆕 (2026-10-02 v2): openForgotPasswordModal — เปิด modal ลืมรหัสผ่าน (modal ใหม่)
+function openForgotPasswordModal() {
+  // ดึง login จากช่อง login ปัจจุบัน (ถ้ามี) → กรอกให้อัตโนมัติ
+  const currentLogin = document.getElementById("customerAuthLogin")?.value?.trim() || "";
+  const input = document.getElementById("forgotPasswordLogin");
+  if (input) input.value = currentLogin;
+  const resultEl = document.getElementById("forgotPasswordResult");
+  if (resultEl) resultEl.textContent = "";
+  const backdrop = document.getElementById("forgotPasswordBackdrop");
+  if (backdrop) {
+    backdrop.style.display = "flex";
+    backdrop.setAttribute("aria-hidden", "false");
+  }
+}
+
+// 🆕 (2026-10-02 v2): closeForgotPasswordModal
+function closeForgotPasswordModal() {
+  const backdrop = document.getElementById("forgotPasswordBackdrop");
+  if (backdrop) {
+    backdrop.style.display = "none";
+    backdrop.setAttribute("aria-hidden", "true");
+  }
+}
+
+// 🆕 (2026-10-02 v2): submitForgotPassword — เรียก /api/customer/forgot-password
+async function submitForgotPassword() {
+  const login = document.getElementById("forgotPasswordLogin")?.value?.trim() || "";
+  const resultEl = document.getElementById("forgotPasswordResult");
+  if (resultEl) resultEl.textContent = "";
+  if (!login) {
+    if (resultEl) { resultEl.textContent = "กรุณากรอกอีเมลหรือเบอร์ WhatsApp"; resultEl.style.color = "var(--danger)"; }
+    return;
+  }
+  const btn = document.getElementById("forgotPasswordSubmitBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "กำลังส่ง..."; }
+  try {
+    const res = await fetch("/api/customer/forgot-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ login }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      if (resultEl) { resultEl.textContent = data?.message || "✅ ส่งคำขารีเซ็ตรหัสผ่านแล้ว — แอดมินจะติดต่อกลับทาง WhatsApp ภายใน 24 ชั่วโมง"; resultEl.style.color = "var(--success)"; }
+      // ปิดปุ่ม submit ป้องกันกดซ้ำ
+      if (btn) { btn.textContent = "✅ ส่งคำขอแล้ว"; btn.disabled = true; }
+    } else {
+      if (resultEl) { resultEl.textContent = data?.error || "ส่งคำขาไม่สำเร็จ"; resultEl.style.color = "var(--danger)"; }
+      if (btn) { btn.disabled = false; btn.textContent = "ส่งคำขารีเซ็ตรหัสผ่าน"; }
+    }
+  } catch (err) {
+    if (resultEl) { resultEl.textContent = "เกิดข้อผิดพลาด: " + (err.message || String(err)); resultEl.style.color = "var(--danger)"; }
+    if (btn) { btn.disabled = false; btn.textContent = "ส่งคำขารีเซ็ตรหัสผ่าน"; }
   }
 }
 
@@ -309,5 +392,23 @@ document.addEventListener("DOMContentLoaded", () => {
       if (activeTab === "login") customerLogin();
       else customerRegister();
     }
+  });
+
+  // 🆕 (2026-10-02 v2): ปุ่ม "ลืมรหัสผ่าน?" ใต้ช่อง login → เปิด modal ลืมรหัส
+  document.getElementById("customerForgotPasswordLink")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    openForgotPasswordModal();
+  });
+  // ปุ่มปิด modal ลืมรหัสผ่าน
+  document.getElementById("forgotPasswordClose")?.addEventListener("click", closeForgotPasswordModal);
+  // กดพื้นหลัง modal ลืมรหัส → ปิด
+  document.getElementById("forgotPasswordBackdrop")?.addEventListener("click", (e) => {
+    if (e.target.id === "forgotPasswordBackdrop") closeForgotPasswordModal();
+  });
+  // ปุ่ม submit ใน modal ลืมรหัส
+  document.getElementById("forgotPasswordSubmitBtn")?.addEventListener("click", submitForgotPassword);
+  // Enter ในช่อง forgot password → submit
+  document.getElementById("forgotPasswordLogin")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitForgotPassword();
   });
 });

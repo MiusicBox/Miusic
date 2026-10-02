@@ -4811,11 +4811,11 @@ async function handleCustomerAuth(request, env, url) {
     try {
       if (email) {
         const exists = await env.DB.prepare("SELECT id FROM customers WHERE email = ?").bind(email).first();
-        if (exists) return jsonResponse({ error: "อีเมลนี้ถูกใช้สมัครแล้ว" }, 409);
+        if (exists) return jsonResponse({ error: "อีเมลนี้ถูกใช้สมัครแล้ว", code: "EMAIL_EXISTS", existing_field: "email" }, 409);
       }
       if (whatsapp) {
         const exists = await env.DB.prepare("SELECT id FROM customers WHERE whatsapp = ?").bind(whatsapp).first();
-        if (exists) return jsonResponse({ error: "เบอร์ WhatsApp นี้ถูกใช้สมัครแล้ว" }, 409);
+        if (exists) return jsonResponse({ error: "เบอร์ WhatsApp นี้ถูกใช้สมัครแล้ว", code: "WHATSAPP_EXISTS", existing_field: "whatsapp" }, 409);
       }
     } catch (err) {
       // ถ้าตาราง customers ยังไม่ถูกสร้าง → return error (graceful)
@@ -4844,7 +4844,9 @@ async function handleCustomerAuth(request, env, url) {
       }
       // ถ้าเป็น UNIQUE constraint → แสดงว่า email/whatsapp ซ้ำ
       if (errMsg.toLowerCase().includes("unique constraint") || errMsg.toLowerCase().includes("unique")) {
-        return jsonResponse({ error: "อีเมลหรือเบอร์ WhatsApp นี้ถูกใช้สมัครแล้ว" }, 409);
+        // ตรวจว่าซ้ำที่ email หรือ whatsapp
+        const whichField = errMsg.toLowerCase().includes("email") ? "email" : (errMsg.toLowerCase().includes("whatsapp") ? "whatsapp" : "email");
+        return jsonResponse({ error: "อีเมลหรือเบอร์ WhatsApp นี้ถูกใช้สมัครแล้ว", code: whichField === "whatsapp" ? "WHATSAPP_EXISTS" : "EMAIL_EXISTS", existing_field: whichField }, 409);
       }
       // กรณีอื่น → ส่ง error จริงกลับไป (เพื่อ debug)
       return jsonResponse({ error: "สมัครสมาชิกไม่สำเร็จ: " + errMsg }, 500);
@@ -4945,11 +4947,48 @@ async function handleCustomerAuth(request, env, url) {
     }
   }
 
-  // 🆕 (2026-10-02): POST /api/customer/reset-password (placeholder)
-  //   รับ: { login } → ค้นหาบัญชี → ส่งรหัสผ่านใหม่ผ่าน WhatsApp (ยังไม่ได้ implement WhatsApp API)
-  //   ตอนนี้: คืนข้อความว่า "ยังไม่พร้อม" (ต้องเพิ่ม WhatsApp API ภายหลัง)
+  // 🆕 (2026-10-02 v2): POST /api/customer/forgot-password
+  //   รับ: { login } → ค้นหาบัญชี → บันทึกคำขารีเซ็ตลง password_reset_requests → แอดมินจะเห็นในหน้าจัดการลูกค้า
+  //   ผลกระทบระบบเดิม: 0% — endpoint ใหม่ (ไม่ใช้ WhatsApp API)
+  if (path === "forgot-password" && request.method === "POST") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+    const login = String(body.login || "").trim();
+    if (!login) return jsonResponse({ error: "กรุณากรอกอีเมลหรือเบอร์ WhatsApp" }, 400);
+    // ป้องกัน spam — ตรวจว่ามีคำขา pending ของ contact เดียวกันในชั่วโมงที่ผ่านมาไหม
+    //   ถ้ามี → บอกว่า "ส่งคำขอแล้ว รอแอดมินติดต่อกลับ" (ไม่สร้าง record ใหม่ — กัน spam)
+    const nowIso = new Date().toISOString();
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    try {
+      const existing = await env.DB.prepare(
+        "SELECT id FROM password_reset_requests WHERE contact = ? AND status = 'pending' AND created_at > ?"
+      ).bind(login, oneHourAgo).first();
+      if (existing) {
+        return jsonResponse({ ok: true, message: "คุณได้ส่งคำขารีเซ็ตรหัสผ่านแล้ว — แอดมินจะติดต่อกลับทาง WhatsApp ภายใน 24 ชั่วโมง" });
+      }
+      // ค้นหา customer (ถ้ามี — ถ้าไม่มีก็ยังบันทึกคำขาได้ เพื่อให้แอดมินเห็นว่ามีคนแอบอ้างหรือเบอร์ผิด)
+      const loginLower = login.toLowerCase();
+      const customer = await env.DB.prepare(
+        "SELECT id FROM customers WHERE email = ? OR whatsapp = ?"
+      ).bind(loginLower, login).first();
+      const id = crypto.randomUUID();
+      await env.DB.prepare(
+        "INSERT INTO password_reset_requests (id, customer_id, contact, status, created_at) VALUES (?, ?, ?, 'pending', ?)"
+      ).bind(id, customer?.id || null, login, nowIso).run();
+      return jsonResponse({ ok: true, message: "✅ ส่งคำขารีเซ็ตรหัสผ่านแล้ว — แอดมินจะติดต่อกลับทาง WhatsApp ภายใน 24 ชั่วโมง" });
+    } catch (err) {
+      if (String(err?.message || "").includes("no such table")) {
+        return jsonResponse({ error: "ระบบยังไม่พร้อม — กรุณารัน schema.sql ล่าสุดใน D1 Console" }, 500);
+      }
+      return jsonResponse({ error: safeError("ส่งคำขาไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+    }
+  }
+
+  // 🆕 (2026-10-02): POST /api/customer/reset-password (legacy placeholder — redirect to forgot-password)
+  //   ตอนนี้ใช้ flow forgot-password แทน — endpoint นี้เก็บไว้เพื่อ backward compat (frontend เดิมยังเรียกได้)
   if (path === "reset-password" && request.method === "POST") {
-    return jsonResponse({ error: "ฟีเจอร์ลืมรหัสผ่านยังไม่พร้อม — กรุณาติดต่อแอดมินผ่าน WhatsApp เพื่อรีเซ็ตรหัสผ่าน" }, 501);
+    return jsonResponse({ error: "กรุณาใช้ฟังก์ชัน 'ลืมรหัสผ่าน' ใหม่ — กดปุ่ม 'ลืมรหัสผ่าน?' ใต้ช่อง login", code: "USE_FORGOT_PASSWORD" }, 400);
   }
 
   // ============================================================
@@ -5031,6 +5070,98 @@ async function handleCustomerAuth(request, env, url) {
       return jsonResponse({ ok: true });
     } catch (err) {
       return jsonResponse({ error: safeError("ลบลูกค้าไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // ============================================================
+  // 🆕 (2026-10-02 v2): /api/admin/password-reset-requests — จัดการคำขารีเซ็ตรหัสผ่าน
+  //   - GET    /api/admin/password-reset-requests            — list คำขา (filter ด้วย ?status=pending|resolved|dismissed)
+  //   - POST   /api/admin/password-reset-requests/:id/resolve — รีเซ็ตรหัสผ่านให้ลูกค้า (แอดมินพิมพ์รหัสเอง) + ทำเครื่องหมายว่าดำเนินการแล้ว
+  //   - POST   /api/admin/password-reset-requests/:id/dismiss — ยกเลิกคำขา (เช่น ไม่ใช่ลูกค้าจริง)
+  //   ผลกระทบระบบเดิม: 0% — endpoints ใหม่
+  // ============================================================
+  if (url.pathname === "/api/admin/password-reset-requests" && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    try {
+      const status = String(url.searchParams.get("status") || "").trim();
+      let sql = "SELECT r.id, r.customer_id, r.contact, r.status, r.note, r.created_at, r.resolved_at, r.resolved_by_admin, c.email as customer_email, c.whatsapp as customer_whatsapp, c.display_name as customer_name FROM password_reset_requests r LEFT JOIN customers c ON r.customer_id = c.id";
+      const binds = [];
+      if (status === "pending" || status === "resolved" || status === "dismissed") {
+        sql += " WHERE r.status = ?";
+        binds.push(status);
+      }
+      sql += " ORDER BY r.created_at DESC LIMIT 200";
+      const { results } = await env.DB.prepare(sql).bind(...binds).all();
+      return jsonResponse({ requests: results || [], total: (results || []).length });
+    } catch (err) {
+      if (String(err?.message || "").includes("no such table")) {
+        return jsonResponse({ requests: [], total: 0 });
+      }
+      return jsonResponse({ error: safeError("โหลดคำขารีเซ็ตไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // POST /api/admin/password-reset-requests/:id/resolve
+  //   body: { new_password, note? }
+  //   action: อัปเดต password_hash ของ customer + ทำเครื่องหมาย request ว่า resolved + เก็บ note
+  if (url.pathname.includes("/api/admin/password-reset-requests/") && url.pathname.endsWith("/resolve") && request.method === "POST") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    const reqId = decodeURIComponent(url.pathname.split("/api/admin/password-reset-requests/")[1].replace("/resolve", ""));
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+    const newPassword = String(body.new_password || "");
+    const note = String(body.note || "").slice(0, 500);
+    if (newPassword.length < 6) return jsonResponse({ error: "รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร" }, 400);
+    try {
+      // ดึง request
+      const req = await env.DB.prepare(
+        "SELECT id, customer_id, contact, status FROM password_reset_requests WHERE id = ?"
+      ).bind(reqId).first();
+      if (!req) return jsonResponse({ error: "ไม่พบคำขา" }, 404);
+      if (req.status !== "pending") return jsonResponse({ error: "คำขานี้ดำเนินการแล้ว" }, 400);
+      if (!req.customer_id) return jsonResponse({ error: "คำขานี้ไม่ได้ผูกกับบัญชีลูกค้า (อาจเป็นเบอร์/อีเมลที่ไม่มีบัญชี) — กรุณาตรวจสอบหรือยกเลิกคำขา" }, 400);
+      // อัปเดต password_hash
+      const newHash = await hashPassword(newPassword);
+      const nowIso = new Date().toISOString();
+      await env.DB.prepare(
+        "UPDATE customers SET password_hash = ?, updated_at = ? WHERE id = ?"
+      ).bind(newHash, nowIso, req.customer_id).run();
+      // ทำเครื่องหมาย request ว่า resolved
+      await env.DB.prepare(
+        "UPDATE password_reset_requests SET status = 'resolved', resolved_at = ?, resolved_by_admin = ?, note = ? WHERE id = ?"
+      ).bind(nowIso, admin.id, note || "รีเซ็ตรหัสผ่านแล้ว", reqId).run();
+      return jsonResponse({ ok: true, message: "รีเซ็ตรหัสผ่านสำเร็จ — กรุณาติดต่อลูกค้าทาง WhatsApp เพื่อแจ้งรหัสผ่านใหม่" });
+    } catch (err) {
+      return jsonResponse({ error: safeError("รีเซ็ตรหัสผ่านไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // POST /api/admin/password-reset-requests/:id/dismiss
+  //   body: { note? } — ยกเลิกคำขา (เช่น เบอร์ไม่ใช่ลูกค้าจริง)
+  if (url.pathname.includes("/api/admin/password-reset-requests/") && url.pathname.endsWith("/dismiss") && request.method === "POST") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    const reqId = decodeURIComponent(url.pathname.split("/api/admin/password-reset-requests/")[1].replace("/dismiss", ""));
+    let body;
+    try { body = await request.json(); } catch { body = {}; }
+    const note = String(body.note || "").slice(0, 500);
+    try {
+      const req = await env.DB.prepare(
+        "SELECT id, status FROM password_reset_requests WHERE id = ?"
+      ).bind(reqId).first();
+      if (!req) return jsonResponse({ error: "ไม่พบคำขา" }, 404);
+      if (req.status !== "pending") return jsonResponse({ error: "คำขานี้ดำเนินการแล้ว" }, 400);
+      await env.DB.prepare(
+        "UPDATE password_reset_requests SET status = 'dismissed', resolved_at = ?, resolved_by_admin = ?, note = ? WHERE id = ?"
+      ).bind(new Date().toISOString(), admin.id, note || "ยกเลิก", reqId).run();
+      return jsonResponse({ ok: true });
+    } catch (err) {
+      return jsonResponse({ error: safeError("ยกเลิกคำขาไม่สำเร็จ", err) }, 500);
     }
   }
 

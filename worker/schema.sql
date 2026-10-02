@@ -399,3 +399,23 @@ CREATE TABLE IF NOT EXISTS customer_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_customer_sessions_customer ON customer_sessions(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customer_sessions_expires ON customer_sessions(expires_at);
+
+-- ===================================================
+-- 🆕 (2026-10-02): ตาราง password_reset_requests — เก็บคำขารีเซ็ตรหัสผ่านจากลูกค้า
+--   Flow: ลูกค้าลืมรหัสผ่าน → ส่งคำขอ → แอดมินเห็นในหน้าจัดการลูกค้า → แอดมินรีเซ็ตให้ + ติดต่อกลับทาง WhatsApp
+--   ผลกระทบระบบเดิม: 0% — ตารางใหม่ ไม่แตะตารางเดิม
+-- ===================================================
+CREATE TABLE IF NOT EXISTS password_reset_requests (
+  id                 TEXT PRIMARY KEY,           -- crypto.randomUUID()
+  customer_id        TEXT,                        -- nullable: ลูกค้าอาจกรอกเบอร์ที่ยังไม่มีบัญชี (guest)
+  contact            TEXT NOT NULL,               -- email หรือ whatsapp ที่ลูกค้ากรอก
+  status             TEXT NOT NULL DEFAULT 'pending',  -- pending | resolved | dismissed
+  note               TEXT,                         -- หมายเหตุแอดมิน (เช่น "รีเซ็ตแล้ว ส่งทาง WhatsApp")
+  new_password_hint  TEXT,                         -- 🆕 (optional) เก็บรหัสผ่านใหม่ที่แอดมินตั้ง (PLAIN TEXT เพื่อส่งต่อ — ลบหลังส่งแล้ว)
+  created_at         TEXT NOT NULL,
+  resolved_at        TEXT,
+  resolved_by_admin  TEXT                          -- admin id ที่ดำเนินการ
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_reset_requests_status ON password_reset_requests(status);
+CREATE INDEX IF NOT EXISTS idx_password_reset_requests_created ON password_reset_requests(created_at);

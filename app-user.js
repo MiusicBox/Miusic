@@ -2110,14 +2110,17 @@ document.getElementById("customerChangePasswordBtn")?.addEventListener("click", 
   }
 });
 
-// 🆕 (2026-10-02): ลืมรหัสผ่าน — ส่งรหัสผ่านใหม่ผ่าน WhatsApp (placeholder — ต้องเพิ่ม endpoint ภายหลัง)
+// 🆕 (2026-10-02 v2): ลืมรหัสผ่าน (ในหน้าบัญชี ตั้งค่า) — ส่งคำขาให้แอดมินรีเซ็ต (ไม่ใช้ WhatsApp API)
+//   เดิมเรียก /api/customer/reset-password (placeholder 501) → เปลี่ยนเป็น /api/customer/forgot-password (เก็บคำขาจริง)
 document.getElementById("customerResetPasswordBtn")?.addEventListener("click", async () => {
   const login = document.getElementById("customerResetLogin")?.value?.trim() || "";
   const resultEl = document.getElementById("customerResetPasswordResult");
   if (resultEl) resultEl.textContent = "";
-  if (!login) { if (resultEl) resultEl.textContent = "กรุณากรอกอีเมลหรือเบอร์ WhatsApp"; return; }
+  if (!login) { if (resultEl) { resultEl.textContent = "กรุณากรอกอีเมลหรือเบอร์ WhatsApp"; resultEl.style.color = "var(--danger)"; } return; }
+  const btn = document.getElementById("customerResetPasswordBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "กำลังส่ง..."; }
   try {
-    const res = await fetch("/api/customer/reset-password", {
+    const res = await fetch("/api/customer/forgot-password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
@@ -2125,12 +2128,15 @@ document.getElementById("customerResetPasswordBtn")?.addEventListener("click", a
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      if (resultEl) { resultEl.textContent = data?.message || "✅ ส่งรหัสผ่านใหม่แล้ว — ตรวจสอบ WhatsApp ของคุณ"; resultEl.style.color = "var(--success)"; }
+      if (resultEl) { resultEl.textContent = data?.message || "✅ ส่งคำขารีเซ็ตรหัสผ่านแล้ว — แอดมินจะติดต่อกลับทาง WhatsApp ภายใน 24 ชั่วโมง"; resultEl.style.color = "var(--success)"; }
+      if (btn) { btn.textContent = "✅ ส่งคำขอแล้ว"; btn.disabled = true; }
     } else {
-      if (resultEl) { resultEl.textContent = data?.error || "ส่งรหัสผ่านใหม่ไม่สำเร็จ"; resultEl.style.color = "var(--danger)"; }
+      if (resultEl) { resultEl.textContent = data?.error || "ส่งคำขาไม่สำเร็จ"; resultEl.style.color = "var(--danger)"; }
+      if (btn) { btn.disabled = false; btn.textContent = "ส่งคำขารีเซ็ตรหัสผ่าน"; }
     }
   } catch (err) {
     if (resultEl) { resultEl.textContent = "เกิดข้อผิดพลาด: " + (err.message || String(err)); resultEl.style.color = "var(--danger)"; }
+    if (btn) { btn.disabled = false; btn.textContent = "ส่งคำขารีเซ็ตรหัสผ่าน"; }
   }
 });
 

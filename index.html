@@ -1094,6 +1094,10 @@
             <input id="customerAuthPassword" type="password" placeholder="รหัสผ่าน (อย่างน้อย 6 ตัว)" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
           </div>
           <button class="btn" id="customerAuthLoginBtn" type="button" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">เข้าสู่ระบบ</button>
+          <!-- 🆕 (2026-10-02 v2): ปุ่ม "ลืมรหัสผ่าน?" — เปิด modal ลืมรหัสผ่าน -->
+          <div style="text-align:right;margin-top:8px;">
+            <a href="#" id="customerForgotPasswordLink" style="font-size:12px;color:var(--accent);text-decoration:none;">ลืมรหัสผ่าน?</a>
+          </div>
         </div>
         <!-- register view -->
         <div id="customerAuthRegisterView" style="display:none;">
@@ -1114,6 +1118,29 @@
             <input id="customerAuthPasswordReg" type="password" placeholder="รหัสผ่าน (อย่างน้อย 6 ตัว)" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;" oninput="document.getElementById('customerAuthPassword').value = this.value;">
           </div>
           <button class="btn" id="customerAuthRegisterBtn" type="button" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">สมัครสมาชิก</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🆕 (2026-10-02 v2): modal "ลืมรหัสผ่าน" — modal ใหม่ ไม่แตะ modal เดิม
+       Flow: ลูกค้ากรอก email/WhatsApp → ส่งคำขา → แอดมินเห็นในหน้าจัดการลูกค้า → รีเซ็ตให้ + ติดต่อกลับทาง WhatsApp
+       ผลกระทบระบบเดิม: 0% -->
+  <div class="modal-backdrop" id="forgotPasswordBackdrop" role="dialog" aria-modal="true" aria-hidden="true" style="display:none;">
+    <div class="modal" style="max-width:380px;">
+      <div class="modal-header">
+        <h3>🔑 ลืมรหัสผ่าน</h3>
+        <button class="modal-close" id="forgotPasswordClose" type="button">✕</button>
+      </div>
+      <div style="padding:14px;">
+        <div class="field" style="margin-bottom:10px;">
+          <label style="font-size:12px;color:var(--text-dim);">อีเมล หรือ เบอร์ WhatsApp ที่ใช้สมัคร</label>
+          <input id="forgotPasswordLogin" type="text" placeholder="email@example.com หรือ 02012345678" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
+        </div>
+        <button class="btn" id="forgotPasswordSubmitBtn" type="button" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:10px;">ส่งคำขารีเซ็ตรหัสผ่าน</button>
+        <div id="forgotPasswordResult" style="font-size:12px;min-height:14px;line-height:1.4;"></div>
+        <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);font-size:11px;color:var(--text-dim);line-height:1.5;">
+          ℹ️ เมื่อส่งคำขอแล้ว แอดมินจะเห็นในหน้าจัดการลูกค้าและรีเซ็ตรหัสผ่านให้คุณ แล้วติดต่อกลับทาง WhatsApp ภายใน 24 ชั่วโมง
         </div>
       </div>
     </div>

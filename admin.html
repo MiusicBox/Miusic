@@ -652,6 +652,22 @@
       </div>
       <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">รายชื่อลูกค้าที่สมัครสมาชิก — กดที่ลูกค้าเพื่อดูรายละเอียด + ออเดอร์</p>
       <div id="customerList" class="container" style="padding:10px 16px 24px;"></div>
+
+      <!-- 🆕 (2026-10-02 v2): section "คำขารีเซ็ตรหัสผ่าน" — แสดงคำขาที่ลูกค้าส่งมา + ปุ่มรีเซ็ต/ยกเลิก -->
+      <div id="passwordResetSection" style="padding:0 16px 24px;">
+        <div style="display:flex;align-items:center;gap:8px;margin:18px 0 8px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08);">
+          <div style="flex:1;font-weight:700;font-size:14px;">🔑 คำขารีเซ็ตรหัสผ่าน</div>
+          <button class="icon-btn" id="pwResetRefreshBtn" title="รีเฟรชคำขา" style="font-size:12px;padding:4px 8px;">↻</button>
+          <select id="pwResetFilter" style="padding:4px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:12px;">
+            <option value="pending">รอดำเนินการ</option>
+            <option value="resolved">ดำเนินการแล้ว</option>
+            <option value="dismissed">ยกเลิกแล้ว</option>
+            <option value="">ทั้งหมด</option>
+          </select>
+        </div>
+        <p style="color:var(--text-dim);font-size:12px;margin:0 0 8px;">เมื่อลูกค้าลืมรหัสผ่าน → ส่งคำขามาที่นี่ → แอดมินกด "รีเซ็ต" แล้วตั้งรหัสใหม่ + ติดต่อลูกค้าทาง WhatsApp</p>
+        <div id="passwordResetList" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
     </div>
 
     <!-- ===================== ลดราคา (Discounts) ===================== -->
@@ -1481,6 +1497,33 @@
     <button type="button" id="promotionRowMenuEdit" style="display:flex;align-items:center;gap:9px;width:100%;padding:10px 12px;background:transparent;border:0;color:#fff;font-size:14px;text-align:left;border-radius:8px;cursor:pointer;">✎ แก้ไข</button>
     <button type="button" id="promotionRowMenuToggle" style="display:flex;align-items:center;gap:9px;width:100%;padding:10px 12px;background:transparent;border:0;color:#fff;font-size:14px;text-align:left;border-radius:8px;cursor:pointer;">🔒 ปิดใช้งาน</button>
     <button type="button" id="promotionRowMenuDelete" style="display:flex;align-items:center;gap:9px;width:100%;padding:10px 12px;background:transparent;border:0;color:var(--danger,#ff6b6b);font-size:14px;text-align:left;border-radius:8px;cursor:pointer;">🗑 ลบ</button>
+  </div>
+
+  <!-- 🆕 (2026-10-02 v2): modal รีเซ็ตรหัสผ่านลูกค้า — แอดมินพิมพ์รหัสใหม่เอง + หมายเหตุ
+       เปิดจากปุ่ม "รีเซ็ต" ใน section คำขารีเซ็ต (view-customers) -->
+  <div class="modal-backdrop" id="customerPwResetBackdrop" style="display:none;">
+    <div class="modal" style="max-width:420px;">
+      <div class="modal-header">
+        <h3>🔑 รีเซ็ตรหัสผ่านลูกค้า</h3>
+        <button class="modal-close" id="customerPwResetClose" type="button">✕</button>
+      </div>
+      <div style="padding:14px;">
+        <div id="customerPwResetInfo" style="padding:10px;border-radius:6px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);font-size:12px;color:var(--text-dim);margin-bottom:12px;line-height:1.5;"></div>
+        <div class="field" style="margin-bottom:10px;">
+          <label style="font-size:12px;color:var(--text-dim);">รหัสผ่านใหม่ (อย่างน้อย 6 ตัว) *</label>
+          <input id="customerPwResetNew" type="text" placeholder="ตั้งรหัสผ่านใหม่ให้ลูกค้า" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
+        </div>
+        <div class="field" style="margin-bottom:14px;">
+          <label style="font-size:12px;color:var(--text-dim);">หมายเหตุ (ไม่บังคับ — เช่น "รีเซ็ตแล้ว ส่งทาง WhatsApp")</label>
+          <input id="customerPwResetNote" type="text" placeholder="หมายเหตุ..." style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn" id="customerPwResetConfirm" type="button" style="flex:1;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">✅ รีเซ็ตรหัสผ่าน</button>
+          <button class="btn" id="customerPwResetCancel" type="button" style="flex:1;padding:10px;background:transparent;color:var(--text);border:1px solid rgba(255,255,255,.15);border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">ยกเลิก</button>
+        </div>
+        <div id="customerPwResetResult" style="font-size:12px;margin-top:8px;min-height:14px;"></div>
+      </div>
+    </div>
   </div>
 
   <div class="toast" id="toast"></div>
