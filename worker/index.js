@@ -2250,9 +2250,15 @@ async function handleDb(request, env, url) {
           //   วิธีแก้: ให้ Worker เป็นคนตั้ง customer_id จาก session cookie (HttpOnly)
           //   → ไม่พึ่ง frontend เลย → ทำงานเสมอ
           //   ถ้าไม่ login → customer_id = null (เหมือนเดิม ระบบ track order ด้วยชื่อ+เบอร์ยังทำงาน)
+          // 🔧 (2026-10-02 fix3): เก็บ customer id จาก session ไว้ในตัวแปรแยก แล้วค่อยใส่ใน filteredData ด้านล่าง
+          //   สาเหตุบั๊ก: customer_id ไม่อยู่ใน CUSTOMER_ALLOWED_FIELDS → ถูก filter ทิ้งก่อนบันทึกเสมอ
+          //   (ทั้งค่าที่ frontend ส่งมา และค่าที่ตั้งตรงนี้) → ออเดอร์ไม่ผูกบัญชี → หน้า "ออเดอร์ของฉัน" ไม่เจอ
+          //   ใช้ค่าจาก session cookie เท่านั้น (ไม่เชื่อ customer_id ที่ client ส่งมา → กัน spoof ผูกออเดอร์กับบัญชีคนอื่น)
+          let sessionCustomerId = null;
           try {
             const customer = await getCustomerSession(request, env);
             if (customer) {
+              sessionCustomerId = customer.id;
               data.customer_id = customer.id;
             }
           } catch (_) { /* ถ้า customer_sessions table ไม่มี → ข้าม */ }
@@ -2333,6 +2339,9 @@ async function handleDb(request, env, url) {
           }
           // force status หลัง filter (กัน case ที่ status อยู่ใน whitelist โดยไม่ตั้งใจ — ปลอดภัยกว่า)
           filteredData.status = "pending_verify";
+          // 🔧 (2026-10-02 fix3): ผูกออเดอร์กับบัญชีลูกค้าที่ login (จาก session เท่านั้น)
+          //   ไม่ login → ไม่ใส่ field นี้ (ระบบ track order ด้วยชื่อ+เบอร์ทำงานเหมือนเดิม)
+          if (sessionCustomerId) filteredData.customer_id = sessionCustomerId;
 
           // 🔒 (2026-09-22 fix Bug #4): Server re-calculate ราคาจาก DB แทนเชื่อลูกค้า
           //   ปัญหา: ลูกค้าส่ง total=0 หรือราคาเท่าไรก็ได้ → แอดมินเห็นราคาผิด
