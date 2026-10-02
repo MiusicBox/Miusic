@@ -1086,13 +1086,25 @@ async function loadPasswordResetRequests(status = "pending") {
   wrap.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-dim);font-size:12px;">⏳ กำลังโหลด...</div>';
   try {
     const url = `/api/admin/password-reset-requests${status ? `?status=${encodeURIComponent(status)}` : ""}`;
+    console.log("[pw-reset] loading from:", url); // 🆕 (2026-10-02 v3 debug)
     const res = await fetch(url, { credentials: "same-origin" });
+    console.log("[pw-reset] response status:", res.status); // 🆕 debug
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      console.warn("[pw-reset] error response:", err); // 🆕 debug
+      // 🆕 (2026-10-02 v3 debug): ถ้าเป็น TABLE_NOT_CREATED → แสดง hint ชัดเจน
+      if (err?.code === "TABLE_NOT_CREATED") {
+        wrap.innerHTML = `<div style="color:var(--danger);font-size:12px;padding:10px;background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.2);border-radius:6px;">
+          ⚠️ <strong>ตาราง password_reset_requests ยังไม่ถูกสร้าง</strong><br>
+          กรุณารัน <code style="background:rgba(255,255,255,.06);padding:2px 4px;border-radius:3px;">scripts/migrate-password-reset-requests.sql</code> ใน D1 Console ก่อน
+        </div>`;
+        return;
+      }
       wrap.innerHTML = `<div style="color:var(--danger);font-size:12px;padding:10px;">${escapeHtml(err?.error || "โหลดไม่สำเร็จ")}</div>`;
       return;
     }
     const data = await res.json();
+    console.log("[pw-reset] data:", data); // 🆕 debug
     const requests = data?.requests || [];
     if (requests.length === 0) {
       wrap.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-dim);font-size:12px;">ไม่มีคำขาในสถานะนี้</div>';

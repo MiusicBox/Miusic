@@ -5096,8 +5096,10 @@ async function handleCustomerAuth(request, env, url) {
       const { results } = await env.DB.prepare(sql).bind(...binds).all();
       return jsonResponse({ requests: results || [], total: (results || []).length });
     } catch (err) {
+      // 🆕 (2026-10-02 v3 debug): ถ้าตารางยังไม่ถูกสร้าง → ส่ง error จริง (พร้อม hint) แทนที่จะ silent empty
+      //   ปัญหา: เดิมส่ง empty array → frontend คิดว่า "ไม่มีคำขา" ทั้งที่จริงคือตารางยังไม่สร้าง → debug ยาก
       if (String(err?.message || "").includes("no such table")) {
-        return jsonResponse({ requests: [], total: 0 });
+        return jsonResponse({ error: "ตาราง password_reset_requests ยังไม่ถูกสร้าง — กรุณารัน scripts/migrate-password-reset-requests.sql ใน D1 Console", code: "TABLE_NOT_CREATED" }, 500);
       }
       return jsonResponse({ error: safeError("โหลดคำขารีเซ็ตไม่สำเร็จ", err) }, 500);
     }
