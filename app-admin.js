@@ -3617,6 +3617,7 @@ function syncBulkCatToggleLabel() {
 }
 
 // 🆕 เปิด/ปิด dropdown DJ
+//   🆕 (2026-10-01 fix toggle): กดปุ่มขณะเปิดอยู่ → ปิด (toggle จริง ไม่ใช่แค่เปิด)
 function toggleBulkDjDropdown() {
   const dropdown = document.getElementById("bulkDjDropdown");
   const chevron = document.getElementById("bulkDjChevron");
@@ -3624,7 +3625,11 @@ function toggleBulkDjDropdown() {
   const isOpen = dropdown.style.display !== "none";
   // ปิด dropdown ของหมวดด้วย (เปิดทีละอัน)
   closeBulkCatDropdown();
-  if (!isOpen) {
+  if (isOpen) {
+    // เปิดอยู่ → ปิด (toggle ปิด)
+    closeBulkDjDropdown();
+  } else {
+    // ปิดอยู่ → เปิด
     dropdown.style.display = "block";
     if (chevron) chevron.style.transform = "rotate(180deg)";
   }
@@ -3637,6 +3642,7 @@ function closeBulkDjDropdown() {
 }
 
 // 🆕 เปิด/ปิด dropdown หมวดหมู่
+//   🆕 (2026-10-01 fix toggle): กดปุ่มขณะเปิดอยู่ → ปิด (toggle จริง)
 function toggleBulkCatDropdown() {
   const dropdown = document.getElementById("bulkCatDropdown");
   const chevron = document.getElementById("bulkCatChevron");
@@ -3644,7 +3650,11 @@ function toggleBulkCatDropdown() {
   const isOpen = dropdown.style.display !== "none";
   // ปิด dropdown ของ DJ ด้วย (เปิดทีละอัน)
   closeBulkDjDropdown();
-  if (!isOpen) {
+  if (isOpen) {
+    // เปิดอยู่ → ปิด (toggle ปิด)
+    closeBulkCatDropdown();
+  } else {
+    // ปิดอยู่ → เปิด
     dropdown.style.display = "block";
     if (chevron) chevron.style.transform = "rotate(180deg)";
   }
