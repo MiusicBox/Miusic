@@ -374,17 +374,20 @@ CREATE INDEX IF NOT EXISTS idx_order_status_history_created
 
 CREATE TABLE IF NOT EXISTS customers (
   id            TEXT PRIMARY KEY,           -- crypto.randomUUID()
-  email         TEXT UNIQUE,                 -- email สำหรับ login (optional ถ้าใช้ WhatsApp)
-  whatsapp      TEXT UNIQUE,                 -- เบอร์ WhatsApp สำหรับ login (optional ถ้าใช้ email)
+  email         TEXT,                         -- email สำหรับ login (nullable — ถ้าใช้ WhatsApp login ไม่ต้องมี email)
+  whatsapp      TEXT,                         -- เบอร์ WhatsApp สำหรับ login (nullable — ถ้าใช้ email login ไม่ต้องมี whatsapp)
   password_hash TEXT NOT NULL,              -- PBKDF2-SHA256 (เหมือน admin_users)
   display_name  TEXT,                        -- ชื่อที่แสดง
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL
 );
 
--- index สำหรับค้นหาด้วย email หรือ whatsapp ตอน login (เร็ว + กัน scan ทั้งตาราง)
-CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
-CREATE INDEX IF NOT EXISTS idx_customers_whatsapp ON customers(whatsapp);
+-- 🆕 (2026-10-01 fix): partial UNIQUE index — กรอง NULL ออกจาก uniqueness check
+--   ปัญหา: ถ้าใช้ UNIQUE constraint บน column → SQLite ถือว่า NULL หลายตัวซ้ำกัน → มี customer ได้แค่ 1 คนที่ไม่มี email
+--   วิธีแก้: ใช้ partial index WHERE email IS NOT NULL → NULL ไม่ถูกนับเป็นซ้ำ → หลาย customer ไม่มี email ได้
+--   แต่ถ้ามี email → ต้องไม่ซ้ำกัน (uniqueness ยังทำงาน)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_email_unique ON customers(email) WHERE email IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_whatsapp_unique ON customers(whatsapp) WHERE whatsapp IS NOT NULL;
 
 -- ตาราง customer_sessions (เหมือน sessions ของแอดมิน แต่แยก)
 CREATE TABLE IF NOT EXISTS customer_sessions (
