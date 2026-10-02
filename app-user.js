@@ -1958,9 +1958,9 @@ async function loadCustomerAccountData() {
           const accountView = document.getElementById("myAccountView");
           if (accountView) accountView.style.display = "none";
           openTrackOrderAllDetail(order);
-          // เปิด track order backdrop (ที่มี detail)
-          const trackAllBackdrop = document.getElementById("trackOrderAllBackdrop");
-          if (trackAllBackdrop) { trackAllBackdrop.classList.add("show"); trackAllBackdrop.setAttribute("aria-hidden", "false"); }
+          // เปิด track order backdrop (ที่มี detail) — ใช้ trackOrderBackdrop ไม่ใช่ trackOrderAllBackdrop
+          const trackBackdrop = document.getElementById("trackOrderBackdrop");
+          if (trackBackdrop) { trackBackdrop.classList.add("show"); trackBackdrop.setAttribute("aria-hidden", "false"); }
         }
       });
     });
