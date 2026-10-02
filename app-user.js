@@ -1812,77 +1812,33 @@ function hideMyOrdersView() {
 //   ไม่แตะระบบเดิม (track order / myOrdersView ด้วย ชื่อ+เบอร์) — ใช้ view ใหม่ #myAccountView
 // ============================================================
 
-// 🆕 แสดงหน้าบัญชีของฉัน (ซ่อน view อื่น + ดึง orders ใหม่)
+// 🆕 แสดงหน้าบัญชีของฉัน (full-screen overlay — ลอยเหนือเนื้อหาทั้งหมด)
+//   🆕 (2026-10-02 fix): myAccountView ใช้ position:fixed + z-index:60 → ลอยเหนือทุกอย่าง
+//   ไม่ต้องซ่อน view อื่นแล้ว (เพราะมันอยู่ด้านล่าง z-index ต่ำกว่า)
 async function showCustomerAccountView() {
-  // 🆕 (2026-10-01 fix): ปิด customerAuthBackdrop ก่อน (กัน modal ค้างเปิดบังหน้าบัญชี)
+  // ปิด customerAuthBackdrop ก่อน (กัน modal ค้างเปิดบัง)
   const authBackdrop = document.getElementById("customerAuthBackdrop");
   if (authBackdrop) { authBackdrop.classList.remove("show"); authBackdrop.setAttribute("aria-hidden", "true"); }
-  // ปิด modal อื่น ๆ ที่อาจค้างเปิดอยู่ด้วย (กันบัง)
+  // ปิด modal อื่น ๆ ที่อาจค้างเปิดอยู่ด้วย
   ["songModalBackdrop", "cartBackdrop", "checkoutBackdrop", "trackOrderBackdrop", "receiptBackdrop", "paymentBackdrop", "uploadSlipBackdrop", "confirmBackdrop"].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.classList.remove("show"); el.setAttribute("aria-hidden", "true"); }
   });
-  // ซ่อน view อื่น
-  ["#gridTitle", "#songGrid", "#emptyState"].forEach(selector => {
-    const el = document.querySelector(selector);
-    if (el) el.style.display = "none";
-  });
-  const categoryChips = document.getElementById("categoryChips");
-  const djSection = document.getElementById("djSection");
-  if (categoryChips) categoryChips.style.display = "none";
-  if (djSection) djSection.style.display = "none";
-  const playlistsContainer = document.getElementById("playlistsContainer");
-  if (playlistsContainer) { playlistsContainer.classList.add("is-closed"); playlistsContainer.style.display = "none"; }
-  const myOrdersView = document.getElementById("myOrdersView");
-  if (myOrdersView) myOrdersView.style.display = "none";
-  // ซ่อน search box ด้วย (ถ้ามี)
-  const searchBox = document.querySelector(".search-box");
-  if (searchBox) searchBox.style.display = "none";
-  // ซ่อน promotion banner (id จริงคือ promoHomeBanner และใช้ attribute hidden)
-  const promoBanner = document.getElementById("promoHomeBanner");
-  if (promoBanner) promoBanner.style.display = "none";
-  // ซ่อนหัวข้อ "เพลย์ลิสต์" (playlist-wrapper) ที่เดิมยังค้างอยู่เหนือหน้าบัญชี
-  const playlistWrapper = document.querySelector(".playlist-wrapper");
-  if (playlistWrapper) playlistWrapper.style.display = "none";
-  // ซ่อนแถบเตือนออเดอร์ค้างชำระ ไม่ให้บังหน้าบัญชี
-  const pendingBanner = document.getElementById("pendingOrderBanner");
-  if (pendingBanner) pendingBanner.style.display = "none";
-  // แสดง account view
+  // แสดง account view (position:fixed → ลอยเหนือเนื้อหาทั้งหมด ไม่ต้องซ่อน view อื่น)
   const myAccountView = document.getElementById("myAccountView");
   if (myAccountView) {
     myAccountView.style.display = "block";
-    // 🆕 (2026-10-01 fix): เลื่อน scroll ไปด้านบน + เพิ่ม margin-top กันถูกบังโดย topbar (fixed)
-    myAccountView.style.marginTop = "70px";
-    scrollPageToTop(); // หน้าร้านใช้ <body> เป็นตัวเลื่อน → window.scrollTo ไม่ทำงาน
-    try { myAccountView.scrollIntoView({ block: "start" }); } catch (_) {}
+    myAccountView.scrollTop = 0; // scroll ไปด้านบนของ overlay
   }
   // ดึงข้อมูล customer + orders
   await loadCustomerAccountData();
 }
 
 // 🆕 ซ่อนหน้าบัญชีของฉัน (กลับหน้าหลัก)
+//   🆕 (2026-10-02 fix): ไม่ต้องแสดง view อื่นกลับมาแล้ว (เพราะไม่ได้ซ่อนไว้ — overlay ลอยอยู่เหนือ)
 function hideCustomerAccountView() {
   const myAccountView = document.getElementById("myAccountView");
-  if (myAccountView) {
-    myAccountView.style.display = "none";
-    myAccountView.style.marginTop = ""; // ล้าง margin-top ที่เพิ่มตอนแสดง
-  }
-  // 🆕 (2026-10-01 fix): แสดง view หลักกลับมา (grid + category + dj + search)
-  ["#gridTitle", "#songGrid"].forEach(s => { const el = document.querySelector(s); if (el) el.style.display = ""; });
-  const categoryChips = document.getElementById("categoryChips");
-  const djSection = document.getElementById("djSection");
-  if (categoryChips) categoryChips.style.display = "";
-  if (djSection) djSection.style.display = "";
-  const searchBox = document.querySelector(".search-box");
-  if (searchBox) searchBox.style.display = "";
-  const playlistsContainer = document.getElementById("playlistsContainer");
-  if (playlistsContainer) { playlistsContainer.style.display = ""; }
-  const playlistWrapper = document.querySelector(".playlist-wrapper");
-  if (playlistWrapper) playlistWrapper.style.display = "";
-  const promoBanner = document.getElementById("promoHomeBanner");
-  if (promoBanner) promoBanner.style.display = "";
-  const pendingBanner = document.getElementById("pendingOrderBanner");
-  if (pendingBanner) pendingBanner.style.display = "";
+  if (myAccountView) myAccountView.style.display = "none";
 }
 
 // 🆕 ดึงข้อมูลบัญชี + ออเดอร์จาก /api/customer/me + /api/customer/orders

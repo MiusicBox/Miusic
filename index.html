@@ -1119,18 +1119,21 @@
     </div>
   </div>
 
-  <!-- 🆕 (2026-10-01): view "บัญชีของฉัน" — สำหรับลูกค้า login แล้ว (ดูออเดอร์ทั้งหมด + ข้อมูลบัญชี) -->
-  <div id="myAccountView" class="container" style="display:none;padding:14px 16px 100px;">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-      <button class="icon-btn" id="myAccountBackBtn" type="button" aria-label="ย้อนกลับ" style="padding:6px 10px;">←</button>
+  <!-- 🆕 (2026-10-01): view "บัญชีของฉัน" — full-screen overlay สำหรับลูกค้า login แล้ว
+       ใช้ position:fixed + z-index:60 (สูงกว่า topbar z-index:40) → ลอยเหนือเนื้อหาทั้งหมด
+       มี background solid (ไม่มืดเหมือน modal) + scroll ได้
+       ผลกระทบระบบเดิม: 0% — เป็น view ใหม่ ไม่แตะ view เดิม -->
+  <div id="myAccountView" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:60;background:var(--bg,#0b0d14);overflow-y:auto;padding:70px 16px 100px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;max-width:600px;margin-left:auto;margin-right:auto;">
+      <button class="icon-btn" id="myAccountBackBtn" type="button" aria-label="ย้อนกลับ" style="padding:6px 10px;flex-shrink:0;">←</button>
       <div style="flex:1;font-weight:800;font-size:16px;">👤 บัญชีของฉัน</div>
-      <button class="icon-btn" id="myAccountRefreshBtn" type="button" aria-label="รีเฟรช" style="padding:6px 10px;">🔄</button>
+      <button class="icon-btn" id="myAccountRefreshBtn" type="button" aria-label="รีเฟรช" style="padding:6px 10px;flex-shrink:0;">🔄</button>
     </div>
     <!-- ข้อมูลบัญชี -->
-    <div id="myAccountProfile" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px;margin-bottom:14px;"></div>
+    <div id="myAccountProfile" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px;margin-bottom:14px;max-width:600px;margin-left:auto;margin-right:auto;"></div>
     <!-- รายการออเดอร์ -->
-    <div style="font-weight:700;font-size:14px;margin-bottom:8px;">📦 ออเดอร์ทั้งหมดของฉัน</div>
-    <div id="myAccountOrdersList" style="display:grid;gap:10px;"></div>
+    <div style="font-weight:700;font-size:14px;margin-bottom:8px;max-width:600px;margin-left:auto;margin-right:auto;">📦 ออเดอร์ทั้งหมดของฉัน</div>
+    <div id="myAccountOrdersList" style="display:grid;gap:10px;max-width:600px;margin-left:auto;margin-right:auto;"></div>
   </div>
 </body>
 </html>
