@@ -974,6 +974,22 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   function renderPendingOrderBanner() {
     const banner = document.getElementById("pendingOrderBanner");
     if (!banner) return;
+
+    // 🆕 (2026-10-02 fix): ถ้าลูกค้า login แล้ว → ปุ่ม "ชำระเงิน" บน banner ควรเปิดหน้าบัญชี
+    //   แทนที่จะเปิด track order modal (ของลูกค้าไม่ login)
+    //   เช็คจาก localStorage เพราะ customer-auth.js อาจยังไม่โหลดเสร็จ
+    const isCustomerLoggedIn = !!localStorage.getItem("miusic_customer_session");
+    if (isCustomerLoggedIn) {
+      // ลูกค้า login แล้ว → ปุ่ม "ชำระเงิน" เปิดหน้าบัญชี (มีออเดอร์ทั้งหมด + ปุ่มชำระ)
+      const payBtn = document.getElementById("pendingOrderPayBtn");
+      if (payBtn) {
+        payBtn.onclick = () => {
+          if (typeof window.showCustomerAccountView === "function") window.showCustomerAccountView();
+          else if (typeof showCustomerAccountView === "function") showCustomerAccountView();
+        };
+      }
+    }
+
     const record = getLastOrderRecord();
     // 🔧 (2026-09-22 Batch 7 fix Bug #4): ใช้ localStorage + 24h TTL แทน sessionStorage
     //   เดิม: sessionStorage → หายตอนปิด tab → ลูกค้าเปิด tab ค้างไว้ → banner หายตลอดวัน
