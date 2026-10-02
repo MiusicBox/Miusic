@@ -356,10 +356,309 @@ function escapeHtmlCustomer(str) {
     .replace(/'/g, "&#039;");
 }
 
+// ============================================================
+// 🆕 (2026-10-02 v6 — ฟีเจอร์ #2): รายการเพลงโปรด (Wishlist) — frontend helpers
+//   - toggleFavorite(songId) → toggle ❤️ (เพิ่ม/ลบ)
+//   - loadCustomerFavorites() → โหลดรายการโปรดในหน้าบัญชี
+//   - checkFavoriteStatus(songId) → ตรวจสถานะ ❤️ ของเพลง (สำหรับแสดงปุ่ม active)
+//   ผลกระทบระบบเดิม: 0% — ฟังก์ชันใหม่
+// ============================================================
+
+// 🆕 cache สถานะ favorites ของลูกค้าปัจจุบัน (song_id → true) เพื่อลด API calls
+let customerFavoritesCache = new Set();
+
+// 🆕 toggle favorite — เพิ่ม/ลบเพลงจากรายการโปรด
+async function toggleFavorite(songId) {
+  if (!songId) return;
+  if (!isCustomerLoggedIn()) {
+    if (typeof showToast === "function") showToast("กรุณาเข้าสู่ระบบเพื่อเพิ่มรายการโปรด", "info");
+    else alert("กรุณาเข้าสู่ระบบเพื่อเพิ่มรายการโปรด");
+    return;
+  }
+  const isFav = customerFavoritesCache.has(songId);
+  try {
+    const url = isFav ? `/api/customer/favorites/${encodeURIComponent(songId)}` : "/api/customer/favorites";
+    const method = isFav ? "DELETE" : "POST";
+    const body = isFav ? null : JSON.stringify({ song_id: songId });
+    const res = await fetch(url, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      credentials: "same-origin",
+      body,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      // อัปเดต cache
+      if (isFav) customerFavoritesCache.delete(songId);
+      else customerFavoritesCache.add(songId);
+      // อัปเดต UI ปุ่ม ❤️ ของเพลงนี้ทั้งหมด (อาจมีหลายจุดในหน้า)
+      document.querySelectorAll(`[data-favorite-btn="${songId}"]`).forEach(btn => {
+        btn.classList.toggle("is-favorite", !isFav);
+        btn.textContent = isFav ? "🤍" : "❤️";
+      });
+      if (typeof showToast === "function") showToast(isFav ? "ลบจากรายการโปรดแล้ว" : "❤️ เพิ่มในรายการโปรดแล้ว", isFav ? "info" : "success");
+    } else {
+      if (typeof showToast === "function") showToast(data?.error || "ไม่สำเร็จ", "error");
+    }
+  } catch (err) {
+    if (typeof showToast === "function") showToast("เกิดข้อผิดพลาด: " + (err.message || String(err)), "error");
+  }
+}
+
+// 🆕 โหลดรายการโปรดทั้งหมด → แสดงในหน้าบัญชี + cache สถานะ
+async function loadCustomerFavorites() {
+  const wrap = document.getElementById("myAccountFavoritesList");
+  if (!wrap) return;
+  if (!isCustomerLoggedIn()) {
+    wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">กรุณาเข้าสู่ระบบ</div>';
+    return;
+  }
+  wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">⏳ กำลังโหลด...</div>';
+  try {
+    const res = await fetch("/api/customer/favorites", { credentials: "same-origin" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      wrap.innerHTML = `<div style="color:var(--danger);font-size:13px;padding:10px;">${escapeHtmlCustomer(data?.error || "โหลดไม่สำเร็จ")}</div>`;
+      return;
+    }
+    const favorites = data.favorites || [];
+    // อัปเดต cache
+    customerFavoritesCache = new Set(favorites.map(f => f.song_id));
+    if (favorites.length === 0) {
+      wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">ยังไม่มีเพลงโปรด — กด ❤️ ในเพลงเพื่อเพิ่ม</div>';
+      return;
+    }
+    // โหลดข้อมูลเพลงแต่ละเพลง (ใช้ db-client ถ้ามี หรือเรียก API)
+    //   แบบง่าย: แสดงเฉพาะ song_id + ปุ่มซื้อ/ลบ → ค่อยโหลดชื่อเพลงทีหลังถ้าต้องการ
+    wrap.innerHTML = favorites.map(f => `
+      <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;display:flex;align-items:center;gap:8px;">
+        <div style="flex:1;min-width:0;font-size:13px;">เพลง ID: ${escapeHtmlCustomer(f.song_id)}</div>
+        <button class="btn" data-fav-buy="${escapeHtmlCustomer(f.song_id)}" style="padding:6px 10px;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;">🛒 ซื้อ</button>
+        <button class="btn" data-fav-remove="${escapeHtmlCustomer(f.song_id)}" style="padding:6px 10px;font-size:12px;background:transparent;color:var(--danger);border:1px solid rgba(239,68,68,.3);border-radius:6px;cursor:pointer;">❌ ลบ</button>
+      </div>
+    `).join("");
+    // ผูกปุ่มลบ
+    wrap.querySelectorAll("[data-fav-remove]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const songId = btn.getAttribute("data-fav-remove");
+        await toggleFavorite(songId);
+        loadCustomerFavorites(); // refresh
+      });
+    });
+    // ผูกปุ่มซื้อ (เรียก addToCart ถ้ามี)
+    wrap.querySelectorAll("[data-fav-buy]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const songId = btn.getAttribute("data-fav-buy");
+        if (typeof window.addToCart === "function") {
+          window.addToCart(songId);
+          if (typeof showToast === "function") showToast("🛒 เพิ่มในตะกร้าแล้ว", "success");
+        }
+      });
+    });
+  } catch (err) {
+    wrap.innerHTML = `<div style="color:var(--danger);font-size:13px;padding:10px;">โหลดไม่สำเร็จ: ${escapeHtmlCustomer(err.message || String(err))}</div>`;
+  }
+}
+
+// 🆕 ตรวจสถานะ favorite ของเพลงเดียว (สำหรับแสดงปุ่ม ❤️ active)
+async function checkFavoriteStatus(songId) {
+  if (!isCustomerLoggedIn() || !songId) return false;
+  // ถ้ามีใน cache → ใช้ cache (เร็วกว่า)
+  if (customerFavoritesCache.has(songId)) return true;
+  try {
+    const res = await fetch(`/api/customer/favorites/check/${encodeURIComponent(songId)}`, { credentials: "same-origin" });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.is_favorite) {
+      customerFavoritesCache.add(songId);
+      return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
+// ============================================================
+// 🆕 (2026-10-02 v6 — ฟีเจอร์ #12): รีวิว + ให้คะแนนเพลง — frontend helpers
+//   - openSongReviewModal(songId, songName) → เปิด modal เขียนรีวิว
+//   - submitSongReview() → ส่งรีวิว (POST /api/customer/reviews)
+//   - loadCustomerReviews() → โหลดรีวิวของลูกค้าในหน้าบัญชี
+//   - deleteCustomerReview(songId) → ลบรีวิว
+//   ผลกระทบระบบเดิม: 0% — ฟังก์ชันใหม่
+// ============================================================
+let currentReviewSongId = null;
+let currentReviewSongName = null;
+
+// 🆕 เปิด modal รีวิว
+async function openSongReviewModal(songId, songName) {
+  if (!isCustomerLoggedIn()) {
+    if (typeof showToast === "function") showToast("กรุณาเข้าสู่ระบบเพื่อรีวิว", "info");
+    else alert("กรุณาเข้าสู่ระบบเพื่อรีวิว");
+    return;
+  }
+  currentReviewSongId = songId;
+  currentReviewSongName = songName || "";
+  // แสดง info เพลง
+  const infoEl = document.getElementById("songReviewSongInfo");
+  if (infoEl) infoEl.textContent = `เพลง: ${songName || songId}`;
+  // reset form
+  document.getElementById("songReviewRating").value = "0";
+  document.getElementById("songReviewText").value = "";
+  document.getElementById("songReviewResult").textContent = "";
+  // reset ดาว
+  document.querySelectorAll("#songReviewStars [data-star]").forEach(s => s.style.color = "rgba(255,255,255,.2)");
+  // ตรวจว่าเคยรีวิวแล้ว → preload รีวิวเดิม
+  try {
+    const res = await fetch("/api/customer/reviews", { credentials: "same-origin" });
+    if (res.ok) {
+      const data = await res.json();
+      const existing = (data.reviews || []).find(r => r.song_id === songId);
+      if (existing) {
+        document.getElementById("songReviewRating").value = String(existing.rating);
+        document.getElementById("songReviewText").value = existing.review || "";
+        // แสดงดาวที่เคยให้
+        document.querySelectorAll("#songReviewStars [data-star]").forEach(s => {
+          const star = Number(s.getAttribute("data-star"));
+          s.style.color = star <= existing.rating ? "#F5B400" : "rgba(255,255,255,.2)";
+        });
+      }
+    }
+  } catch (_) {}
+  // แสดง modal
+  document.getElementById("songReviewBackdrop").style.display = "flex";
+}
+
+function closeSongReviewModal() {
+  document.getElementById("songReviewBackdrop").style.display = "none";
+  currentReviewSongId = null;
+  currentReviewSongName = null;
+}
+
+// 🆕 ส่งรีวิว
+async function submitSongReview() {
+  if (!currentReviewSongId) return;
+  const rating = Number(document.getElementById("songReviewRating").value || 0);
+  const review = document.getElementById("songReviewText").value.trim();
+  const resultEl = document.getElementById("songReviewResult");
+  if (resultEl) resultEl.textContent = "";
+  if (rating < 1 || rating > 5) {
+    if (resultEl) { resultEl.textContent = "กรุณาเลือกคะแนน 1-5 ดาว"; resultEl.style.color = "var(--danger)"; }
+    return;
+  }
+  const btn = document.getElementById("songReviewSubmitBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "กำลังส่ง..."; }
+  try {
+    const res = await fetch("/api/customer/reviews", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ song_id: currentReviewSongId, rating, review }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      if (resultEl) { resultEl.textContent = "✅ " + (data?.message || "ส่งรีวิวแล้ว"); resultEl.style.color = "var(--success)"; }
+      if (typeof showToast === "function") showToast("✅ ส่งรีวิวแล้ว", "success");
+      setTimeout(closeSongReviewModal, 1000);
+    } else {
+      if (resultEl) { resultEl.textContent = data?.error || "ส่งรีวิวไม่สำเร็จ"; resultEl.style.color = "var(--danger)"; }
+      if (btn) { btn.disabled = false; btn.textContent = "ส่งรีวิว"; }
+    }
+  } catch (err) {
+    if (resultEl) { resultEl.textContent = "เกิดข้อผิดพลาด: " + (err.message || String(err)); resultEl.style.color = "var(--danger)"; }
+    if (btn) { btn.disabled = false; btn.textContent = "ส่งรีวิว"; }
+  }
+}
+
+// 🆕 โหลดรีวิวของลูกค้า → หน้าบัญชี
+async function loadCustomerReviews() {
+  const wrap = document.getElementById("myAccountReviewsList");
+  if (!wrap) return;
+  if (!isCustomerLoggedIn()) {
+    wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">กรุณาเข้าสู่ระบบ</div>';
+    return;
+  }
+  wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">⏳ กำลังโหลด...</div>';
+  try {
+    const res = await fetch("/api/customer/reviews", { credentials: "same-origin" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      wrap.innerHTML = `<div style="color:var(--danger);font-size:13px;padding:10px;">${escapeHtmlCustomer(data?.error || "โหลดไม่สำเร็จ")}</div>`;
+      return;
+    }
+    const reviews = data.reviews || [];
+    if (reviews.length === 0) {
+      wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">ยังไม่มีรีวิว — ซื้อเพลงแล้วรีวิวได้</div>';
+      return;
+    }
+    wrap.innerHTML = reviews.map(r => {
+      const stars = "★".repeat(r.rating) + "☆".repeat(5 - r.rating);
+      const date = r.updated_at ? new Date(r.updated_at).toLocaleDateString("th-TH") : "-";
+      return `
+        <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;">
+            <div style="font-size:13px;font-weight:600;">เพลง ID: ${escapeHtmlCustomer(r.song_id)}</div>
+            <span style="color:#F5B400;font-size:14px;">${stars}</span>
+          </div>
+          ${r.review ? `<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">${escapeHtmlCustomer(r.review)}</div>` : ""}
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:11px;color:var(--text-dim);">${escapeHtmlCustomer(date)}</span>
+            <div style="display:flex;gap:6px;">
+              <button class="btn" data-review-edit="${escapeHtmlCustomer(r.song_id)}" style="padding:4px 8px;font-size:11px;background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:4px;cursor:pointer;">✎ แก้ไข</button>
+              <button class="btn" data-review-delete="${escapeHtmlCustomer(r.song_id)}" style="padding:4px 8px;font-size:11px;background:transparent;color:var(--danger);border:1px solid rgba(239,68,68,.3);border-radius:4px;cursor:pointer;">🗑 ลบ</button>
+            </div>
+          </div>
+        </div>`;
+    }).join("");
+    // ผูกปุ่มแก้ไข
+    wrap.querySelectorAll("[data-review-edit]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const songId = btn.getAttribute("data-review-edit");
+        openSongReviewModal(songId, "");
+      });
+    });
+    // ผูกปุ่มลบ
+    wrap.querySelectorAll("[data-review-delete]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const songId = btn.getAttribute("data-review-delete");
+        if (!confirm("ต้องการลบรีวิวนี้ใช่ไหม?")) return;
+        await deleteCustomerReview(songId);
+        loadCustomerReviews();
+      });
+    });
+  } catch (err) {
+    wrap.innerHTML = `<div style="color:var(--danger);font-size:13px;padding:10px;">โหลดไม่สำเร็จ: ${escapeHtmlCustomer(err.message || String(err))}</div>`;
+  }
+}
+
+// 🆕 ลบรีวิว
+async function deleteCustomerReview(songId) {
+  try {
+    const res = await fetch(`/api/customer/reviews/${encodeURIComponent(songId)}`, {
+      method: "DELETE",
+      credentials: "same-origin",
+    });
+    if (res.ok) {
+      if (typeof showToast === "function") showToast("ลบรีวิวแล้ว", "info");
+    } else {
+      const data = await res.json().catch(() => ({}));
+      if (typeof showToast === "function") showToast(data?.error || "ลบไม่สำเร็จ", "error");
+    }
+  } catch (err) {
+    if (typeof showToast === "function") showToast("ลบไม่สำเร็จ: " + (err.message || String(err)), "error");
+  }
+}
+
 // 🆕 expose ให้ app-user.js / app-cart.js เรียกใช้
 window.isCustomerLoggedIn = isCustomerLoggedIn;
 window.getCurrentCustomer = getCurrentCustomer;
 window.initCustomerAuth = initCustomerAuth;
+// 🆕 (2026-10-02 v6): favorites + reviews
+window.toggleFavorite = toggleFavorite;
+window.loadCustomerFavorites = loadCustomerFavorites;
+window.checkFavoriteStatus = checkFavoriteStatus;
+window.openSongReviewModal = openSongReviewModal;
+window.closeSongReviewModal = closeSongReviewModal;
+window.submitSongReview = submitSongReview;
+window.loadCustomerReviews = loadCustomerReviews;
+window.deleteCustomerReview = deleteCustomerReview;
 // 🔧 FIX: เดิมบรรทัดนี้เซ็ต window.showCustomerAccountView = null ทับค่าที่ app-user.js เซ็งไว้ (customer-auth.js โหลดทีหลัง)
 //   ทำให้ปุ่มบัญชี/ดูออเดอร์ตอน login แล้วไม่ทำงาน → ตั้งเป็น null เฉพาะเมื่อยังไม่มีค่าเท่านั้น
 if (typeof window.showCustomerAccountView !== "function") window.showCustomerAccountView = null;
@@ -410,5 +709,42 @@ document.addEventListener("DOMContentLoaded", () => {
   // Enter ในช่อง forgot password → submit
   document.getElementById("forgotPasswordLogin")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") submitForgotPassword();
+  });
+
+  // 🆕 (2026-10-02 v6 — ฟีเจอร์ #12): listeners สำหรับ modal รีวิว
+  // ปุ่มปิด modal รีวิว
+  document.getElementById("songReviewClose")?.addEventListener("click", closeSongReviewModal);
+  // กดพื้นหลัง modal รีวิว → ปิด
+  document.getElementById("songReviewBackdrop")?.addEventListener("click", (e) => {
+    if (e.target.id === "songReviewBackdrop") closeSongReviewModal();
+  });
+  // ปุ่ม submit รีวิว
+  document.getElementById("songReviewSubmitBtn")?.addEventListener("click", submitSongReview);
+  // คลิกดาว → เลือกคะแนน
+  document.querySelectorAll("#songReviewStars [data-star]").forEach(star => {
+    star.addEventListener("click", () => {
+      const rating = Number(star.getAttribute("data-star"));
+      document.getElementById("songReviewRating").value = String(rating);
+      // อัปเดตสีดาว
+      document.querySelectorAll("#songReviewStars [data-star]").forEach(s => {
+        const sStar = Number(s.getAttribute("data-star"));
+        s.style.color = sStar <= rating ? "#F5B400" : "rgba(255,255,255,.2)";
+      });
+    });
+    // hover effect
+    star.addEventListener("mouseenter", () => {
+      const rating = Number(star.getAttribute("data-star"));
+      document.querySelectorAll("#songReviewStars [data-star]").forEach(s => {
+        const sStar = Number(s.getAttribute("data-star"));
+        s.style.color = sStar <= rating ? "#F5B400" : "rgba(255,255,255,.2)";
+      });
+    });
+  });
+  document.getElementById("songReviewStars")?.addEventListener("mouseleave", () => {
+    const rating = Number(document.getElementById("songReviewRating").value || 0);
+    document.querySelectorAll("#songReviewStars [data-star]").forEach(s => {
+      const sStar = Number(s.getAttribute("data-star"));
+      s.style.color = sStar <= rating ? "#F5B400" : "rgba(255,255,255,.2)";
+    });
   });
 });

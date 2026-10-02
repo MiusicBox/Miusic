@@ -2036,10 +2036,10 @@ document.getElementById("myAccountRefreshBtn")?.addEventListener("click", () => 
   loadCustomerAccountData();
 });
 
-// 🆕 (2026-10-02): tab switching สำหรับหน้าบัญชี — โปรไฟล์ / ออเดอร์ / ตั้งค่า
+// 🆕 (2026-10-02): tab switching สำหรับหน้าบัญชี — โปรไฟล์ / ออเดอร์ / รายการโปรด / รีวิว / ตั้งค่า
 function switchAccountTab(tab) {
-  const tabs = { profile: "accountTabProfile", orders: "accountTabOrders", settings: "accountTabSettings" };
-  const sections = { profile: "accountSectionProfile", orders: "accountSectionOrders", settings: "accountSectionSettings" };
+  const tabs = { profile: "accountTabProfile", orders: "accountTabOrders", favorites: "accountTabFavorites", reviews: "accountTabReviews", settings: "accountTabSettings" };
+  const sections = { profile: "accountSectionProfile", orders: "accountSectionOrders", favorites: "accountSectionFavorites", reviews: "accountSectionReviews", settings: "accountSectionSettings" };
   for (const [key, tabId] of Object.entries(tabs)) {
     const tabBtn = document.getElementById(tabId);
     const section = document.getElementById(sections[key]);
@@ -2056,6 +2056,16 @@ document.getElementById("accountTabProfile")?.addEventListener("click", () => sw
 document.getElementById("accountTabOrders")?.addEventListener("click", () => {
   switchAccountTab("orders");
   loadCustomerAccountData(); // โหลดออเดอร์เมื่อกด tab
+});
+// 🆕 (2026-10-02 v6): tab รายการโปรด → โหลด favorites
+document.getElementById("accountTabFavorites")?.addEventListener("click", () => {
+  switchAccountTab("favorites");
+  if (typeof loadCustomerFavorites === "function") loadCustomerFavorites();
+});
+// 🆕 (2026-10-02 v6): tab รีวิว → โหลด reviews
+document.getElementById("accountTabReviews")?.addEventListener("click", () => {
+  switchAccountTab("reviews");
+  if (typeof loadCustomerReviews === "function") loadCustomerReviews();
 });
 document.getElementById("accountTabSettings")?.addEventListener("click", () => switchAccountTab("settings"));
 
