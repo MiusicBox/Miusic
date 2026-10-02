@@ -663,10 +663,14 @@ function renderSongGrid() {
               <div class="song-price-block">
                 ${renderDiscountedPriceForSong(s)}
               </div>
-              <button class="cart-add-btn cart-add-btn-row" type="button" data-add-cart="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
-                <span>เพิ่มลงตะกร้า</span>
-              </button>
+              <div class="song-actions-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <button class="btn-icon-mini" type="button" data-favorite-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="เพิ่มในรายการโปรด" title="เพิ่มในรายการโปรด" style="background:transparent;border:none;font-size:18px;cursor:pointer;padding:4px 6px;border-radius:50%;line-height:1;transition:transform .15s;">🤍</button>
+                <button class="btn-icon-mini" type="button" data-review-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="รีวิวเพลง" title="รีวิวเพลง" style="background:transparent;border:none;font-size:18px;cursor:pointer;padding:4px 6px;border-radius:50%;line-height:1;transition:transform .15s;">⭐</button>
+                <button class="cart-add-btn cart-add-btn-row" type="button" data-add-cart="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
+                  <span>เพิ่มลงตะกร้า</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -693,6 +697,41 @@ function renderSongGrid() {
         const song = findSong(el.getAttribute("data-add-cart"));
         if (song) {
           addToCart(song);
+        }
+      });
+    });
+    // 🆕 (2026-10-02 v6): ปุ่ม ❤️ — toggle favorite
+    grid.querySelectorAll("[data-favorite-btn]").forEach(el => {
+      if (el.dataset._listenerAttached) return;
+      el.dataset._listenerAttached = "1";
+      el.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        const songId = el.getAttribute("data-favorite-btn");
+        if (typeof window.toggleFavorite === "function") {
+          await window.toggleFavorite(songId);
+        }
+      });
+      // 🆕 โหลดสถานะ favorite เริ่มต้น (ถ้า login แล้ว)
+      const songId = el.getAttribute("data-favorite-btn");
+      if (typeof window.checkFavoriteStatus === "function" && typeof window.isCustomerLoggedIn === "function" && window.isCustomerLoggedIn()) {
+        window.checkFavoriteStatus(songId).then(isFav => {
+          if (isFav) {
+            el.textContent = "❤️";
+            el.classList.add("is-favorite");
+          }
+        });
+      }
+    });
+    // 🆕 (2026-10-02 v6): ปุ่ม ⭐ — เปิด modal รีวิว
+    grid.querySelectorAll("[data-review-btn]").forEach(el => {
+      if (el.dataset._listenerAttached) return;
+      el.dataset._listenerAttached = "1";
+      el.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const songId = el.getAttribute("data-review-btn");
+        const songName = el.getAttribute("data-song-name") || "";
+        if (typeof window.openSongReviewModal === "function") {
+          window.openSongReviewModal(songId, songName);
         }
       });
     });
