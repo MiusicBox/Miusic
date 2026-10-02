@@ -459,7 +459,17 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     if (feedback) feedback.textContent = "";
     // 🆕 (2026-10-01): ถ้าลูกค้า login แล้ว → auto-fill ข้อมูลจากบัญชี + แสดงข้อความ
     //   ลูกค้าไม่ต้องกรอกชื่อ+เบอร์อีก — ใช้ข้อมูลที่ลงทะเบียนไว้
-    const customer = (window.getCurrentCustomer && window.getCurrentCustomer()) ? window.getCurrentCustomer() : null;
+    const customer = (() => {
+      // 🆕 (2026-10-02 fix): อ่านจาก localStorage แทน window.getCurrentCustomer (ES module timing)
+      let c = (window.getCurrentCustomer && window.getCurrentCustomer()) ? window.getCurrentCustomer() : null;
+      if (!c) {
+        try {
+          const raw = localStorage.getItem("miusic_customer_session");
+          if (raw) c = JSON.parse(raw);
+        } catch (_) {}
+      }
+      return c;
+    })();
     if (customer) {
       const nameInput = document.getElementById("checkoutCustomerName");
       const whatsappInput = document.getElementById("checkoutCustomerWhatsapp");
@@ -2000,7 +2010,17 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     //   - ถ้าไม่ login → อ่านจาก input ที่ลูกค้ากรอก (เหมือนเดิม)
     let customerName = "";
     let whatsapp = "";
-    const customer = (window.getCurrentCustomer && window.getCurrentCustomer()) ? window.getCurrentCustomer() : null;
+    const customer = (() => {
+      // 🆕 (2026-10-02 fix): อ่านจาก localStorage แทน window.getCurrentCustomer (ES module timing)
+      let c = (window.getCurrentCustomer && window.getCurrentCustomer()) ? window.getCurrentCustomer() : null;
+      if (!c) {
+        try {
+          const raw = localStorage.getItem("miusic_customer_session");
+          if (raw) c = JSON.parse(raw);
+        } catch (_) {}
+      }
+      return c;
+    })();
     if (customer) {
       // login แล้ว → ใช้ข้อมูลจากบัญชี
       customerName = customer.display_name || "";
@@ -2104,9 +2124,19 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
           // 🆕 (2026-10-01): ผูก customer_id ถ้าลูกค้า login แล้ว (optional — ไม่ login ก็ซื้อได้)
           //   ใช้สำหรับหน้า "บัญชีของฉัน" ดึงออเดอร์ทั้งหมดของ customer_id นี้
           //   ถ้าไม่ login → customer_id = null (ระบบเดิม track order ด้วย ชื่อ+เบอร์ ยังทำงาน)
-          // 🆕 (2026-10-02 debug): เพิ่ม log เพื่อตรวจว่า customer_id ถูกบันทึกจริงไหม
+          // 🆕 (2026-10-02 fix): อ่านจาก localStorage แทน window.getCurrentCustomer
+          //   เพราะ customer-auth.js เป็น ES module ที่โหลดทีหลัง → window.getCurrentCustomer ยังไม่พร้อม
+          //   localStorage พร้อมทันที (ไม่ต้องรอโหลด)
           customer_id: (() => {
-            const c = (window.getCurrentCustomer && window.getCurrentCustomer()) ? window.getCurrentCustomer() : null;
+            // ลอง window.getCurrentCustomer ก่อน (ถ้าพร้อม)
+            let c = (window.getCurrentCustomer && window.getCurrentCustomer()) ? window.getCurrentCustomer() : null;
+            // ถ้าไม่พร้อม → อ่านจาก localStorage
+            if (!c) {
+              try {
+                const raw = localStorage.getItem("miusic_customer_session");
+                if (raw) c = JSON.parse(raw);
+              } catch (_) {}
+            }
             console.log("[checkout] customer login status:", c ? `YES (id: ${c.id})` : "NO");
             return c ? c.id : null;
           })(),

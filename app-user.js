@@ -1850,7 +1850,14 @@ async function loadCustomerAccountData() {
   ordersListEl.innerHTML = "";
   try {
     // ดึงข้อมูล customer (จาก customer-auth.js state)
-    const customer = window.getCurrentCustomer ? window.getCurrentCustomer() : null;
+    // 🆕 (2026-10-02 fix): อ่านจาก localStorage แทน window.getCurrentCustomer (ES module timing)
+    let customer = (window.getCurrentCustomer && window.getCurrentCustomer()) ? window.getCurrentCustomer() : null;
+    if (!customer) {
+      try {
+        const raw = localStorage.getItem("miusic_customer_session");
+        if (raw) customer = JSON.parse(raw);
+      } catch (_) {}
+    }
     if (!customer) {
       profileEl.innerHTML = `<div style="color:var(--danger);">⚠️ ยังไม่ได้เข้าสู่ระบบ</div>`;
       return;
@@ -2734,9 +2741,12 @@ const trackOrderBtnEl = document.getElementById("trackOrderBtn");
 if (trackOrderBtnEl) trackOrderBtnEl.addEventListener("click", () => {
   // 🆕 (2026-10-01): ถ้าลูกค้า login แล้ว → ไปหน้า "บัญชีของฉัน" เลย (ไม่ต้องกรอกชื่อ+เบอร์)
   //   ถ้าไม่ login → เปิด modal track order เหมือนเดิม (กรอกชื่อ+เบอร์)
-  if (window.isCustomerLoggedIn && window.isCustomerLoggedIn()) {
+  // 🆕 (2026-10-02 fix): ตรวจจาก localStorage ด้วย (กัน ES module timing issue)
+  const isLoggedIn = (window.isCustomerLoggedIn && window.isCustomerLoggedIn()) || (!!localStorage.getItem("miusic_customer_session"));
+  if (isLoggedIn) {
     // login แล้ว → ไปหน้าบัญชี (มี function ใน app-user.js เอง)
     if (typeof showCustomerAccountView === "function") showCustomerAccountView();
+    else if (typeof window.showCustomerAccountView === "function") window.showCustomerAccountView();
   } else {
     // ไม่ login → เปิด modal track order (เหมือนเดิม)
     openTrackOrder();

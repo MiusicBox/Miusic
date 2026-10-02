@@ -13,6 +13,31 @@
 // 🆕 state — เก็บข้อมูลลูกค้าที่ login อยู่ (null = ยังไม่ login)
 let currentCustomer = null;
 
+// 🆕 (2026-10-02 fix): เก็บ customer ใน localStorage เพื่อให้ app-cart.js / app-user.js
+//   อ่านได้ทันทีโดยไม่ต้องรอ customer-auth.js โหลดเสร็จ (ES module timing issue)
+//   - บันทึกตอน login/register สำเร็จ
+//   - ลบตอน logout
+//   - อ่านตอน initCustomerAuth (page load)
+const CUSTOMER_STORAGE_KEY = "miusic_customer_session";
+
+function saveCustomerToStorage(customer) {
+  try {
+    if (customer) {
+      localStorage.setItem(CUSTOMER_STORAGE_KEY, JSON.stringify(customer));
+    } else {
+      localStorage.removeItem(CUSTOMER_STORAGE_KEY);
+    }
+  } catch (_) {}
+}
+
+function loadCustomerFromStorage() {
+  try {
+    const raw = localStorage.getItem(CUSTOMER_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (_) { return null; }
+}
+
 // 🆕 ตรวจสถานะ login — ใช้ใน app-user.js / app-cart.js ตรวจว่า login แล้วไหม
 function isCustomerLoggedIn() {
   return !!currentCustomer;
@@ -67,16 +92,30 @@ function syncCustomerAuthUI() {
 //   ถ้ามี session (login แล้ว) → set currentCustomer + sync UI
 //   ถ้าไม่มี → currentCustomer = null + sync UI (แสดงปุ่ม login)
 async function initCustomerAuth() {
+  // 🆕 (2026-10-02): อ่านจาก localStorage ก่อนทันที (ไม่ต้องรอ fetch) → app-cart.js ใช้ได้เลย
+  const stored = loadCustomerFromStorage();
+  if (stored) currentCustomer = stored;
+  // ตรวจ session จาก server (เพื่อยืนยันว่ายัง valid)
   try {
     const res = await fetch("/api/customer/me", { credentials: "same-origin" });
     if (res.ok) {
       const data = await res.json();
       if (data?.ok && data?.customer) {
         currentCustomer = data.customer;
+        saveCustomerToStorage(data.customer); // 🆕 บันทึกลง localStorage
+      } else {
+        // server บอกไม่ login → ลบ localStorage
+        currentCustomer = null;
+        saveCustomerToStorage(null);
       }
+    } else if (res.status === 401) {
+      // session หมดอายุ → ลบ localStorage
+      currentCustomer = null;
+      saveCustomerToStorage(null);
     }
   } catch (err) {
     console.warn("[customer-auth] init failed:", err?.message || err);
+    // ถ้า fetch fail → ใช้ localStorage (ถ้ามี) เป็น fallback
   }
   syncCustomerAuthUI();
 }
@@ -159,6 +198,7 @@ async function customerRegister() {
     }
     if (data?.ok && data?.customer) {
       currentCustomer = data.customer;
+      saveCustomerToStorage(data.customer); // 🆕 บันทึกลง localStorage
       syncCustomerAuthUI();
       closeCustomerAuthModal();
       if (typeof showToast === "function") showToast("✅ สมัครสมาชิกสำเร็จ", "success");
@@ -190,6 +230,7 @@ async function customerLogin() {
     }
     if (data?.ok && data?.customer) {
       currentCustomer = data.customer;
+      saveCustomerToStorage(data.customer); // 🆕 บันทึกลง localStorage
       syncCustomerAuthUI();
       closeCustomerAuthModal();
       if (typeof showToast === "function") showToast("✅ เข้าสู่ระบบสำเร็จ", "success");
@@ -209,6 +250,7 @@ async function customerLogout() {
     });
   } catch (_) {}
   currentCustomer = null;
+  saveCustomerToStorage(null); // 🆕 ลบจาก localStorage
   syncCustomerAuthUI();
   if (typeof showToast === "function") showToast("ออกจากระบบแล้ว", "info");
   else alert("ออกจากระบบแล้ว");
