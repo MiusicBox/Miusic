@@ -1229,7 +1229,13 @@
       </div>
 
       <div class="field"><label>DJ (ใช้กับทุกเพลงในชุดนี้ — ไม่ระบุก็ได้)</label><select id="bulkDj"><option value="">— ไม่ระบุ —</option></select></div>
+      <!-- 🆕 (2026-10-01): ช่องสร้าง DJ ใหม่ภายใน bulk upload — pattern เดียวกับ bulkNewPlaylistName -->
+      <!--   ถ้ากรอกช่องนี้ → สร้าง DJ ใหม่ + ใช้กับทุกเพลงในชุด (ชนะ select เดิม) -->
+      <!--   ถ้าเว้นว่าง → ใช้ select เดิม (เหมือนเดิม) -->
+      <div class="field"><label>หรือสร้าง DJ ใหม่ (ไม่บังคับ — ถ้ากรอกจะสร้าง DJ ใหม่และใช้กับทุกเพลง)</label><input id="bulkNewDjName" placeholder="ชื่อ DJ ใหม่"></div>
       <div class="field"><label>หมวดหมู่ (ใช้กับทุกเพลงในชุดนี้ — ไม่ระบุก็ได้)</label><select id="bulkCategory"><option value="">— ไม่ระบุ —</option></select></div>
+      <!-- 🆕 (2026-10-01): ช่องสร้างหมวดหมู่ใหม่ภายใน bulk upload — pattern เดียวกับ bulkNewPlaylistName -->
+      <div class="field"><label>หรือสร้างหมวดหมู่ใหม่ (ไม่บังคับ — ถ้ากรอกจะสร้างหมวดหมู่ใหม่และใช้กับทุกเพลง)</label><input id="bulkNewCatName" placeholder="ชื่อหมวดหมู่ใหม่"></div>
       <div class="field"><label>ราคาต่อเพลง (LAK — ใช้กับทุกเพลงในชุดนี้)</label><input id="bulkPrice" type="number" min="0"></div>
       <div class="field">
         <label>รูปปก (ใช้กับทุกเพลงในชุดนี้ — ไม่บังคับ)</label>

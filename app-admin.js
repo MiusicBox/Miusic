@@ -3516,6 +3516,11 @@ async function openBulkUpload() {
   const bulkPreview = document.getElementById("bulkSongListPreview");
   if (bulkPreview) bulkPreview.innerHTML = "";
   document.getElementById("bulkNewPlaylistName").value = "";
+  // 🆕 (2026-10-01): ล้างช่องสร้าง DJ/หมวดหมู่ใหม่ด้วย (เหมือน bulkNewPlaylistName)
+  const bulkNewDjNameEl = document.getElementById("bulkNewDjName");
+  if (bulkNewDjNameEl) bulkNewDjNameEl.value = "";
+  const bulkNewCatNameEl = document.getElementById("bulkNewCatName");
+  if (bulkNewCatNameEl) bulkNewCatNameEl.value = "";
   document.getElementById("bulkPrice").value = "";
   document.getElementById("bulkFilesInput").value = "";
   document.getElementById("bulkCoverInput").value = "";
@@ -3869,9 +3874,56 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
     const catSel = document.getElementById("bulkCategory");
     // 🔧 (2026-09-19): อ่านราคาแต่ละเพลงจากช่องใน list — ถ้าไม่มีช่อง (เช่น list ไม่ render) → fallback ใช้ bulkPrice
     const defaultPrice = Number(document.getElementById("bulkPrice").value || 0);
-    const djName = djSel.value ? djSel.options[djSel.selectedIndex].text : "";
-    const catId = catSel.value;
-    const catName = catSel.value ? catSel.options[catSel.selectedIndex].text : "";
+
+    // 🆕 (2026-10-01): สร้าง DJ ใหม่ถ้าแอดมินกรอกช่อง "หรือสร้าง DJ ใหม่"
+    //   pattern เดียวกับ bulkNewPlaylistName (บรรทัด 3832, 3844-3853)
+    //   - ถ้ากรอกช่องใหม่ → สร้าง DJ ใหม่ + ใช้ dj_name ใหม่ (ชนะ select เดิม)
+    //   - ถ้าเว้นว่าง → ใช้ select เดิม (เหมือนเดิม)
+    let djName = djSel.value ? djSel.options[djSel.selectedIndex].text : "";
+    const newDjName = (document.getElementById("bulkNewDjName")?.value || "").trim();
+    if (newDjName) {
+      try {
+        const now = new Date().toISOString();
+        const newDjDoc = await addDoc(collection(db, "djs"), {
+          dj_name: newDjName,
+          description: "",
+          image_url: "",
+          created_at: now,
+          updated_at: now,
+        });
+        djName = newDjName;
+        console.log(`[bulk upload] สร้าง DJ ใหม่: ${newDjName} (id: ${newDjDoc.id})`);
+      } catch (err) {
+        showToast("สร้าง DJ ใหม่ไม่สำเร็จ: " + (err.message || String(err)), "error");
+        btn.disabled = false; btn.textContent = "เริ่มอัปโหลดทั้งหมด";
+        document.getElementById("bulkProgressWrap").style.display = "none";
+        return;
+      }
+    }
+
+    // 🆕 (2026-10-01): สร้างหมวดหมู่ใหม่ถ้าแอดมินกรอกช่อง "หรือสร้างหมวดหมู่ใหม่"
+    let catId = catSel.value;
+    let catName = catSel.value ? catSel.options[catSel.selectedIndex].text : "";
+    const newCatName = (document.getElementById("bulkNewCatName")?.value || "").trim();
+    if (newCatName) {
+      try {
+        const now = new Date().toISOString();
+        const newCatDoc = await addDoc(collection(db, "categories"), {
+          category_name: newCatName,
+          description: "",
+          created_at: now,
+          updated_at: now,
+        });
+        catId = newCatDoc.id;
+        catName = newCatName;
+        console.log(`[bulk upload] สร้างหมวดหมู่ใหม่: ${newCatName} (id: ${newCatDoc.id})`);
+      } catch (err) {
+        showToast("สร้างหมวดหมู่ใหม่ไม่สำเร็จ: " + (err.message || String(err)), "error");
+        btn.disabled = false; btn.textContent = "เริ่มอัปโหลดทั้งหมด";
+        document.getElementById("bulkProgressWrap").style.display = "none";
+        return;
+      }
+    }
 
     let matchedCount = 0;
     const unmatchedNames = []; // เก็บชื่อเพลงที่มีไฟล์เต็มให้เลือก แต่จับคู่ไม่ได้ — จะได้รู้ทันทีว่าต้องไปแก้ไขเพลงไหนเพิ่ม
