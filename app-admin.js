@@ -912,6 +912,160 @@ document.getElementById("qaAuditLogNew")?.addEventListener("click", () => {
   document.getElementById("qaAuditLog")?.click();
 });
 
+// ============================================================
+// 🆕 (2026-10-02): จัดการลูกค้า (Customer Management)
+// ============================================================
+
+let customerSearchTimeout = null;
+
+document.getElementById("qaManageCustomersNew")?.addEventListener("click", () => {
+  showView("view-customers");
+  loadCustomers();
+});
+document.getElementById("customerRefreshBtn")?.addEventListener("click", () => loadCustomers());
+document.getElementById("customerSearch")?.addEventListener("input", (e) => {
+  clearTimeout(customerSearchTimeout);
+  customerSearchTimeout = setTimeout(() => loadCustomers(e.target.value.trim()), 300);
+});
+
+async function loadCustomers(search = "") {
+  const wrap = document.getElementById("customerList");
+  if (!wrap) return;
+  wrap.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-dim);">⏳ กำลังโหลด...</div>';
+  try {
+    const url = `/api/admin/customers?limit=50${search ? `&search=${encodeURIComponent(search)}` : ""}`;
+    const res = await fetch(url, { credentials: "same-origin" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      wrap.innerHTML = `<div style="text-align:center;color:var(--danger);padding:20px;">${escapeHtml(err?.error || "โหลดไม่สำเร็จ")}</div>`;
+      return;
+    }
+    const data = await res.json();
+    const customers = data?.customers || [];
+    if (customers.length === 0) {
+      wrap.innerHTML = '<div class="empty-state">ยังไม่มีลูกค้าสมัครสมาชิก</div>';
+      return;
+    }
+    wrap.innerHTML = customers.map(c => {
+      const date = c.created_at ? new Date(c.created_at).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" }) : "-";
+      const initials = (c.display_name || c.email || c.whatsapp || "?").charAt(0).toUpperCase();
+      return `
+        <div class="list-row" data-customer-id="${escapeHtml(c.id)}" style="cursor:pointer;">
+          <div style="width:40px;height:40px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0;">${escapeHtml(initials)}</div>
+          <div class="info">
+            <div class="n1">${escapeHtml(c.display_name || "ไม่มีชื่อ")}</div>
+            <div class="n2">${escapeHtml(c.email || "")}${c.whatsapp ? (c.email ? " · " : "") + "📱 " + escapeHtml(c.whatsapp) : ""} · ${c.order_count || 0} ออเดอร์</div>
+          </div>
+          <div class="row-actions">
+            <span style="font-size:11px;color:var(--text-dim);">สมัคร: ${escapeHtml(date)}</span>
+            ${currentAdminRole === "main" ? `<button class="icon-btn danger" data-customer-delete="${escapeHtml(c.id)}" title="ลบ">🗑</button>` : ""}
+          </div>
+        </div>`;
+    }).join("");
+
+    // click row → ดูรายละเอียด
+    wrap.querySelectorAll("[data-customer-id]").forEach(row => {
+      row.addEventListener("click", (e) => {
+        if (e.target.closest(".row-actions")) return;
+        const id = row.getAttribute("data-customer-id");
+        openCustomerDetail(id);
+      });
+    });
+    // delete
+    wrap.querySelectorAll("[data-customer-delete]").forEach(btn => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute("data-customer-delete");
+        if (!confirm("ต้องการลบลูกค้านี้ใช่ไหม? (ออเดอร์จะไม่ถูกลบ)")) return;
+        try {
+          const delRes = await fetch(`/api/admin/customers/${encodeURIComponent(id)}`, { method: "DELETE", credentials: "same-origin" });
+          if (delRes.ok) {
+            showToast("ลบลูกค้าแล้ว", "success");
+            loadCustomers(document.getElementById("customerSearch")?.value?.trim() || "");
+          } else {
+            const delErr = await delRes.json().catch(() => ({}));
+            showToast(delErr?.error || "ลบไม่สำเร็จ", "error");
+          }
+        } catch (err) {
+          showToast("ลบไม่สำเร็จ: " + (err.message || String(err)), "error");
+        }
+      });
+    });
+  } catch (err) {
+    wrap.innerHTML = `<div style="text-align:center;color:var(--danger);padding:20px;">โหลดไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
+  }
+}
+
+async function openCustomerDetail(customerId) {
+  const wrap = document.getElementById("customerList");
+  if (!wrap) return;
+  wrap.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-dim);">⏳ กำลังโหลดรายละเอียด...</div>';
+  try {
+    const res = await fetch(`/api/admin/customers/${encodeURIComponent(customerId)}`, { credentials: "same-origin" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      wrap.innerHTML = `<div style="text-align:center;color:var(--danger);padding:20px;">${escapeHtml(err?.error || "โหลดไม่สำเร็จ")}</div>`;
+      return;
+    }
+    const data = await res.json();
+    const c = data.customer;
+    const orders = data.orders || [];
+    const initials = (c.display_name || c.email || c.whatsapp || "?").charAt(0).toUpperCase();
+    const date = c.created_at ? new Date(c.created_at).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" }) : "-";
+
+    const ordersHtml = orders.map(o => {
+      const status = String(o.status || "pending_verify");
+      const total = Number(o.final_total ?? o.total ?? 0);
+      const receipt = o.receipt_number || (o.id || "").slice(0, 8);
+      const createdAt = o.created_at ? new Date(o.created_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "-";
+      let statusColor = "var(--text-dim)", statusLabel = status;
+      if (status === "pending_verify") { statusColor = "#F5B400"; statusLabel = "🟡 รอตรวจ"; }
+      else if (status === "processing") { statusColor = "#3B82F6"; statusLabel = "🔵 กำลังส่ง"; }
+      else if (status === "completed") { statusColor = "#10B981"; statusLabel = "✅ เสร็จ"; }
+      else if (status === "cancelled") { statusColor = "var(--danger)"; statusLabel = "❌ ยกเลิก"; }
+      return `
+        <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:700;font-size:13px;">#${escapeHtml(receipt)}</div>
+              <div style="font-size:11px;color:var(--text-dim);">${escapeHtml(createdAt)}</div>
+            </div>
+            <span style="font-size:11px;font-weight:700;color:${statusColor};">${escapeHtml(statusLabel)}</span>
+          </div>
+          <div style="font-size:12px;margin-top:6px;">ยอด: <strong>${formatPrice(total)}</strong> · ${o.items ? o.items.length : 0} เพลง</div>
+        </div>`;
+    }).join("");
+
+    wrap.innerHTML = `
+      <div style="margin-bottom:14px;">
+        <button class="btn secondary" id="customerDetailBack" style="padding:8px 14px;font-size:13px;">← กลับ</button>
+      </div>
+      <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px;margin-bottom:14px;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+          <div style="width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;">${escapeHtml(initials)}</div>
+          <div style="flex:1;">
+            <div style="font-weight:700;font-size:16px;">${escapeHtml(c.display_name || "ไม่มีชื่อ")}</div>
+            <div style="font-size:13px;color:var(--text-dim);">${escapeHtml(c.email || c.whatsapp || "")}</div>
+          </div>
+        </div>
+        ${c.email ? `<div style="font-size:13px;color:var(--text-dim);">📧 ${escapeHtml(c.email)}</div>` : ""}
+        ${c.whatsapp ? `<div style="font-size:13px;color:var(--text-dim);">📱 ${escapeHtml(c.whatsapp)}</div>` : ""}
+        <div style="font-size:12px;color:var(--text-dim);margin-top:6px;">สมาชิกตั้งแต่: ${escapeHtml(date)}</div>
+      </div>
+      <div style="font-weight:700;font-size:14px;margin-bottom:8px;">📦 ออเดอร์ (${orders.length})</div>
+      ${ordersHtml || '<div class="empty-state">ยังไม่มีออเดอร์</div>'}
+    `;
+    document.getElementById("customerDetailBack")?.addEventListener("click", () => {
+      loadCustomers(document.getElementById("customerSearch")?.value?.trim() || "");
+    });
+  } catch (err) {
+    wrap.innerHTML = `<div style="text-align:center;color:var(--danger);padding:20px;">โหลดไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
+  }
+}
+// ============================================================
+// /🆕 จัดการลูกค้า — สิ้นสุด
+// ============================================================
+
 // 🆕 sync visibility ของปุ่ม "👤 แอดมิน" ใน Card 4 ตาม role
 //   (เดิมอยู่ใน showAdminUI บรรทัด 463 — แต่ที่นั่นตั้ง display ให้ qaManageAdmins เดิม
 //    ที่นี่ตั้ง display ให้ qaManageAdminsNew ด้วย)

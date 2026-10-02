@@ -115,6 +115,8 @@
           <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">
             <button id="qaSettingsNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">🔧 ตั้งค่า</button>
             <button id="qaManageAdminsNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;display:none;">👤 แอดมิน</button>
+            <!-- 🆕 (2026-10-02): ปุ่มจัดการลูกค้า -->
+            <button id="qaManageCustomersNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">👥 ลูกค้า</button>
             <button id="qaAuditLogNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;grid-column:1 / -1;">📜 ประวัติร้าน</button>
           </div>
         </div>
@@ -636,6 +638,20 @@
       </div>
       <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">แอดมินหลักเพิ่ม/ลบ/แก้ไขแอดมินคนอื่นได้ทั้งหมด ส่วนแอดมินย่อยจะเข้าหน้านี้ไม่ได้และไม่เห็นเมนูนี้</p>
       <div id="adminList" class="container" style="padding:10px 16px 24px;"></div>
+    </div>
+
+    <!-- 🆕 (2026-10-02): view จัดการลูกค้า -->
+    <div id="view-customers" class="view" style="display:none;">
+      <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
+        <button class="icon-btn back-btn">←</button>
+        <div style="flex:1;font-weight:800;">👥 จัดการลูกค้า</div>
+        <button class="icon-btn" id="customerRefreshBtn" title="รีเฟรช">↻</button>
+      </div>
+      <div style="padding:0 16px;margin:10px 0;">
+        <div class="search-box"><input id="customerSearch" placeholder="ค้นหาชื่อ/อีเมล/เบอร์..."></div>
+      </div>
+      <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">รายชื่อลูกค้าที่สมัครสมาชิก — กดที่ลูกค้าเพื่อดูรายละเอียด + ออเดอร์</p>
+      <div id="customerList" class="container" style="padding:10px 16px 24px;"></div>
     </div>
 
     <!-- ===================== ลดราคา (Discounts) ===================== -->

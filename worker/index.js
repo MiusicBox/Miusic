@@ -4952,6 +4952,88 @@ async function handleCustomerAuth(request, env, url) {
     return jsonResponse({ error: "ฟีเจอร์ลืมรหัสผ่านยังไม่พร้อม — กรุณาติดต่อแอดมินผ่าน WhatsApp เพื่อรีเซ็ตรหัสผ่าน" }, 501);
   }
 
+  // ============================================================
+  // 🆕 (2026-10-02): /api/admin/customers — จัดการลูกค้า (ฝั่งแอดมิน)
+  //   - GET  /api/admin/customers — list ทั้งหมด (pagination + search)
+  //   - GET  /api/admin/customers/:id — รายละเอียดลูกค้า + ออเดอร์
+  //   - DELETE /api/admin/customers/:id — ลบลูกค้า (main admin เท่านั้น)
+  //   ผลกระทบระบบเดิม: 0% — endpoints ใหม่
+  // ============================================================
+
+  if (url.pathname === "/api/admin/customers" && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    try {
+      const search = String(url.searchParams.get("search") || "").trim();
+      const limit = Math.min(100, Number(url.searchParams.get("limit") || 50));
+      const offset = Math.max(0, Number(url.searchParams.get("offset") || 0));
+      let sql = "SELECT id, email, whatsapp, display_name, created_at, updated_at FROM customers";
+      const binds = [];
+      if (search) {
+        sql += " WHERE email LIKE ? OR whatsapp LIKE ? OR display_name LIKE ?";
+        binds.push(`%${search}%`, `%${search}%`, `%${search}%`);
+      }
+      sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+      binds.push(limit, offset);
+      const { results } = await env.DB.prepare(sql).bind(...binds).all();
+      // นับจำนวนออเดอร์ของแต่ละ customer (ดึงจาก documents)
+      const customers = [];
+      for (const row of results || []) {
+        const orderCountRow = await env.DB.prepare(
+          "SELECT COUNT(*) as cnt FROM documents WHERE collection='orders' AND json_extract(data,'$.customer_id')=?"
+        ).bind(row.id).first();
+        customers.push({ ...row, order_count: orderCountRow?.cnt || 0 });
+      }
+      return jsonResponse({ customers, total: customers.length });
+    } catch (err) {
+      if (String(err?.message || "").includes("no such table")) {
+        return jsonResponse({ customers: [], total: 0 });
+      }
+      return jsonResponse({ error: safeError("โหลดรายชื่อลูกค้าไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  if (url.pathname.startsWith("/api/admin/customers/") && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    const customerId = decodeURIComponent(url.pathname.slice("/api/admin/customers/".length));
+    try {
+      const customer = await env.DB.prepare(
+        "SELECT id, email, whatsapp, display_name, created_at, updated_at FROM customers WHERE id=?"
+      ).bind(customerId).first();
+      if (!customer) return jsonResponse({ error: "ไม่พบลูกค้า" }, 404);
+      // ดึงออเดอร์ของลูกค้า
+      const { results: orderRows } = await env.DB.prepare(
+        "SELECT id, data FROM documents WHERE collection='orders' AND json_extract(data,'$.customer_id')=? ORDER BY created_at DESC LIMIT 50"
+      ).bind(customerId).all();
+      const orders = (orderRows || []).map(row => {
+        try { return { id: row.id, ...JSON.parse(row.data) }; } catch { return { id: row.id }; }
+      });
+      return jsonResponse({ customer, orders });
+    } catch (err) {
+      return jsonResponse({ error: safeError("โหลดรายละเอียดลูกค้าไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  if (url.pathname.startsWith("/api/admin/customers/") && request.method === "DELETE") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    if (admin.role !== "main") return jsonResponse({ error: "เฉพาะแอดมินหลักเท่านั้นที่ลบลูกค้าได้" }, 403);
+    const customerId = decodeURIComponent(url.pathname.slice("/api/admin/customers/".length));
+    try {
+      // ลบ sessions ของลูกค้าก่อน
+      await env.DB.prepare("DELETE FROM customer_sessions WHERE customer_id=?").bind(customerId).run();
+      // ลบลูกค้า
+      await env.DB.prepare("DELETE FROM customers WHERE id=?").bind(customerId).run();
+      return jsonResponse({ ok: true });
+    } catch (err) {
+      return jsonResponse({ error: safeError("ลบลูกค้าไม่สำเร็จ", err) }, 500);
+    }
+  }
+
   // ---------- GET /api/customer/me ----------
   // ตรวจ session → คืนข้อมูล customer ถ้า login แล้ว
   if (path === "me" && request.method === "GET") {
