@@ -2049,7 +2049,7 @@ async function loadCustomerAccountData() {
     ordersAll.forEach(o => { if (!o._docId) o._docId = o.id || ""; });
     trackOrderAllOrders = ordersAll;
 
-    // 🆕 (v8): helper function สร้าง HTML ของ order card — รับ source='login'|'guest' เพื่อใส่ badge ที่มา
+    // 🆕 (v9): helper function สร้าง HTML ของ order card — ไม่มี badge ที่มา (กลับเป็นแบบเดิม)
     //   ใช้ data-account-order-source + data-account-order-idx ในการค้น order ที่ถูกต้อง
     function buildOrderCardHtml(order, indexInSource, source) {
       const cfg = TRACK_STATUS_CONFIG[order.status] || TRACK_STATUS_CONFIG.pending_verify;
@@ -2065,10 +2065,6 @@ async function loadCustomerAccountData() {
       const downloadBtnHtml = canDownload
         ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" data-account-download="${escapeHtml(source)}-${indexInSource}" class="btn list-download-btn">⬇️ ดาวน์โหลดเพลง</a>`
         : "";
-      // 🆕 (v8 แบบ D): badge บอกที่มา — login = ม่วง "บัญชีนี้", guest = เหลือง "ก่อน login"
-      const sourceBadgeHtml = source === "login"
-        ? `<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:rgba(139,92,246,.15);color:#a78bfa;font-weight:600;">🟣 บัญชีนี้</span>`
-        : `<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:rgba(245,180,0,.15);color:#F5B400;font-weight:600;">👤 ก่อน login</span>`;
       return `
         <div class="track-order-all-card" role="button" tabindex="0" data-account-order-source="${escapeHtml(source)}" data-account-order-idx="${indexInSource}" style="width:100%;text-align:left;">
           <div class="track-order-all-card-top">
@@ -2079,47 +2075,29 @@ async function loadCustomerAccountData() {
             <span>${escapeHtml(dateStr)}</span>
             <span>${formatPrice(finalTotal)}</span>
           </div>
-          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">
-            ${sourceBadgeHtml}
-            ${paymentBadgeHtml}
-          </div>
+          ${paymentBadgeHtml ? `<div style="margin-top:4px;">${paymentBadgeHtml}</div>` : ""}
           ${downloadBtnHtml}
         </div>`;
     }
 
-    // 🆕 (v8 แบบ D): รวมทุกออเดอร์ใน array เดียว เรียงตามวันที่ (ล่าสุดก่อน) + บอก source ใน index
+    // 🆕 (v9): รวมทุกออเดอร์ใน array เดียว เรียงตามวันที่ (ล่าสุดก่อน) — ไม่มีสรุปด้านบน + ไม่มี badge ที่มา
     const allOrdersMerged = [
       ...ordersLogin.map((order, i) => ({ order, source: "login", idx: i })),
       ...ordersGuest.map((order, i) => ({ order, source: "guest", idx: i })),
     ].sort((a, b) => {
-      // เรียงตาม created_at DESC (ล่าสุดก่อน)
       const aTime = a.order.created_at ? new Date(a.order.created_at).getTime() : 0;
       const bTime = b.order.created_at ? new Date(b.order.created_at).getTime() : 0;
       return bTime - aTime;
     });
 
-    // 🆕 (v8 แบบ D): สรุปด้านบน — "ทั้งหมด 5 ออเดอร์ (บัญชีนี้ 2 + ก่อน login 3)"
-    const summaryHtml = `
-      <div style="margin-bottom:12px;padding:10px 12px;border-radius:10px;background:linear-gradient(135deg, rgba(139,92,246,.08), rgba(245,180,0,.08));border:1px solid rgba(139,92,246,.2);">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
-          <div style="font-size:13px;font-weight:700;color:var(--text);">
-            📦 ออเดอร์ทั้งหมด ${ordersAll.length} รายการ
-          </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px;">
-            <span style="padding:3px 8px;border-radius:8px;background:rgba(139,92,246,.15);color:#a78bfa;font-weight:600;">🟣 บัญชีนี้ ${ordersLogin.length}</span>
-            <span style="padding:3px 8px;border-radius:8px;background:rgba(245,180,0,.15);color:#F5B400;font-weight:600;">👤 ก่อน login ${ordersGuest.length}</span>
-          </div>
-        </div>
-      </div>`;
-
-    // 🆕 (v8 แบบ D): แสดง list รวม + แต่ละออเดอร์มี badge บอกที่มา
+    // 🆕 (v9): แสดง list รวมเรียงตามวันที่ (เหมือน modal เดิม) — ไม่มีสรุปด้านบน + ไม่มี badge ที่มา
     const listHtml = allOrdersMerged.length > 0
       ? `<div style="display:grid;gap:10px;">
           ${allOrdersMerged.map(item => buildOrderCardHtml(item.order, item.idx, item.source)).join("")}
         </div>`
       : '<div class="empty-state">ยังไม่มีออเดอร์</div>';
 
-    ordersListEl.innerHTML = summaryHtml + listHtml;
+    ordersListEl.innerHTML = listHtml;
 
     // 🆕 (v8): ปุ่ม "ดาวน์โหลดเพลง" — ใช้ selector เดิม แต่ data-account-download มี source-index
     ordersListEl.querySelectorAll("[data-account-download]").forEach(btn => {
@@ -3228,17 +3206,15 @@ if (trackOrderAllBackBtnEl) trackOrderAllBackBtnEl.addEventListener("click", clo
 
 const trackOrderBtnEl = document.getElementById("trackOrderBtn");
 if (trackOrderBtnEl) trackOrderBtnEl.addEventListener("click", () => {
-  // 🆕 (2026-10-01): ถ้าลูกค้า login แล้ว → ไปหน้า "บัญชีของฉัน" เลย (ไม่ต้องกรอกชื่อ+เบอร์)
-  //   ถ้าไม่ login → เปิด modal track order เหมือนเดิม (กรอกชื่อ+เบอร์)
-  // 🆕 (2026-10-02 fix): ตรวจจาก localStorage ด้วย (กัน ES module timing issue)
+  // 🆕 (2026-10-02 v9): login และไม่ login ใช้ปุ่มเดียวกัน → เปิด modal "ติดตามออเดอร์"
+  //   - ถ้า login แล้ว → switchTrackOrderMode("all") จะ auto-fill + auto-submit ให้อัตโนมัติ
+  //   - ถ้าไม่ login → ลูกค้ากรอกชื่อ+เบอร์เอง (เหมือนเดิม)
+  //   ทั้งสองกรณีใช้ modal เดียวกัน → ไม่สับสน
+  openTrackOrder();
+  // 🆕 (v9): ถ้า login แล้ว → switch ไป tab "ออเดอร์ทั้งหมดของฉัน" อัตโนมัติ (จะ auto-fill + auto-submit)
   const isLoggedIn = (window.isCustomerLoggedIn && window.isCustomerLoggedIn()) || (!!localStorage.getItem("miusic_customer_session"));
   if (isLoggedIn) {
-    // login แล้ว → ไปหน้าบัญชี (มี function ใน app-user.js เอง)
-    if (typeof showCustomerAccountView === "function") showCustomerAccountView();
-    else if (typeof window.showCustomerAccountView === "function") window.showCustomerAccountView();
-  } else {
-    // ไม่ login → เปิด modal track order (เหมือนเดิม)
-    openTrackOrder();
+    switchTrackOrderMode("all");
   }
 });
 const trackOrderCloseEl = document.getElementById("trackOrderClose");
