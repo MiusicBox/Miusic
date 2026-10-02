@@ -1838,16 +1838,23 @@ async function showCustomerAccountView() {
   // ซ่อน search box ด้วย (ถ้ามี)
   const searchBox = document.querySelector(".search-box");
   if (searchBox) searchBox.style.display = "none";
-  // ซ่อน promotion banner (ถ้ามี)
-  const promoBanner = document.getElementById("promotionBanner");
+  // ซ่อน promotion banner (id จริงคือ promoHomeBanner และใช้ attribute hidden)
+  const promoBanner = document.getElementById("promoHomeBanner");
   if (promoBanner) promoBanner.style.display = "none";
+  // ซ่อนหัวข้อ "เพลย์ลิสต์" (playlist-wrapper) ที่เดิมยังค้างอยู่เหนือหน้าบัญชี
+  const playlistWrapper = document.querySelector(".playlist-wrapper");
+  if (playlistWrapper) playlistWrapper.style.display = "none";
+  // ซ่อนแถบเตือนออเดอร์ค้างชำระ ไม่ให้บังหน้าบัญชี
+  const pendingBanner = document.getElementById("pendingOrderBanner");
+  if (pendingBanner) pendingBanner.style.display = "none";
   // แสดง account view
   const myAccountView = document.getElementById("myAccountView");
   if (myAccountView) {
     myAccountView.style.display = "block";
     // 🆕 (2026-10-01 fix): เลื่อน scroll ไปด้านบน + เพิ่ม margin-top กันถูกบังโดย topbar (fixed)
     myAccountView.style.marginTop = "70px";
-    window.scrollTo(0, 0);
+    scrollPageToTop(); // หน้าร้านใช้ <body> เป็นตัวเลื่อน → window.scrollTo ไม่ทำงาน
+    try { myAccountView.scrollIntoView({ block: "start" }); } catch (_) {}
   }
   // ดึงข้อมูล customer + orders
   await loadCustomerAccountData();
@@ -1870,6 +1877,12 @@ function hideCustomerAccountView() {
   if (searchBox) searchBox.style.display = "";
   const playlistsContainer = document.getElementById("playlistsContainer");
   if (playlistsContainer) { playlistsContainer.style.display = ""; }
+  const playlistWrapper = document.querySelector(".playlist-wrapper");
+  if (playlistWrapper) playlistWrapper.style.display = "";
+  const promoBanner = document.getElementById("promoHomeBanner");
+  if (promoBanner) promoBanner.style.display = "";
+  const pendingBanner = document.getElementById("pendingOrderBanner");
+  if (pendingBanner) pendingBanner.style.display = "";
 }
 
 // 🆕 ดึงข้อมูลบัญชี + ออเดอร์จาก /api/customer/me + /api/customer/orders
