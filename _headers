@@ -2,8 +2,8 @@
   Content-Type: text/plain; charset=utf-8
 
 /*.css
-  Cache-Control: public, max-age=31536000, immutable
+  Cache-Control: public, max-age=31536000
 /*.js
-  Cache-Control: public, max-age=31536000, immutable
+  Cache-Control: no-cache
 /*.svg
-  Cache-Control: public, max-age=31536000, immutable
+  Cache-Control: public, max-age=31536000
