@@ -457,13 +457,28 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     renderCheckoutSummary();
     const feedback = document.getElementById("checkoutFeedback");
     if (feedback) feedback.textContent = "";
-    // เพิ่มใหม่: ถ้าเคยสั่งซื้อมาก่อนและจำชื่อ/เบอร์ไว้ในเครื่องนี้ ให้เติมให้อัตโนมัติ (เฉพาะช่องที่ลูกค้ายังไม่ได้กรอกเอง)
-    const savedInfo = loadCustomerInfo();
-    if (savedInfo) {
+    // 🆕 (2026-10-01): ถ้าลูกค้า login แล้ว → auto-fill ข้อมูลจากบัญชี + แสดงข้อความ
+    //   ลูกค้าไม่ต้องกรอกชื่อ+เบอร์อีก — ใช้ข้อมูลที่ลงทะเบียนไว้
+    const customer = (window.getCurrentCustomer && window.getCurrentCustomer()) ? window.getCurrentCustomer() : null;
+    if (customer) {
       const nameInput = document.getElementById("checkoutCustomerName");
       const whatsappInput = document.getElementById("checkoutCustomerWhatsapp");
-      if (nameInput && !nameInput.value.trim() && savedInfo.customerName) nameInput.value = savedInfo.customerName;
-      if (whatsappInput && !whatsappInput.value.trim() && savedInfo.whatsapp) whatsappInput.value = savedInfo.whatsapp;
+      if (nameInput) nameInput.value = customer.display_name || "";
+      if (whatsappInput) whatsappInput.value = customer.whatsapp || customer.email || "";
+      // แสดงข้อความแจ้งลูกค้าว่าใช้ข้อมูลจากบัญชี (read-only feel)
+      if (feedback) {
+        feedback.textContent = `👤 ใช้ข้อมูลจากบัญชี: ${customer.display_name || ""} (${customer.whatsapp || customer.email || ""})`;
+        feedback.style.color = "var(--accent)";
+      }
+    } else {
+      // ไม่ login → ใช้ข้อมูลที่เคยบันทึกไว้ในเครื่อง (เหมือนเดิม)
+      const savedInfo = loadCustomerInfo();
+      if (savedInfo) {
+        const nameInput = document.getElementById("checkoutCustomerName");
+        const whatsappInput = document.getElementById("checkoutCustomerWhatsapp");
+        if (nameInput && !nameInput.value.trim() && savedInfo.customerName) nameInput.value = savedInfo.customerName;
+        if (whatsappInput && !whatsappInput.value.trim() && savedInfo.whatsapp) whatsappInput.value = savedInfo.whatsapp;
+      }
     }
     closeCart();
     const backdrop = document.getElementById("checkoutBackdrop");
@@ -1980,8 +1995,25 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     if (submitting) return;
     const nameInput = document.getElementById("checkoutCustomerName");
     const whatsappInput = document.getElementById("checkoutCustomerWhatsapp");
-    const customerName = nameInput?.value.trim() || "";
-    const whatsapp = whatsappInput?.value.trim() || "";
+    // 🆕 (2026-10-01): ถ้าลูกค้า login แล้ว → ใช้ข้อมูลจากบัญชีอัตโนมัติ (ไม่ต้องกรอกชื่อ+เบอร์)
+    //   - ถ้า login → customerName = display_name, whatsapp = customer.whatsapp หรือ customer.email
+    //   - ถ้าไม่ login → อ่านจาก input ที่ลูกค้ากรอก (เหมือนเดิม)
+    let customerName = "";
+    let whatsapp = "";
+    const customer = (window.getCurrentCustomer && window.getCurrentCustomer()) ? window.getCurrentCustomer() : null;
+    if (customer) {
+      // login แล้ว → ใช้ข้อมูลจากบัญชี
+      customerName = customer.display_name || "";
+      whatsapp = customer.whatsapp || "";
+      // ถ้าไม่มี whatsapp ในบัญชี → ใช้ email แทน (สำหรับแจ้งเตือน)
+      if (!whatsapp && customer.email) {
+        whatsapp = customer.email; // fallback — ใช้ email เป็นช่องทางติดต่อ (ถ้าไม่มีเบอร์)
+      }
+    } else {
+      // ไม่ login → อ่านจาก input (เหมือนเดิม)
+      customerName = nameInput?.value.trim() || "";
+      whatsapp = whatsappInput?.value.trim() || "";
+    }
     if (!customerName || !whatsapp) {
       setCheckoutFeedback("กรุณากรอกชื่อลูกค้าและเบอร์ WhatsApp");
       return;
@@ -1989,12 +2021,17 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     // 🔧 (2026-09-21 fix Bug #2 Phone validation): ตรวจเบอร์ลาวก่อนส่ง
     //   ป้องกัน: ลูกค้าใส่ "abc" → ผ่าน checkout → แต่ track order ไม่เจอ → โทรด่าแอดมิน
     //   วิธี: ใช้ getPhoneValidationError() (เพิ่มใหม่ด้านบน)
-    const phoneError = getPhoneValidationError(whatsapp);
-    if (phoneError) {
-      setCheckoutFeedback(phoneError);
-      // focus input กลับเพื่อให้ลูกค้าแก้ได้ทันที
-      if (whatsappInput) { whatsappInput.focus(); whatsappInput.select(); }
-      return;
+    //   🆕 (2026-10-01): ถ้า login ด้วย email (ไม่มีเบอร์ WhatsApp) → ข้าม phone validation
+    //     เพราะ whatsapp = email ในกรณีนี้ (ไม่ใช่เบอร์โทร)
+    if (!customer || customer.whatsapp) {
+      // มีเบอร์ WhatsApp จริง → ตรวจเบอร์
+      const phoneError = getPhoneValidationError(whatsapp);
+      if (phoneError) {
+        setCheckoutFeedback(phoneError);
+        // focus input กลับเพื่อให้ลูกค้าแก้ได้ทันที (เฉพาะถ้ายังไม่ login)
+        if (!customer && whatsappInput) { whatsappInput.focus(); whatsappInput.select(); }
+        return;
+      }
     }
     if (state.cart.length === 0) {
       setCheckoutFeedback("ยังไม่มีเพลงในตะกร้า");

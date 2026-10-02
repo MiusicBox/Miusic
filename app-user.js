@@ -2730,7 +2730,17 @@ const trackOrderAllBackBtnEl = document.getElementById("trackOrderAllBackBtn");
 if (trackOrderAllBackBtnEl) trackOrderAllBackBtnEl.addEventListener("click", closeTrackOrderAllDetail);
 
 const trackOrderBtnEl = document.getElementById("trackOrderBtn");
-if (trackOrderBtnEl) trackOrderBtnEl.addEventListener("click", openTrackOrder);
+if (trackOrderBtnEl) trackOrderBtnEl.addEventListener("click", () => {
+  // 🆕 (2026-10-01): ถ้าลูกค้า login แล้ว → ไปหน้า "บัญชีของฉัน" เลย (ไม่ต้องกรอกชื่อ+เบอร์)
+  //   ถ้าไม่ login → เปิด modal track order เหมือนเดิม (กรอกชื่อ+เบอร์)
+  if (window.isCustomerLoggedIn && window.isCustomerLoggedIn()) {
+    // login แล้ว → ไปหน้าบัญชี (มี function ใน app-user.js เอง)
+    if (typeof showCustomerAccountView === "function") showCustomerAccountView();
+  } else {
+    // ไม่ login → เปิด modal track order (เหมือนเดิม)
+    openTrackOrder();
+  }
+});
 const trackOrderCloseEl = document.getElementById("trackOrderClose");
 if (trackOrderCloseEl) trackOrderCloseEl.addEventListener("click", closeTrackOrder);
 const trackOrderBackdropEl = document.getElementById("trackOrderBackdrop");
