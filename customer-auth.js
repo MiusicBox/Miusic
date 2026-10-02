@@ -392,9 +392,18 @@ async function toggleFavorite(songId) {
       if (isFav) customerFavoritesCache.delete(songId);
       else customerFavoritesCache.add(songId);
       // อัปเดต UI ปุ่ม ❤️ ของเพลงนี้ทั้งหมด (อาจมีหลายจุดในหน้า)
+      // 🆕 (v6 fix): ใช้ SVG icon แทน emoji + toggle class is-favorite (CSS จะเปลี่ยนสีให้)
+      const heartSvg = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
       document.querySelectorAll(`[data-favorite-btn="${songId}"]`).forEach(btn => {
-        btn.classList.toggle("is-favorite", !isFav);
-        btn.textContent = isFav ? "🤍" : "❤️";
+        if (isFav) {
+          btn.classList.remove("is-favorite");
+          // ใช้ stroke (ว่าง) แทน fill (เต็ม)
+          btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+        } else {
+          btn.classList.add("is-favorite");
+          // ใช้ fill (เต็มสีแดง)
+          btn.innerHTML = heartSvg;
+        }
       });
       if (typeof showToast === "function") showToast(isFav ? "ลบจากรายการโปรดแล้ว" : "❤️ เพิ่มในรายการโปรดแล้ว", isFav ? "info" : "success");
     } else {
@@ -465,9 +474,9 @@ async function loadCustomerFavorites() {
             <div style="font-size:12px;font-weight:600;color:var(--accent);">${originalPriceDisplay}${priceDisplay}</div>
           </div>
           <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
-            <button class="btn-icon-mini" data-favorite-btn="${escapeHtmlCustomer(f.song_id)}" data-song-name="${songName}" aria-label="ลบจากรายการโปรด" title="ลบจากรายการโปรด" style="background:transparent;border:none;font-size:18px;cursor:pointer;padding:4px 6px;">❤️</button>
-            <button class="btn-icon-mini" data-review-btn="${escapeHtmlCustomer(f.song_id)}" data-song-name="${songName}" aria-label="รีวิวเพลง" title="รีวิวเพลง" style="background:transparent;border:none;font-size:18px;cursor:pointer;padding:4px 6px;">⭐</button>
-            <button class="btn" data-fav-buy="${escapeHtmlCustomer(f.song_id)}" style="padding:6px 10px;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;">🛒</button>
+            <button class="btn-icon-mini" data-favorite-btn="${escapeHtmlCustomer(f.song_id)}" data-song-name="${songName}" aria-label="ลบจากรายการโปรด" title="ลบจากรายการโปรด"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
+            <button class="btn-icon-mini" data-review-btn="${escapeHtmlCustomer(f.song_id)}" data-song-name="${songName}" aria-label="รีวิวเพลง" title="รีวิวเพลง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
+            <button class="btn-icon-mini" data-fav-buy="${escapeHtmlCustomer(f.song_id)}" aria-label="เพิ่มลงตะกร้า" title="เพิ่มลงตะกร้า" style="background:linear-gradient(145deg, #4ade80 0%, #16a34a 50%, #14532d 100%);color:#fff;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg></button>
           </div>
         </div>`;
     }).join("");

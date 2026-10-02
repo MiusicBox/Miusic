@@ -151,6 +151,11 @@ const { loadCart, bindCartEvents, addToCart, getLastOrderRecord, showReceipt, up
 //   (showReceipt/openPaymentModal มาจาก initCart return → อยู่ใน module scope ของ app-user.js)
 window.showReceipt = showReceipt;
 window.openPaymentModal = openPaymentModal;
+// 🆕 (2026-10-02 v6 fix): expose addToCart + findSong ไป window
+//   ให้ customer-auth.js เรียกได้จากหน้าบัญชี (ปุ่ม 🛒 ในรายการโปรด)
+//   (addToCart/findSong อยู่ใน module scope ของ app-user.js → ต้อง expose ถึงเรียกได้)
+window.addToCart = addToCart;
+window.findSong = findSong;
 
 // 💙 (2026-09-20): สไตล์ C2 Vivid Cyan — แยกตัวอักษรชื่อร้านเป็น span.char
 //   แต่ละตัวได้สีฟ้าไล่จากสว่าง→มืด + animation-delay ต่างกัน → กระโดดทีละตัว
@@ -664,8 +669,8 @@ function renderSongGrid() {
                 ${renderDiscountedPriceForSong(s)}
               </div>
               <div class="song-actions-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                <button class="btn-icon-mini" type="button" data-favorite-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="เพิ่มในรายการโปรด" title="เพิ่มในรายการโปรด" style="background:transparent;border:none;font-size:18px;cursor:pointer;padding:4px 6px;border-radius:50%;line-height:1;transition:transform .15s;">🤍</button>
-                <button class="btn-icon-mini" type="button" data-review-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="รีวิวเพลง" title="รีวิวเพลง" style="background:transparent;border:none;font-size:18px;cursor:pointer;padding:4px 6px;border-radius:50%;line-height:1;transition:transform .15s;">⭐</button>
+                <button class="btn-icon-mini" type="button" data-favorite-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="เพิ่มในรายการโปรด" title="เพิ่มในรายการโปรด"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
+                <button class="btn-icon-mini" type="button" data-review-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="รีวิวเพลง" title="รีวิวเพลง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
                 <button class="cart-add-btn cart-add-btn-row" type="button" data-add-cart="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
                   <span>เพิ่มลงตะกร้า</span>
@@ -711,13 +716,13 @@ function renderSongGrid() {
           await window.toggleFavorite(songId);
         }
       });
-      // 🆕 โหลดสถานะ favorite เริ่มต้น (ถ้า login แล้ว)
+      // 🆕 โหลดสถานะ favorite เริ่มต้น (ถ้า login แล้ว) → เปลี่ยนเป็น heart เต็ม (fill สีแดง)
       const songId = el.getAttribute("data-favorite-btn");
       if (typeof window.checkFavoriteStatus === "function" && typeof window.isCustomerLoggedIn === "function" && window.isCustomerLoggedIn()) {
         window.checkFavoriteStatus(songId).then(isFav => {
           if (isFav) {
-            el.textContent = "❤️";
             el.classList.add("is-favorite");
+            el.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
           }
         });
       }
