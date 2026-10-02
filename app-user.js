@@ -2036,20 +2036,22 @@ async function loadCustomerAccountData() {
       return;
     }
     const data = await res.json();
-    const orders = Array.isArray(data?.orders) ? data.orders : [];
-    if (orders.length === 0) {
+    // 🆕 (2026-10-02 v8): แยก login vs guest — ถ้า backend ส่ง orders_login/orders_guest มา ใช้ตรง
+    //   ถ้า backend เดิม (ยังไม่ deploy v8) → ใช้ orders รวม (compat)
+    const ordersLogin = Array.isArray(data?.orders_login) ? data.orders_login : [];
+    const ordersGuest = Array.isArray(data?.orders_guest) ? data.orders_guest : [];
+    const ordersAll = ordersLogin.concat(ordersGuest);
+    if (ordersAll.length === 0) {
       ordersListEl.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:20px;">ยังไม่มีออเดอร์ — ไปเลือกเพลงแล้วสั่งซื้อได้เลย 🎵</div>`;
       return;
     }
-    // 🆕 (2026-10-02): ใช้ renderTrackOrderAllList + openTrackOrderAllDetail เหมือนลูกค้าไม่ login
-    //   → รายละเอียดครบ: เลข Order, ชื่อ, เบอร์, รายการเพลง, ยอดรวม, banner สถานะ,
-    //   ปุ่ม 💳 ชำระเงิน, ติดต่อ WhatsApp, ลบออเดอร์, ดาวน์โหลด ZIP
-    //   เก็บ orders ไว้ใน trackOrderAllOrders (ใช้โดย renderTrackOrderAllList + openTrackOrderAllDetail)
-    orders.forEach(o => { if (!o._docId) o._docId = o.id || ""; });
-    trackOrderAllOrders = orders;
-    // แสดง list ใน myAccountOrdersList (แทน trackOrderAllList เดิม)
-    //   ใช้ renderTrackOrderAllList แต่ส่ง listEl ของเราเอง
-    const accountOrdersHtml = orders.map((order, index) => {
+    // เก็บ orders ทั้งหมดไว้ใน trackOrderAllOrders (ใช้โดย openTrackOrderAllDetail)
+    ordersAll.forEach(o => { if (!o._docId) o._docId = o.id || ""; });
+    trackOrderAllOrders = ordersAll;
+
+    // 🆕 (v8): helper function สร้าง HTML ของ order card — รับ source='login'|'guest' เพื่อแยก index namespace
+    //   ใช้ data-account-order-source บอกว่าออเดอร์จาก login หรือ guest → กัน index ปนกัน
+    function buildOrderCardHtml(order, indexInSource, source) {
       const cfg = TRACK_STATUS_CONFIG[order.status] || TRACK_STATUS_CONFIG.pending_verify;
       const dateStr = order.created_at ? new Date(order.created_at).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
       const pState = getOrderPaymentState(order);
@@ -2059,15 +2061,12 @@ async function loadCustomerAccountData() {
       else if (pState.state === "pending_review") paymentBadgeHtml = `<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(245,180,0,.15);color:#F5B400;font-weight:600;">📸 ส่งสลิปแล้ว</span>`;
       else if (pState.state === "rejected") paymentBadgeHtml = `<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(239,68,68,.15);color:var(--danger);font-weight:600;">⚠️ สลิปถูกปฏิเสธ</span>`;
       const finalTotal = (order.final_total != null) ? Number(order.final_total) : Number(order.total || 0);
-      // 🆕 (2026-10-02 v7): ปุ่ม "⬇️ ดาวน์โหลดเพลง" ใน list view — แสดงเฉพาะออเดอร์สำเร็จ (completed/processing) ที่มี zip_download_url
-      //   ใช้ <a> แทน <button> เพื่อให้คลิกแล้วเปิด download ได้โดยตรง (ไม่ต้องเปิด detail)
-      //   หยุด event propagation เพื่อกันคลิกปุ่มนี้แล้วเปิด detail ด้วย
       const canDownload = order.zip_download_url && (order.status === "processing" || order.status === "completed");
       const downloadBtnHtml = canDownload
-        ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" data-account-download="${index}" class="btn list-download-btn">⬇️ ดาวน์โหลดเพลง</a>`
+        ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" data-account-download="${escapeHtml(source)}-${indexInSource}" class="btn list-download-btn">⬇️ ดาวน์โหลดเพลง</a>`
         : "";
       return `
-        <div class="track-order-all-card" role="button" tabindex="0" data-account-order-index="${index}" style="width:100%;text-align:left;">
+        <div class="track-order-all-card" role="button" tabindex="0" data-account-order-source="${escapeHtml(source)}" data-account-order-index="${indexInSource}" style="width:100%;text-align:left;">
           <div class="track-order-all-card-top">
             <span class="track-order-all-card-id">${escapeHtml(order.receipt_number || "")}</span>
             <span class="track-order-all-card-status" style="color:${cfg.color};background:${cfg.bg};">${cfg.emoji} ${escapeHtml(cfg.label)}</span>
@@ -2079,29 +2078,57 @@ async function loadCustomerAccountData() {
           ${paymentBadgeHtml ? `<div style="margin-top:4px;">${paymentBadgeHtml}</div>` : ""}
           ${downloadBtnHtml}
         </div>`;
-    }).join("");
-    ordersListEl.innerHTML = accountOrdersHtml || '<div class="empty-state">ยังไม่มีออเดอร์</div>';
-    // 🆕 (v7): ปุ่ม "ดาวน์โหลดเพลง" — หยุด event propagation กันเปิด detail พร้อมกัน
+    }
+
+    // 🆕 (v8): สร้าง HTML ของ 2 sections แยกกัน
+    const loginHtml = ordersLogin.length > 0
+      ? `<div style="margin-bottom:14px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(139,92,246,.3);">
+            <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;background:rgba(139,92,246,.15);color:#a78bfa;">🟣 บัญชีนี้</span>
+            <span style="font-size:12px;color:var(--text-dim);">(${ordersLogin.length} ออเดอร์ที่ซื้อตอน login)</span>
+          </div>
+          <div style="display:grid;gap:10px;">
+            ${ordersLogin.map((order, i) => buildOrderCardHtml(order, i, "login")).join("")}
+          </div>
+        </div>`
+      : `<div style="margin-bottom:14px;padding:10px;border-radius:8px;background:rgba(139,92,246,.05);border:1px solid rgba(139,92,246,.15);">
+          <div style="font-size:12px;color:var(--text-dim);">🟣 <strong>บัญชีนี้</strong> — ยังไม่มีออเดอร์ที่ซื้อตอน login</div>
+        </div>`;
+
+    const guestHtml = ordersGuest.length > 0
+      ? `<div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(245,180,0,.3);">
+            <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;background:rgba(245,180,0,.15);color:#F5B400;">👤 ซื้อแบบ guest</span>
+            <span style="font-size:12px;color:var(--text-dim);">(${ordersGuest.length} ออเดอร์ก่อน login)</span>
+          </div>
+          <div style="display:grid;gap:10px;">
+            ${ordersGuest.map((order, i) => buildOrderCardHtml(order, i, "guest")).join("")}
+          </div>
+        </div>`
+      : "";
+
+    ordersListEl.innerHTML = loginHtml + guestHtml;
+
+    // 🆕 (v8): ปุ่ม "ดาวน์โหลดเพลง" — ใช้ selector เดิม แต่ data-account-download มี source-index
     ordersListEl.querySelectorAll("[data-account-download]").forEach(btn => {
       btn.addEventListener("click", (ev) => {
         ev.stopPropagation();
         ev.preventDefault();
-        // เปิดลิงก์ download ใน tab ใหม่
         const url = btn.getAttribute("href");
         if (url) window.open(url, "_blank", "noopener");
       });
     });
-    // bind click → openTrackOrderAllDetail (เหมือนลูกค้าไม่ login)
-    ordersListEl.querySelectorAll("[data-account-order-index]").forEach(btn => {
+
+    // 🆕 (v8): bind click → เปิด detail — แยก login/guest เพื่อหา order ที่ถูกต้อง
+    ordersListEl.querySelectorAll("[data-account-order-source]").forEach(btn => {
       btn.addEventListener("click", () => {
+        const source = btn.getAttribute("data-account-order-source");
         const idx = Number(btn.getAttribute("data-account-order-index"));
-        const order = orders[idx];
+        const order = source === "login" ? ordersLogin[idx] : ordersGuest[idx];
         if (order) {
-          // ปิด account view → เปิด track order detail (ใช้ระบบเดิม)
           const accountView = document.getElementById("myAccountView");
           if (accountView) accountView.style.display = "none";
           openTrackOrderAllDetail(order);
-          // เปิด track order backdrop (ที่มี detail) — ใช้ trackOrderBackdrop ไม่ใช่ trackOrderAllBackdrop
           const trackBackdrop = document.getElementById("trackOrderBackdrop");
           if (trackBackdrop) { trackBackdrop.classList.add("show"); trackBackdrop.setAttribute("aria-hidden", "false"); }
         }
