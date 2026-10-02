@@ -2059,6 +2059,13 @@ async function loadCustomerAccountData() {
       else if (pState.state === "pending_review") paymentBadgeHtml = `<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(245,180,0,.15);color:#F5B400;font-weight:600;">📸 ส่งสลิปแล้ว</span>`;
       else if (pState.state === "rejected") paymentBadgeHtml = `<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(239,68,68,.15);color:var(--danger);font-weight:600;">⚠️ สลิปถูกปฏิเสธ</span>`;
       const finalTotal = (order.final_total != null) ? Number(order.final_total) : Number(order.total || 0);
+      // 🆕 (2026-10-02 v7): ปุ่ม "⬇️ ดาวน์โหลดเพลง" ใน list view — แสดงเฉพาะออเดอร์สำเร็จ (completed/processing) ที่มี zip_download_url
+      //   ใช้ <a> แทน <button> เพื่อให้คลิกแล้วเปิด download ได้โดยตรง (ไม่ต้องเปิด detail)
+      //   หยุด event propagation เพื่อกันคลิกปุ่มนี้แล้วเปิด detail ด้วย
+      const canDownload = order.zip_download_url && (order.status === "processing" || order.status === "completed");
+      const downloadBtnHtml = canDownload
+        ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" data-account-download="${index}" class="btn" style="display:inline-block;padding:6px 12px;font-size:12px;font-weight:600;background:linear-gradient(145deg, #4ade80 0%, #16a34a 50%, #14532d 100%);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:8px;text-decoration:none;cursor:pointer;margin-top:6px;box-shadow:0 4px 12px rgba(22,163,74,.45);">⬇️ ดาวน์โหลดเพลง</a>`
+        : "";
       return `
         <button class="track-order-all-card" type="button" data-account-order-index="${index}" style="width:100%;text-align:left;">
           <div class="track-order-all-card-top">
@@ -2070,9 +2077,20 @@ async function loadCustomerAccountData() {
             <span>${formatPrice(finalTotal)}</span>
           </div>
           ${paymentBadgeHtml ? `<div style="margin-top:4px;">${paymentBadgeHtml}</div>` : ""}
+          ${downloadBtnHtml}
         </button>`;
     }).join("");
     ordersListEl.innerHTML = accountOrdersHtml || '<div class="empty-state">ยังไม่มีออเดอร์</div>';
+    // 🆕 (v7): ปุ่ม "ดาวน์โหลดเพลง" — หยุด event propagation กันเปิด detail พร้อมกัน
+    ordersListEl.querySelectorAll("[data-account-download]").forEach(btn => {
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        // เปิดลิงก์ download ใน tab ใหม่
+        const url = btn.getAttribute("href");
+        if (url) window.open(url, "_blank", "noopener");
+      });
+    });
     // bind click → openTrackOrderAllDetail (เหมือนลูกค้าไม่ login)
     ordersListEl.querySelectorAll("[data-account-order-index]").forEach(btn => {
       btn.addEventListener("click", () => {
