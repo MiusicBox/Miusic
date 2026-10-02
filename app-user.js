@@ -1927,21 +1927,26 @@ async function loadCustomerAccountData() {
       ordersListEl.innerHTML = orders.map(o => window.renderOneOrderCard(o)).join("");
       // bind event listeners (เหมือน renderMyOrdersList ใน app-promotion.js)
       // toggle expand/collapse
-      ordersListEl.querySelectorAll("[data-toggle-order]").forEach(btn => {
-        btn.addEventListener("click", () => {
-          const id = btn.getAttribute("data-toggle-order");
-          if (window.MY_ORDERS_STATE && window.MY_ORDERS_STATE.expandedOrderIds) {
-            if (window.MY_ORDERS_STATE.expandedOrderIds.has(id)) {
-              window.MY_ORDERS_STATE.expandedOrderIds.delete(id);
-            } else {
-              window.MY_ORDERS_STATE.expandedOrderIds.add(id);
+      // 🆕 (2026-10-02 fix): แยก function เพื่อ re-bind ได้หลัง re-render (กันกดปิดไม่ได้)
+      function bindToggle() {
+        ordersListEl.querySelectorAll("[data-toggle-order]").forEach(btn => {
+          btn.addEventListener("click", () => {
+            const id = btn.getAttribute("data-toggle-order");
+            if (window.MY_ORDERS_STATE && window.MY_ORDERS_STATE.expandedOrderIds) {
+              if (window.MY_ORDERS_STATE.expandedOrderIds.has(id)) {
+                window.MY_ORDERS_STATE.expandedOrderIds.delete(id);
+              } else {
+                window.MY_ORDERS_STATE.expandedOrderIds.add(id);
+              }
+              // re-render + re-bind ทุก event ใหม่ (toggle + ปุ่มต่าง ๆ)
+              ordersListEl.innerHTML = orders.map(o => window.renderOneOrderCard(o)).join("");
+              bindToggle();
+              bindAccountOrderEvents(ordersListEl, orders);
             }
-            // re-render
-            ordersListEl.innerHTML = orders.map(o => window.renderOneOrderCard(o)).join("");
-            bindAccountOrderEvents(ordersListEl, orders);
-          }
+          });
         });
-      });
+      }
+      bindToggle();
       // bind ปุ่มอื่น ๆ
       bindAccountOrderEvents(ordersListEl, orders);
     } else {
