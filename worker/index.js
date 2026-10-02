@@ -5228,10 +5228,37 @@ async function handleCustomerAuth(request, env, url) {
     const customer = await getCustomerSession(request, env);
     if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
     try {
+      // 🆕 (2026-10-02 v6 fix): JOIN กับ documents เพื่อดึงข้อมูลเพลงมาด้วย
+      //   เดิม: ส่งกลับแค่ song_id → frontend แสดง "เพลง ID: <uuid>" ไม่สวย
+      //   ใหม่: JOIN ดึง song_name, cover_url, dj_name, artist, price, discount_price มาด้วย
+      //   ใช้ json_extract ดึง fields จาก JSON blob ของเพลง
       const { results } = await env.DB.prepare(
-        "SELECT song_id, created_at FROM customer_favorites WHERE customer_id = ? ORDER BY created_at DESC LIMIT 200"
+        "SELECT f.song_id, f.created_at as favorited_at, " +
+        "json_extract(d.data, '$.song_name') as song_name, " +
+        "json_extract(d.data, '$.cover_url') as cover_url, " +
+        "json_extract(d.data, '$.dj_name') as dj_name, " +
+        "json_extract(d.data, '$.artist') as artist, " +
+        "json_extract(d.data, '$.price') as price, " +
+        "json_extract(d.data, '$.discount_price') as discount_price " +
+        "FROM customer_favorites f " +
+        "LEFT JOIN documents d ON d.collection = 'songs' AND d.id = f.song_id " +
+        "WHERE f.customer_id = ? " +
+        "ORDER BY f.created_at DESC LIMIT 200"
       ).bind(customer.id).all();
-      return jsonResponse({ ok: true, favorites: results || [] });
+      // ตรวจว่าเพลงยังมีอยู่จริง (ถ้าถูกลบ → song_name จะเป็น NULL → ข้ามไปใน frontend)
+      const favorites = (results || []).map(r => ({
+        song_id: r.song_id,
+        created_at: r.favorited_at,
+        song: r.song_name ? {
+          song_name: r.song_name,
+          cover_url: r.cover_url,
+          dj_name: r.dj_name,
+          artist: r.artist,
+          price: r.price,
+          discount_price: r.discount_price,
+        } : null,
+      }));
+      return jsonResponse({ ok: true, favorites });
     } catch (err) {
       if (String(err?.message || "").includes("no such table")) {
         return jsonResponse({ error: "ระบบยังไม่พร้อม — กรุณารัน scripts/migrate-customer-v6.sql ใน D1 Console", code: "TABLE_NOT_CREATED" }, 500);
@@ -5319,10 +5346,35 @@ async function handleCustomerAuth(request, env, url) {
     const customer = await getCustomerSession(request, env);
     if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
     try {
+      // 🆕 (2026-10-02 v6 fix): JOIN กับ documents เพื่อดึงข้อมูลเพลงมาด้วย
+      //   เดิม: ส่งกลับแค่ song_id → frontend แสดง "เพลง ID: <uuid>" ไม่สวย
+      //   ใหม่: JOIN ดึง song_name, cover_url, dj_name, artist มาด้วย
       const { results } = await env.DB.prepare(
-        "SELECT id, song_id, rating, review, created_at, updated_at FROM song_reviews WHERE customer_id = ? ORDER BY updated_at DESC LIMIT 200"
+        "SELECT r.id, r.song_id, r.rating, r.review, r.created_at, r.updated_at, " +
+        "json_extract(d.data, '$.song_name') as song_name, " +
+        "json_extract(d.data, '$.cover_url') as cover_url, " +
+        "json_extract(d.data, '$.dj_name') as dj_name, " +
+        "json_extract(d.data, '$.artist') as artist " +
+        "FROM song_reviews r " +
+        "LEFT JOIN documents d ON d.collection = 'songs' AND d.id = r.song_id " +
+        "WHERE r.customer_id = ? " +
+        "ORDER BY r.updated_at DESC LIMIT 200"
       ).bind(customer.id).all();
-      return jsonResponse({ ok: true, reviews: results || [] });
+      const reviews = (results || []).map(r => ({
+        id: r.id,
+        song_id: r.song_id,
+        rating: r.rating,
+        review: r.review,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+        song: r.song_name ? {
+          song_name: r.song_name,
+          cover_url: r.cover_url,
+          dj_name: r.dj_name,
+          artist: r.artist,
+        } : null,
+      }));
+      return jsonResponse({ ok: true, reviews });
     } catch (err) {
       if (String(err?.message || "").includes("no such table")) {
         return jsonResponse({ error: "ระบบยังไม่พร้อม — กรุณารัน scripts/migrate-customer-v6.sql ใน D1 Console", code: "TABLE_NOT_CREATED" }, 500);

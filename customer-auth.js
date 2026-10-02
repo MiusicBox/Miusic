@@ -428,21 +428,71 @@ async function loadCustomerFavorites() {
       wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">ยังไม่มีเพลงโปรด — กด ❤️ ในเพลงเพื่อเพิ่ม</div>';
       return;
     }
-    // โหลดข้อมูลเพลงแต่ละเพลง (ใช้ db-client ถ้ามี หรือเรียก API)
-    //   แบบง่าย: แสดงเฉพาะ song_id + ปุ่มซื้อ/ลบ → ค่อยโหลดชื่อเพลงทีหลังถ้าต้องการ
-    wrap.innerHTML = favorites.map(f => `
-      <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;display:flex;align-items:center;gap:8px;">
-        <div style="flex:1;min-width:0;font-size:13px;">เพลง ID: ${escapeHtmlCustomer(f.song_id)}</div>
-        <button class="btn" data-fav-buy="${escapeHtmlCustomer(f.song_id)}" style="padding:6px 10px;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;">🛒 ซื้อ</button>
-        <button class="btn" data-fav-remove="${escapeHtmlCustomer(f.song_id)}" style="padding:6px 10px;font-size:12px;background:transparent;color:var(--danger);border:1px solid rgba(239,68,68,.3);border-radius:6px;cursor:pointer;">❌ ลบ</button>
-      </div>
-    `).join("");
-    // ผูกปุ่มลบ
+    // 🆕 (v6 fix): render เป็น song card สวยๆ เหมือนหน้ารายการเพลง (มี cover, ชื่อ, DJ, ราคา, ปุ่ม ❤️ ⭐ 🛒)
+    //   ถ้าเพลงถูกลบ (song = null) → แสดงข้อความว่าเพลงถูกลบแล้ว + ปุ่มลบจากรายการโปรด
+    wrap.innerHTML = favorites.map(f => {
+      const s = f.song;
+      if (!s) {
+        // เพลงถูกลบจากระบบ → แสดงกล่องเตือน + ปุ่มลบจากรายการโปรด
+        return `
+          <div style="background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:10px;display:flex;align-items:center;gap:8px;">
+            <div style="flex:1;min-width:0;font-size:13px;color:var(--danger);">⚠️ เพลงนี้ถูกลบจากระบบแล้ว</div>
+            <button class="btn" data-fav-remove="${escapeHtmlCustomer(f.song_id)}" style="padding:6px 10px;font-size:12px;background:transparent;color:var(--danger);border:1px solid rgba(239,68,68,.3);border-radius:6px;cursor:pointer;">❌ ลบจากรายการ</button>
+          </div>`;
+      }
+      // ใช้ escapeHtmlCustomer กัน XSS
+      const songName = escapeHtmlCustomer(s.song_name || "ไม่มีชื่อ");
+      const coverUrl = escapeHtmlCustomer(s.cover_url || "default-song-cover.svg");
+      const djName = s.dj_name ? escapeHtmlCustomer(s.dj_name) : "";
+      const artist = s.artist ? escapeHtmlCustomer(s.artist) : "";
+      // คำนวณราคา (มี discount ใช้ discount)
+      const price = Number(s.price || 0);
+      const discountPrice = s.discount_price != null ? Number(s.discount_price) : null;
+      const finalPrice = discountPrice != null && discountPrice > 0 && discountPrice < price ? discountPrice : price;
+      const priceDisplay = finalPrice > 0 ? finalPrice.toLocaleString("th-TH") + " ₭" : "ฟรี";
+      const originalPriceDisplay = (discountPrice != null && discountPrice > 0 && discountPrice < price) ? `<span style="text-decoration:line-through;color:var(--text-dim);font-size:11px;margin-right:4px;">${price.toLocaleString("th-TH")}₭</span>` : "";
+      return `
+        <div class="song-card song-card-row" data-id="${escapeHtmlCustomer(f.song_id)}" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;display:flex;gap:10px;align-items:center;">
+          <div style="width:50px;height:50px;border-radius:6px;overflow:hidden;flex-shrink:0;">
+            <img src="${coverUrl}" loading="lazy" alt="${songName}" onerror="this.src='default-song-cover.svg'" style="width:100%;height:100%;object-fit:cover;">
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:13px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${songName}</div>
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">
+              ${djName ? `<span>🎧 ${djName}</span>` : ""}
+              ${artist ? `${djName ? " · " : ""}<span>${artist}</span>` : ""}
+            </div>
+            <div style="font-size:12px;font-weight:600;color:var(--accent);">${originalPriceDisplay}${priceDisplay}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
+            <button class="btn-icon-mini" data-favorite-btn="${escapeHtmlCustomer(f.song_id)}" data-song-name="${songName}" aria-label="ลบจากรายการโปรด" title="ลบจากรายการโปรด" style="background:transparent;border:none;font-size:18px;cursor:pointer;padding:4px 6px;">❤️</button>
+            <button class="btn-icon-mini" data-review-btn="${escapeHtmlCustomer(f.song_id)}" data-song-name="${songName}" aria-label="รีวิวเพลง" title="รีวิวเพลง" style="background:transparent;border:none;font-size:18px;cursor:pointer;padding:4px 6px;">⭐</button>
+            <button class="btn" data-fav-buy="${escapeHtmlCustomer(f.song_id)}" style="padding:6px 10px;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;">🛒</button>
+          </div>
+        </div>`;
+    }).join("");
+    // ผูกปุ่ม ❤️ (ลบจากโปรด — เพราะในหน้านี้เพลงเป็นโปรดอยู่แล้ว)
+    wrap.querySelectorAll("[data-favorite-btn]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const songId = btn.getAttribute("data-favorite-btn");
+        await toggleFavorite(songId);
+        loadCustomerFavorites(); // refresh
+      });
+    });
+    // ผูกปุ่ม ⭐ (เปิด modal รีวิว)
+    wrap.querySelectorAll("[data-review-btn]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const songId = btn.getAttribute("data-review-btn");
+        const songName = btn.getAttribute("data-song-name") || "";
+        if (typeof openSongReviewModal === "function") openSongReviewModal(songId, songName);
+      });
+    });
+    // ผูกปุ่มลบ (สำหรับเพลงที่ถูกลบ)
     wrap.querySelectorAll("[data-fav-remove]").forEach(btn => {
       btn.addEventListener("click", async () => {
         const songId = btn.getAttribute("data-fav-remove");
         await toggleFavorite(songId);
-        loadCustomerFavorites(); // refresh
+        loadCustomerFavorites();
       });
     });
     // ผูกปุ่มซื้อ (เรียก addToCart ถ้ามี)
@@ -450,7 +500,14 @@ async function loadCustomerFavorites() {
       btn.addEventListener("click", () => {
         const songId = btn.getAttribute("data-fav-buy");
         if (typeof window.addToCart === "function") {
-          window.addToCart(songId);
+          // ดึงข้อมูลเพลงจาก STATE ถ้ามี ไม่งั้นใช้ song_id อย่างเดียว
+          const song = (typeof window.findSong === "function") ? window.findSong(songId) : null;
+          if (song) {
+            window.addToCart(song);
+          } else {
+            // ไม่พบใน STATE (อาจเป็นเพลงที่ยังไม่ได้โหลด) → สร้าง minimal object
+            window.addToCart({ id: songId, song_name: btn.closest("[data-id]")?.querySelector("[data-song-name]")?.getAttribute("data-song-name") || songId });
+          }
           if (typeof showToast === "function") showToast("🛒 เพิ่มในตะกร้าแล้ว", "success");
         }
       });
@@ -588,21 +645,34 @@ async function loadCustomerReviews() {
       wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">ยังไม่มีรีวิว — ซื้อเพลงแล้วรีวิวได้</div>';
       return;
     }
+    // 🆕 (v6 fix): render พร้อมชื่อเพลง + cover (ถ้าเพลงถูกลบ → แสดง song_id แทน)
     wrap.innerHTML = reviews.map(r => {
       const stars = "★".repeat(r.rating) + "☆".repeat(5 - r.rating);
       const date = r.updated_at ? new Date(r.updated_at).toLocaleDateString("th-TH") : "-";
+      const s = r.song;
+      const songName = s ? escapeHtmlCustomer(s.song_name || "ไม่มีชื่อ") : `เพลง ID: ${escapeHtmlCustomer(r.song_id)}`;
+      const coverUrl = s ? escapeHtmlCustomer(s.cover_url || "default-song-cover.svg") : "default-song-cover.svg";
+      const djName = s && s.dj_name ? escapeHtmlCustomer(s.dj_name) : "";
+      const artist = s && s.artist ? escapeHtmlCustomer(s.artist) : "";
+      const deletedBadge = !s ? `<span style="color:var(--danger);font-size:11px;"> (ถูกลบแล้ว)</span>` : "";
       return `
-        <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;">
-            <div style="font-size:13px;font-weight:600;">เพลง ID: ${escapeHtmlCustomer(r.song_id)}</div>
-            <span style="color:#F5B400;font-size:14px;">${stars}</span>
+        <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;display:flex;gap:10px;align-items:flex-start;">
+          <div style="width:40px;height:40px;border-radius:6px;overflow:hidden;flex-shrink:0;">
+            <img src="${coverUrl}" loading="lazy" alt="${songName}" onerror="this.src='default-song-cover.svg'" style="width:100%;height:100%;object-fit:cover;">
           </div>
-          ${r.review ? `<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">${escapeHtmlCustomer(r.review)}</div>` : ""}
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <span style="font-size:11px;color:var(--text-dim);">${escapeHtmlCustomer(date)}</span>
-            <div style="display:flex;gap:6px;">
-              <button class="btn" data-review-edit="${escapeHtmlCustomer(r.song_id)}" style="padding:4px 8px;font-size:11px;background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:4px;cursor:pointer;">✎ แก้ไข</button>
-              <button class="btn" data-review-delete="${escapeHtmlCustomer(r.song_id)}" style="padding:4px 8px;font-size:11px;background:transparent;color:var(--danger);border:1px solid rgba(239,68,68,.3);border-radius:4px;cursor:pointer;">🗑 ลบ</button>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px;">
+              <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${songName}${deletedBadge}</div>
+              <span style="color:#F5B400;font-size:14px;flex-shrink:0;">${stars}</span>
+            </div>
+            ${(djName || artist) ? `<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">${djName ? `🎧 ${djName}` : ""}${djName && artist ? " · " : ""}${artist ? artist : ""}</div>` : ""}
+            ${r.review ? `<div style="font-size:12px;color:var(--text);margin-bottom:6px;line-height:1.4;">${escapeHtmlCustomer(r.review)}</div>` : ""}
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:11px;color:var(--text-dim);">${escapeHtmlCustomer(date)}</span>
+              <div style="display:flex;gap:6px;">
+                ${s ? `<button class="btn" data-review-edit="${escapeHtmlCustomer(r.song_id)}" data-song-name="${songName}" style="padding:4px 8px;font-size:11px;background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:4px;cursor:pointer;">✎ แก้ไข</button>` : ""}
+                <button class="btn" data-review-delete="${escapeHtmlCustomer(r.song_id)}" style="padding:4px 8px;font-size:11px;background:transparent;color:var(--danger);border:1px solid rgba(239,68,68,.3);border-radius:4px;cursor:pointer;">🗑 ลบ</button>
+              </div>
             </div>
           </div>
         </div>`;
@@ -611,7 +681,8 @@ async function loadCustomerReviews() {
     wrap.querySelectorAll("[data-review-edit]").forEach(btn => {
       btn.addEventListener("click", () => {
         const songId = btn.getAttribute("data-review-edit");
-        openSongReviewModal(songId, "");
+        const songName = btn.getAttribute("data-song-name") || "";
+        openSongReviewModal(songId, songName);
       });
     });
     // ผูกปุ่มลบ
