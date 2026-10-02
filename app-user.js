@@ -2477,7 +2477,6 @@ function renderTrackOrderResult(order) {
     <div class="track-order-row"><span>เลข Order</span><strong>${escapeHtml(order.receipt_number || "")}</strong></div>
     <div class="track-order-row"><span>ชื่อลูกค้า</span><strong>${escapeHtml(order.customer_name || "")}</strong></div>
     <div class="track-order-row"><span>เบอร์โทร</span><strong>${escapeHtml(order.whatsapp || "")}</strong></div>
-    <div class="track-order-items">${itemsHtml}</div>
     <div class="track-order-total"><span>ยอดรวม</span><span>${formatPrice(order.total)}</span></div>
     ${/* 🛡️ (added 2026-09-26): banner สถานะการชำระเงิน */ ""}
     ${paymentBanner}
@@ -2493,6 +2492,7 @@ function renderTrackOrderResult(order) {
           ? `<div style="margin-top:10px;font-size:12px;color:var(--text-dim);">⏳ รอแอดมินตรวจสอบการโอนเงิน — หลังยืนยันแล้วไฟล์จะถูกเตรียมให้</div>`
           : ""}
     <div class="track-order-actions">
+      <button class="btn" type="button" id="trackOrderReceiptBtn" style="background:linear-gradient(145deg, #4ade80 0%, #16a34a 50%, #14532d 100%);color:#fff;border:1px solid rgba(255,255,255,.25);box-shadow:0 4px 12px rgba(22,163,74,.45),inset 0 1px 0 rgba(255,255,255,.22);">📄 ดูใบเสร็จ</button>
       ${/* 🛡️ (added 2026-09-26): ซ่อนปุ่ม "ชำระเงิน" เมื่อ state เป็น paid / pending_review / verified_awaiting_zip */ ""}
       ${/*   ปุ่มยังแสดงเมื่อ state เป็น unpaid / rejected / cancelled (ลูกค้ายังชำระ/ส่งสลิปใหม่ได้) */ ""}
       ${paymentState.showPayButton ? `<button class="btn" type="button" id="trackOrderPayBtn" style="background:var(--accent);color:#fff;">💳 ชำระเงิน</button>` : ""}
@@ -2501,6 +2501,20 @@ function renderTrackOrderResult(order) {
     </div>
   `;
   resultEl.hidden = false;
+
+  // 🆕 (2026-10-02 v7): ปุ่ม "📄 ดูใบเสร็จ" → เปิด receipt modal ผ่าน showReceipt
+  const receiptBtn = document.getElementById("trackOrderReceiptBtn");
+  if (receiptBtn) {
+    receiptBtn.onclick = () => {
+      const orderWithId = order._docId ? order : { ...order, _docId: order._docId || order.id };
+      // ปิด track order backdrop ก่อน แล้วเปิด receipt modal
+      const trackBackdrop = document.getElementById("trackOrderBackdrop");
+      if (trackBackdrop) trackBackdrop.classList.remove("show");
+      const trackAllBackdrop = document.getElementById("trackOrderAllBackdrop");
+      if (trackAllBackdrop) trackAllBackdrop.classList.remove("show");
+      showReceipt(orderWithId, order.receipt_number, STATE.settings.whatsapp_number);
+    };
+  }
 
   const waBtn = document.getElementById("trackOrderWhatsappBtn");
   if (waBtn) {
@@ -2848,7 +2862,6 @@ function openTrackOrderAllDetail(order) {
     <div class="track-order-row"><span>เลข Order</span><strong>${escapeHtml(order.receipt_number || "")}</strong></div>
     <div class="track-order-row"><span>ชื่อลูกค้า</span><strong>${escapeHtml(order.customer_name || "")}</strong></div>
     <div class="track-order-row"><span>เบอร์โทร</span><strong>${escapeHtml(order.whatsapp || "")}</strong></div>
-    <div class="track-order-items">${itemsHtml}</div>
     <div class="track-order-total"><span>ยอดรวม</span><span>${formatPrice(order.total)}</span></div>
     ${/* 🛡️ (added 2026-09-26): banner สถานะการชำระเงิน */ ""}
     ${paymentBanner}
@@ -2864,6 +2877,7 @@ function openTrackOrderAllDetail(order) {
           ? `<div style="margin-top:10px;font-size:12px;color:var(--text-dim);">⏳ รอแอดมินตรวจสอบการโอนเงิน — หลังยืนยันแล้วไฟล์จะถูกเตรียมให้</div>`
           : ""}
     <div class="track-order-actions">
+      <button class="btn" type="button" id="trackOrderAllReceiptBtn" style="background:linear-gradient(145deg, #4ade80 0%, #16a34a 50%, #14532d 100%);color:#fff;border:1px solid rgba(255,255,255,.25);box-shadow:0 4px 12px rgba(22,163,74,.45),inset 0 1px 0 rgba(255,255,255,.22);">📄 ดูใบเสร็จ</button>
       ${/* 🛡️ (added 2026-09-26): ซ่อนปุ่ม "ชำระเงิน" เมื่อ state เป็น paid/pending_review/verified_awaiting_zip */ ""}
       ${paymentState.showPayButton ? `<button class="btn" type="button" id="trackOrderAllPayBtn" style="background:var(--accent);color:#fff;">💳 ชำระเงิน</button>` : ""}
       <button class="btn" type="button" id="trackOrderAllWhatsappBtn">ติดต่อแอดมินผ่าน WhatsApp</button>
@@ -2873,6 +2887,20 @@ function openTrackOrderAllDetail(order) {
 
   if (listEl) listEl.hidden = true;
   detailEl.hidden = false;
+
+  // 🆕 (2026-10-02 v7): ปุ่ม "📄 ดูใบเสร็จ" → เปิด receipt modal ผ่าน showReceipt
+  const receiptBtn = document.getElementById("trackOrderAllReceiptBtn");
+  if (receiptBtn) {
+    receiptBtn.onclick = () => {
+      const orderWithId = order._docId ? order : { ...order, _docId: order._docId || order.id };
+      // ปิด track order backdrop ก่อน แล้วเปิด receipt modal
+      const trackBackdrop = document.getElementById("trackOrderBackdrop");
+      if (trackBackdrop) trackBackdrop.classList.remove("show");
+      const trackAllBackdrop = document.getElementById("trackOrderAllBackdrop");
+      if (trackAllBackdrop) trackAllBackdrop.classList.remove("show");
+      showReceipt(orderWithId, order.receipt_number, STATE.settings.whatsapp_number);
+    };
+  }
 
   const waBtn = document.getElementById("trackOrderAllWhatsappBtn");
   if (waBtn) {
