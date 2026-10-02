@@ -1719,6 +1719,7 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
     //   เพื่อให้แน่ใจว่า view โปรโมชั่นจะถูกซ่อนเสมอเมื่อเปลี่ยนไปแท็บอื่น
     //   ไม่กระทบ branch เดิม — เพียงเรียกฟังก์ชัน hidePromotionsView() ที่เช็ค element เอง (ปลอดภัย)
     hidePromotionsView();
+    hideCustomerAccountView(); // 🔧 (2026-10-02 fix2): กัน overlay บัญชีของฉันค้างทับหน้าอื่น
     if (tab === "home") {
       hideMyOrdersView();
       cleanupMyOrdersView();
@@ -1763,9 +1764,16 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
     }
     else if (tab === "myorders") {
       // ===== เพิ่มใหม่: tab "ออเดอร์ของฉัน" =====
-      showMyOrdersView();
-      initMyOrdersView();
-      scrollPageToTop();
+      // 🔧 (2026-10-02 fix2): ถ้า login แล้ว → เปิดหน้าบัญชี/ออเดอร์ของฉันจากบัญชีเลย
+      let loggedInCustomer = null;
+      try { loggedInCustomer = JSON.parse(localStorage.getItem("miusic_customer_session") || "null"); } catch (_) {}
+      if (loggedInCustomer) {
+        showCustomerAccountView();
+      } else {
+        showMyOrdersView();
+        initMyOrdersView();
+        scrollPageToTop();
+      }
     }
     else if (tab === "promotions") {
       // 🎁 (2026-09-20) เพิ่มใหม่: tab "โปรโมชั่น" — หน้าพรีวิวโปรโมชั่นทั้งหมดที่ active
@@ -1836,44 +1844,22 @@ async function showCustomerAccountView() {
     openTrackOrder();
     return;
   }
-  // login แล้ว → ตั้งค่า MY_ORDERS_STATE ด้วยข้อมูลจากบัญชี
-  if (typeof MY_ORDERS_STATE !== "undefined") {
-    MY_ORDERS_STATE.customerName = customer.display_name || "";
-    MY_ORDERS_STATE.customerWhatsapp = customer.whatsapp || "";
-  }
-  // แสดง #myOrdersView เดิม
-  if (typeof showMyOrdersView === "function") showMyOrdersView();
-  // ซ่อนฟอร์มกรอกชื่อ+เบอร์ (เพราะ login แล้วไม่ต้องกรอก)
-  setTimeout(() => {
-    const nameInput = document.getElementById("myOrdersName");
-    const whatsappInput = document.getElementById("myOrdersWhatsapp");
-    const nameField = nameInput?.closest(".field");
-    const whatsappField = whatsappInput?.closest(".field");
-    if (nameField) nameField.style.display = "none";
-    if (whatsappField) whatsappField.style.display = "none";
-    // แสดงข้อความแจ้งว่าใช้ข้อมูลจากบัญชี
-    const feedback = document.getElementById("myOrdersFeedback");
-    if (feedback) {
-      feedback.innerHTML = `<div style="background:rgba(139,92,246,.1);border:1px solid var(--accent);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px;">👤 ใช้ข้อมูลจากบัญชี: <strong>${(customer.display_name || "")}</strong> (${(customer.whatsapp || customer.email || "")})</div>`;
-      feedback.style.color = "var(--text)";
-    }
-    // โหลดออเดอร์ทันที (ไม่ต้องกดปุ่มค้นหา)
-    if (typeof fetchMyOrdersOnce === "function") fetchMyOrdersOnce();
-  }, 100);
+  // 🔧 (2026-10-02 fix2): เดิมเรียก showMyOrdersView() อย่างเดียว → #myOrdersView เป็น div ว่าง
+  //   (เนื้อหาถูกสร้างโดย initMyOrdersView() เท่านั้น) ทำให้หน้าว่าง + grid/chips ถูกซ่อน → ดูเหมือนค้าง
+  //   แก้: ใช้ overlay #myAccountView (มี profile + รายการออเดอร์ในตัว) + ดึงจาก /api/customer/orders
+  //   ไม่พึ่ง myOrdersView / ชื่อ+เบอร์ → ใช้ได้กับลูกค้าที่สมัครด้วยอีเมลอย่างเดียวด้วย
+  const accountView = document.getElementById("myAccountView");
+  if (!accountView) { openTrackOrder(); return; }
+  accountView.style.display = "block";
+  document.body.classList.remove("modal-open");
+  accountView.scrollTop = 0;
+  try { await loadCustomerAccountData(); } catch (err) { console.error("loadCustomerAccountData error:", err); }
 }
 
 // 🆕 ซ่อนหน้าบัญชีของฉัน (ใช้ hideMyOrdersView เดิม + แสดงฟอร์มกลับมา)
 function hideCustomerAccountView() {
-  if (typeof hideMyOrdersView === "function") hideMyOrdersView();
-  // แสดงฟอร์มกรอกชื่อ+เบอร์กลับมา (กันกรณี logout)
-  setTimeout(() => {
-    const nameInput = document.getElementById("myOrdersName");
-    const whatsappInput = document.getElementById("myOrdersWhatsapp");
-    const nameField = nameInput?.closest(".field");
-    const whatsappField = whatsappInput?.closest(".field");
-    if (nameField) nameField.style.display = "";
-    if (whatsappField) whatsappField.style.display = "";
-  }, 100);
+  const accountView = document.getElementById("myAccountView");
+  if (accountView) accountView.style.display = "none";
 }
 
 // 🆕 ดึงข้อมูลบัญชี + ออเดอร์จาก /api/customer/me + /api/customer/orders
@@ -1964,6 +1950,7 @@ async function loadCustomerAccountData() {
 
 // 🆕 expose ให้ customer-auth.js เรียก (ตอนกดปุ่ม "👤 บัญชี")
 window.showCustomerAccountView = showCustomerAccountView;
+window.loadCustomerAccountData = loadCustomerAccountData;
 // 🆕 (2026-10-02 fix): expose showMyOrdersView + hideMyOrdersView ให้ customer-auth.js fallback ใช้ได้
 window.showMyOrdersView = showMyOrdersView;
 window.hideMyOrdersView = hideMyOrdersView;
