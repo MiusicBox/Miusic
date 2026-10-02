@@ -5177,17 +5177,34 @@ async function handleCustomerAuth(request, env, url) {
   }
 
   // ---------- GET /api/customer/orders ----------
-  // ดึงออเดอร์ทั้งหมดของ customer_id นี้ (เรียงจากล่าสุดก่อน)
-  // ใช้ customer_id จาก session → ค้นใน documents WHERE collection='orders' AND customer_id = ?
+  // ดึงออเดอร์ทั้งหมดของลูกค้า (เรียงจากล่าสุดก่อน)
+  //
+  // 🆕 (2026-10-02 v6 — ฟีเจอร์ #1 ประวัติซื้อครบถ้วน):
+  //   เดิม: ค้นเฉพาะ customer_id เท่านั้น → ลูกค้าที่เคยซื้อแบบ guest (ใส่ชื่อ+เบอร์ WhatsApp) จะไม่เห็นออเดอร์เก่า
+  //   ใหม่: ค้นด้วย customer_id OR customer_whatsapp (เบอร์ WhatsApp ของลูกค้าที่ login)
+  //         → ลูกค้าเห็นออเดอร์ทั้งหมดที่เคยซื้อ (login แล้ว + guest เก่า) ในที่เดียว
+  //   ผลกระทบระบบเดิม: ต่ำ — เป็นการขยายเงื่อนไขค้นหา ไม่เปลี่ยน endpoint signature หรือ response shape
+  //                      ไม่ update DB → ข้อมูลเดิมถูก保存 100%
   if (path === "orders" && request.method === "GET") {
     if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
     const customer = await getCustomerSession(request, env);
     if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
     try {
-      // ค้น orders ที่ผูกกับ customer_id นี้ (ใช้ json_extract เพราะ customer_id เก็บใน JSON blob)
-      const { results } = await env.DB.prepare(
-        "SELECT id, data FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ? ORDER BY created_at DESC LIMIT 200"
-      ).bind(customer.id).all();
+      // ค้น orders ที่ผูกกับ customer_id นี้ OR ที่มี customer_whatsapp ตรงกับเบอร์ของลูกค้าที่ login
+      //   กรณีลูกค้า login ด้วย email (ไม่มี whatsapp) → customer.whatsapp เป็น null → query ใช้ customer_id เท่านั้น
+      //   กรณีลูกค้า login ด้วย whatsapp → จะเห็นทั้งออเดอร์ที่ login ซื้อ + ออเดอร์เก่าที่ซื้อแบบ guest
+      const customerWhatsapp = customer.whatsapp || "";
+      let sql, binds;
+      if (customerWhatsapp) {
+        // ค้นด้วย customer_id OR customer_whatsapp (กันซ้ำด้วย DISTINCT — ถ้าออเดอร์มีทั้ง customer_id และ customer_whatsapp ตรงเบอร์ลูกค้า)
+        sql = "SELECT DISTINCT id, data, created_at FROM documents WHERE collection = 'orders' AND (json_extract(data, '$.customer_id') = ? OR json_extract(data, '$.customer_whatsapp') = ?) ORDER BY created_at DESC LIMIT 200";
+        binds = [customer.id, customerWhatsapp];
+      } else {
+        // ลูกค้าไม่มีเบอร์ WhatsApp → ค้นด้วย customer_id เท่านั้น (เหมือนเดิม)
+        sql = "SELECT id, data FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ? ORDER BY created_at DESC LIMIT 200";
+        binds = [customer.id];
+      }
+      const { results } = await env.DB.prepare(sql).bind(...binds).all();
       const orders = (results || []).map(row => {
         let data;
         try { data = JSON.parse(row.data); } catch { data = {}; }
