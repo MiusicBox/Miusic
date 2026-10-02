@@ -4790,7 +4790,12 @@ async function handleOrderZipAbort(request, env) {
 //   ผลกระทบระบบเดิม: 0% — endpoints ใหม่ทั้งหมด ไม่แตะ /api/auth/* หรือ /api/db/*
 // ===================================================
 async function handleCustomerAuth(request, env, url) {
-  const path = url.pathname.slice("/api/customer/".length);
+  // 🔧 FIX (like button): /api/songs/:id/like(s) ถูก route เข้ามาที่นี่ด้วย แต่เดิม slice แค่ "/api/customer/" (14 ตัวอักษร)
+  //   ทำให้ path ของ /api/songs/... เพี้ยน (ไม่ขึ้นต้นด้วย "songs/") → ไม่เคยเข้า handler ถูกใจ → 404 → กดแล้วไม่เกิดอะไรขึ้น
+  //   แก้: ถ้าเป็น /api/songs/... ให้ตัดแค่ "/api/" เพื่อให้ได้ "songs/<id>/like"
+  const path = url.pathname.startsWith("/api/songs/")
+    ? url.pathname.slice("/api/".length)
+    : url.pathname.slice("/api/customer/".length);
 
   // ---------- POST /api/customer/register ----------
   // รับ: { email?, whatsapp?, password, display_name }
