@@ -71,35 +71,9 @@ function syncCustomerAuthUI() {
       if (typeof window.showCustomerAccountView === "function") {
         window.showCustomerAccountView();
       } else {
-        // Fallback: อ่าน customer จาก localStorage + เปิด myOrdersView โดยตรง
-        let customer = null;
-        try {
-          const raw = localStorage.getItem("miusic_customer_session");
-          if (raw) customer = JSON.parse(raw);
-        } catch (_) {}
-        if (customer) {
-          // ตั้ง MY_ORDERS_STATE (ถ้ามี) + เปิด myOrdersView
-          if (window.MY_ORDERS_STATE) {
-            window.MY_ORDERS_STATE.customerName = customer.display_name || "";
-            window.MY_ORDERS_STATE.customerWhatsapp = customer.whatsapp || "";
-          }
-          if (typeof window.showMyOrdersView === "function") window.showMyOrdersView();
-          // ซ่อนฟอร์มกรอก + โหลดออเดอร์
-          setTimeout(() => {
-            const nameInput = document.getElementById("myOrdersName");
-            const whatsappInput = document.getElementById("myOrdersWhatsapp");
-            const nameField = nameInput?.closest(".field");
-            const whatsappField = whatsappInput?.closest(".field");
-            if (nameField) nameField.style.display = "none";
-            if (whatsappField) whatsappField.style.display = "none";
-            const feedback = document.getElementById("myOrdersFeedback");
-            if (feedback) {
-              feedback.innerHTML = `<div style="background:rgba(139,92,246,.1);border:1px solid var(--accent);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px;">👤 ใช้ข้อมูลจากบัญชี: <strong>${escapeHtmlCustomer(customer.display_name || "")}</strong> (${escapeHtmlCustomer(customer.whatsapp || customer.email || "")})</div>`;
-              feedback.style.color = "var(--text)";
-            }
-            if (typeof window.fetchMyOrdersOnce === "function") window.fetchMyOrdersOnce();
-          }, 100);
-        }
+        // 🔧 (2026-10-02 fix2): Fallback — ให้แท็บ "ออเดอร์ของฉัน" จัดการ (app-user.js จะเปิดหน้าบัญชีให้เอง)
+        const tabBtn = document.querySelector('.bottom-nav button[data-tab="myorders"]');
+        if (tabBtn) tabBtn.click();
       }
     });
     document.getElementById("customerLogoutBtn")?.addEventListener("click", async () => {
