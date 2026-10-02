@@ -556,9 +556,14 @@ function getAnonymousFingerprint() {
 
 // 🆕 toggle like — เพิ่ม/ลด like ของเพลง + อัปเดตจำนวนใน UI
 async function toggleLike(songId) {
-  if (!songId) return;
+  if (!songId) {
+    console.warn("[like] toggleLike called with no songId");
+    return;
+  }
+  console.log("[like] toggleLike start, songId:", songId);
   // ถ้า login → ใช้ customer.id, ถ้าไม่ login → ใช้ fingerprint (anonymous like)
   const fingerprint = isCustomerLoggedIn() ? null : getAnonymousFingerprint();
+  console.log("[like] fingerprint:", fingerprint ? "anon (anonym)" : "logged-in customer");
   try {
     const res = await fetch(`/api/songs/${encodeURIComponent(songId)}/like`, {
       method: "POST",
@@ -566,7 +571,9 @@ async function toggleLike(songId) {
       credentials: "same-origin",
       body: JSON.stringify({ fingerprint }),
     });
+    console.log("[like] response status:", res.status);
     const data = await res.json().catch(() => ({}));
+    console.log("[like] response data:", data);
     if (res.ok) {
       const newCount = data.like_count || 0;
       const isLiked = data.is_liked;
@@ -583,9 +590,11 @@ async function toggleLike(songId) {
       });
       if (typeof showToast === "function") showToast(isLiked ? "❤️ ถูกใจแล้ว" : "ยกเลิกถูกใจ", isLiked ? "success" : "info");
     } else {
+      console.error("[like] error from server:", data);
       if (typeof showToast === "function") showToast(data?.error || "ไม่สำเร็จ", "error");
     }
   } catch (err) {
+    console.error("[like] network/fetch error:", err);
     if (typeof showToast === "function") showToast("เกิดข้อผิดพลาด: " + (err.message || String(err)), "error");
   }
 }
@@ -600,8 +609,12 @@ async function loadLikeStatus(songId) {
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
       return { like_count: data.like_count || 0, is_liked: !!data.is_liked };
+    } else {
+      console.warn("[like] loadLikeStatus error:", data);
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn("[like] loadLikeStatus fetch failed:", err);
+  }
   return { like_count: 0, is_liked: false };
 }
 
