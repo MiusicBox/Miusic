@@ -1096,6 +1096,9 @@ async function openCustomerDetail(customerId) {
 //   ผลกระทบระบบเดิม: 0% — เป็นฟังก์ชันใหม่ทั้งหมด ไม่แตะฟังก์ชันเดิม
 // ============================================================
 let currentPwResetRequestId = null;
+// 🆕 (2026-10-02 v5): เก็บข้อมูลลูกค้าที่กำลังรีเซ็ต เพื่อใช้ตอนเปิด WhatsApp modal หลัง resolve สำเร็จ
+//   { customer_name, customer_whatsapp, customer_email, contact }
+let currentPwResetCustomer = null;
 
 async function loadPasswordResetRequests(status = "pending") {
   const wrap = document.getElementById("passwordResetList");
@@ -1195,7 +1198,8 @@ async function loadPasswordResetRequests(status = "pending") {
 // 🆕 (2026-10-02 v2): เปิด modal รีเซ็ตรหัสผ่านลูกค้า — แอดมินพิมพ์รหัสเอง
 async function openCustomerPwResetModal(reqId) {
   currentPwResetRequestId = reqId;
-  // ดึงข้อมูล request เพื่อแสดงใน info box
+  currentPwResetCustomer = null; // reset ก่อน
+  // ดึงข้อมูล request เพื่อแสดงใน info box + เก็บ customer info สำหรับเปิด WhatsApp หลังรีเซ็ต
   let infoText = "";
   try {
     const res = await fetch(`/api/admin/password-reset-requests`, { credentials: "same-origin" });
@@ -1203,7 +1207,14 @@ async function openCustomerPwResetModal(reqId) {
       const data = await res.json();
       const req = (data?.requests || []).find(r => r.id === reqId);
       if (req) {
-        infoText = `ลูกค้า: ${req.customer_name || "—"}\nติดต่อ: ${req.contact || "—"}${req.customer_whatsapp ? "\nWhatsApp: " + req.customer_whatsapp : ""}`;
+        // 🆕 (v5): เก็บ customer info สำหรับใช้ตอนเปิด WhatsApp หลัง resolve สำเร็จ
+        currentPwResetCustomer = {
+          customer_name: req.customer_name || "",
+          customer_whatsapp: req.customer_whatsapp || "",
+          customer_email: req.customer_email || "",
+          contact: req.contact || "",
+        };
+        infoText = `ลูกค้า: ${req.customer_name || "—"}\nติดต่อ: ${req.contact || "—"}${req.customer_whatsapp ? "\nWhatsApp: " + req.customer_whatsapp : ""}${req.customer_email ? "\nอีเมล: " + req.customer_email : ""}`;
       }
     }
   } catch (_) {}
@@ -1224,6 +1235,27 @@ function closeCustomerPwResetModal() {
   const backdrop = document.getElementById("customerPwResetBackdrop");
   if (backdrop) backdrop.style.display = "none";
   currentPwResetRequestId = null;
+  currentPwResetCustomer = null;
+}
+
+// 🆕 (2026-10-02 v5): เปิด WhatsApp modal พร้อมข้อความรีเซ็ตรหัสผ่าน → ส่งให้ลูกค้า
+//   เรียกหลัง confirmCustomerPwReset() สำเร็จ — ใช้ modal whatsappNotifyBackdrop เดิม
+function openWhatsAppForPwReset(newPassword) {
+  // ถ้าไม่มีเบอร์ WhatsApp → แจ้งแอดมินว่าต้องส่งเอง
+  const customerWhatsapp = currentPwResetCustomer?.customer_whatsapp || currentPwResetCustomer?.contact || "";
+  const customerName = currentPwResetCustomer?.customer_name || "";
+  if (!customerWhatsapp) {
+    showToast("⚠️ ลูกค้าไม่มีเบอร์ WhatsApp — กรุณาส่งรหัสผ่านใหม่ด้วยตนเอง", "error");
+    return;
+  }
+  // ใช้ openWhatsAppNotifyModal เดิม — ส่ง action='pw_reset' + receiptNumber= newPassword (recycle field)
+  openWhatsAppNotifyModal({
+    title: "💬 ส่งรหัสผ่านใหม่ให้ลูกค้าผ่าน WhatsApp",
+    customerName,
+    customerWhatsapp,
+    receiptNumber: newPassword, // ← recycle field เก็บรหัสผ่านใหม่
+    action: "pw_reset",
+  });
 }
 
 // 🆕 (2026-10-02 v2): ยืนยันรีเซ็ตรหัสผ่าน → POST /resolve
@@ -1248,13 +1280,14 @@ async function confirmCustomerPwReset() {
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      if (resultEl) { resultEl.textContent = data?.message || "✅ รีเซ็ตรหัสผ่านสำเร็จ — กรุณาติดต่อลูกค้าทาง WhatsApp"; resultEl.style.color = "var(--success)"; }
-      showToast("✅ รีเซ็ตรหัสผ่านสำเร็จ — กรุณาติดต่อลูกค้าทาง WhatsApp", "success");
-      // ปิด modal หลัง 1.5 วินาที + refresh
+      if (resultEl) { resultEl.textContent = data?.message || "✅ รีเซ็ตรหัสผ่านสำเร็จ — กำลังเปิด WhatsApp..."; resultEl.style.color = "var(--success)"; }
+      showToast("✅ รีเซ็ตรหัสผ่านสำเร็จ — กำลังเปิด WhatsApp ส่งให้ลูกค้า", "success");
+      // 🆕 (2026-10-02 v5): ปิด modal รีเซ็ต + เปิด WhatsApp modal พร้อมข้อความอัตโนมัติ
       setTimeout(() => {
         closeCustomerPwResetModal();
         loadPasswordResetRequests(document.getElementById("pwResetFilter")?.value || "pending");
-      }, 1500);
+        openWhatsAppForPwReset(newPwd); // เปิด WhatsApp modal พร้อมข้อความ
+      }, 800);
     } else {
       if (resultEl) { resultEl.textContent = data?.error || "รีเซ็ตไม่สำเร็จ"; resultEl.style.color = "var(--danger)"; }
       if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "✅ รีเซ็ตรหัสผ่าน"; }
@@ -5176,6 +5209,22 @@ Order: ${rcpt}
 
 กรุณาตรวจสอบและอัปโหลดสลิปใหม่อีกครั้งที่หน้าเว็บ
 หากมีข้อสงสัย ติดต่อแอดมินได้ครับ/ค่ะ 🙏`;
+  }
+  // 🆕 (2026-10-02 v5): action "pw_reset" — ส่งรหัสผ่านใหม่ให้ลูกค้าหลังแอดมินรีเซ็ต
+  //   ใช้ receiptNumber field ส่งรหัสผ่านใหม่มา (recycle field เพื่อไม่ต้องเพิ่ม param ใหม่)
+  if (action === "pw_reset") {
+    const newPassword = receiptNumber || "";
+    return `สวัสดีครับ/ค่ะ ${customerName || ""}
+
+🔑 แอดมินรีเซ็ตรหัสผ่านให้คุณแล้ว
+
+รหัสผ่านใหม่ของคุณคือ: ${newPassword}
+
+กรุณา login ด้วยรหัสผ่านใหม่นี้ แล้วเปลี่ยนรหัสผ่านในหน้าบัญชี → ตั้งค่า → เปลี่ยนรหัสผ่าน เพื่อความปลอดภัย
+
+🔗 เข้าสู่ระบบ: ${window.location.origin}/
+
+หากไม่ใช่คุณที่ขอรีเซ็ตรหัสผ่าน กรุณาแจ้งแอดมินทันที 🙏`;
   }
   return `Order ${rcpt}`;
 }
