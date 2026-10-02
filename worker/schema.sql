@@ -419,3 +419,40 @@ CREATE TABLE IF NOT EXISTS password_reset_requests (
 
 CREATE INDEX IF NOT EXISTS idx_password_reset_requests_status ON password_reset_requests(status);
 CREATE INDEX IF NOT EXISTS idx_password_reset_requests_created ON password_reset_requests(created_at);
+
+-- ===================================================
+-- 🆕 (2026-10-02 v6 — ฟีเจอร์ #2): ตาราง customer_favorites — รายการเพลงโปรดของลูกค้า
+--   ลูกค้ากด ❤️ ในเพลง → เก็บในรายการโปรด → ดูได้ในหน้าบัญชี + ซื้อได้โดยตรง
+--   ผลกระทบระบบเดิม: 0% — ตารางใหม่
+-- ===================================================
+CREATE TABLE IF NOT EXISTS customer_favorites (
+  id          TEXT PRIMARY KEY,           -- crypto.randomUUID()
+  customer_id TEXT NOT NULL,
+  song_id     TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  UNIQUE(customer_id, song_id)            -- กันซ้ำ: 1 ลูกค้าต่อ 1 เพลง = 1 record
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_favorites_customer ON customer_favorites(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_favorites_song ON customer_favorites(song_id);
+
+-- ===================================================
+-- 🆕 (2026-10-02 v6 — ฟีเจอร์ #12): ตาราง song_reviews — รีวิว + ให้คะแนนเพลง
+--   ลูกค้าที่ซื้อเพลงแล้ว → ให้คะแนน 1-5 ดาว + รีวิว → แสดงในหน้าเพลง
+--   กฎ: 1 ลูกค้าต่อ 1 เพลง = 1 รีวิว (UNIQUE constraint + UPSERT)
+--        ต้องซื้อเพลงแล้ว (status='completed') ถึงจะรีวิวได้ (ตรวจใน worker ไม่ใช่ DB)
+--   ผลกระทบระบบเดิม: 0% — ตารางใหม่
+-- ===================================================
+CREATE TABLE IF NOT EXISTS song_reviews (
+  id          TEXT PRIMARY KEY,           -- crypto.randomUUID()
+  customer_id TEXT NOT NULL,
+  song_id     TEXT NOT NULL,
+  rating      INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+  review      TEXT,                        -- nullable: ลูกค้าอาจให้แค่คะแนน ไม่เขียนรีวิว
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  UNIQUE(customer_id, song_id)            -- 1 ลูกค้าต่อ 1 เพลง = 1 รีวิว
+);
+
+CREATE INDEX IF NOT EXISTS idx_song_reviews_song ON song_reviews(song_id);
+CREATE INDEX IF NOT EXISTS idx_song_reviews_customer ON song_reviews(customer_id);

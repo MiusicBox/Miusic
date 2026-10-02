@@ -5216,6 +5216,216 @@ async function handleCustomerAuth(request, env, url) {
     }
   }
 
+  // ============================================================
+  // 🆕 (2026-10-02 v6 — ฟีเจอร์ #2): /api/customer/favorites — รายการเพลงโปรด
+  //   - GET    /api/customer/favorites       — ดูรายการโปรดทั้งหมด
+  //   - POST   /api/customer/favorites       — เพิ่มเพลงในรายการ { song_id }
+  //   - DELETE /api/customer/favorites/:id   — ลบเพลงจากรายการ
+  //   ผลกระทบระบบเดิม: 0% — endpoints ใหม่
+  // ============================================================
+  if (path === "favorites" && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const customer = await getCustomerSession(request, env);
+    if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    try {
+      const { results } = await env.DB.prepare(
+        "SELECT song_id, created_at FROM customer_favorites WHERE customer_id = ? ORDER BY created_at DESC LIMIT 200"
+      ).bind(customer.id).all();
+      return jsonResponse({ ok: true, favorites: results || [] });
+    } catch (err) {
+      if (String(err?.message || "").includes("no such table")) {
+        return jsonResponse({ error: "ระบบยังไม่พร้อม — กรุณารัน scripts/migrate-customer-v6.sql ใน D1 Console", code: "TABLE_NOT_CREATED" }, 500);
+      }
+      return jsonResponse({ error: safeError("โหลดรายการโปรดไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  if (path === "favorites" && request.method === "POST") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const customer = await getCustomerSession(request, env);
+    if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+    const songId = String(body.song_id || "").trim();
+    if (!songId) return jsonResponse({ error: "กรุณาระบุ song_id" }, 400);
+    try {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      // ใช้ INSERT OR IGNORE เพื่อกันซ้ำ (ถ้าซ้ำ → ไม่ error แต่ return ok เหมือนกัน)
+      await env.DB.prepare(
+        "INSERT OR IGNORE INTO customer_favorites (id, customer_id, song_id, created_at) VALUES (?, ?, ?, ?)"
+      ).bind(id, customer.id, songId, now).run();
+      return jsonResponse({ ok: true, message: "เพิ่มในรายการโปรดแล้ว" });
+    } catch (err) {
+      if (String(err?.message || "").includes("no such table")) {
+        return jsonResponse({ error: "ระบบยังไม่พร้อม — กรุณารัน scripts/migrate-customer-v6.sql ใน D1 Console", code: "TABLE_NOT_CREATED" }, 500);
+      }
+      return jsonResponse({ error: safeError("เพิ่มรายการโปรดไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // 🆕 (2026-10-02 v6): DELETE /api/customer/favorites/:song_id
+  //   path = "favorites/<song_id>" → ต้อง split เอา song_id
+  if (path.startsWith("favorites/") && request.method === "DELETE") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const customer = await getCustomerSession(request, env);
+    if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    const songId = decodeURIComponent(path.slice("favorites/".length));
+    if (!songId) return jsonResponse({ error: "กรุณาระบุ song_id" }, 400);
+    try {
+      await env.DB.prepare(
+        "DELETE FROM customer_favorites WHERE customer_id = ? AND song_id = ?"
+      ).bind(customer.id, songId).run();
+      return jsonResponse({ ok: true, message: "ลบจากรายการโปรดแล้ว" });
+    } catch (err) {
+      if (String(err?.message || "").includes("no such table")) {
+        return jsonResponse({ error: "ระบบยังไม่พร้อม — กรุณารัน scripts/migrate-customer-v6.sql ใน D1 Console", code: "TABLE_NOT_CREATED" }, 500);
+      }
+      return jsonResponse({ error: safeError("ลบรายการโปรดไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // 🆕 (2026-10-02 v6): GET /api/customer/favorites/check/:song_id — ตรวจว่าเพลงนี้อยู่ในรายการโปรดหรือไม่
+  //   ใช้ใน frontend เพื่อแสดงสถานะปุ่ม ❤️ (active หรือไม่)
+  if (path.startsWith("favorites/check/") && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const customer = await getCustomerSession(request, env);
+    if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    const songId = decodeURIComponent(path.slice("favorites/check/".length));
+    if (!songId) return jsonResponse({ error: "กรุณาระบุ song_id" }, 400);
+    try {
+      const row = await env.DB.prepare(
+        "SELECT id FROM customer_favorites WHERE customer_id = ? AND song_id = ?"
+      ).bind(customer.id, songId).first();
+      return jsonResponse({ ok: true, is_favorite: !!row });
+    } catch (err) {
+      if (String(err?.message || "").includes("no such table")) {
+        return jsonResponse({ ok: true, is_favorite: false }); // graceful — ถ้าตารางไม่มี บอกว่าไม่ใช่โปรด
+      }
+      return jsonResponse({ error: safeError("ตรวจสถานะโปรดไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // ============================================================
+  // 🆕 (2026-10-02 v6 — ฟีเจอร์ #12): /api/customer/reviews — รีวิว + ให้คะแนนเพลง
+  //   - GET    /api/customer/reviews           — ดูรีวิวของลูกค้าตัวเองทั้งหมด
+  //   - POST   /api/customer/reviews           — สร้าง/แก้ไขรีวิว (UPSERT) { song_id, rating, review }
+  //   - DELETE /api/customer/reviews/:song_id   — ลบรีวิวของตัวเอง
+  //   กฎ: ต้องซื้อเพลงแล้ว (status='completed') ถึงจะรีวิวได้
+  //   ผลกระทบระบบเดิม: 0% — endpoints ใหม่
+  // ============================================================
+  if (path === "reviews" && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const customer = await getCustomerSession(request, env);
+    if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    try {
+      const { results } = await env.DB.prepare(
+        "SELECT id, song_id, rating, review, created_at, updated_at FROM song_reviews WHERE customer_id = ? ORDER BY updated_at DESC LIMIT 200"
+      ).bind(customer.id).all();
+      return jsonResponse({ ok: true, reviews: results || [] });
+    } catch (err) {
+      if (String(err?.message || "").includes("no such table")) {
+        return jsonResponse({ error: "ระบบยังไม่พร้อม — กรุณารัน scripts/migrate-customer-v6.sql ใน D1 Console", code: "TABLE_NOT_CREATED" }, 500);
+      }
+      return jsonResponse({ error: safeError("โหลดรีวิวไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  if (path === "reviews" && request.method === "POST") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const customer = await getCustomerSession(request, env);
+    if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+    const songId = String(body.song_id || "").trim();
+    const rating = Number(body.rating || 0);
+    const review = String(body.review || "").slice(0, 1000); // จำกัด 1000 ตัวอักษร
+    if (!songId) return jsonResponse({ error: "กรุณาระบุ song_id" }, 400);
+    if (rating < 1 || rating > 5 || !Number.isInteger(rating)) {
+      return jsonResponse({ error: "คะแนนต้องเป็นจำนวนเต็ม 1-5" }, 400);
+    }
+    try {
+      // 🆕 (v6 กฎเข้มงวด): ตรวจว่าลูกค้าเคยซื้อเพลงนี้แล้ว (status='completed') หรือไม่
+      //   ค้นใน documents collection='orders' ที่มี song_id นี้ใน items array + customer_id = ลูกค้า + status='completed'
+      //   ใช้ json_extract ค้นใน JSON array ของ items
+      //   หมายเหตุ: ตรวจเฉพาะ customer_id (ไม่รวม guest เพราะรีวิวต้อง verify ตัวตนชัดเจน)
+      const orderRow = await env.DB.prepare(
+        "SELECT id FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ? AND json_extract(data, '$.status') = 'completed' AND EXISTS (SELECT 1 FROM json_each(json_extract(data, '$.items')) WHERE json_extract(value, '$.song_id') = ?) LIMIT 1"
+      ).bind(customer.id, songId).first();
+      if (!orderRow) {
+        return jsonResponse({ error: "คุณยังไม่ได้ซื้อเพลงนี้ — ต้องซื้อก่อนถึงจะรีวิวได้", code: "NOT_PURCHASED" }, 403);
+      }
+      // ใช้ UPSERT: ถ้ามีรีวิวอยู่แล้ว → อัปเดต, ถ้าไม่มี → สร้างใหม่
+      const now = new Date().toISOString();
+      const existing = await env.DB.prepare(
+        "SELECT id FROM song_reviews WHERE customer_id = ? AND song_id = ?"
+      ).bind(customer.id, songId).first();
+      if (existing) {
+        await env.DB.prepare(
+          "UPDATE song_reviews SET rating = ?, review = ?, updated_at = ? WHERE id = ?"
+        ).bind(rating, review || null, now, existing.id).run();
+        return jsonResponse({ ok: true, message: "อัปเดตรีวิวแล้ว" });
+      } else {
+        const id = crypto.randomUUID();
+        await env.DB.prepare(
+          "INSERT INTO song_reviews (id, customer_id, song_id, rating, review, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        ).bind(id, customer.id, songId, rating, review || null, now, now).run();
+        return jsonResponse({ ok: true, message: "ส่งรีวิวแล้ว" });
+      }
+    } catch (err) {
+      if (String(err?.message || "").includes("no such table")) {
+        return jsonResponse({ error: "ระบบยังไม่พร้อม — กรุณารัน scripts/migrate-customer-v6.sql ใน D1 Console", code: "TABLE_NOT_CREATED" }, 500);
+      }
+      return jsonResponse({ error: safeError("ส่งรีวิวไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // 🆕 (2026-10-02 v6): DELETE /api/customer/reviews/:song_id — ลบรีวิวของตัวเอง
+  if (path.startsWith("reviews/") && request.method === "DELETE") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const customer = await getCustomerSession(request, env);
+    if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    const songId = decodeURIComponent(path.slice("reviews/".length));
+    if (!songId) return jsonResponse({ error: "กรุณาระบุ song_id" }, 400);
+    try {
+      await env.DB.prepare(
+        "DELETE FROM song_reviews WHERE customer_id = ? AND song_id = ?"
+      ).bind(customer.id, songId).run();
+      return jsonResponse({ ok: true, message: "ลบรีวิวแล้ว" });
+    } catch (err) {
+      if (String(err?.message || "").includes("no such table")) {
+        return jsonResponse({ error: "ระบบยังไม่พร้อม — กรุณารัน scripts/migrate-customer-v6.sql ใน D1 Console", code: "TABLE_NOT_CREATED" }, 500);
+      }
+      return jsonResponse({ error: safeError("ลบรีวิวไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // 🆕 (2026-10-02 v6): GET /api/songs/:id/reviews — ดูรีวิวทั้งหมดของเพลง (public — ไม่ต้อง login)
+  //   ใช้สำหรับแสดงคะแนนเฉลี่ย + รีวิวในหน้าเพลง
+  //   ⚠️ endpoint นี้อยู่ใน handleCustomerAuth แต่ path ขึ้นต้นด้วย /api/songs/ → ต้อง route ใน main fetch
+  //      → ดูบรรทัด routing ที่เพิ่มไว้ใน main fetch handler
+  if (path.startsWith("songs/") && path.endsWith("/reviews") && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    // ⚠️ endpoint นี้ public — ไม่ต้อง login
+    const songId = decodeURIComponent(path.slice("songs/".length, -"/reviews".length));
+    if (!songId) return jsonResponse({ error: "กรุณาระบุ song_id" }, 400);
+    try {
+      const { results } = await env.DB.prepare(
+        "SELECT r.id, r.rating, r.review, r.created_at, r.updated_at, c.display_name as customer_name FROM song_reviews r LEFT JOIN customers c ON r.customer_id = c.id WHERE r.song_id = ? ORDER BY r.updated_at DESC LIMIT 50"
+      ).bind(songId).all();
+      // คำนวณคะแนนเฉลี่ย
+      const reviews = results || [];
+      const totalRating = reviews.reduce((sum, r) => sum + Number(r.rating || 0), 0);
+      const avgRating = reviews.length > 0 ? (totalRating / reviews.length) : 0;
+      return jsonResponse({ ok: true, reviews, total: reviews.length, avg_rating: Math.round(avgRating * 10) / 10 });
+    } catch (err) {
+      if (String(err?.message || "").includes("no such table")) {
+        return jsonResponse({ ok: true, reviews: [], total: 0, avg_rating: 0 }); // graceful — ถ้าตารางไม่มี ส่ง empty
+      }
+      return jsonResponse({ error: safeError("โหลดรีวิวไม่สำเร็จ", err) }, 500);
+    }
+  }
+
   return jsonResponse({ error: "ไม่พบ endpoint นี้" }, 404);
 }
 
@@ -6384,6 +6594,13 @@ export default {
     //   แก้: เพิ่ม routing สำหรับ /api/admin/customers และ /api/admin/password-reset-requests ให้เรียก handleCustomerAuth()
     //   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่ม routing ใหม่ ไม่ลบ/เปลี่ยน routing เดิม
     if (url.pathname.startsWith("/api/admin/customers") || url.pathname.startsWith("/api/admin/password-reset-requests")) {
+      if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
+      return handleCustomerAuth(request, env, url);
+    }
+
+    // 🆕 (2026-10-02 v6 — ฟีเจอร์ #12): /api/songs/:id/reviews — public endpoint ดูรีวิวของเพลง
+    //   ไม่ต้อง login → route เข้า handleCustomerAuth (มี logic ข้างในสำหรับ path นี้)
+    if (url.pathname.startsWith("/api/songs/") && url.pathname.endsWith("/reviews")) {
       if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
       return handleCustomerAuth(request, env, url);
     }
