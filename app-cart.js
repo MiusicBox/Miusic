@@ -3,10 +3,12 @@
 import { db } from "./firebase-init.js?v=20260905-fix1";
 import {
   collection, doc, query, where, getDoc, getDocs, setDoc, queryCustomerOrder,
+  // 🆕 (2026-10-03 v10): guest_id ประจำ browser — แนบกับออเดอร์ของลูกค้าที่ไม่ได้ login
+  getGuestId,
   // 🚀 (2026-09-28 fix H7): เพิ่ม getDocsByIds สำหรับ batch fetch แทน N+1
   //   ลด HTTP requests จาก N+1 → 2 (songs + playlists) ใน resolveCartFromDatabase
   getDocsByIds
-} from "./db-client.js?v=20260928-promo-fix-v9";
+} from "./db-client.js?v=20261003-login-guest-v10";
 //
 // 🔧 แก้บั๊ก (2026-09-12): "ยังไม่ได้ login" ตอนกดสั่งซื้อ
 // -----------------------------------------------------------
@@ -31,7 +33,7 @@ import {
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่) — import มาจาก app-promotion.js กลาง (รวมไฟล์เดียว) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, computeCartPricing, clearPricingCache
-} from "./app-promotion.js?v=20260929-stack-promo";
+} from "./app-promotion.js?v=20261003-login-guest-v10";
 
 const CART_STORAGE_KEY = "music_store_cart_v1";
 const CHECKOUT_ORDER_KEY = "music_store_checkout_order_v1";
@@ -2175,6 +2177,11 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
             console.log("[checkout] customer login status:", c ? `YES (id: ${c.id})` : "NO");
             return c ? c.id : null;
           })(),
+          // 🆕 (2026-10-03 v10 — แยก Login / Guest): แนบ guest_id ของ browser นี้ไปกับออเดอร์เสมอ
+          //   Server เป็นคนตัดสินจาก session cookie: ถ้า login → ทิ้ง guest_id (ออเดอร์ผูก customer_id อย่างเดียว)
+          //   ถ้าไม่ login → เก็บ guest_id ไว้ ใช้คู่กับ WhatsApp ค้นเฉพาะ guest order ของตัวเอง
+          //   (ไม่ตัดสิน login จาก localStorage ฝั่ง client เพราะอาจค้าง/หมดอายุ — ให้ Server ตัดสิน)
+          guest_id: getGuestId(),
           items: resolved.items, // Order Items ทั้งหมดของตะกร้า ณ ขณะสั่งซื้อ
           total: resolved.total, // ← ยอดสุดท้าย (final_total) — เก็บเหมือนเดิมเพื่อ back-compat กับ orders.js เดิม
           order_type: resolved.orderType, // "single" | "playlist" | "mixed"
