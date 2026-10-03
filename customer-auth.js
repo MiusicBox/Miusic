@@ -21,6 +21,14 @@ let currentCustomer = null;
 const CUSTOMER_STORAGE_KEY = "miusic_customer_session";
 
 function saveCustomerToStorage(customer) {
+  // 🆕 (2026-10-03 v11 — แยก Login / Guest): จำ id ก่อนเขียน เพื่อรู้ว่า "ตัวตน" เปลี่ยนจริงไหม
+  //   (guest→login, login→guest, หรือสลับบัญชี) — ถ้าเปลี่ยน ต้องล้าง/โหลด badge + แถบเตือน + modal ติดตามออเดอร์ใหม่
+  //   ถ้า id เดิม (แค่รีเฟรชโปรไฟล์) → ไม่ทำอะไรเพิ่ม
+  let prevId = "";
+  try {
+    const prevRaw = localStorage.getItem(CUSTOMER_STORAGE_KEY);
+    prevId = prevRaw ? String((JSON.parse(prevRaw) || {}).id || "") : "";
+  } catch (_) {}
   try {
     if (customer) {
       localStorage.setItem(CUSTOMER_STORAGE_KEY, JSON.stringify(customer));
@@ -28,6 +36,10 @@ function saveCustomerToStorage(customer) {
       localStorage.removeItem(CUSTOMER_STORAGE_KEY);
     }
   } catch (_) {}
+  const nextId = customer && customer.id ? String(customer.id) : "";
+  if (prevId !== nextId && typeof window.__onOrderScopeChanged === "function") {
+    try { window.__onOrderScopeChanged(); } catch (err) { console.warn("[customer-auth] onOrderScopeChanged failed:", err?.message || err); }
+  }
 }
 
 function loadCustomerFromStorage() {
