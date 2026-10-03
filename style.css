@@ -6936,3 +6936,406 @@ html.admin-page body {
     font-size: 10px !important;
   }
 }
+
+/* ==================================================================
+   🆕 (T019): Homepage UI Redesign — Hero Banner + Category Showcase
+              + DJ Row enhancement + Section Title + Promo Banner polish
+   Author: Nong Tao + Nong Mick (Coder + UI/UX)
+   Branch: ai-team/T019-homepage-ui-redesign
+   Acceptance Criteria covered:
+     AC#1 Hero Banner (welcome + current promo)
+     AC#2 DJ Row สวยขึ้น — รูปกลม + ชื่อใต้รูป + hover effect
+     AC#3 Category Showcase grid (ไม่ใช่ chips)
+     AC#4 Spacing ระหว่าง sections หายใจสบายขึ้น
+     AC#5 Section title สวยขึ้น (icon + ขีดเส้นใต้)
+     AC#6 Promo banner ปรับสวยขึ้น (spacing + mobile)
+     AC#7 Mobile-friendly (responsive)
+     AC#9 Lazy load (ไม่ทำให้หน้าแรกช้าลง)
+   กฎเหล็ก: ไม่แก้ worker/* / ทำใน branch T019 / ไม่ break ระบบเดิม
+   ================================================================== */
+
+/* ---------- AC#5: Section Title สวยขึ้น (icon + ขีดเส้นใต้) ----------
+   โครงสร้างใหม่: <div class="section-title-row"><h2 class="section-title">...</h2></div>
+   - ใช้ .section-title-row .section-title selector (specificity สูงกว่า .section-title เดิม)
+     เพื่อ override กฎเดิม (padding: 0 16px / display: flex / max-width: 1080px / margin: 10px auto)
+   - ขีดเส้นใต้ (vertical bar) ที่ซ้ายมือ: linear-gradient ม่วง→ชมพู + border-radius 2px
+   - รองรับทั้ง "🎧 DJ" / "📂 หมวดหมู่แนะนำ" / "🎵 เพลงทั้งหมด" (ที่ใช้โครงสร้างใหม่ใน index.html)
+   - .section-title เดิม (ที่ไม่ได้อยู่ใน .section-title-row) ยังใช้สไตล์เดิม → ไม่ break ระบบเดิม */
+.section-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px auto 12px;
+  max-width: 1080px;
+  padding: 0 16px;
+  box-sizing: border-box;
+}
+.section-title-row .section-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  margin: 0;
+  padding: 0 0 0 12px;
+  position: relative;
+  display: block;
+  max-width: none;
+  letter-spacing: -0.3px;
+}
+.section-title-row .section-title::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 18px;
+  background: linear-gradient(to bottom, var(--accent), var(--accent-2));
+  border-radius: 2px;
+}
+
+/* ---------- AC#4: Spacing ระหว่าง sections หายใจสบายขึ้น ----------
+   - DJ section + playlist-wrapper + song-grid มี margin-top เพิ่มขึ้นเล็กน้อย
+   - ใช้ .playlist-wrapper เดิม + เพิ่ม margin-top ให้หายใจ (ไม่กระทบ T018 mobile rules) */
+#djSection {
+  margin-top: 8px;
+}
+.playlist-wrapper {
+  margin-top: 8px;
+}
+
+/* ---------- AC#2: DJ Row ปรับใหม่ — รูปกลม + ชื่อใต้รูป + hover effect ----------
+   โครงสร้างเดิม (dj-item + dj-avatar + dj-name) ถูกใช้โดย renderDjRow() อยู่แล้ว
+   และมีรูปกลม + ชื่อใต้รูป + hover (translateY + border-color) อยู่แล้ว
+   T019 เพิ่ม:
+   - hover bg tint บนตัว .dj-item (เดิมมีเฉพาะ avatar)
+   - selected state bg tint (เดิมมีเฉพาะ border + name color)
+   - scrollbar แบบ accent color (เดิมซ่อน scrollbar ไว้)
+   - avatar border หนาขึ้น 3px (เดิม 2px) + transition ที่ avatar border-color
+   หมายเหตุ: ใช้ .dj-row.dj-row (double class) เพื่อ specificity สูงกว่า .dj-row เดิม
+   แต่ต่ำกว่า !important → ปลอดภัย ไม่ break T018 mobile rules */
+.dj-row {
+  /* override scrollbar จาก display:none เดิม → แสดง accent scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent) transparent;
+}
+.dj-row::-webkit-scrollbar {
+  display: block;
+  height: 4px;
+  background: transparent;
+}
+.dj-row::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: 2px;
+}
+.dj-row::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* hover bg tint บนตัวการ์ด DJ (เดิม hover แค่ avatar) */
+.dj-item {
+  border-radius: 12px;
+  padding: 8px 4px;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+.dj-item:hover {
+  background: var(--surface-hover);
+  transform: translateY(-2px);
+}
+
+/* selected state — bg tint สีม่วง (เดิมมีเฉพาะ border + name color) */
+.dj-item.selected {
+  background: var(--accent-glow);
+  border-radius: 12px;
+}
+
+/* avatar border หนาขึ้น + transition border-color */
+.dj-avatar {
+  border-width: 3px !important;
+  transition: border-color 0.2s ease, transform 0.25s ease, box-shadow 0.25s ease !important;
+}
+.dj-item:hover .dj-avatar {
+  border-color: var(--accent) !important;
+}
+
+/* ---------- AC#1: Hero Banner ----------
+   - gradient bg นุ่ม ๆ (surface → surface-2) + radial glow (accent + accent-2)
+   - title ใช้ gradient text (accent → accent-2) + ตัดขาวใส่ (transparent fill)
+   - subtitle สี text-dim + จำกัด max-width 480px (อ่านง่าย)
+   - CTA ปุ่มกลม (radius 9999px) + gradient + shadow accent
+   - ไม่มีรูป → ไม่ต้อง lazy load; ใช้ gradient + radial glow แทน (performance ดี) */
+.hero-banner {
+  position: relative;
+  margin: 12px auto 20px;
+  max-width: 1080px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.hero-banner-content {
+  position: relative;
+  z-index: 1;
+  padding: 28px 24px;
+  text-align: center;
+  box-sizing: border-box;
+}
+.hero-banner-bg {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background:
+    radial-gradient(circle at 20% 50%, var(--accent-glow) 0%, transparent 50%),
+    radial-gradient(circle at 80% 50%, var(--accent-2-glow) 0%, transparent 50%);
+  opacity: 0.6;
+  pointer-events: none;
+}
+.hero-title {
+  font-size: 24px;
+  font-weight: 800;
+  margin: 0 0 8px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  letter-spacing: -0.3px;
+  line-height: 1.3;
+}
+.hero-subtitle {
+  font-size: 14px;
+  color: var(--text-dim);
+  margin: 0 auto 16px;
+  max-width: 480px;
+  line-height: 1.6;
+}
+.hero-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.hero-cta {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px var(--accent-glow);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.hero-cta:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 18px var(--accent-glow);
+}
+.hero-cta:active {
+  transform: scale(0.98);
+}
+.hero-cta:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- AC#3: Category Showcase Grid ----------
+   - grid auto-fill minmax(140px, 1fr) → การ์ดเท่ากัน + ขึ้นบรรทัดใหม่อัตโนมัติ
+   - การ์ดมี hover effect (translateY + shadow) + ::before gradient overlay (opacity 0 → 0.3)
+   - icon 32px + ชื่อหมัด 14px + จำนวนเพลง 11px (text-dim)
+   - กดการ์ด → เลือกหมวด + scroll ไปที่ songGrid (handler ใน renderCategoryGrid) */
+.category-showcase {
+  max-width: 1080px;
+  margin: 20px auto;
+  padding: 0 16px;
+  box-sizing: border-box;
+}
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+.category-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+.category-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(135deg, var(--accent-glow), transparent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+.category-card:hover,
+.category-card:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+  border-color: var(--accent);
+  outline: none;
+}
+.category-card:hover::before,
+.category-card:focus-visible::before {
+  opacity: 0.3;
+}
+.category-card .cat-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+  position: relative;
+  z-index: 1;
+  line-height: 1;
+}
+.category-card .cat-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.category-card .cat-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- AC#6: Promo Banner polish (spacing + mobile) ----------
+   - เพิ่ม margin-top/bottom ให้หายใจสบายขึ้น (เดิม margin: 10px 12px 6px)
+   - mobile: padding ลดลง + font-size ลดลง + clip-path มุมตัดเล็กลง */
+.promo-home-banner {
+  margin: 14px 12px 10px;
+}
+@media (max-width: 480px) {
+  .promo-home-banner {
+    margin: 12px 8px 8px;
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+  }
+  .promo-home-banner-inner {
+    padding: 14px 14px;
+    gap: 10px;
+  }
+  .promo-home-banner-icon {
+    width: 44px;
+    height: 44px;
+  }
+  .promo-home-banner-icon svg {
+    width: 24px;
+    height: 24px;
+  }
+  .promo-home-banner-title {
+    font-size: 16px;
+  }
+  .promo-home-banner-label {
+    font-size: 11px;
+    letter-spacing: 1.5px;
+  }
+  .promo-home-banner-meta {
+    font-size: 12px;
+  }
+  .promo-home-banner-arrow {
+    font-size: 22px;
+  }
+}
+
+/* ---------- AC#7: Mobile responsive สำหรับ T019 elements ---------- */
+@media (max-width: 480px) {
+  /* Hero Banner mobile */
+  .hero-banner {
+    margin: 10px 8px 16px;
+    border-radius: 14px;
+  }
+  .hero-banner-content {
+    padding: 20px 16px;
+  }
+  .hero-title {
+    font-size: 20px;
+  }
+  .hero-subtitle {
+    font-size: 13px;
+  }
+  .hero-cta {
+    padding: 8px 20px;
+    font-size: 13px;
+  }
+
+  /* Category Showcase mobile — 2 columns + padding ลดลง */
+  .category-showcase {
+    margin: 16px auto;
+    padding: 0 8px;
+  }
+  .category-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .category-card {
+    padding: 12px;
+  }
+  .category-card .cat-icon {
+    font-size: 26px;
+  }
+  .category-card .cat-name {
+    font-size: 13px;
+  }
+  .category-card .cat-count {
+    font-size: 10px;
+  }
+
+  /* DJ Row mobile — avatar เล็กลง + ชื่อเล็กลง (เคารพ T018 .dj-item min-height) */
+  .dj-avatar {
+    width: 60px !important;
+    height: 60px !important;
+  }
+  .dj-item {
+    width: 68px;
+  }
+  .dj-name {
+    font-size: 11px;
+    max-width: 64px;
+  }
+
+  /* Section title mobile — margin ลดลง */
+  .section-title-row {
+    margin: 16px 8px 10px;
+    padding: 0 8px;
+  }
+  .section-title-row .section-title {
+    font-size: 16px;
+  }
+  .section-title-row .section-title::before {
+    height: 16px;
+  }
+}
+
+/* ---------- AC#9: Lazy load / Performance ----------
+   - Hero Banner: ไม่มีรูป → ใช้ CSS gradient + radial glow แทน (ไม่ต้อง lazy load)
+   - Category Showcase: ไม่มีรูป → ใช้ emoji icon + CSS (ไม่ต้อง lazy load)
+   - DJ Row: ใช้ loading="lazy" บน <img> อยู่แล้ว (บรรทัด 970 ใน app-user.js)
+   - ไม่เพิ่ม network requests ใด ๆ → ไม่กระทบ load time
+   - prefers-reduced-motion: ลด transition (accessibility) */
+@media (prefers-reduced-motion: reduce) {
+  .hero-cta,
+  .category-card,
+  .dj-item,
+  .dj-avatar,
+  .promo-home-banner {
+    transition: none !important;
+  }
+  .hero-cta:hover,
+  .category-card:hover {
+    transform: none !important;
+  }
+}

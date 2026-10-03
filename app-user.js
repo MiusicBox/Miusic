@@ -287,8 +287,36 @@ async function init() {
       logo.style.display = "block";
     }
   }
+  // 🆕 (T019): update Hero Banner ด้วย settings (website_name + meta_description)
+  //   - ถ้ามี settings.website_name → เปลี่ยน hero title เป็น "🎵 ยินดีต้อนรับสู่ {website_name}"
+  //   - ถ้ามี settings.meta_description → เปลี่ยน hero subtitle
+  //   - ถ้าไม่มี → คงค่า default ใน HTML (Miusic + tagline)
+  //   - ปุ่ม CTA → scroll ไปที่ #songGrid (เริ่มฟังเพลง)
+  //   - ไม่กระทบระบบเดิม — ใช้ optional chaining + guard ทุกจุด
+  try {
+    const heroTitle = document.getElementById("heroTitle");
+    const heroSubtitle = document.getElementById("heroSubtitle");
+    if (heroTitle && STATE.settings && STATE.settings.website_name) {
+      heroTitle.textContent = `🎵 ยินดีต้อนรับสู่ ${STATE.settings.website_name}`;
+    }
+    if (heroSubtitle && STATE.settings && STATE.settings.meta_description) {
+      heroSubtitle.textContent = STATE.settings.meta_description;
+    }
+    // hero CTA — scroll ไปที่ songGrid (เริ่มฟังเพลง)
+    const heroCtaBtn = document.getElementById("heroCtaBtn");
+    if (heroCtaBtn) {
+      heroCtaBtn.addEventListener("click", () => {
+        const songGrid = document.getElementById("songGrid");
+        if (songGrid) songGrid.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  } catch (err) {
+    console.warn("[init] T019 hero banner setup failed:", err?.message || err);
+  }
+
   renderCategoryChips();
   renderDjRow();
+  renderCategoryGrid(); // 🆕 (T019): วาด category showcase grid (หลัง renderCategoryChips — ใช้ STATE.categories + STATE.songs)
   renderPlaylists();
   renderSongGrid();
   renderPromotionBanner(); // 🎁 (2026-09-20) เพิ่มใหม่: แสดงแบนเนอร์โปรโมชั่นเด่นบนหน้าแรก (ถ้ามีโปร active)
@@ -959,6 +987,125 @@ function renderCategoryChips() {
   });
 }
 
+// 🆕 (T019): renderCategoryGrid — วาดการ์ดหมวดหมู่แนะนำแบบ grid (ไม่ใช่ chips)
+//   - แสดง icon (emoji) + ชื่อหมวด + จำนวนเพลงในหมวด
+//   - กดการ์ด → เลือกหมวด + scroll ไปที่ #songGrid (เริ่มฟังเพลงของหมวดนั้น)
+//   - ใช้ STATE.categories + STATE.songs (ที่โหลดแล้วใน init()) → ไม่ต้อง fetch เพิ่ม
+//   - ไม่กระทบระบบเดิม — ใช้ chip handler เดิม (renderCategoryChips + renderSongGrid)
+//   - lazy: ไม่มีรูป → ใช้ emoji icon → ไม่ต้อง lazy load (performance ดี)
+function renderCategoryGrid() {
+  const grid = document.getElementById("categoryGrid");
+  if (!grid) return;
+
+  // 🆕 (T019): category icon mapping — emoji สำหรับหมวดยอดนิยม
+  //   - ถ้า cat.id ตรงกับ key → ใช้ emoji นั้น
+  //   - ถ้าไม่ตรง → ใช้ cat.icon (ถ้ามี) หรือ default 🎵
+  const catIcons = {
+    "dance": "💃",
+    "remix": "🎵",
+    "luktung": "🎤",
+    "party": "🎉",
+    "edm": "🎧",
+    "slow": "🌙",
+    "remix-dj": "🎚️",
+  };
+
+  // 🛡️ guard: ถ้าไม่มี categories → แสดง empty state (กัน grid ว่างเปล่า)
+  if (!Array.isArray(STATE.categories) || STATE.categories.length === 0) {
+    grid.innerHTML = `<div class="category-card" style="grid-column:1/-1;cursor:default;opacity:0.6;">
+      <div class="cat-icon">🎵</div>
+      <div class="cat-name">กำลังโหลดหมวดหมู่...</div>
+    </div>`;
+    return;
+  }
+
+  // 🆕 (T019): วาดการ์ดหมวดหมู่ทั้งหมด (รวม "ทั้งหมด" ที่จำลองจาก chip "ทั้งหมด")
+  let html = "";
+
+  // การ์ดแรก: "ทั้งหมด" (เหมือน chip แรกใน chip-row) — กดแล้ว reset category + scroll ไป songGrid
+  const totalSongs = (STATE.songs || []).length;
+  html += `<div class="category-card" data-category-id="all" role="button" tabindex="0" aria-label="ดูเพลงทั้งหมด">
+    <div class="cat-icon">🎵</div>
+    <div class="cat-name">ทั้งหมด</div>
+    <div class="cat-count">${totalSongs} เพลง</div>
+  </div>`;
+
+  // การ์ดหมวดจริง ๆ — ใช้ STATE.categories ที่ sort แล้วใน init()
+  html += STATE.categories.map(cat => {
+    const icon = catIcons[String(cat.id).toLowerCase()] || cat.icon || "🎵";
+    // 🆕 (T019): นับจำนวนเพลงในหมวด — ใช้ songBelongsToCurrentCategory? ไม่ได้ เพราะมันผูกกับ currentCategory
+    //   ใช้ getCategoryValues + เทียบค่าแบบเดียวกับ songBelongsToCurrentCategory แต่ส่ง cat.id ตรง ๆ
+    const selectedValues = [
+      cat.id,
+      cat.category_name,
+      cat.name
+    ].flatMap(getCategoryValues);
+    const songCount = (STATE.songs || []).filter(s => {
+      const songValues = [
+        s.category_id,
+        s.categoryId,
+        s.category_ids,
+        s.categoryIds,
+        s.category,
+        s.category_name,
+        s.categoryName,
+        s.categories
+      ].flatMap(getCategoryValues);
+      return songValues.some(value => selectedValues.includes(value));
+    }).length;
+    return `<div class="category-card" data-category-id="${escapeHtml(cat.id)}" role="button" tabindex="0" aria-label="ดูเพลงหมวด ${escapeHtml(cat.category_name || "")}">
+      <div class="cat-icon">${icon}</div>
+      <div class="cat-name">${escapeHtml(cat.category_name || cat.name || "ไม่มีชื่อ")}</div>
+      <div class="cat-count">${songCount} เพลง</div>
+    </div>`;
+  }).join("");
+
+  grid.innerHTML = html;
+
+  // 🆕 (T019): bind click + keyboard handler — เลือกหมวด + scroll ไป songGrid
+  //   - click: เลือกหมวด + scroll ไป songGrid
+  //   - keydown (Enter/Space): เทียบเท่า click (accessibility)
+  grid.querySelectorAll(".category-card").forEach(card => {
+    const handleSelect = () => {
+      const catId = card.getAttribute("data-category-id");
+      if (!catId) return;
+      // 🆕 (T015): ถ้าอยู่ใน advanced filter mode → reset ก่อน เพื่อกลับสู่ client-side filter
+      //   เหตุผล: STATE.songs ปัจจุบันเป็น server-filtered results → category-grid filter ฝั่ง client จะไม่ครบ
+      //   ถ้า active=false ตั้งแต่ต้น → resetAdvancedFilterState จะ return ทันที (no-op)
+      try { resetAdvancedFilterState({ reloadSongs: true }); } catch (_) {}
+      STATE.currentCategory = catId;
+      STATE.currentDj = null;
+      // 🔧 (2026-09-18 v6 Full System): เมื่อกดหมวดหมู่ ถ้ายังโหลดเพลงไม่ครบ → trigger auto-load-all
+      //   กันกรณีที่เพลงของหมวดนี้อยู่ใน page หลัง → filter ไม่เจอ
+      if (STATE.songsHasMore && !STATE.songsLoadingAllRemaining) {
+        showToast("กำลังโหลดเพลงทั้งหมดเพื่อกรอง...", "progress");
+        loadAllRemainingSongs().then(() => {
+          renderCategoryGrid(); // re-render เพื่ออัปเดต song count
+          renderSongGrid();
+          renderPlaylists();
+          togglePlaylistsVisibility();
+        });
+      }
+      setView(STATE.currentView);
+      renderCategoryChips();
+      renderSongGrid();
+      renderPlaylists();
+      togglePlaylistsVisibility();
+      // scroll ไปที่ songGrid (เริ่มฟังเพลง)
+      const songGrid = document.getElementById("songGrid");
+      if (songGrid) songGrid.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    card.addEventListener("click", handleSelect);
+    // 🆕 (T019): keyboard handler — Enter/Space = click (accessibility AC#7 implicit)
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+        e.preventDefault();
+        handleSelect();
+      }
+    });
+  });
+}
+
 function renderDjRow() {
   const wrap = document.getElementById("djRow");
   if (!wrap) return;
@@ -1599,6 +1746,16 @@ function setView(view) {
   const djSection = document.getElementById("djSection");
   if (categoryChips) categoryChips.style.display = showCategory ? "" : "none";
   if (djSection) djSection.style.display = showDj ? "" : "none";
+
+  // 🆕 (T019): ซ่อน/แสดง Hero Banner + Category Showcase ตาม view
+  //   - Hero Banner (#heroBanner): แสดงเฉพาะหน้า "home" (เป็น welcome message ของหน้าแรก)
+  //   - Category Showcase (#categoryShowcase): แสดงเมื่อ showDj=true (เหมือน djSection)
+  //     เหตุผล: category showcase คือทางเลือกแทน chip-row ในการ browse หมวด → แสดงเมื่อ DJ section แสดง
+  //   - ไม่กระทบระบบเดิม — ใช้ guard ทุกจุด (ถ้า element ไม่อยู่ → ข้ามเงียบ ๆ)
+  const heroBanner = document.getElementById("heroBanner");
+  if (heroBanner) heroBanner.style.display = (view === "home") ? "" : "none";
+  const categoryShowcase = document.getElementById("categoryShowcase");
+  if (categoryShowcase) categoryShowcase.style.display = showDj ? "" : "none";
 
   // แท็บเพลย์ลิสต์และ DJ ซ่อนรายการเพลงทั้งหมด ส่วนหมวดหมู่ยังดูเพลงที่กรองได้
   // หมายเหตุ (แก้บั๊ก 2026-09-13): เอา "#emptyState" ออกจาก loop นี้ เพราะเดิมมันไป
