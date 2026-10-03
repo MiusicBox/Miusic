@@ -3018,6 +3018,19 @@ async function handleDb(request, env, url) {
         }
         // 🔧 (2026-09-22 fix): audit log — บันทึกการลบ (เก็บ snapshot ของข้อมูลก่อนลบ)
         const beforeDelete = await getDocument(env, collection, id);
+        // 🆕 (T008-L9): ลบไฟล์ R2 ของเพลงก่อนลบ document — กัน orphan files บวม R2 storage
+        //   เดิม: DELETE /api/db/songs/:id ลบเฉพาะ D1 document → ไฟล์ cover + preview + full audio ค้าง
+        //   ใหม่: ถ้า collection="songs" → เรียก cleanupSongFiles() ก่อน deleteDocument
+        //   ถ้า cleanup fail (R2 error) → log warning แต่ไม่ block DELETE document (best-effort)
+        //   ผลกระทบระบบเดิม: 0% สำหรับ collection อื่น — เรียกเฉพาะ songs
+        if (collection === "songs" && beforeDelete?.data) {
+          try {
+            const cleanupResult = await cleanupSongFiles(env, beforeDelete.data);
+            console.log(`[T008-L9] cleanupSongFiles for song ${id}:`, cleanupResult);
+          } catch (cleanupErr) {
+            console.warn(`[T008-L9] cleanupSongFiles failed for song ${id} (continuing with DELETE):`, cleanupErr?.message || cleanupErr);
+          }
+        }
         await deleteDocument(env, collection, id);
         // 🔧 (2026-09-22 fix Bug #2 UI v3): ตรวจหา target_name จากหลาย field (เหมือน PUT/PATCH)
         //   ทำให้ target_name แสดงชื่อจริง ๆ แทน UUID ตอนลบ DJ/หมวดหมู่/ผู้ใช้ ฯลฯ
@@ -3093,6 +3106,72 @@ function getSongR2Key(song, env) {
   const fileUrl = song?.full_file_url || song?.file_url;
   if (!fileUrl) return null;
   return deriveR2KeyFromUrl(fileUrl, env);
+}
+
+// ===================================================
+// 🆕 (T008-L9): cleanupSongFiles — ลบไฟล์ R2 ของเพลงตอน admin DELETE /api/db/songs/:id
+// -----------------------------------------------------------
+// ปัญหา: เดิม DELETE /api/db/:collection/:id ลบเฉพาะ document ใน D1 → ไฟล์ R2
+//   (cover + preview + full audio) ค้างเป็น orphan → R2 storage บวมโดยไม่จำเป็น
+//   (Free plan 10GB → จุดตันเร็วถ้า admin ลบเพลงเก่าบ่อย)
+//
+// ลำดับการ derive R2 key:
+//   - full audio: ใช้ getSongR2Key() ที่มีอยู่ → รองรับทั้ง full_file_public_id + full_file_url/file_url
+//   - cover: deriveR2KeyFromUrl(cover_url) — ถ้ามี cover_public_id ก็ใช้ direct
+//   - preview: deriveR2KeyFromUrl(preview_url) — ถ้ามี preview_public_id ก็ใช้ direct
+//   - ข้าม URL ที่ไม่ใช่ของ R2 bucket นี้ (เช่น Cloudinary เก่า) เงียบ ๆ ไม่ error
+//   - ถ้า R2 delete ล้มเหลว (เช่น key ผิด/object ไม่มี) → log warning แต่ไม่ block DELETE document
+//
+// ผลกระทบระบบเดิม: 0% สำหรับ collection อื่น (call เฉพาะ collection="songs")
+//   สำหรับ songs: ไฟล์ R2 ที่ผูกกับเพลงถูกลบด้วย (ซึ่งเป็นสิ่งที่ admin คาดหวังตอนกด "ลบ")
+// ===================================================
+async function cleanupSongFiles(env, songData) {
+  if (!env.BUCKET || !songData || typeof songData !== "object") return { cleaned: 0, skipped: 0, failed: 0 };
+  const base = (env.R2_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+  const keysToDelete = new Set();
+  let skipped = 0;
+
+  // รวบรวม (public_id, url) pairs สำหรับแต่ละประเภทไฟล์
+  const candidates = [
+    // full audio — ใช้ getSongR2Key ที่มีอยู่ (handles public_id + url)
+    { publicId: songData.full_file_public_id, url: songData.full_file_url || songData.file_url },
+    // cover
+    { publicId: songData.cover_public_id, url: songData.cover_url },
+    // preview
+    { publicId: songData.preview_public_id, url: songData.preview_url },
+  ];
+
+  for (const c of candidates) {
+    // ถ้ามี public_id (R2 key ตรง) → ใช้เลย
+    if (c.publicId && typeof c.publicId === "string" && c.publicId.trim()) {
+      keysToDelete.add(c.publicId.trim());
+      continue;
+    }
+    // ถ้าไม่มี public_id → derive key จาก url (เฉพาะที่เป็น R2 URL ของ bucket นี้)
+    if (c.url && typeof c.url === "string" && c.url.trim()) {
+      const url = c.url.trim();
+      if (base && !url.startsWith(base + "/")) {
+        // URL ไม่ใช่ของ R2 bucket นี้ (เช่น Cloudinary เก่า) → ข้ามเงียบ ๆ
+        skipped += 1;
+        continue;
+      }
+      const derived = deriveR2KeyFromUrl(url, env);
+      if (derived) keysToDelete.add(derived);
+    }
+  }
+
+  let cleaned = 0;
+  let failed = 0;
+  for (const key of keysToDelete) {
+    try {
+      await env.BUCKET.delete(key);
+      cleaned += 1;
+    } catch (err) {
+      failed += 1;
+      console.warn(`[T008-L9] cleanupSongFiles: R2 delete failed for key "${key}":`, err?.message || err);
+    }
+  }
+  return { cleaned, skipped, failed };
 }
 
 // Helper: ทำความสะอาด leftover multipart upload ใน R2 (ถ้ามี)
@@ -4940,7 +5019,10 @@ async function handleCustomerAuth(request, env, url) {
     let body;
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
     const email = String(body.email || "").trim().toLowerCase() || null;
-    const whatsapp = String(body.whatsapp || "").trim() || null;
+    // 🆕 (T008-M6): normalize whatsapp ก่อนเก็บ/เช็คซ้ำ — กัน duplicate account + login ไม่ติด
+    //   เดิม: เก็บตรง ๆ (เช่น "+85620xxx" หรือ "020xxx") → login ด้วย format ต่างกัน → หาไม่เจอ → สมัครซ้ำ
+    //   ใหม่: normalize ทุก format → มาตรฐานเดียว (85620xxx สำหรับลาว / 66xxx สำหรับไทย) → uniqueness check แม่นยำ
+    const whatsapp = normalizeWhatsapp(String(body.whatsapp || "").trim()) || null;
     const password = String(body.password || "");
     const displayName = String(body.display_name || "").trim();
     // validate
@@ -4988,8 +5070,11 @@ async function handleCustomerAuth(request, env, url) {
         const whichField = errMsg.toLowerCase().includes("email") ? "email" : (errMsg.toLowerCase().includes("whatsapp") ? "whatsapp" : "email");
         return jsonResponse({ error: "อีเมลหรือเบอร์ WhatsApp นี้ถูกใช้สมัครแล้ว", code: whichField === "whatsapp" ? "WHATSAPP_EXISTS" : "EMAIL_EXISTS", existing_field: whichField }, 409);
       }
-      // กรณีอื่น → ส่ง error จริงกลับไป (เพื่อ debug)
-      return jsonResponse({ error: "สมัครสมาชิกไม่สำเร็จ: " + errMsg }, 500);
+      // 🆕 (T008-M2): ใช้ safeError() แทนการส่ง raw errMsg กลับ client
+      //   เดิม: `return jsonResponse({ error: "สมัครสมาชิกไม่สำเร็จ: " + errMsg }, 500)` — รั่ว D1 internal error
+      //   (table name, column name, SQL syntax) ให้ client → info disclosure
+      //   ใหม่: ใช้ safeError() เหมือนทุก endpoint — log จริงใน Worker logs + ส่งข้อความกลางๆ
+      return jsonResponse({ error: safeError("สมัครสมาชิกไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }
     // สร้าง session
     const token = await createCustomerSession(env, id);
@@ -5015,13 +5100,17 @@ async function handleCustomerAuth(request, env, url) {
     const login = String(body.login || "").trim();
     const password = String(body.password || "");
     if (!login || !password) return jsonResponse({ error: "กรุณากรอกอีเมล/เบอร์ WhatsApp และรหัสผ่าน" }, 400);
+    // 🆕 (T008-M6): normalize login identifier ก่อนค้นหา — ให้ตรงกับที่ register เก็บไว้
+    //   ถ้าเป็น email (มี @) → lowercase ธรรมดา
+    //   ถ้าเป็นเบอร์ WhatsApp → normalize ให้เป็นมาตรฐานเดียวกับ register (85620xxx / 66xxx)
+    //   bind ค่า normalized ทั้ง 2 ช่อง (email + whatsapp) เพราะเราไม่รู้ว่าลูกค้ากรอก email หรือเบอร์
+    const loginNormalized = login.includes("@") ? login.toLowerCase() : normalizeWhatsapp(login);
     // ค้นหา customer ด้วย email หรือ whatsapp (ลองทั้งสองแบบ)
-    const loginLower = login.toLowerCase();
     let customer;
     try {
       customer = await env.DB.prepare(
         "SELECT id, email, whatsapp, password_hash, display_name, created_at FROM customers WHERE email = ? OR whatsapp = ?"
-      ).bind(loginLower, login).first();
+      ).bind(loginNormalized, loginNormalized).first();
     } catch (err) {
       if (String(err?.message || "").includes("no such table")) {
         return jsonResponse({ error: "ระบบสมาชิกยังไม่พร้อม — กรุณารัน schema.sql ล่าสุดใน D1 Console" }, 500);
@@ -5113,6 +5202,12 @@ async function handleCustomerAuth(request, env, url) {
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
     const login = String(body.login || "").trim();
     if (!login) return jsonResponse({ error: "กรุณากรอกอีเมลหรือเบอร์ WhatsApp" }, 400);
+    // 🆕 (T008-M6): normalize login identifier เหมือน login/register
+    //   ถ้าเป็น email (มี @) → lowercase
+    //   ถ้าเป็นเบอร์ WhatsApp → normalize ให้เป็นมาตรฐานเดียวกับ register
+    //   ใช้ loginNormalized สำหรับ: ตรวจ pending request + ค้น customer + บันทึก contact
+    //   → ถ้าลูกค้าสมัครด้วย "020xxx" แล้วขอ reset ด้วย "+85620xxx" → ยัง match ได้
+    const loginNormalized = login.includes("@") ? login.toLowerCase() : normalizeWhatsapp(login);
     // ป้องกัน spam — ตรวจว่ามีคำขา pending ของ contact เดียวกันในชั่วโมงที่ผ่านมาไหม
     //   ถ้ามี → บอกว่า "ส่งคำขอแล้ว รอแอดมินติดต่อกลับ" (ไม่สร้าง record ใหม่ — กัน spam)
     const nowIso = new Date().toISOString();
@@ -5120,19 +5215,18 @@ async function handleCustomerAuth(request, env, url) {
     try {
       const existing = await env.DB.prepare(
         "SELECT id FROM password_reset_requests WHERE contact = ? AND status = 'pending' AND created_at > ?"
-      ).bind(login, oneHourAgo).first();
+      ).bind(loginNormalized, oneHourAgo).first();
       if (existing) {
         return jsonResponse({ ok: true, message: "คุณได้ส่งคำขารีเซ็ตรหัสผ่านแล้ว — แอดมินจะติดต่อกลับทาง WhatsApp ภายใน 24 ชั่วโมง" });
       }
       // ค้นหา customer (ถ้ามี — ถ้าไม่มีก็ยังบันทึกคำขาได้ เพื่อให้แอดมินเห็นว่ามีคนแอบอ้างหรือเบอร์ผิด)
-      const loginLower = login.toLowerCase();
       const customer = await env.DB.prepare(
         "SELECT id FROM customers WHERE email = ? OR whatsapp = ?"
-      ).bind(loginLower, login).first();
+      ).bind(loginNormalized, loginNormalized).first();
       const id = crypto.randomUUID();
       await env.DB.prepare(
         "INSERT INTO password_reset_requests (id, customer_id, contact, status, created_at) VALUES (?, ?, ?, 'pending', ?)"
-      ).bind(id, customer?.id || null, login, nowIso).run();
+      ).bind(id, customer?.id || null, loginNormalized, nowIso).run();
       return jsonResponse({ ok: true, message: "✅ ส่งคำขารีเซ็ตรหัสผ่านแล้ว — แอดมินจะติดต่อกลับทาง WhatsApp ภายใน 24 ชั่วโมง" });
     } catch (err) {
       if (String(err?.message || "").includes("no such table")) {
@@ -5465,13 +5559,31 @@ async function handleCustomerAuth(request, env, url) {
     const songId = String(body.song_id || "").trim();
     if (!songId) return jsonResponse({ error: "กรุณาระบุ song_id" }, 400);
     try {
-      const id = crypto.randomUUID();
+      // 🆕 (T008-L10): favorites toggle — ถ้ามี → DELETE (unfavorite), ถ้าไม่มี → INSERT (favorite)
+      //   เดิม: INSERT OR IGNORE → กดซ้ำเป็น no-op (return ok เหมือนกันทุกครั้ง)
+      //     ลูกค้ากด ❤️ แล้วกด ❤️ ซ้ำ → ไม่ยกเลิก → รู้สึกว่าปุ่มไม่ทำงาน + ไม่สามารถ unfavorite ผ่านปุ่มได้
+      //   ใหม่: toggle — กด ❤️ เพิ่ม, กด ❤️ ซ้ำยกเลิก (response บอก is_favorite ให้ frontend update UI ทันที)
+      //   ผลกระทบระบบเดิม: response shape เปลี่ยนเพิ่ม field `is_favorite` (frontend ใช้เพื่อ update ปุ่ม)
+      //     ถ้า frontend เดิมไม่สนใจ is_favorite → ยังทำงานได้ (ok:true ยังอยู่)
       const now = new Date().toISOString();
-      // ใช้ INSERT OR IGNORE เพื่อกันซ้ำ (ถ้าซ้ำ → ไม่ error แต่ return ok เหมือนกัน)
+      const existing = await env.DB.prepare(
+        "SELECT id FROM customer_favorites WHERE customer_id = ? AND song_id = ?"
+      ).bind(customer.id, songId).first();
+
+      if (existing) {
+        // unfavorite — ลูกค้ากด ❤️ ซ้ำ → ยกเลิก
+        await env.DB.prepare(
+          "DELETE FROM customer_favorites WHERE customer_id = ? AND song_id = ?"
+        ).bind(customer.id, songId).run();
+        return jsonResponse({ ok: true, is_favorite: false, message: "ลบจากรายการโปรดแล้ว" });
+      }
+
+      // favorite — ลูกค้ากด ❤️ ครั้งแรก → เพิ่ม
+      const id = crypto.randomUUID();
       await env.DB.prepare(
-        "INSERT OR IGNORE INTO customer_favorites (id, customer_id, song_id, created_at) VALUES (?, ?, ?, ?)"
+        "INSERT INTO customer_favorites (id, customer_id, song_id, created_at) VALUES (?, ?, ?, ?)"
       ).bind(id, customer.id, songId, now).run();
-      return jsonResponse({ ok: true, message: "เพิ่มในรายการโปรดแล้ว" });
+      return jsonResponse({ ok: true, is_favorite: true, message: "เพิ่มในรายการโปรดแล้ว" });
     } catch (err) {
       if (String(err?.message || "").includes("no such table")) {
         return jsonResponse({ error: "ระบบยังไม่พร้อม — กรุณารัน scripts/migrate-customer-v6.sql ใน D1 Console", code: "TABLE_NOT_CREATED" }, 500);
@@ -5615,6 +5727,44 @@ async function handleCustomerAuth(request, env, url) {
   }
 
   return jsonResponse({ error: "ไม่พบ endpoint นี้" }, 404);
+}
+
+// ===================================================
+// 🆕 (T008-M6): normalizeWhatsapp — normalize เบอร์ WhatsApp ของลูกค้า
+// -----------------------------------------------------------
+// ปัญหา: register/login/forgot-password เก็บและค้น whatsapp แบบตรงตัว →
+//   ลูกค้าสมัครด้วย "+85620XXX" แล้ว login ด้วย "020XXX" → หาไม่เจอ →
+//   บัญชีซ้ำซ้อน (สมัครใหม่อีกรอบด้วย format ต่างกัน)
+//
+// กฎการ normalize:
+//   - +85620XXXXXXXX → 85620XXXXXXXX (ละ +)
+//   - 020XXXXXXXX     → 85620XXXXXXXX (เติม 856 ละ 0 นำหน้า)
+//   - 20XXXXXXXX (10 หลัก) → 85620XXXXXXXX (เติม 856)
+//   - 0XXXXXXXXX (เบอร์ไทย 10 หลัก) → 66XXXXXXXXX
+//   - 66XXXXXXXXX     → 66XXXXXXXXX (คงเดิม)
+//   - 85620XXXXXXXX   → 85620XXXXXXXX (คงเดิม)
+//   - ไม่มีตัวเลขอื่นนอกจากตัวเลข + ละ + ต้น → คืน ""
+//
+// ผลกระทบระบบเดิม: เฉพาะระบบ customer auth (register/login/forgot-password)
+//   ไม่กระทบระบบ order tracking ที่ใช้ normalizePhoneServer() เดิม (เก็บ format 20XXXXXXXX)
+// ===================================================
+function normalizeWhatsapp(v) {
+  if (!v) return "";
+  let s = String(v).trim();
+  // ละ + ต้น
+  if (s.startsWith("+")) s = s.slice(1);
+  // เก็บเฉพาะตัวเลข
+  s = s.replace(/[^0-9]/g, "");
+  if (!s) return "";
+  // เบอร์ลาว: 020XXXXXXXX → 85620XXXXXXXX
+  if (s.startsWith("020")) return "856" + s.slice(1);
+  // เบอร์ลาว: 20XXXXXXXX (ไม่มี 0 นำ, 10 หลัก) → 85620XXXXXXXX
+  if (s.startsWith("20") && s.length === 10) return "856" + s;
+  // เบอร์ไทย: 0XXXXXXXXX (10 หลัก) → 66XXXXXXXXX
+  if (s.startsWith("0") && s.length === 10) return "66" + s.slice(1);
+  // เบอร์ไทย 66XXXXXXXXX → คงเดิม
+  // เบอร์ลาว 856XXXXXXXXX → คงเดิม
+  return s;
 }
 
 export default {
@@ -6410,10 +6560,23 @@ export default {
       const file = formData.get("file");
       const customerName = String(formData.get("customer_name") || "").trim();
       const whatsapp = String(formData.get("whatsapp") || "").trim();
-      const amountClaimed = formData.get("amount_claimed");
+      const amountClaimedRaw = formData.get("amount_claimed");
       const transferRef = String(formData.get("transfer_ref") || "").trim();
       if (!file || typeof file === "string" || !file.size) return jsonResponse({ error: "กรุณาเลือกไฟล์รูปสลิป" }, 400);
       if (!customerName || !whatsapp) return jsonResponse({ error: "กรุณากรอกชื่อลูกค้าและเบอร์ WhatsApp" }, 400);
+      // 🆕 (T008-L7): validate amount_claimed ก่อนใช้ — กัน NaN ลง DB
+      //   เดิม: ใช้ `amountClaimed ? Number(amountClaimed) : null` → ถ้ากรอก "abc" → Number("abc")=NaN
+      //     → D1 INSERT จะ fail หรือเก็บเป็น NULL ผิด ๆ (พฤติกรรม undefined)
+      //   ใหม่: parse + ตรวจ Number.isFinite + ตรวจ >= 0 → ถ้าไม่ผ่าน return 400 (บอกลูกค้ากรอกผิด)
+      //   ถ้าลูกค้าไม่กรอก (empty/null) → ยังอนุญาตเป็น null เหมือนเดิม (backward-compat)
+      let amountClaimed = null;
+      if (amountClaimedRaw !== null && amountClaimedRaw !== undefined && String(amountClaimedRaw).trim() !== "") {
+        const parsed = Number(amountClaimedRaw);
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          return jsonResponse({ error: "ยอดเงินไม่ถูกต้อง — กรุณากรอกเฉพาะตัวเลข" }, 400);
+        }
+        amountClaimed = parsed;
+      }
       // size limit: 5MB
       const MAX_SLIP_SIZE = 5 * 1024 * 1024;
       if (file.size > MAX_SLIP_SIZE) return jsonResponse({ error: "ไฟล์ใหญ่เกิน 5MB — กรุณาลดขนาดรูป" }, 413);
@@ -6531,7 +6694,8 @@ export default {
         ).bind(
           proofId, orderId, r2Key, fileUrl, uploadedAt,
           customerName.slice(0, 200), whatsapp.slice(0, 30),
-          amountClaimed ? Number(amountClaimed) : null,
+          // 🆕 (T008-L7): amountClaimed ถูก validate แล้วที่ด้านบน — เป็น number (finite, >=0) หรือ null
+          amountClaimed,
           transferRef.slice(0, 200) || null
         ).run();
       } catch (err) {
@@ -6576,7 +6740,7 @@ export default {
       //   ถ้า admin upload แทน (via admin panel) → endpoint อื่นจะบันทึกด้วย admin.id จริง
       //   ผลกระทบระบบเดิม: 0% — audit_log row เดิม (id='system') ยังอยู่ใน DB
       //   row ใหม่ → id='customer' (clearer)
-      try { ctx.waitUntil(writeAuditLog(env, request, { id: "customer", email: "customer" }, "upload", "payment_proofs", proofId, customerName, null, { order_id: orderId, file_key: r2Key, amount_claimed: amountClaimed ? Number(amountClaimed) : null })); } catch {}
+      try { ctx.waitUntil(writeAuditLog(env, request, { id: "customer", email: "customer" }, "upload", "payment_proofs", proofId, customerName, null, { order_id: orderId, file_key: r2Key, amount_claimed: amountClaimed })); } catch {}
 
       return jsonResponse({
         ok: true,
