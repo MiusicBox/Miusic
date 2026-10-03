@@ -284,6 +284,8 @@
   }
 
   /* ---- 🎨 (2026-09-26 redesign): ปุ่ม + popup ติดตามออเดอร์ (ฝั่งลูกค้า) — สไตล์เว็บมืออาชีพ ---- */
+  /* ⚠️ (T014): .track-order-btn เป็น orphan CSS แล้ว — ปุ่ม trackOrderBtn ถูกลบจาก topbar (ย้ายฟีเจอร์ไป tab ออเดอร์)
+       ไม่ลบตามกฎ "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน" — class อื่น ๆ ด้านล่างยังใช้กับ modal track order (trackOrderBackdrop) */
   .track-order-btn { position:relative; margin-right:6px; font-size:26px; line-height:1; }
   .track-order-modal .track-order-intro { color:var(--text-dim); font-size:13px; margin-top:0; margin-bottom:16px; }
   .track-order-result { margin-top:6px; padding-top:14px; border-top:1px solid var(--border); }
@@ -557,10 +559,9 @@
         <span id="siteName">Music Store</span>
       </div>
       <div class="cart-toggle-wrap">
-        <button class="icon-btn track-order-btn" id="trackOrderBtn" type="button" aria-label="ติดตามออเดอร์">
-          📦
-          <span id="trackOrderBadge" class="cart-badge" hidden>0</span>
-        </button>
+        <!-- 🆕 (T014): ลบปุ่ม 📦 trackOrderBtn ออกจาก topbar — ย้ายฟีเจอร์ "ค้นหาด้วยเลขใบเสร็จ" ไปไว้ใน tab ออเดอร์ (#myOrdersView) แทน
+             เหตุผล: มี tab ออเดอร์ข้างล่างแล้ว ปุ่มบนซ้ำซ้อน (user feedback) — trackOrderBadge/trackOrderBtn element ถูกลบแล้ว
+             หมายเหตุ: openTrackOrder/closeTrackOrder/trackOrderBackdrop (modal) ยังคงอยู่ — อาจถูกเรียกจากที่อื่น เช่น pending order banner -->
         <button class="icon-btn cart-toggle-btn" id="cartToggleBtn" type="button" aria-label="เปิดตะกร้าสินค้า">
           <svg class="cart-icon-svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
           <span id="cartBadge" class="cart-badge" hidden>0</span>
