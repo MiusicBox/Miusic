@@ -125,7 +125,7 @@
       <!-- 🆕 (2026-10-01 dashboard reorg): popup เลือก "เพิ่มเพลงเดี่ยว / หลายไฟล์" -->
       <div class="modal-backdrop" id="addSongChoiceBackdrop" style="display:none;">
         <div class="modal" style="max-width:360px;">
-          <div class="modal-header"><h3>เพิ่มเพลง</h3><button class="modal-close" id="addSongChoiceClose">✕</button></div>
+          <div class="modal-header"><h3>เพิ่มเพลง</h3><button class="modal-close" id="addSongChoiceClose" type="button" aria-label="ปิด">✕</button></div>
           <div style="padding:14px;display:grid;gap:10px;">
             <button id="addSongChoiceSingle" style="padding:14px;font-size:14px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;">🎵 เพิ่มเพลงเดี่ยว</button>
             <button id="addSongChoiceBulk" style="padding:14px;font-size:14px;font-weight:600;border:1px solid var(--accent);background:rgba(122,92,255,.08);color:var(--accent);border-radius:8px;cursor:pointer;">📦 เพิ่มเพลงหลายไฟล์ (Bulk)</button>
@@ -136,7 +136,7 @@
       <!-- 🆕 (2026-10-01 dashboard reorg): popup เลือก "จัดออเดอร์ / ตรวจสลิป" -->
       <div class="modal-backdrop" id="ordersChoiceBackdrop" style="display:none;">
         <div class="modal" style="max-width:360px;">
-          <div class="modal-header"><h3>ออเดอร์ & การเงิน</h3><button class="modal-close" id="ordersChoiceClose">✕</button></div>
+          <div class="modal-header"><h3>ออเดอร์ & การเงิน</h3><button class="modal-close" id="ordersChoiceClose" type="button" aria-label="ปิด">✕</button></div>
           <div style="padding:14px;display:grid;gap:10px;">
             <button id="ordersChoiceList" style="position:relative;padding:14px;font-size:14px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;">📋 จัดการออเดอร์ <span class="badge" id="ordersBadgeChoice" style="position:relative;top:auto;right:auto;display:inline-block;margin-left:6px;">0</span></button>
             <button id="ordersChoiceSlip" style="position:relative;padding:14px;font-size:14px;font-weight:600;border:1px solid var(--accent);background:rgba(122,92,255,.08);color:var(--accent);border-radius:8px;cursor:pointer;">🧾 ตรวจสลิป <span class="badge" id="paymentsBadgeChoice" style="position:relative;top:auto;right:auto;display:inline-block;margin-left:6px;">0</span></button>
@@ -601,7 +601,7 @@
       <div class="modal" style="max-width:480px;">
         <div class="modal-header">
           <h3 id="whatsappNotifyTitle">💬 ส่งข้อความ WhatsApp</h3>
-          <button class="modal-close" id="whatsappNotifyClose" type="button">✕</button>
+          <button class="modal-close" id="whatsappNotifyClose" type="button" aria-label="ปิด">✕</button>
         </div>
         <div style="padding:14px 16px;">
           <div id="whatsappNotifyCustomerInfo" style="margin-bottom:10px;padding:10px;background:var(--bg-soft,#f5f5f5);border-radius:8px;font-size:13px;"></div>
@@ -756,7 +756,7 @@
 
   <div class="modal-backdrop" id="songFormBackdrop">
     <div class="modal">
-      <div class="modal-header"><h3 id="songFormTitle">เพิ่มเพลง</h3><button class="modal-close" id="songFormClose">✕</button></div>
+      <div class="modal-header"><h3 id="songFormTitle">เพิ่มเพลง</h3><button class="modal-close" id="songFormClose" type="button" aria-label="ปิด">✕</button></div>
       <div class="field">
         <label>ไฟล์เพลง (MP3 / WAV)</label>
         <label class="file-picker" id="songFilePicker" for="songFileInput">📁 แตะเพื่อเลือกไฟล์เพลงจาก iPhone/iPad</label>
@@ -814,7 +814,7 @@
 
   <div class="modal-backdrop" id="catFormBackdrop">
     <div class="modal">
-      <div class="modal-header"><h3 id="catFormTitle">เพิ่มหมวดหมู่</h3><button class="modal-close" id="catFormClose">✕</button></div>
+      <div class="modal-header"><h3 id="catFormTitle">เพิ่มหมวดหมู่</h3><button class="modal-close" id="catFormClose" type="button" aria-label="ปิด">✕</button></div>
       <div class="field"><label>ชื่อหมวดหมู่ *</label><input id="fCatName"></div>
       <div class="field"><label>คำอธิบาย</label><textarea id="fCatDesc"></textarea></div>
       <button class="btn" id="catSaveBtn">บันทึก</button>
@@ -823,7 +823,7 @@
 
   <div class="modal-backdrop" id="djFormBackdrop">
     <div class="modal">
-      <div class="modal-header"><h3 id="djFormTitle">เพิ่ม DJ</h3><button class="modal-close" id="djFormClose">✕</button></div>
+      <div class="modal-header"><h3 id="djFormTitle">เพิ่ม DJ</h3><button class="modal-close" id="djFormClose" type="button" aria-label="ปิด">✕</button></div>
       <div class="field"><label>ชื่อ DJ *</label><input id="fDjName"></div>
       <div class="field"><label>คำอธิบาย</label><textarea id="fDjDesc"></textarea></div>
       <div class="field">
@@ -837,18 +837,18 @@
 
   <div class="modal-backdrop" id="changePasswordBackdrop">
     <div class="modal">
-      <div class="modal-header"><h3>เปลี่ยนรหัสผ่านของฉัน</h3><button class="modal-close" id="changePasswordClose">✕</button></div>
+      <div class="modal-header"><h3>เปลี่ยนรหัสผ่านของฉัน</h3><button class="modal-close" id="changePasswordClose" type="button" aria-label="ปิด">✕</button></div>
       <div class="field"><label>รหัสผ่านปัจจุบัน *</label><input id="cpCurrentPassword" type="password" autocomplete="current-password"></div>
       <div class="field"><label>รหัสผ่านใหม่ * (อย่างน้อย 6 ตัวอักษร)</label><input id="cpNewPassword" type="password" autocomplete="new-password"></div>
       <div class="field"><label>ยืนยันรหัสผ่านใหม่ *</label><input id="cpConfirmPassword" type="password" autocomplete="new-password"></div>
-      <div id="cpFeedback" style="font-size:13px;margin-bottom:10px;min-height:18px;"></div>
+      <div id="cpFeedback" style="font-size:13px;margin-bottom:10px;min-height:18px;" aria-live="polite" role="status"></div>
       <button class="btn" id="changePasswordSaveBtn">บันทึกรหัสผ่านใหม่</button>
     </div>
   </div>
 
   <div class="modal-backdrop" id="adminFormBackdrop">
     <div class="modal">
-      <div class="modal-header"><h3 id="adminFormTitle">เพิ่มแอดมิน</h3><button class="modal-close" id="adminFormClose">✕</button></div>
+      <div class="modal-header"><h3 id="adminFormTitle">เพิ่มแอดมิน</h3><button class="modal-close" id="adminFormClose" type="button" aria-label="ปิด">✕</button></div>
       <div class="field"><label>อีเมล *</label><input id="fAdminEmail" type="email" autocomplete="off"></div>
       <div class="field" id="adminPasswordField"><label>รหัสผ่าน * (อย่างน้อย 6 ตัวอักษร)</label><input id="fAdminPassword" type="password" autocomplete="new-password"></div>
       <div class="field"><label>ชื่อที่แสดง</label><input id="fAdminDisplayName" placeholder="ชื่อแอดมิน"></div>
@@ -866,7 +866,7 @@
 
   <div class="modal-backdrop" id="playlistFormBackdrop">
     <div class="modal">
-      <div class="modal-header"><h3 id="playlistFormTitle">เพิ่มเพลย์ลิสต์</h3><button class="modal-close" id="playlistFormClose">✕</button></div>
+      <div class="modal-header"><h3 id="playlistFormTitle">เพิ่มเพลย์ลิสต์</h3><button class="modal-close" id="playlistFormClose" type="button" aria-label="ปิด">✕</button></div>
       <div class="field"><label>ชื่อเพลย์ลิสต์ *</label><input id="fPlaylistName"></div>
       <div class="field"><label>คำอธิบาย</label><textarea id="fPlaylistDesc"></textarea></div>
       <div class="field"><label>ราคาเพลย์ลิสต์ (LAK — ราคาขายทั้งชุด, ปล่อยว่างหรือ 0 ถ้าไม่ขายทั้งชุด)</label><input id="fPlaylistPrice" type="number" min="0"></div>
@@ -882,7 +882,7 @@
   <!-- ===================== Modal: ลดราคา ===================== -->
   <div class="modal-backdrop" id="discountFormBackdrop">
     <div class="modal">
-      <div class="modal-header"><h3 id="discountFormTitle">เพิ่มลดราคา</h3><button class="modal-close" id="discountFormClose">✕</button></div>
+      <div class="modal-header"><h3 id="discountFormTitle">เพิ่มลดราคา</h3><button class="modal-close" id="discountFormClose" type="button" aria-label="ปิด">✕</button></div>
       <div class="field">
         <label>เป้าหมาย (เลือกเพลงหรือเพลย์ลิสต์) *</label>
         <!-- เพิ่มใหม่ (แก้บั๊ก 2026-09-10): ช่องค้นหาชื่อเพลง/เพลย์ลิสต์ กรอง option ใน select ด้านล่าง ไม่กระทบ select เดิม -->
@@ -928,7 +928,7 @@
   <!-- ===================== Modal: โปรโมชั่น ===================== -->
   <div class="modal-backdrop" id="promotionFormBackdrop">
     <div class="modal">
-      <div class="modal-header"><h3 id="promotionFormTitle">สร้างโปรโมชั่น</h3><button class="modal-close" id="promotionFormClose">✕</button></div>
+      <div class="modal-header"><h3 id="promotionFormTitle">สร้างโปรโมชั่น</h3><button class="modal-close" id="promotionFormClose" type="button" aria-label="ปิด">✕</button></div>
       <div class="field">
         <label>ชื่อโปรโมชั่น * (เช่น "ซื้อ 3 ลด 10%")</label>
         <input id="fPromoName" placeholder="ซื้อ 3 ลด 10%">
@@ -1011,7 +1011,7 @@
   <!-- ===== ดูเพลงที่อยู่จริงในหมวดหมู่ / DJ / เพลย์ลิสต์ ที่กดเข้าไปดู (กดจากรายการในหน้าจัดการ) ===== -->
   <div class="modal-backdrop" id="listSongsBackdrop">
     <div class="modal">
-      <div class="modal-header"><h3 id="listSongsTitle">เพลงในรายการนี้</h3><button class="modal-close" id="listSongsClose">✕</button></div>
+      <div class="modal-header"><h3 id="listSongsTitle">เพลงในรายการนี้</h3><button class="modal-close" id="listSongsClose" type="button" aria-label="ปิด">✕</button></div>
       <div id="listSongsMeta" style="font-size:12px;color:var(--text-dim);margin:-8px 0 12px;"></div>
       <div id="listSongsContainer"></div>
     </div>
@@ -1128,7 +1128,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3>รายละเอียดเพลง</h3>
-        <button class="modal-close" id="songDetailClose">✕</button>
+        <button class="modal-close" id="songDetailClose" type="button" aria-label="ปิด">✕</button>
       </div>
 
       <!-- แถวหัว: รูปปกเล็ก (80x80) + ข้อมูลขวา — กระทัดรัด ไม่รก -->
@@ -1227,7 +1227,7 @@
   <!-- ===== จัดเพลงเข้าเพลย์ลิสต์ / หมวดหมู่ / DJ แบบเร็ว (จากปุ่ม 📌 ในหน้าจัดการเพลง) ===== -->
   <div class="modal-backdrop" id="quickAssignBackdrop">
     <div class="modal">
-      <div class="modal-header"><h3>จัดเพลงเข้าเพลย์ลิสต์ / หมวดหมู่ / DJ</h3><button class="modal-close" id="quickAssignClose">✕</button></div>
+      <div class="modal-header"><h3>จัดเพลงเข้าเพลย์ลิสต์ / หมวดหมู่ / DJ</h3><button class="modal-close" id="quickAssignClose" type="button" aria-label="ปิด">✕</button></div>
       <div id="quickAssignSongName" style="font-weight:700;margin-bottom:12px;"></div>
       <div class="field"><label>DJ</label><select id="qaDj"><option value="">— ไม่ระบุ —</option></select></div>
       <div class="field"><label>หมวดหมู่</label><select id="qaCategory"><option value="">— ไม่ระบุ —</option></select></div>
@@ -1238,7 +1238,7 @@
 
   <div class="modal-backdrop" id="bulkUploadBackdrop">
     <div class="modal">
-      <div class="modal-header"><h3>เพิ่มเพลงหลายไฟล์พร้อมกัน</h3><button class="modal-close" id="bulkUploadClose">✕</button></div>
+      <div class="modal-header"><h3>เพิ่มเพลงหลายไฟล์พร้อมกัน</h3><button class="modal-close" id="bulkUploadClose" type="button" aria-label="ปิด">✕</button></div>
       <p style="color:var(--text-dim);font-size:13px;margin-top:-8px;">เลือกไฟล์เพลงหลายไฟล์พร้อมกันจากแอป Files แล้วระบบจะอัปโหลดทีละไฟล์ให้อัตโนมัติ — จะเลือกจัดเข้าเพลย์ลิสต์เดียวกันทั้งหมด หรือเว้นว่างไว้เพื่อเพิ่มเป็นเพลงเดี่ยวๆ หลายเพลงพร้อมกันก็ได้</p>
 
       <div class="field">
@@ -1319,7 +1319,7 @@
 
   <div class="modal-backdrop" id="orderFormBackdrop">
     <div class="modal">
-      <div class="modal-header"><h3 id="orderFormTitle">แก้ไขออเดอร์</h3><button class="modal-close" id="orderFormClose">✕</button></div>
+      <div class="modal-header"><h3 id="orderFormTitle">แก้ไขออเดอร์</h3><button class="modal-close" id="orderFormClose" type="button" aria-label="ปิด">✕</button></div>
 
       <div class="field"><label>ชื่อลูกค้า *</label><input id="eOrderCustomerName" placeholder="ชื่อลูกค้า"></div>
       <div class="field"><label>เบอร์ WhatsApp *</label><input id="eOrderCustomerWhatsapp" placeholder="20XXXXXXXX"></div>
@@ -1364,7 +1364,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3>ใบเสร็จ</h3>
-        <button class="modal-close" id="receiptClose">✕</button>
+        <button class="modal-close" id="receiptClose" type="button" aria-label="ปิด">✕</button>
       </div>
       <div id="receiptContent"></div>
       <div style="display:flex;gap:8px;margin-top:14px;">
@@ -1378,7 +1378,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3>ไฟล์เพลงเต็มสำหรับส่งลูกค้า</h3>
-        <button class="modal-close" id="fullFilesClose">✕</button>
+        <button class="modal-close" id="fullFilesClose" type="button" aria-label="ปิด">✕</button>
       </div>
       <p style="color:var(--text-dim);font-size:13px;margin-top:0;">คัดลอกลิงก์ดาวน์โหลดส่งให้ลูกค้า หรือกดปุ่ม WhatsApp เพื่อส่งตรง — ลูกค้าสามารถดาวน์โหลดได้จากลิงก์นี้</p>
       <div id="fullFilesContent"></div>
@@ -1410,7 +1410,7 @@
        ป้องกันการ logout โดยไม่ตั้งใจจากการกดผิด -->
   <div class="modal-backdrop" id="logoutConfirmBackdrop" style="display:none;">
     <div class="modal" style="max-width:360px;">
-      <div class="modal-header"><h3>ตัวเลือกก่อนออก</h3><button class="modal-close" id="logoutConfirmClose">✕</button></div>
+      <div class="modal-header"><h3>ตัวเลือกก่อนออก</h3><button class="modal-close" id="logoutConfirmClose" type="button" aria-label="ปิด">✕</button></div>
       <p style="color:var(--text-dim);font-size:13px;margin-top:0;">คุณต้องการจะ...</p>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:14px;">
         <a href="/" id="logoutConfirmViewStore" target="_blank" rel="noopener"
@@ -1441,7 +1441,7 @@
     <div class="modal" style="max-width:400px;">
       <div class="modal-header">
         <h3 id="confirmTitle">ยืนยันการลบ</h3>
-        <button class="modal-close" id="confirmCloseBtn" type="button">✕</button>
+        <button class="modal-close" id="confirmCloseBtn" type="button" aria-label="ปิด">✕</button>
       </div>
       <div id="confirmContent" style="padding:0 4px 8px;">
         <p id="confirmText" style="color:var(--text);font-size:14.5px;line-height:1.55;white-space:pre-line;word-break:break-word;">คุณต้องการลบรายการนี้หรือไม่?</p>
@@ -1459,7 +1459,7 @@
     <div class="modal" style="max-width:380px;">
       <div class="modal-header">
         <h3 id="alertTitle">แจ้งเตือน</h3>
-        <button class="modal-close" id="alertCloseBtn" type="button">✕</button>
+        <button class="modal-close" id="alertCloseBtn" type="button" aria-label="ปิด">✕</button>
       </div>
       <div id="alertContent" style="padding:0 4px 8px;">
         <p id="alertMessage" style="color:var(--text);font-size:14.5px;line-height:1.55;white-space:pre-line;word-break:break-word;"></p>
@@ -1505,7 +1505,7 @@
     <div class="modal" style="max-width:420px;">
       <div class="modal-header">
         <h3>🔑 รีเซ็ตรหัสผ่านลูกค้า</h3>
-        <button class="modal-close" id="customerPwResetClose" type="button">✕</button>
+        <button class="modal-close" id="customerPwResetClose" type="button" aria-label="ปิด">✕</button>
       </div>
       <div style="padding:14px;">
         <div id="customerPwResetInfo" style="padding:10px;border-radius:6px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);font-size:12px;color:var(--text-dim);margin-bottom:12px;line-height:1.5;"></div>
@@ -1526,7 +1526,9 @@
     </div>
   </div>
 
-  <div class="toast" id="toast"></div>
+  <!-- 🛡️ (r2-fern-mick-critical C6 fix): เพิ่ม aria-live="polite" aria-atomic="true"
+       ให้ screen reader announce toast message ให้ผู้ใช้ตาบอดได้ยินด้วย -->
+  <div class="toast" id="toast" aria-live="polite" aria-atomic="true" role="status"></div>
 
   <script type="module" src="app-admin.js?v=20261002-pw-reset"></script>
 </body>

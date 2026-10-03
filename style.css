@@ -1810,6 +1810,11 @@ button:active {
   border: 1px solid var(--border);
   width: 36px;
   height: 36px;
+  /* 🛡️ (r2-fern-mick-critical C5 fix): ขนาดสัมผัสขั้นต่ำ 44x44px ตาม WCAG 2.5.5
+     - เดิม 36x36px เล็กเกินไปบนมือถือ (touch target ต่ำกว่ามาตรฐาน)
+     - ใช้ min-width/min-height เพื่อให้สามารถขยายได้ถ้า wrapper อนุญาต แต่ไม่เล็กกว่า 44px */
+  min-width: 44px;
+  min-height: 44px;
   border-radius: 50%;
   color: var(--text-dim);
   font-size: 18px;
@@ -3803,7 +3808,7 @@ button:active {
   text-overflow: ellipsis;
 }
 @media (max-width: 360px) {
-  .bottom-nav button { font-size: 9px; }
+  .bottom-nav button { font-size: 10.5px; }
   .bottom-nav button svg { width: 18px; height: 18px; }
 }
 
@@ -5243,10 +5248,14 @@ html.admin-page body {
    ========================================================================== */
 
 /* ---------- WhatsApp FAB (Floating Action Button) ---------- */
+/* 🔧 (r2-fern-mick-critical C4 fix): ย้ายจากขวาล่าง → ซ้ายล่าง
+   - สาเหตุ: เดิม FAB อยู่ขวาล่าง z-index:70 ทับ player-bar z-index:60 ที่บริเวณใกล้กัน
+   - player-bar อยู่กึ่งกลางจอ (transform: translateX(-50%)) → ย้าย FAB ไปซ้ายล่างจะไม่ทับ player-bar
+   - ไม่ต้องแก้ JS */
 #whatsappFab {
   position: fixed;
-  right: 16px;
-  /* อยู่เหนือ bottom-nav (z-index สูงกว่า) และเหนือ player-bar */
+  left: 16px;
+  /* อยู่เหนือ bottom-nav (z-index สูงกว่า) */
   bottom: calc(72px + var(--safe-bottom));
   z-index: 70;
   width: 56px;
@@ -5317,7 +5326,7 @@ html.admin-page body {
   #whatsappFab {
     width: 50px;
     height: 50px;
-    right: 12px;
+    left: 12px;
     bottom: calc(76px + var(--safe-bottom));
   }
   #whatsappFab svg {
@@ -5438,9 +5447,12 @@ html.admin-page body {
 }
 
 /* จอเล็กมาก ≤ 360px (iPhone SE 1st gen, มือถือรุ่นเก่า) — ยิ่งเล็กลง */
+/* 🔧 (r2-fern-mick-critical C3 fix): เดิม font-size: 9px อ่านไม่ได้ โดยเฉพาะคำยาว "เพลย์ลิสต์" "โปรโมชั่น"
+   - เปลี่ยนข้อความใน index.html เป็นคำสั้น ๆ (หน้า/เพลง/หมวด/DJ/โปร/ออเดอร์) + title attribute เก็บชื่อเต็ม
+   - ปรับ font-size กลับเป็น 10.5px เท่าเดิม */
 @media (max-width: 360px) {
   .bottom-nav button {
-    font-size: 9px;
+    font-size: 10.5px;
     padding: 5px 2px;
   }
   .bottom-nav button svg {

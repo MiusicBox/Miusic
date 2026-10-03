@@ -463,3 +463,20 @@ CREATE TABLE IF NOT EXISTS song_likes (
 
 CREATE INDEX IF NOT EXISTS idx_song_likes_song ON song_likes(song_id);
 CREATE INDEX IF NOT EXISTS idx_song_likes_customer ON song_likes(customer_id);
+
+-- ===================================================
+-- 🆕 (2026-10-03 team-24h-v2): เพิ่ม indexes สำหรับ query ที่ใช้บ่อย
+--   1. customer_id + created_at — ใช้ใน customer order list (worker/index.js:5293)
+--   2. zip_status — ใช้ใน cron cleanup scan (worker/index.js:6795)
+--   3. zip_created_at — ใช้ใน cron cleanup range filter (worker/index.js:6796-6798)
+CREATE INDEX IF NOT EXISTS idx_documents_orders_customer_id_created
+  ON documents (json_extract(data, '$.customer_id'), created_at)
+  WHERE collection = 'orders';
+
+CREATE INDEX IF NOT EXISTS idx_documents_orders_zip_status
+  ON documents (json_extract(data, '$.zip_status'))
+  WHERE collection = 'orders';
+
+CREATE INDEX IF NOT EXISTS idx_documents_orders_zip_created_at
+  ON documents (json_extract(data, '$.zip_created_at'))
+  WHERE collection = 'orders';

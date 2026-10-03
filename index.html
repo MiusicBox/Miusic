@@ -655,32 +655,32 @@
   </div>
 
   <div class="bottom-nav">
-    <button class="active" data-tab="home" type="button" aria-label="หน้าแรก">
+    <button class="active" data-tab="home" type="button" aria-label="หน้าแรก" title="หน้าแรก">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a1 1 0 01-1 1H4a1 1 0 01-1-1z"/></svg>
-      หน้าแรก
+      หน้า
     </button>
-    <button data-tab="playlist" type="button" aria-label="เพลย์ลิสต์">
+    <button data-tab="playlist" type="button" aria-label="เพลย์ลิสต์" title="เพลย์ลิสต์">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>
-      เพลย์ลิสต์
+      เพลง
     </button>
-    <button data-tab="category" type="button" aria-label="หมวดหมู่">
+    <button data-tab="category" type="button" aria-label="หมวดหมู่" title="หมวดหมู่">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-      หมวดหมู่
+      หมวด
     </button>
-    <button data-tab="dj" type="button" aria-label="DJ">
+    <button data-tab="dj" type="button" aria-label="DJ" title="DJ">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
       DJ
     </button>
     <!-- 🎁 (2026-09-20) เพิ่มแท็บใหม่ "โปรโมชั่น" — สไตล์ J: CYBERPUNK -->
-    <button data-tab="promotions" type="button" aria-label="โปรโมชั่น">
+    <button data-tab="promotions" type="button" aria-label="โปรโมชั่น" title="โปรโมชั่น">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-      โปรโมชั่น
+      โปร
     </button>
     <!-- 🆕 (2026-10-03 team-fix): เพิ่มแท็บ "ออเดอร์" แทนที่ "ติดต่อ"
          - ลูกค้า login แล้ว → เปิดหน้าบัญชี (#myAccountView) ที่มีโปรไฟล์ + ออเดอร์ + โปรด + ตั้งค่า
          - ลูกค้ายังไม่ login → เปิดหน้า #myOrdersView (ค้นหาออเดอร์ด้วยชื่อ+เบอร์) พร้อมแบนเนอร์เชิญเข้าสู่ระบบ
          - ติดต่อแอดมิน (WhatsApp) ย้ายไปเป็นปุ่มลอย FAB ด้านขวาล่างแทน -->
-    <button data-tab="myorders" type="button" aria-label="ออเดอร์ของฉัน">
+    <button data-tab="myorders" type="button" aria-label="ออเดอร์ของฉัน" title="ออเดอร์ของฉัน">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
       ออเดอร์
     </button>
@@ -699,7 +699,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3>รายละเอียดเพลง</h3>
-        <button class="modal-close" id="songModalClose">✕</button>
+        <button class="modal-close" id="songModalClose" type="button" aria-label="ปิด">✕</button>
       </div>
 
       <!-- แถวหัว: รูปปก 80x80 ซ้าย + ข้อมูลขวา — กระทัดรัด เหมือนฝั่ง admin -->
@@ -766,7 +766,7 @@
     <div class="modal cart-modal">
       <div class="modal-header">
         <h3>ตะกร้าสินค้า</h3>
-        <button class="modal-close" id="cartCloseBtn" type="button">✕</button>
+        <button class="modal-close" id="cartCloseBtn" type="button" aria-label="ปิด">✕</button>
       </div>
       <div id="cartItems" class="cart-items"></div>
       <div id="cartSummary" class="cart-summary" hidden>
@@ -792,7 +792,7 @@
     <div class="modal cart-modal">
       <div class="modal-header">
         <h3>ข้อมูลสำหรับสั่งซื้อ</h3>
-        <button class="modal-close" id="checkoutCloseBtn" type="button">✕</button>
+        <button class="modal-close" id="checkoutCloseBtn" type="button" aria-label="ปิด">✕</button>
       </div>
       <p style="color:var(--text-dim);font-size:13px;margin-top:0;">
         กรอกข้อมูลเพื่อบันทึก Order และแจ้งรายละเอียดให้ร้านทาง WhatsApp
@@ -807,7 +807,7 @@
       </div>
       <div id="checkoutSummary" class="cart-summary"></div>
       <button class="btn" id="submitCartOrderBtn" type="button">ยืนยันสั่งซื้อ</button>
-      <div id="checkoutFeedback" class="cart-feedback"></div>
+      <div id="checkoutFeedback" class="cart-feedback" aria-live="polite" role="status"></div>
     </div>
   </div>
 
@@ -816,7 +816,7 @@
     <div class="modal track-order-modal">
       <div class="modal-header">
         <h3>ติดตามออเดอร์</h3>
-        <button class="modal-close" id="trackOrderClose" type="button">✕</button>
+        <button class="modal-close" id="trackOrderClose" type="button" aria-label="ปิด">✕</button>
       </div>
       <p class="track-order-intro">กรอกเลข Order พร้อมชื่อและเบอร์โทร/WhatsApp ที่ใช้ตอนสั่งซื้อ เพื่อตรวจสอบสถานะ</p>
 
@@ -844,7 +844,7 @@
           <input id="trackOrderPhone" autocomplete="tel" placeholder="20XXXXXXXX">
         </div>
         <button class="btn" id="trackOrderSubmitBtn" type="button">ค้นหาออเดอร์</button>
-        <div id="trackOrderFeedback" class="cart-feedback"></div>
+        <div id="trackOrderFeedback" class="cart-feedback" aria-live="polite" role="status"></div>
 
         <div id="trackOrderResult" class="track-order-result" hidden></div>
       </div>
@@ -860,7 +860,7 @@
           <input id="trackOrderAllPhone" autocomplete="tel" placeholder="20XXXXXXXX">
         </div>
         <button class="btn" id="trackOrderAllSubmitBtn" type="button">ดูออเดอร์ทั้งหมด</button>
-        <div id="trackOrderAllFeedback" class="cart-feedback"></div>
+        <div id="trackOrderAllFeedback" class="cart-feedback" aria-live="polite" role="status"></div>
 
         <div id="trackOrderAllList" class="track-order-all-list" hidden></div>
 
@@ -877,7 +877,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3>ใบเสร็จ</h3>
-        <button class="modal-close" id="receiptClose" type="button">✕</button>
+        <button class="modal-close" id="receiptClose" type="button" aria-label="ปิด">✕</button>
       </div>
       <div id="receiptContent"></div>
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
@@ -893,7 +893,7 @@
     <div class="modal" style="max-width:420px;">
       <div class="modal-header">
         <h3>💳 ชำระเงิน</h3>
-        <button class="modal-close" id="paymentClose" type="button">✕</button>
+        <button class="modal-close" id="paymentClose" type="button" aria-label="ปิด">✕</button>
       </div>
       <div id="paymentContent" style="padding:0 4px;">
         <div style="text-align:center;color:var(--text-dim);padding:30px 0;">กำลังโหลดข้อมูลการชำระเงิน...</div>
@@ -906,13 +906,15 @@
     <div class="modal" style="max-width:420px;">
       <div class="modal-header">
         <h3>📸 แจ้งชำระเงิน</h3>
-        <button class="modal-close" id="uploadSlipClose" type="button">✕</button>
+        <button class="modal-close" id="uploadSlipClose" type="button" aria-label="ปิด">✕</button>
       </div>
       <div id="uploadSlipContent" style="padding:0 4px;"></div>
     </div>
   </div>
 
-  <div class="toast" id="toast"></div>
+  <!-- 🛡️ (r2-fern-mick-critical C6 fix): เพิ่ม aria-live="polite" aria-atomic="true"
+       ให้ screen reader announce toast message ให้ผู้ใช้ตาบอดได้ยินด้วย -->
+  <div class="toast" id="toast" aria-live="polite" aria-atomic="true" role="status"></div>
 
   <!-- 🎨 (2026-09-26) Custom Confirm Modal — แทน window.confirm() แบบเดิม
        ใช้ผ่าน window.customConfirm(message, options) → Promise<boolean>
@@ -921,7 +923,7 @@
     <div class="modal" style="max-width:400px;">
       <div class="modal-header">
         <h3 id="confirmTitle">กรุณายืนยัน</h3>
-        <button class="modal-close" id="confirmClose" type="button">✕</button>
+        <button class="modal-close" id="confirmClose" type="button" aria-label="ปิด">✕</button>
       </div>
       <div id="confirmContent" style="padding:0 4px 8px;">
         <div id="confirmMessage" style="font-size:14.5px;line-height:1.55;color:var(--text);"></div>
@@ -1090,7 +1092,7 @@
     <div class="modal" style="max-width:380px;">
       <div class="modal-header">
         <h3>👤 บัญชีลูกค้า</h3>
-        <button class="modal-close" id="customerAuthClose" type="button">✕</button>
+        <button class="modal-close" id="customerAuthClose" type="button" aria-label="ปิด">✕</button>
       </div>
       <div style="padding:14px;">
         <!-- tab เลือก login/register -->
@@ -1099,7 +1101,9 @@
           <button type="button" id="customerAuthTabRegister" class="track-order-mode-btn" style="flex:1;padding:8px;font-size:13px;font-weight:600;border:none;background:transparent;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;">สมัครสมาชิก</button>
         </div>
         <!-- error message -->
-        <div id="customerAuthError" style="color:var(--danger);font-size:12px;margin-bottom:8px;min-height:14px;"></div>
+        <!-- 🛡️ (r2-fern-mick-critical C7 fix): เพิ่ม aria-live="polite" role="status"
+             ให้ screen reader announce error ให้ผู้ใช้ตาบอดได้ยิน -->
+        <div id="customerAuthError" style="color:var(--danger);font-size:12px;margin-bottom:8px;min-height:14px;" aria-live="polite" role="status"></div>
         <!-- login view -->
         <div id="customerAuthLoginView">
           <div class="field" style="margin-bottom:10px;">
@@ -1147,7 +1151,7 @@
     <div class="modal" style="max-width:380px;">
       <div class="modal-header">
         <h3>🔑 ลืมรหัสผ่าน</h3>
-        <button class="modal-close" id="forgotPasswordClose" type="button">✕</button>
+        <button class="modal-close" id="forgotPasswordClose" type="button" aria-label="ปิด">✕</button>
       </div>
       <div style="padding:14px;">
         <div class="field" style="margin-bottom:10px;">
@@ -1155,7 +1159,7 @@
           <input id="forgotPasswordLogin" type="text" placeholder="email@example.com หรือ 02012345678" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
         </div>
         <button class="btn" id="forgotPasswordSubmitBtn" type="button" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:10px;">ส่งคำขารีเซ็ตรหัสผ่าน</button>
-        <div id="forgotPasswordResult" style="font-size:12px;min-height:14px;line-height:1.4;"></div>
+        <div id="forgotPasswordResult" style="font-size:12px;min-height:14px;line-height:1.4;" aria-live="polite" role="status"></div>
         <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);font-size:11px;color:var(--text-dim);line-height:1.5;">
           ℹ️ เมื่อส่งคำขอแล้ว แอดมินจะเห็นในหน้าจัดการลูกค้าและรีเซ็ตรหัสผ่านให้คุณ แล้วติดต่อกลับทาง WhatsApp ภายใน 24 ชั่วโมง
         </div>
@@ -1215,7 +1219,7 @@
           <input id="customerChangeNewPassword" type="password" placeholder="รหัสผ่านใหม่ (อย่างน้อย 6 ตัว)" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
         </div>
         <button class="btn" id="customerChangePasswordBtn" type="button" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">เปลี่ยนรหัสผ่าน</button>
-        <div id="customerChangePasswordResult" style="font-size:12px;margin-top:8px;min-height:14px;"></div>
+        <div id="customerChangePasswordResult" style="font-size:12px;margin-top:8px;min-height:14px;" aria-live="polite" role="status"></div>
       </div>
 
       <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px;">
@@ -1225,7 +1229,7 @@
           <input id="customerResetLogin" type="text" placeholder="อีเมล หรือ เบอร์ WhatsApp" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
         </div>
         <button class="btn" id="customerResetPasswordBtn" type="button" style="width:100%;padding:10px;background:rgba(139,92,246,.12);color:var(--accent);border:1px solid var(--accent);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">ส่งรหัสผ่านใหม่</button>
-        <div id="customerResetPasswordResult" style="font-size:12px;margin-top:8px;min-height:14px;"></div>
+        <div id="customerResetPasswordResult" style="font-size:12px;margin-top:8px;min-height:14px;" aria-live="polite" role="status"></div>
       </div>
     </div>
   </div>

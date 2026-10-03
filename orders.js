@@ -1419,7 +1419,7 @@ function ensureReceiptElements() {
     <div class="modal">
       <div class="modal-header">
         <h3>ใบเสร็จดิจิทัล</h3>
-        <button class="modal-close" id="receiptClose">✕</button>
+        <button class="modal-close" id="receiptClose" type="button" aria-label="ปิด">✕</button>
       </div>
       <div id="receiptContent"></div>
       <div style="display:flex;gap:8px;margin-top:14px;">
@@ -1442,7 +1442,7 @@ function ensureFullFilesElements() {
     <div class="modal">
       <div class="modal-header">
         <h3>ไฟล์เพลงเต็มสำหรับส่งลูกค้า</h3>
-        <button class="modal-close" id="fullFilesClose">✕</button>
+        <button class="modal-close" id="fullFilesClose" type="button" aria-label="ปิด">✕</button>
       </div>
        <p style="color:var(--text-dim);font-size:13px;margin-top:0;">คัดลอกลิงก์ดาวน์โหลดส่งให้ลูกค้า หรือกดปุ่ม WhatsApp เพื่อส่งตรง — ลูกค้าสามารถดาวน์โหลดได้จากลิงก์นี้</p>
       <div id="fullFilesContent"></div>
