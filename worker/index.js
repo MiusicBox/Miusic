@@ -1938,10 +1938,18 @@ async function handleDb(request, env, url) {
       } catch (_) { /* customer_sessions ไม่มี → ถือว่าไม่ได้ login */ }
       let matchCount = 0;
       let firstMatch = null;
+      let scopeMismatch = null;
       for (const d of docs) {
         const oName = normalizeNameServer(d.data?.customer_name || "");
         const oPhone = normalizePhoneServer(d.data?.whatsapp || "");
-        if (!isOrderVisibleForReceiptLookup(d.data, receiptSessionCustomerId)) continue;
+        if (!isOrderVisibleForReceiptLookup(d.data, receiptSessionCustomerId)) {
+          // 🆕 (v11): ข้อมูลตรงครบ (เลขใบเสร็จ+ชื่อ+เบอร์) แต่อยู่คนละขอบเขต → บอก UI ให้อธิบายลูกค้าได้ถูก
+          //   ผู้ถามรู้ครบทั้ง 3 ค่าอยู่แล้ว จึงไม่เปิดเผยข้อมูลออเดอร์ — บอกแค่ว่าออเดอร์อยู่ฝั่งไหน
+          if (oName === queryName && oPhone === queryPhone) {
+            scopeMismatch = d.data?.customer_id ? "login_order" : "guest_order";
+          }
+          continue;
+        }
         if (oName === queryName && oPhone === queryPhone) {
           matchCount++;
           if (!firstMatch) firstMatch = d;
@@ -1957,6 +1965,7 @@ async function handleDb(request, env, url) {
         console.warn(`[H-6] customer-query: ambiguous match (${matchCount} orders match receipt+name+whatsapp) — refusing to return any for safety`);
         return jsonResponse({ exists: false, ambiguous: true });
       }
+      if (scopeMismatch) return jsonResponse({ exists: false, scope_mismatch: scopeMismatch });
       return jsonResponse({ exists: false });
     }
 
