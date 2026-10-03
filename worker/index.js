@@ -6463,10 +6463,23 @@ export default {
       const file = formData.get("file");
       const customerName = String(formData.get("customer_name") || "").trim();
       const whatsapp = String(formData.get("whatsapp") || "").trim();
-      const amountClaimed = formData.get("amount_claimed");
+      const amountClaimedRaw = formData.get("amount_claimed");
       const transferRef = String(formData.get("transfer_ref") || "").trim();
       if (!file || typeof file === "string" || !file.size) return jsonResponse({ error: "กรุณาเลือกไฟล์รูปสลิป" }, 400);
       if (!customerName || !whatsapp) return jsonResponse({ error: "กรุณากรอกชื่อลูกค้าและเบอร์ WhatsApp" }, 400);
+      // 🆕 (T008-L7): validate amount_claimed ก่อนใช้ — กัน NaN ลง DB
+      //   เดิม: ใช้ `amountClaimed ? Number(amountClaimed) : null` → ถ้ากรอก "abc" → Number("abc")=NaN
+      //     → D1 INSERT จะ fail หรือเก็บเป็น NULL ผิด ๆ (พฤติกรรม undefined)
+      //   ใหม่: parse + ตรวจ Number.isFinite + ตรวจ >= 0 → ถ้าไม่ผ่าน return 400 (บอกลูกค้ากรอกผิด)
+      //   ถ้าลูกค้าไม่กรอก (empty/null) → ยังอนุญาตเป็น null เหมือนเดิม (backward-compat)
+      let amountClaimed = null;
+      if (amountClaimedRaw !== null && amountClaimedRaw !== undefined && String(amountClaimedRaw).trim() !== "") {
+        const parsed = Number(amountClaimedRaw);
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          return jsonResponse({ error: "ยอดเงินไม่ถูกต้อง — กรุณากรอกเฉพาะตัวเลข" }, 400);
+        }
+        amountClaimed = parsed;
+      }
       // size limit: 5MB
       const MAX_SLIP_SIZE = 5 * 1024 * 1024;
       if (file.size > MAX_SLIP_SIZE) return jsonResponse({ error: "ไฟล์ใหญ่เกิน 5MB — กรุณาลดขนาดรูป" }, 413);
@@ -6584,7 +6597,8 @@ export default {
         ).bind(
           proofId, orderId, r2Key, fileUrl, uploadedAt,
           customerName.slice(0, 200), whatsapp.slice(0, 30),
-          amountClaimed ? Number(amountClaimed) : null,
+          // 🆕 (T008-L7): amountClaimed ถูก validate แล้วที่ด้านบน — เป็น number (finite, >=0) หรือ null
+          amountClaimed,
           transferRef.slice(0, 200) || null
         ).run();
       } catch (err) {
@@ -6629,7 +6643,7 @@ export default {
       //   ถ้า admin upload แทน (via admin panel) → endpoint อื่นจะบันทึกด้วย admin.id จริง
       //   ผลกระทบระบบเดิม: 0% — audit_log row เดิม (id='system') ยังอยู่ใน DB
       //   row ใหม่ → id='customer' (clearer)
-      try { ctx.waitUntil(writeAuditLog(env, request, { id: "customer", email: "customer" }, "upload", "payment_proofs", proofId, customerName, null, { order_id: orderId, file_key: r2Key, amount_claimed: amountClaimed ? Number(amountClaimed) : null })); } catch {}
+      try { ctx.waitUntil(writeAuditLog(env, request, { id: "customer", email: "customer" }, "upload", "payment_proofs", proofId, customerName, null, { order_id: orderId, file_key: r2Key, amount_claimed: amountClaimed })); } catch {}
 
       return jsonResponse({
         ok: true,
