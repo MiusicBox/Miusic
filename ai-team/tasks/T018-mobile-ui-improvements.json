@@ -122,15 +122,15 @@
   },
 
   "commit_info": {
-    "sha_main": "<TBD — หลัง git commit>",
-    "sha_task": "<TBD — หลัง git commit task file>",
+    "sha_main": "18d325e",
+    "sha_task": "d391bf0",
     "pushed_to": "origin/ai-team/T018-mobile-ui-improvements",
     "pr_url": "https://github.com/MiusicBox/Miusic/pull/new/ai-team/T018-mobile-ui-improvements",
     "files_changed": [
       "style.css (+249 บรรทัด — T018 mobile UI improvements block)",
       "ai-team/tasks/T018-mobile-ui-improvements.json (NEW — task file)"
     ],
-    "diff_stat": "249 insertions, 0 deletions (style.css) + task file (CSS-only feature, no worker/* changes)"
+    "diff_stat": "249 insertions, 0 deletions (style.css) + 137 insertions (task file) = 386 insertions total (CSS-only feature, no worker/* changes)"
   },
 
   "next_stage": "Stage 4 (Testing) — ส่งให้ น้องนัท + พี่ก้อน ต่อ คาดว่าจะเพิ่ม:\n  - Browser-level test (Playwright/Puppeteer): เปิดหน้า user ใน viewport 360px + 375px + 414px → ตรวจทุก AC\n  - Touch target test: วัด actual rendered size ของ .bottom-nav button (≥56px), .icon-btn (≥44x44), .filter-checkbox (≥36px), .modal-close (≥44x44) บนทั้ง 3 viewports\n  - Modal full-screen test: คลิกปุ่มเปิด cart + checkout + login + register modal → ตรวจว่า modal กินเต็มจอ 100% × 100% บนมือถือ + ไม่มี border-radius + modal-header เป็น sticky (scroll แล้ว ✕ ยังอยู่ด้านบน)\n  - iOS zoom prevention test: ใช้ Safari iOS (หรือ Simulator) → focus ที่ .search-box input + .field input → ตรวจว่า viewport ไม่ auto-zoom\n  - Filter panel mobile test: เปิด filter panel บน 375px → ตรวจว่า price-range-inputs เรียงแนวตั้ง + filter-actions แนวตั้ง + .btn กว้าง 100%\n  - Player bar position test: เล่นเพลง → ตรวจว่า player-bar bottom = calc(70px + safe-area-inset-bottom) และไม่บัง bottom-nav (60px height) บนมือถือ\n  - Desktop regression test: เปิดใน viewport 1280px → ตรวจว่า bottom-nav ยังแสดง + modal ยังเป็น centered pop-up (max-width 560px, border-radius, align-items center) + ไม่มีผลข้างเคียง\n  - Song cards spacing test: ตรวจว่า .song-grid gap = 8px (≤480px) / 6px (≤360px) และ .song-card padding = 8px\n  - Accessibility test: ใช้ screen reader → ตรวจปุ่ม ✕ ใน modal-header ยังอ่านได้ตลอดเวลาตอน scroll (sticky)\n  - Performance test: ตรวจว่า CSS size ไม่กระทบ load time (เพิ่ม 249 บรรทัด = ~6KB → ไม่มีผล)\n  - Regression test: ตรวจว่า T015 (advanced filter) + T016 (auto-refresh) + T017 (dashboard) ยังทำงานปกติบนมือถือ\n  - Security test (พี่เบนซ์): ตรวจว่า worker/* ไม่ถูกแก้ (กฎเหล็ก #1 + #2) + ไม่มี endpoint ใหม่ + CSS-only feature (ปลอดภัย)"
