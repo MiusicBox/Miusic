@@ -767,14 +767,13 @@ function renderSongGrid() {
   function renderNextBatch() {
     if (STATE._renderedSongCount >= totalSongs) return;
     const startIdx = STATE._renderedSongCount;
-    // สร้าง HTML + insert ก่อน sentinel
+    // สร้าง HTML + insert เข้า grid ตรง ๆ
     const batchHTML = buildBatchHTML(startIdx);
-    const sentinel = document.getElementById("songGridSentinel");
-    if (sentinel) {
-      sentinel.insertAdjacentHTML("beforebegin", batchHTML);
-    } else {
-      grid.insertAdjacentHTML("beforeend", batchHTML);
-    }
+    // 🔧 (T007 fix): insert เข้า grid ตรง ๆ แทน sentinel.beforebegin
+    //   เดิม: sentinel.insertAdjacentHTML("beforebegin", batchHTML) → song cards เป็น siblings ของ #songGrid → ตอนซ่อน #songGrid ด้วย display:none มันซ่อนแค่ตัวว่างเปล่า song cards ยังเห็นอยู่
+    //   ใหม่: grid.insertAdjacentHTML("beforeend", batchHTML) → song cards เป็น children ของ #songGrid → ซ่อน #songGrid แล้ว song cards ซ่อนด้วย
+    //   ผลกระทบ: แก้ bug ที่กด tab โปร/ออเดอร์ แล้วต้อง scroll ผ่านเพลงทั้งหมด + แก้ duplicate songs bug (grid.innerHTML='' ตอนนี้ clear songs ได้จริง)
+    grid.insertAdjacentHTML("beforeend", batchHTML);
     STATE._renderedSongCount = Math.min(startIdx + RENDER_BATCH_SIZE, totalSongs);
     attachBatchListeners(startIdx);
     updatePlayButtonsUI();
