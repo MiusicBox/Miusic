@@ -1468,6 +1468,16 @@ async function handleDb(request, env, url) {
   //       →ลูกค้าได้แค่ song_name, artist, price, status, playlist_id, cover_url, preview_url, ...
   //       → ไม่ได้ full_file_url / full_file_public_id / full_file_name (เพลงเต็ม)
   if (isBatchGetEndpoint) {
+    // 🔒 (2026-10-01 fix C1): whitelist collection ที่ non-admin เรียก _batch-get ได้
+    //   เดิม: auth exception (บรรทัด ~1437) อนุญาต non-admin เรียก _batch-get ของทุก collection
+    //         รวมทั้ง `orders` → handler ส่ง raw docs กลับ (PII: customer_name, whatsapp, total, items, payment_proof_id, status_history)
+    //   ใหม่: อนุญาตเฉพาะ `songs` + `playlists` (ตามเจตนา comment บรรทัด 1463-1469 — สำหรับ checkout)
+    //         collection อื่น (orders, settings, ...) ต้องเป็น admin เท่านั้น → return 401
+    //   ผลกระทบระบบเดิม: 0% — admin ยังใช้ได้ทุก collection, ลูกค้า checkout ยังใช้ songs/playlists ได้
+    const BATCH_GET_PUBLIC_COLLECTIONS = new Set(["songs", "playlists"]);
+    if (!admin && !BATCH_GET_PUBLIC_COLLECTIONS.has(collection)) {
+      return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    }
     let body;
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
     const ids = Array.isArray(body?.ids) ? body.ids : [];
