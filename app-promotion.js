@@ -44,7 +44,7 @@ import {
   //    ↑ ↑ ↑ ฟังก์ชันนี้แหละที่ใช้จริงในไฟล์นี้ (แทน listenCustomerOrders เดิม) ใน PART 4: MY ORDERS VIEW
   fetchCustomerOrdersOnce
 // 🔧 (2026-09-17 v2): เพิ่ม ?v=20260917-polling-fix บังคับ browser โหลด db-client.js ใหม่ (กัน cache เก่า)
-} from "./db-client.js?v=20260928-promo-fix-v9";
+} from "./db-client.js?v=20261003-login-guest-v10";
 
 // ============================================================================
 // PART 1: PRICING HELPERS (คำนวณส่วนลด + โปรโมชั่น)
@@ -1571,6 +1571,7 @@ function renderMyOrdersForm() {
     <div class="my-orders-header">
       <h2>📦 ออเดอร์ของฉัน</h2>
       <p>กรอกชื่อและเบอร์ WhatsApp ที่ใช้สั่งซื้อ — กด "รีเฟรช" เพื่อดูข้อมูลล่าสุด (ระบบจะอัปเดตอัตโนมัติเมื่อคุณกลับเข้าหน้านี้ใหม่)</p>
+      <p style="font-size:12px;color:var(--text-dim);margin-top:4px;">หน้านี้แสดงเฉพาะออเดอร์ที่สั่งโดยไม่เข้าสู่ระบบ จากเบราว์เซอร์/อุปกรณ์นี้ — ออเดอร์ของสมาชิกดูได้ที่หน้า "บัญชี" หลังเข้าสู่ระบบ</p>
     </div>
     <div class="my-orders-form">
       <div class="field">
