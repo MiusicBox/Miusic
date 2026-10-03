@@ -2158,12 +2158,17 @@ button:active {
   transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none;
   box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255,255,255,.04);
-  min-width: 200px; max-width: calc(100vw - 32px);
+  min-width: 280px; max-width: 90vw;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* 🆕 (T009-F3): อนุญาตหลายบรรทัด — ข้อความยาวไม่ถูกตัดด้วย ellipsis
+     (เดิมใช้ white-space:nowrap + overflow:hidden + text-overflow:ellipsis → error ยาวถูกตัด) */
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  border-radius: 16px;
 }
 
 .toast.show {
