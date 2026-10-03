@@ -135,7 +135,7 @@
   },
 
   "commit_info": {
-    "main_commit_sha": "<FILLED_AFTER_COMMIT>",
+    "main_commit_sha": "8e6e0ed5cc3c3438038a47399b7c37bea1358ffb",
     "branch": "ai-team/T020-song-reviews",
     "files_changed": [
       "worker/schema.sql (+20 บรรทัด — song_reviews table + 2 indexes ท้ายไฟล์)",
