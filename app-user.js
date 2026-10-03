@@ -307,6 +307,12 @@ async function init() {
 //   - กัน concurrent fetches ผ่าน STATE.songsLoading
 async function loadMoreSongs() {
   if (STATE.songsLoading || !STATE.songsHasMore) return;
+  // 🛡️ (T007 hardening): guard — ถ้า songGrid ซ่อนอยู่ ไม่ต้องโหลด (กัน observer ยิงเปล่า ๆ)
+  //   เหตุผล: defense-in-depth — ถึงแม้ observer callback จะมี guard แล้ว แต่ loadMoreSongs
+  //   อาจถูกเรียกจากที่อื่น (เช่น loadAllRemainingSongs ที่ trigger จาก category click)
+  //   → กันกรณี user อยู่บน tab อื่นแล้ว code เรียก loadMoreSongs โดยตรง
+  const songGrid = document.getElementById("songGrid");
+  if (songGrid && songGrid.style.display === "none") return;
   STATE.songsLoading = true;
   const nextPage = (STATE.songsPage || 0) + 1;
   const offset = (nextPage - 1) * 50;
@@ -436,6 +442,11 @@ function setupSongListInfinityScroll() {
   // (user ยังใช้เว็บได้ปกติ แค่เห็น 50 เพลงแรก)
   if (!("IntersectionObserver" in window)) return;
   const observer = new IntersectionObserver(async (entries) => {
+    // 🛡️ (T007 hardening): guard — ถ้า songGrid ซ่อนอยู่ ไม่ต้องโหลดเพิ่ม
+    //   เหตุผล: defense-in-depth — กัน observer ยิง loadMoreSongs ตอนอยู่บน tab อื่น (โปร/ออเดอร์/เพลย์ลิสต์)
+    //   แม้จะซ่อน sentinel ไว้แล้ว แต่กันกรณี browser ยัง trigger intersect ด้วยเหตุผลอื่น (resize, etc.)
+    const songGrid = document.getElementById("songGrid");
+    if (!songGrid || songGrid.style.display === "none") return;
     for (const entry of entries) {
       if (entry.isIntersecting && STATE.songsHasMore && !STATE.songsLoading) {
         await loadMoreSongs();
@@ -802,6 +813,11 @@ function renderSongGrid() {
       STATE._songGridObserver.disconnect();
     }
     STATE._songGridObserver = new IntersectionObserver((entries) => {
+      // 🛡️ (T007 hardening): guard — ถ้า songGrid ซ่อนอยู่ ไม่ต้อง render batch ถัดไป
+      //   เหตุผล: defense-in-depth — กัน observer ยิง renderNextBatch ตอนอยู่บน tab อื่น
+      //   แม้จะซ่อน sentinel ไว้แล้ว แต่กันกรณี browser ยัง trigger intersect ด้วยเหตุผลอื่น
+      const songGrid = document.getElementById("songGrid");
+      if (!songGrid || songGrid.style.display === "none") return;
       for (const entry of entries) {
         if (entry.isIntersecting && STATE._renderedSongCount < totalSongs) {
           renderNextBatch();
