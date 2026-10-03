@@ -4991,8 +4991,11 @@ async function handleCustomerAuth(request, env, url) {
         const whichField = errMsg.toLowerCase().includes("email") ? "email" : (errMsg.toLowerCase().includes("whatsapp") ? "whatsapp" : "email");
         return jsonResponse({ error: "อีเมลหรือเบอร์ WhatsApp นี้ถูกใช้สมัครแล้ว", code: whichField === "whatsapp" ? "WHATSAPP_EXISTS" : "EMAIL_EXISTS", existing_field: whichField }, 409);
       }
-      // กรณีอื่น → ส่ง error จริงกลับไป (เพื่อ debug)
-      return jsonResponse({ error: "สมัครสมาชิกไม่สำเร็จ: " + errMsg }, 500);
+      // 🆕 (T008-M2): ใช้ safeError() แทนการส่ง raw errMsg กลับ client
+      //   เดิม: `return jsonResponse({ error: "สมัครสมาชิกไม่สำเร็จ: " + errMsg }, 500)` — รั่ว D1 internal error
+      //   (table name, column name, SQL syntax) ให้ client → info disclosure
+      //   ใหม่: ใช้ safeError() เหมือนทุก endpoint — log จริงใน Worker logs + ส่งข้อความกลางๆ
+      return jsonResponse({ error: safeError("สมัครสมาชิกไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }
     // สร้าง session
     const token = await createCustomerSession(env, id);
