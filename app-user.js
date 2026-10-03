@@ -1096,6 +1096,15 @@ function setView(view) {
     const el = document.querySelector(selector);
     if (el) el.style.display = showSongs ? "" : "none";
   });
+  // 🛡️ (T007 hardening): ซ่อน/แสดง songGridSentinel + songListSentinel ตาม showSongs
+  //   เหตุผล: sentinel ทั้ง 2 ตัวเป็น siblings ของ #songGrid — เมื่อ #songGrid ถูกซ่อน (playlist tab)
+  //   → หน้าสั้นลง → sentinel เข้าใกล้ viewport → observer ยิง loadMoreSongs/renderNextBatch โดยไม่จำเป็น
+  //   → ประหยัด API calls + กัน DOM nodes สะสมใน #songGrid ที่ซ่อนอยู่
+  //   เมื่อกลับหน้า home/category/dj (showSongs=true) → restore display="" ให้ observer ทำงานได้ปกติ
+  ["#songGridSentinel", "#songListSentinel"].forEach(selector => {
+    const el = document.querySelector(selector);
+    if (el) el.style.display = showSongs ? "" : "none";
+  });
 
   // ให้ renderSongGrid() เป็นคนเดียวที่ตัดสินใจแสดง/ซ่อน emptyState เสมอ
   // (ถ้าไม่ได้อยู่หน้าที่โชว์เพลง ก็ซ่อน emptyState ไปด้วยตรงๆ)
@@ -1941,6 +1950,14 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
 function showMyOrdersView() {
   // ซ่อน view อื่นๆ (gridTitle, songGrid, category chips, dj, playlists, emptyState)
   ["#gridTitle", "#songGrid", "#emptyState"].forEach(selector => {
+    const el = document.querySelector(selector);
+    if (el) el.style.display = "none";
+  });
+  // 🛡️ (T007 hardening): ซ่อน songGridSentinel + songListSentinel ตอนอยู่ใน view อื่น
+  //   เหตุผล: sentinel ทั้ง 2 ตัวเป็น siblings ของ #songGrid — เมื่อ #songGrid ถูกซ่อน หน้าจะสั้นลง
+  //   → sentinel เข้าใกล้ viewport → observer ยิง loadMoreSongs/renderNextBatch โดยไม่จำเป็น
+  //   → ประหยัด API calls + กัน DOM nodes สะสมใน #songGrid ที่ซ่อนอยู่
+  ["#songGridSentinel", "#songListSentinel"].forEach(selector => {
     const el = document.querySelector(selector);
     if (el) el.style.display = "none";
   });
@@ -3995,6 +4012,14 @@ function renderPromotionsView() {
 function showPromotionsView() {
   // ซ่อน view อื่น ๆ
   ["#gridTitle", "#songGrid", "#emptyState"].forEach(selector => {
+    const el = document.querySelector(selector);
+    if (el) el.style.display = "none";
+  });
+  // 🛡️ (T007 hardening): ซ่อน songGridSentinel + songListSentinel ตอนอยู่ใน view อื่น
+  //   เหตุผล: sentinel ทั้ง 2 ตัวเป็น siblings ของ #songGrid — เมื่อ #songGrid ถูกซ่อน หน้าจะสั้นลง
+  //   → sentinel เข้าใกล้ viewport → observer ยิง loadMoreSongs/renderNextBatch โดยไม่จำเป็น
+  //   → ประหยัด API calls + กัน DOM nodes สะสมใน #songGrid ที่ซ่อนอยู่
+  ["#songGridSentinel", "#songListSentinel"].forEach(selector => {
     const el = document.querySelector(selector);
     if (el) el.style.display = "none";
   });
