@@ -5776,3 +5776,258 @@ html.admin-page body {
   }
 }
 
+/* ============================================================
+   🆕 (T012): Reports View — สไตล์สำหรับหน้ารายงานยอดขาย (Admin)
+   - bar chart: CSS-only ไม่ใช้ chart library
+   - reports-table-wrap / reports-row: ตาราง Top Songs + Top DJs
+   - filter-row / filter-label / filter-input: advanced search panel
+   ผลกระทบระบบเดิม: 0% — class ใหม่ ไม่กระทบ class เดิม
+   ============================================================ */
+
+/* ---------- Bar Chart (CSS-only) ---------- */
+.bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 140px;
+  padding: 12px;
+  background: var(--surface);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow-x: auto;
+  overflow-y: hidden;
+  position: relative;
+}
+
+.bar-chart .bar {
+  flex: 1;
+  min-width: 3px;
+  max-width: 24px;
+  background: linear-gradient(to top, var(--accent), var(--accent-2));
+  border-radius: 4px 4px 0 0;
+  position: relative;
+  min-height: 2px;
+  transition: height 0.3s ease, filter 0.2s ease;
+  cursor: pointer;
+}
+
+.bar-chart .bar:hover {
+  filter: brightness(1.2);
+}
+
+/* tooltip บน hover — แสดงข้อมูลวันที่ + จำนวนออเดอร์ + ยอดขาย */
+.bar-chart .bar:hover::after {
+  content: attr(data-value);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  z-index: 10;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 4px;
+}
+
+.bar-chart-empty {
+  width: 100%;
+  text-align: center;
+  align-self: center;
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 20px 0;
+}
+
+/* มือถือจอแคบ ≤ 600px — bar chart สั้นลง + bar แคบลง */
+@media (max-width: 600px) {
+  .bar-chart {
+    height: 110px;
+    padding: 8px;
+    gap: 1px;
+  }
+  .bar-chart .bar {
+    min-width: 2px;
+    max-width: 14px;
+  }
+}
+
+/* ---------- Reports Table (Top Songs / Top DJs) ---------- */
+.reports-table-wrap {
+  background: var(--surface);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 8px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.reports-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+
+.reports-row:hover {
+  background: var(--surface-hover);
+}
+
+.reports-row + .reports-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.reports-rank {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 14px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  color: var(--text-dim);
+}
+
+.reports-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.reports-name {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reports-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.reports-empty {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 24px 8px;
+  font-size: 13px;
+}
+
+/* มือถือจอแคบ ≤ 600px — ตาราง compact ลง */
+@media (max-width: 600px) {
+  .reports-row {
+    padding: 8px 10px;
+    gap: 10px;
+  }
+  .reports-rank {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+  .reports-name {
+    font-size: 12px;
+  }
+  .reports-sub {
+    font-size: 10px;
+  }
+}
+
+/* ---------- Period selector buttons (active state) ---------- */
+.reports-period-btn {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.reports-period-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--accent);
+}
+
+/* ---------- Advanced Search Panel (Orders view) ---------- */
+.advanced-search-panel {
+  margin: 10px 0;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.filter-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+  flex: 1;
+  min-width: 140px;
+}
+
+.filter-input {
+  background: var(--surface-2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.filter-input:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* มือถือจอแคบ ≤ 600px — filter panel compact */
+@media (max-width: 600px) {
+  .advanced-search-panel {
+    padding: 10px;
+    gap: 8px;
+  }
+  .filter-label {
+    min-width: 100%;
+    font-size: 11px;
+  }
+  .filter-row {
+    gap: 8px;
+  }
+  .filter-input {
+    padding: 7px 9px;
+    font-size: 12px;
+  }
+}
+
+

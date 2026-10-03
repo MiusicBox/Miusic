@@ -1838,6 +1838,13 @@ async function handleDb(request, env, url) {
   //   response: { docs: [{ id, data }], total: <number> }
   //   ค้นใน: customer_name, whatsapp, receipt_number, id (LIKE %q%)
   //   Security: admin-only (PII)
+  //
+  // 🆕 (T012): Advanced search — เพิ่ม optional filters ใน body
+  //   { q?, limit?, offset?, date_from?, date_to?, status?, min_amount?, max_amount? }
+  //   - ถ้ามี q → ใช้ text search เหมือนเดิม (UNION ALL 4 ฟิลด์) + เพิ่ม filter clause ทุก branch
+  //   - ถ้าไม่มี q แต่มี filter → ใช้ SELECT เดียว (ไม่ต้อง UNION)
+  //   - ถ้าไม่มีทั้งคู่ → return empty (เหมือนเดิม — back-compatible)
+  //   ผลกระทบระบบเดิม: 0% — client เดิมที่ส่งแค่ { q } ยังทำงานเหมือนเดิม
   if (isOrdersAdminSearchEndpoint) {
     if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
     let body;
@@ -1845,7 +1852,24 @@ async function handleDb(request, env, url) {
     const q = String(body?.q || "").trim();
     const limit = Math.min(Math.max(Number(body?.limit) || 200, 1), 500);
     const offset = Math.max(Number(body?.offset) || 0, 0);
-    if (!q) return jsonResponse({ docs: [], total: 0 });
+
+    // 🆕 (T012): parse advanced filters — ทำความสะอาดค่า + sanitize
+    //   - date_from/date_to: ISO 8601 string (เช่น "2026-09-01" หรือ "2026-09-01T00:00:00.000Z")
+    //   - status: เลือกจาก enum ที่กำหนด (pending_verify/processing/completed/cancelled/rejected/verified)
+    //   - min_amount/max_amount: ตัวเลข >= 0
+    const ALLOWED_STATUS = new Set(["pending_verify", "processing", "completed", "cancelled", "rejected", "verified"]);
+    const dateFrom = String(body?.date_from || "").trim() || null;
+    const dateTo = String(body?.date_to || "").trim() || null;
+    const statusFilter = ALLOWED_STATUS.has(String(body?.status || "")) ? String(body.status) : null;
+    let minAmount = body?.min_amount != null ? Number(body.min_amount) : null;
+    if (!Number.isFinite(minAmount) || minAmount < 0) minAmount = null;
+    let maxAmount = body?.max_amount != null ? Number(body.max_amount) : null;
+    if (!Number.isFinite(maxAmount) || maxAmount < 0) maxAmount = null;
+
+    // ถ้าไม่มี q และไม่มี filter ใด ๆ → return empty (back-compatible)
+    if (!q && !dateFrom && !dateTo && !statusFilter && minAmount == null && maxAmount == null) {
+      return jsonResponse({ docs: [], total: 0, limit, offset });
+    }
 
     try {
       // 🔒 (Audit Fix H-7): ใช้ LIKE บน json_extract ของหลายฟิลด์ + id column
@@ -1855,42 +1879,96 @@ async function handleDb(request, env, url) {
       //   ⚠️ ใช้ OR 4 คอลัมน์ → D1 ต้อง scan 4 ครั้ง (or ใช้ UNION ALL)
       //   เลือกใช้ UNION ALL เพื่อใช้ index ของแต่ละ column ได้ (ถ้ามี)
       //   ผลกระทบระบบเดิม: 0% — เป็น endpoint ใหม่ ไม่แตะของเดิม
-      const likePattern = `%${q.replace(/[%_]/g, (m) => "\\" + m)}%`; // escape wildcards
-      const sql = `
-        SELECT id, data, created_at FROM (
-          SELECT id, data, created_at FROM documents
-          WHERE collection = 'orders' AND id LIKE ? ESCAPE '\\'
-          UNION ALL
-          SELECT id, data, created_at FROM documents
-          WHERE collection = 'orders' AND json_extract(data, '$.customer_name') LIKE ? ESCAPE '\\'
-          UNION ALL
-          SELECT id, data, created_at FROM documents
-          WHERE collection = 'orders' AND json_extract(data, '$.whatsapp') LIKE ? ESCAPE '\\'
-          UNION ALL
-          SELECT id, data, created_at FROM documents
-          WHERE collection = 'orders' AND json_extract(data, '$.receipt_number') LIKE ? ESCAPE '\\'
-        )
-        GROUP BY id  -- dedup (order อาจ match หลาย field)
-        ORDER BY MAX(created_at) DESC
-        LIMIT ? OFFSET ?
-      `;
-      const { results } = await env.DB.prepare(sql)
-        .bind(likePattern, likePattern, likePattern, likePattern, limit, offset).all();
 
-      // count total (สำหรับ pagination UI ในอนาคต)
-      const countSql = `
-        SELECT COUNT(*) AS c FROM (
-          SELECT id FROM documents WHERE collection = 'orders' AND id LIKE ? ESCAPE '\\'
-          UNION
-          SELECT id FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_name') LIKE ? ESCAPE '\\'
-          UNION
-          SELECT id FROM documents WHERE collection = 'orders' AND json_extract(data, '$.whatsapp') LIKE ? ESCAPE '\\'
-          UNION
-          SELECT id FROM documents WHERE collection = 'orders' AND json_extract(data, '$.receipt_number') LIKE ? ESCAPE '\\'
-        )
-      `;
-      const countRow = await env.DB.prepare(countSql)
-        .bind(likePattern, likePattern, likePattern, likePattern).first();
+      // 🆕 (T012): สร้าง filter SQL fragment + binds ที่จะใช้ซ้ำในทุก UNION branch
+      //   - แต่ละ branch ต้องมี filter เดียวกัน เพื่อให้ filter ทำงานครบทุก branch
+      //   - ใช้ escapeLikePattern() ที่มีอยู่แล้วสำหรับ q (T011-L6)
+      const filterClauses = [];
+      const filterBinds = [];
+      if (dateFrom) {
+        filterClauses.push("json_extract(data, '$.created_at') >= ?");
+        filterBinds.push(dateFrom);
+      }
+      if (dateTo) {
+        filterClauses.push("json_extract(data, '$.created_at') <= ?");
+        filterBinds.push(dateTo);
+      }
+      if (statusFilter) {
+        filterClauses.push("json_extract(data, '$.status') = ?");
+        filterBinds.push(statusFilter);
+      }
+      if (minAmount != null) {
+        filterClauses.push("CAST(json_extract(data, '$.final_total') AS REAL) >= ?");
+        filterBinds.push(minAmount);
+      }
+      if (maxAmount != null) {
+        filterClauses.push("CAST(json_extract(data, '$.final_total') AS REAL) <= ?");
+        filterBinds.push(maxAmount);
+      }
+      const filterSql = filterClauses.length > 0 ? " AND " + filterClauses.join(" AND ") : "";
+
+      const hasTextSearch = !!q;
+
+      // === Branch A: มี text search → ใช้ UNION ALL (preserves index usage) ===
+      if (hasTextSearch) {
+        const escapedQ = escapeLikePattern(q);
+        const likePattern = `%${escapedQ}%`;
+        // build 4 branches — แต่ละ branch ใช้ likePattern 1 ครั้ง + filter binds เดียวกัน
+        const branchBinds = [];
+        const branches = [
+          `SELECT id, data, created_at FROM documents WHERE collection = 'orders' AND id LIKE ? ESCAPE '\\'${filterSql}`,
+          `SELECT id, data, created_at FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_name') LIKE ? ESCAPE '\\'${filterSql}`,
+          `SELECT id, data, created_at FROM documents WHERE collection = 'orders' AND json_extract(data, '$.whatsapp') LIKE ? ESCAPE '\\'${filterSql}`,
+          `SELECT id, data, created_at FROM documents WHERE collection = 'orders' AND json_extract(data, '$.receipt_number') LIKE ? ESCAPE '\\'${filterSql}`,
+        ];
+        // binds สำหรับ data query: [likePattern, ...filterBinds] × 4 branches + [limit, offset]
+        const dataBinds = [];
+        for (let i = 0; i < 4; i++) {
+          dataBinds.push(likePattern, ...filterBinds);
+        }
+        dataBinds.push(limit, offset);
+
+        const sql = `
+          SELECT id, data, created_at FROM (
+            ${branches.join("\n            UNION ALL\n            ")}
+          )
+          GROUP BY id  -- dedup (order อาจ match หลาย field)
+          ORDER BY MAX(created_at) DESC
+          LIMIT ? OFFSET ?
+        `;
+        const { results } = await env.DB.prepare(sql).bind(...dataBinds).all();
+
+        // count total (สำหรับ pagination UI)
+        //   ใช้ UNION (ไม่ใช่ UNION ALL) เพื่อนับ id ที่ไม่ซ้ำ
+        const countBranches = [
+          `SELECT id FROM documents WHERE collection = 'orders' AND id LIKE ? ESCAPE '\\'${filterSql}`,
+          `SELECT id FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_name') LIKE ? ESCAPE '\\'${filterSql}`,
+          `SELECT id FROM documents WHERE collection = 'orders' AND json_extract(data, '$.whatsapp') LIKE ? ESCAPE '\\'${filterSql}`,
+          `SELECT id FROM documents WHERE collection = 'orders' AND json_extract(data, '$.receipt_number') LIKE ? ESCAPE '\\'${filterSql}`,
+        ];
+        const countSql = `SELECT COUNT(*) AS c FROM (${countBranches.join("\n          UNION\n          ")})`;
+        const countBinds = [];
+        for (let i = 0; i < 4; i++) {
+          countBinds.push(likePattern, ...filterBinds);
+        }
+        const countRow = await env.DB.prepare(countSql).bind(...countBinds).first();
+        const total = countRow?.c || 0;
+
+        const docs = (results || []).map(r => ({ id: r.id, data: JSON.parse(r.data) }));
+        return jsonResponse({ docs, total, limit, offset });
+      }
+
+      // === Branch B: ไม่มี text search → filter-only query (ใช้ SELECT เดียว ใช้ index ของ status) ===
+      //   - ไม่ต้อง UNION ALL เพราะไม่มี text OR
+      //   - ใช้ index idx_documents_orders_status สำหรับ status filter
+      //   - ใช้ index idx_documents_collection_created_at สำหรับ collection
+      const whereClauses = ["collection = 'orders'", ...filterClauses];
+      const dataSql = `SELECT id, data, created_at FROM documents WHERE ${whereClauses.join(" AND ")} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+      const dataBinds = [...filterBinds, limit, offset];
+      const { results } = await env.DB.prepare(dataSql).bind(...dataBinds).all();
+
+      const countSql = `SELECT COUNT(*) AS c FROM documents WHERE ${whereClauses.join(" AND ")}`;
+      const countRow = await env.DB.prepare(countSql).bind(...filterBinds).first();
       const total = countRow?.c || 0;
 
       const docs = (results || []).map(r => ({ id: r.id, data: JSON.parse(r.data) }));
@@ -6025,6 +6103,220 @@ async function handleCustomerAuth(request, env, url) {
     }
   }
 
+  // ============================================================
+  // 🆕 (T012): /api/admin/reports/* — รายงานยอดขาย (Admin only)
+  //   - GET /api/admin/reports/sales-summary?period=daily|weekly|monthly
+  //   - GET /api/admin/reports/top-songs?limit=10
+  //   - GET /api/admin/reports/top-djs?limit=10
+  // ------------------------------------------------------------
+  // กฎเหล็ก:
+  //   - ไม่แก้ logic ระบบชำระเงิน (read-only reports)
+  //   - ใช้ D1 SQL aggregate (GROUP BY) ไม่ใช่ loop N+1
+  //   - ใช้เฉพาะ orders ที่สำเร็จ (status: completed | processing | verified)
+  //     * verified คือออเดอร์ที่แอดมินยืนยันสลิปแล้ว แต่ยังไม่ได้ mark completed
+  //     * processing คือออเดอร์ที่กำลังดำเนินการ (อาจหมายถึงกำลังสร้าง ZIP)
+  //     * completed คือออเดอร์สำเร็จเต็มรูปแบบ (ZIP ส่งลูกค้าแล้ว)
+  //   - ผลกระทบระบบเดิม: 0% — endpoints ใหม่ ไม่แตะของเดิม
+  // ============================================================
+
+  // 🆕 (T012): GET /api/admin/reports/sales-summary
+  //   query: ?period=daily|weekly|monthly (default: daily)
+  //     - daily: 30 วันล่าสุด (group by date)
+  //     - weekly: 90 วันล่าสุด (group by date — admin เห็นเป็นรายวัน 90 วัน)
+  //     - monthly: 365 วันล่าสุด (group by date — admin เห็นเป็นรายวัน 1 ปี)
+  //   response: { ok, period, summary: {total_orders, total_revenue, avg_order_value}, data: [{date, order_count, revenue}] }
+  if (url.pathname === "/api/admin/reports/sales-summary" && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ไม่ได้รับอนุญาต" }, 401);
+
+    try {
+      const period = String(url.searchParams.get("period") || "daily").trim();
+      // กำหนดระยะเวลาย้อนหลัง (วัน) ตาม period
+      //   - daily: 30 วัน (1 เดือนย้อนหลัง)
+      //   - weekly: 90 วัน (3 เดือนย้อนหลัง)
+      //   - monthly: 365 วัน (1 ปีย้อนหลัง)
+      const days = period === "weekly" ? 90 : period === "monthly" ? 365 : 30;
+      const normalizedPeriod = period === "weekly" || period === "monthly" ? period : "daily";
+      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      // 🆕 (T012): SQL aggregate — GROUP BY date (1 query สำหรับทั้งช่วง)
+      //   - DATE(json_extract(data, '$.created_at')) ดึงแค่ส่วน YYYY-MM-DD
+      //   - ใช้ index idx_documents_orders_status สำหรับ status filter (composite)
+      //   - ใช้ index idx_documents_collection_created_at สำหรับ collection + created_at
+      //   - LIMIT 365 กันผลลัพธ์ใหญ่เกิน (ป้องกัน D1 row limit)
+      const { results } = await env.DB.prepare(
+        `SELECT
+           DATE(json_extract(data, '$.created_at')) as date,
+           COUNT(*) as order_count,
+           SUM(CAST(json_extract(data, '$.final_total') AS REAL)) as revenue
+         FROM documents
+         WHERE collection = 'orders'
+           AND json_extract(data, '$.status') IN ('completed', 'processing', 'verified')
+           AND json_extract(data, '$.created_at') >= ?
+         GROUP BY DATE(json_extract(data, '$.created_at'))
+         ORDER BY date DESC
+         LIMIT 365`
+      ).bind(startDate).all();
+
+      const rows = results || [];
+      const totalOrders = rows.reduce((sum, r) => sum + (r.order_count || 0), 0);
+      const totalRevenue = rows.reduce((sum, r) => sum + (Number(r.revenue) || 0), 0);
+      const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+      return jsonResponse({
+        ok: true,
+        period: normalizedPeriod,
+        days_back: days,
+        summary: {
+          total_orders: totalOrders,
+          total_revenue: Math.round(totalRevenue * 100) / 100,
+          avg_order_value: Math.round(avgOrderValue * 100) / 100,
+        },
+        data: rows.map(r => ({
+          date: r.date,
+          order_count: r.order_count,
+          revenue: Math.round((Number(r.revenue) || 0) * 100) / 100,
+        })),
+      });
+    } catch (err) {
+      return jsonResponse({ error: safeError("โหลดรายงานยอดขายไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // 🆕 (T012): GET /api/admin/reports/top-songs?limit=10
+  //   response: { ok, top_songs: [{ song_id, title, sales_count, revenue }] }
+  //   - ดึง orders ที่สำเร็จ → extract items → GROUP BY song_id
+  //   - ใช้ json_each ของ items array (SQLite function)
+  //   - กรองเฉพาะ items ที่มี song_id (kind:"song" หรือ legacy flat items)
+  //     → ข้าม items ที่เป็น kind:"playlist" (ไม่มี song_id ตรง ๆ)
+  if (url.pathname === "/api/admin/reports/top-songs" && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ไม่ได้รับอนุญาต" }, 401);
+
+    try {
+      const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") || "10", 10) || 10, 1), 50);
+
+      // 🆕 (T012): SQL aggregate บน json_each — 1 query เดียว
+      //   - json_each คืน table ที่มี column "value" (เป็น JSON value ของแต่ละ item)
+      //   - ใช้ value->>'$.song_id' เพื่อ extract song_id (text)
+      //   - WHERE song_id IS NOT NULL กรอง playlist items ออก
+      //   - GROUP BY song_id → นับจำนวนครั้งที่ขาย + sum revenue
+      const { results } = await env.DB.prepare(
+        `SELECT
+           json_each.value->>'$.song_id' as song_id,
+           COALESCE(json_each.value->>'$.title', '(ไม่มีชื่อ)') as title,
+           COUNT(*) as sales_count,
+           SUM(CAST(json_each.value->>'$.price' AS REAL)) as revenue
+         FROM documents, json_each(json_extract(data, '$.items'))
+         WHERE collection = 'orders'
+           AND json_extract(data, '$.status') IN ('completed', 'processing', 'verified')
+           AND json_each.value->>'$.song_id' IS NOT NULL
+         GROUP BY song_id
+         ORDER BY sales_count DESC
+         LIMIT ?`
+      ).bind(limit).all();
+
+      return jsonResponse({
+        ok: true,
+        top_songs: (results || []).map(r => ({
+          song_id: r.song_id,
+          title: r.title,
+          sales_count: r.sales_count,
+          revenue: Math.round((Number(r.revenue) || 0) * 100) / 100,
+        })),
+      });
+    } catch (err) {
+      return jsonResponse({ error: safeError("โหลดรายงานเพลงขายดีไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // 🆕 (T012): GET /api/admin/reports/top-djs?limit=10
+  //   response: { ok, top_djs: [{ dj_name, sales_count, revenue, song_count }] }
+  //   - ใช้ SQL aggregate บน json_each เพื่อนับยอดขายต่อ song_id (เหมือน top-songs)
+  //   - จากนั้น batch lookup dj_name ของแต่ละ song_id จาก collection 'songs'
+  //   - สุดท้าย re-aggregate ตาม dj_name ฝั่ง JS (bounded by limit จึงไม่ใช่ N+1)
+  //   - ใช้ 2 D1 queries รวม (aggregate + batch lookup) ไม่ใช่ N queries
+  if (url.pathname === "/api/admin/reports/top-djs" && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ไม่ได้รับอนุญาต" }, 401);
+
+    try {
+      const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") || "10", 10) || 10, 1), 50);
+
+      // Step 1: aggregate ยอดขายต่อ song_id (เหมือน top-songs แต่ limit ใหญ่กว่า — ดึง top 200 song_id)
+      //   เพื่อให้ครอบคลุมเพลงทั้งหมดที่อาจเป็นของ DJ หลายคน → re-aggregate ต่อ dj_name ถูกต้อง
+      const SONG_LOOKUP_LIMIT = 200;
+      const { results: songAgg } = await env.DB.prepare(
+        `SELECT
+           json_each.value->>'$.song_id' as song_id,
+           COUNT(*) as sales_count,
+           SUM(CAST(json_each.value->>'$.price' AS REAL)) as revenue
+         FROM documents, json_each(json_extract(data, '$.items'))
+         WHERE collection = 'orders'
+           AND json_extract(data, '$.status') IN ('completed', 'processing', 'verified')
+           AND json_each.value->>'$.song_id' IS NOT NULL
+         GROUP BY song_id
+         ORDER BY sales_count DESC
+         LIMIT ?`
+      ).bind(SONG_LOOKUP_LIMIT).all();
+
+      const songRows = songAgg || [];
+      if (songRows.length === 0) {
+        return jsonResponse({ ok: true, top_djs: [] });
+      }
+
+      // Step 2: batch lookup dj_name ของแต่ละ song_id จาก collection 'songs' (1 query เดียวใช้ IN clause)
+      //   - ใช้ json_extract(data, '$.dj_name') เพื่อดึง dj_name จาก song document
+      //   - ใช้ placeholder แบบ dynamic (?, ?, ?, ...) ตามจำนวน song_id
+      //   - D1 รองรับ IN clause สูงสุด 500 expressions (แต่เราจำกัดที่ 200 → safe)
+      const songIds = songRows.map(r => r.song_id);
+      const placeholders = songIds.map(() => "?").join(",");
+      const songDjRows = await env.DB.prepare(
+        `SELECT id, json_extract(data, '$.dj_name') as dj_name
+         FROM documents
+         WHERE collection = 'songs' AND id IN (${placeholders})`
+      ).bind(...songIds).all();
+      const songDjMap = new Map();
+      for (const row of (songDjRows?.results || [])) {
+        const djName = row.dj_name ? String(row.dj_name) : "";
+        songDjMap.set(row.id, djName);
+      }
+
+      // Step 3: re-aggregate ตาม dj_name (ฝั่ง JS — bounded by SONG_LOOKUP_LIMIT=200)
+      //   - ถ้า dj_name ว่าง → ใส่ "(ไม่ระบุ DJ)"
+      //   - รวม sales_count + revenue + song_count (จำนวนเพลงที่ขายของ DJ นั้น)
+      const djAgg = new Map();
+      for (const song of songRows) {
+        const djName = songDjMap.get(song.song_id) || "(ไม่ระบุ DJ)";
+        if (!djAgg.has(djName)) {
+          djAgg.set(djName, { dj_name: djName, sales_count: 0, revenue: 0, song_count: 0 });
+        }
+        const entry = djAgg.get(djName);
+        entry.sales_count += song.sales_count || 0;
+        entry.revenue += Number(song.revenue) || 0;
+        entry.song_count += 1;
+      }
+
+      // Step 4: sort + slice to limit
+      const topDjs = Array.from(djAgg.values())
+        .sort((a, b) => (b.sales_count || 0) - (a.sales_count || 0))
+        .slice(0, limit)
+        .map(d => ({
+          dj_name: d.dj_name,
+          sales_count: d.sales_count,
+          revenue: Math.round(d.revenue * 100) / 100,
+          song_count: d.song_count,
+        }));
+
+      return jsonResponse({ ok: true, top_djs: topDjs });
+    } catch (err) {
+      return jsonResponse({ error: safeError("โหลดรายงาน DJ ขายดีไม่สำเร็จ", err) }, 500);
+    }
+  }
+
   return jsonResponse({ error: "ไม่พบ endpoint นี้" }, 404);
 }
 
@@ -7268,7 +7560,9 @@ export default {
     //   เฉพาะเมื่อ path ขึ้นต้นด้วย /api/customer/ (เอกพจน์) → /api/admin/* จึงไม่เคยถูกเรียก → 404
     //   แก้: เพิ่ม routing สำหรับ /api/admin/customers และ /api/admin/password-reset-requests ให้เรียก handleCustomerAuth()
     //   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่ม routing ใหม่ ไม่ลบ/เปลี่ยน routing เดิม
-    if (url.pathname.startsWith("/api/admin/customers") || url.pathname.startsWith("/api/admin/password-reset-requests")) {
+    // 🆕 (T012): เพิ่ม /api/admin/reports เข้าไปใน routing ให้เรียก handleCustomerAuth()
+    //   ใน handleCustomerAuth มี handler สำหรับ /api/admin/reports/sales-summary, top-songs, top-djs
+    if (url.pathname.startsWith("/api/admin/customers") || url.pathname.startsWith("/api/admin/password-reset-requests") || url.pathname.startsWith("/api/admin/reports")) {
       if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
       return handleCustomerAuth(request, env, url);
     }

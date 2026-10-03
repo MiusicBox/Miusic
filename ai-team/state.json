@@ -1,6 +1,6 @@
 {
-  "version": "1.7.0",
-  "last_updated": "2026-10-03T14:30:00+07:00",
+  "version": "1.9.0",
+  "last_updated": "2026-10-03T20:30:00+07:00",
   "current_session": {
     "session_id": "web-fa07595c-dcf9-4921-aa7a-8451696ed1c0",
     "started_at": "2026-10-03T10:00:00+07:00",
@@ -8,11 +8,15 @@
   },
   "tasks": {
     "active": [],
-    "pending_user_approval": [],
+    "pending_user_approval": [
+      {"id": "T011-validation-ux-light", "title": "Validation + UX เบา ๆ (L2,L3,L6,L8,L11 + F4,F5,F6)", "branch": "ai-team/T011-validation-ux-light", "commit_sha": "326e3c6", "pushed_at": "2026-10-03T19:30:00+07:00", "pr_url": "https://github.com/MiusicBox/Miusic/pull/new/ai-team/T011-validation-ux-light", "stage": "implementation_complete — พร้อมส่ง Stage 4 (Testing)"},
+      {"id": "T012-sales-report-search", "title": "ฟีเจอร์ใหม่ — รายงานยอดขาย + ค้นหาขั้นสูง", "branch": "ai-team/T012-sales-report-search", "pushed_at": "2026-10-03T20:30:00+07:00", "pr_url": "https://github.com/MiusicBox/Miusic/pull/new/ai-team/T012-sales-report-search", "stage": "implementation_complete — พร้อมส่ง Stage 4 (Testing)"}
+    ],
     "completed": [
       {"id": "T001-T007", "completed_at": "2026-10-03T13:30:00+07:00", "note": "ดูรายละเอียดใน state.json ก่อนหน้า"},
       {"id": "T008-urgent-bugs", "title": "แก้ Bug ด่วน 5 ตัว (M6, M2, L7, L9, L10)", "pr_number": 7, "completed_at": "2026-10-03T14:00:00+07:00", "merge_sha": "e0de042e", "deploy_version": "49686104-cca1-41d6-b822-2102370cc965", "bugs_fixed": ["M6 whatsapp normalize", "M2 safeError", "L7 amount_claimed NaN", "L9 R2 cleanup", "L10 favorites toggle"]},
-      {"id": "T009-ux-improvements", "title": "UX เร็ว 3 ตัว (F3 Toast, F2 Empty states, F1 Skeleton)", "pr_number": 8, "completed_at": "2026-10-03T14:30:00+07:00", "merge_sha": "f9b5eb55", "deploy_version": "04fd2f61-13ac-42aa-bea3-e560a9aa2ec8", "features_added": ["F3 toast multi-line", "F2 empty states (cart/orders/promo/favorites)", "F1 skeleton loaders"]}
+      {"id": "T009-ux-improvements", "title": "UX เร็ว 3 ตัว (F3 Toast, F2 Empty states, F1 Skeleton)", "pr_number": 8, "completed_at": "2026-10-03T14:30:00+07:00", "merge_sha": "f9b5eb55", "deploy_version": "04fd2f61-13ac-42aa-bea3-e560a9aa2ec8", "features_added": ["F3 toast multi-line", "F2 empty states (cart/orders/promo/favorites)", "F1 skeleton loaders"]},
+      {"id": "T010-security-hardening", "title": "Security hardening 8 ตัว (M1, M3, M5, M9, M10, M11, R5, R6)", "pr_number": 9, "completed_at": "2026-10-03T17:30:00+07:00", "merge_sha": "a6ad962", "features_added": ["security headers", "rate limits", "audit log mask", "cache poisoning fix", "pagination", "constants extraction"]}
     ],
     "blocked": []
   },
@@ -30,7 +34,8 @@
     "open_prs": [],
     "recent_merges": [
       {"number": 7, "title": "T008: Bug ด่วน 5 ตัว", "merged_at": "2026-10-03T14:00:00+07:00"},
-      {"number": 8, "title": "T009: UX 3 ตัว", "merged_at": "2026-10-03T14:30:00+07:00"}
+      {"number": 8, "title": "T009: UX 3 ตัว", "merged_at": "2026-10-03T14:30:00+07:00"},
+      {"number": 9, "title": "T010: Security hardening 8 ตัว", "merged_at": "2026-10-03T17:30:00+07:00"}
     ]
   },
   "cloudflare": {
@@ -56,13 +61,44 @@
     "toast_multi_line": "active (T009-F3)",
     "empty_states": "active (T009-F2) — cart/orders/promo/favorites",
     "skeleton_loaders": "active (T009-F1)",
+    "security_headers": "active (T010-M1)",
+    "change_password_rate_limit": "active (T010-M3)",
+    "audit_log_mask_email": "active (T010-M5)",
+    "cache_poisoning_fix": "active (T010-M9)",
+    "forgot_password_rate_limit": "active (T010-M10)",
+    "pagination": "active (T010-M11)",
+    "constants_centralized": "active (T010-R6)",
+    "email_format_validation": "active (T011-L2)",
+    "password_complexity": "active (T011-L3)",
+    "audit_log_like_escape": "active (T011-L6)",
+    "verify_amount_received_audit": "active (T011-L8)",
+    "customer_list_limit": "active (T011-L11)",
+    "password_show_hide_toggle": "active (T011-F4)",
+    "password_complexity_meter": "active (T011-F4)",
+    "cart_badge_bounce_haptic": "active (T011-F5)",
+    "scroll_to_top_button": "active (T011-F6)",
+    "sales_summary_reports": "active (T012) — GET /api/admin/reports/sales-summary?period=daily|weekly|monthly",
+    "top_songs_report": "active (T012) — GET /api/admin/reports/top-songs?limit=10",
+    "top_djs_report": "active (T012) — GET /api/admin/reports/top-djs?limit=10",
+    "advanced_order_search": "active (T012) — _admin-search รองรับ date_from/date_to/status/min_amount/max_amount",
+    "reports_view_admin": "active (T012) — view-reports + bar chart (CSS-only) + period selector",
+    "advanced_search_panel": "active (T012) — panel ใน view-orders ค้นหาด้วย date range + status + amount range",
     "iron_rules_3": "active"
   },
   "decisions_log": [
     {"id": "D001-D007", "note": "ดูใน state.json ก่อนหน้า"},
     {"id": "D008", "action": "T007 fix tab scroll bug"},
     {"id": "D009", "timestamp": "2026-10-03T13:45:00+07:00", "user_answer": "ประชุมทีม", "action": "TEAM-MEETING-001 — 4 roles รายงาน bug + UX + tech debt + security"},
-    {"id": "D010", "timestamp": "2026-10-03T13:50:00+07:00", "user_answer": "เลือก A — เริ่มจาก bug ด่วน + UX เร็ว", "action": "T008 + T009 ครบ"}
+    {"id": "D010", "timestamp": "2026-10-03T13:50:00+07:00", "user_answer": "เลือก A — เริ่มจาก bug ด่วน + UX เร็ว", "action": "T008 + T009 ครบ"},
+    {"id": "D011", "timestamp": "2026-10-03T17:30:00+07:00", "action": "T010 merge — security hardening 8 ตัวเสร็จ"},
+    {"id": "T011-D1", "timestamp": "2026-10-03T18:30:00+07:00", "action": "L4 skip — ตรวจพบว่าแก้แล้วใน T008 (DELETE customer_favorites + song_likes + password_reset_requests ก่อน DELETE customer)"},
+    {"id": "T011-D2", "timestamp": "2026-10-03T18:30:00+07:00", "action": "L13 skip — ตรวจพบว่าแก้แล้วใน T010-M11 (parsePagination + LIMIT ? OFFSET ?)"},
+    {"id": "T011-D3", "timestamp": "2026-10-03T18:45:00+07:00", "action": "L11 ใช้ LIMITS.MAX_PAGE (=200) แทน DEFAULT_PAGE (=50) เพื่อไม่ให้เป็น regression"},
+    {"id": "T012-D1", "timestamp": "2026-10-03T20:00:00+07:00", "action": "T012 — รายงานยอดขายใช้ status IN ('completed','processing','verified') เพราะ verified คือแอดมินยืนยันสลิปแล้ว (ยังไม่ completed แต่ถือว่าขายสำเร็จ)"},
+    {"id": "T012-D2", "timestamp": "2026-10-03T20:00:00+07:00", "action": "T012 — top-songs ใช้ json_each บน items array กรองเฉพาะ song_id IS NOT NULL (ข้าม playlist items เพราะ playlist ไม่มี song_id ตรง ๆ)"},
+    {"id": "T012-D3", "timestamp": "2026-10-03T20:00:00+07:00", "action": "T012 — top-djs ใช้ 2 D1 queries (aggregate + batch IN clause lookup) ไม่ใช่ N+1; re-aggregate dj_name ฝั่ง JS bounded โดย SONG_LOOKUP_LIMIT=200"},
+    {"id": "T012-D4", "timestamp": "2026-10-03T20:00:00+07:00", "action": "T012 — _admin-search ขยายด้วย optional body fields (date_from/date_to/status/min_amount/max_amount) ส่งเป็น top-level fields — back-compatible (client เดิมที่ส่งแค่ {q} ยังทำงาน)"},
+    {"id": "T012-D5", "timestamp": "2026-10-03T20:00:00+07:00", "action": "T012 — bar chart ใช้ CSS-only (ไม่ใช้ Chart.js) ประหยัด bundle + กัน dependency ใหม่"}
   ],
   "resume_instructions": {
     "how_to_resume": "บอก AI: 'resume ai-team'",
@@ -76,23 +112,24 @@
   },
   "next_actions_pending_user": [
     {
-      "action": "เลือกขั้นถัดไป (สัปดาห์ที่ 2-4 จากแผน)",
+      "action": "Review T011 + สร้าง PR",
       "options": [
-        "🅱️ สัปดาห์ที่ 2: Security hardening (M1, M3, M10, M5, L1-L4) — 13-15 ชม.",
-        "🅲️ สัปดาห์ที่ 3: ฟีเจอร์ใหม่ (รายงานยอดขาย + ค้นหาขั้นสูง) — 10-15 ชม.",
-        "🅳️ สัปดาห์ที่ 4: Refactor + ฟีเจอร์เสริม (F4 password, F5 cart badge, F6 scroll-to-top)",
-        "อื่น ๆ — บอกได้เลย"
+        "✅ Approve T011 → สร้าง PR + merge → deploy",
+        "❌ Reject → ส่งกลับให้แก้",
+        "🔍 ขอให้ Tester ทดสอบก่อน (Stage 4)"
       ]
     },
     {
       "action": "ทดสอบบนมือถือจริง (optional แต่แนะนำ)",
       "tests": [
-        "Toast: ทำให้เกิด error ยาว ๆ → ดูว่าขึ้นหลายบรรทัดไหม",
-        "Empty states: เปิดตะกร้าว่าง → ดูว่ามี icon + CTA ไหม",
-        "Skeleton: refresh หน้าแรก → ดูว่ามี shimmer ตอนโหลดไหม",
-        "Favorites toggle: กด ❤️ ซ้ำ → ดูว่ายกเลิกได้ไหม",
-        "WhatsApp login: ลอง login ด้วยเบอร์ format ต่าง ๆ (+85620xxx, 020xxx, 85620xxx)"
+        "F4 password toggle: กด 👁 → ดูว่ารหัสผ่านเปลี่ยนเป็น text, กดอีกทีกลับเป็น password",
+        "F4 complexity meter: พิมพ์รหัสผ่านในช่อง register → ดูว่าแถบเปลี่ยนสี (แดง/เหลือง/เขียว)",
+        "F5 cart bounce: เพิ่มสินค้าลงตะกร้า → ดูว่า badge กระพริบ + มือถือสั่น (ถ้ารองรับ)",
+        "F6 scroll-to-top: เลื่อนหน้าลงมาเกิน 400px → ดูว่ามีปุ่ม ↑ ลอยขึ้นมาที่ซ้ายล่าง",
+        "L2 email validation: ลองสมัครด้วย email ผิด format (เช่น 'abc') → ดูว่าขึ้น 'รูปแบบอีเมลไม่ถูกต้อง'",
+        "L3 password complexity: ลองสมัครด้วย 'aaaaaa' → ดูว่าขึ้น 'ต้องมีตัวเลขหรืออักขระพิเศษ'"
       ]
     }
   ]
 }
+

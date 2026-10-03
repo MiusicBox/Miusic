@@ -6027,3 +6027,231 @@ document.getElementById("songDetailSavePreviewBtn").addEventListener("click", as
   }
   btn.disabled = false; btn.textContent = "💾 บันทึก Preview ลงเพลงนี้";
 });
+
+// ============================================================
+// 🆕 (T012): Reports View — รายงานยอดขาย (Admin only)
+//   - ดึงข้อมูลจาก /api/admin/reports/{sales-summary, top-songs, top-djs}
+//   - แสดง: การ์ดสรุปยอด + bar chart รายวัน + ตาราง Top Songs + Top DJs
+//   - period selector: daily (30d) / weekly (90d) / monthly (365d)
+//   - bar chart: CSS-only ไม่ใช้ chart library (กัน dependency + ประหยัด bundle)
+//   ผลกระทบระบบเดิม: 0% — view ใหม่, ไม่แตะ view เดิม
+// ============================================================
+
+const reportsViewState = {
+  period: "daily",       // daily | weekly | monthly
+  loading: false,
+  listenersBound: false, // กัน duplicate listeners ถ้า initReportsView ถูกเรียกซ้ำ
+};
+
+// 🆕 (T012): ปุ่ม dashboard → view-reports
+document.getElementById("qaReportsNew")?.addEventListener("click", () => {
+  showView("view-reports");
+  initReportsView();
+});
+
+async function initReportsView() {
+  // ผูก period buttons + refresh btn ครั้งเดียว (กัน duplicate)
+  if (!reportsViewState.listenersBound) {
+    document.querySelectorAll(".reports-period-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const p = btn.dataset.period;
+        if (!p || p === reportsViewState.period) return;
+        reportsViewState.period = p;
+        updateReportsPeriodActiveBtn();
+        loadReports(p);
+      });
+    });
+    document.getElementById("reportsRefreshBtn")?.addEventListener("click", () => {
+      loadReports(reportsViewState.period);
+    });
+    reportsViewState.listenersBound = true;
+  }
+  updateReportsPeriodActiveBtn();
+  await loadReports(reportsViewState.period);
+}
+
+function updateReportsPeriodActiveBtn() {
+  document.querySelectorAll(".reports-period-btn").forEach(btn => {
+    const isActive = btn.dataset.period === reportsViewState.period;
+    if (isActive) {
+      btn.style.background = "var(--accent)";
+      btn.style.color = "#fff";
+      btn.style.borderColor = "var(--accent)";
+    } else {
+      btn.style.background = "rgba(255,255,255,.04)";
+      btn.style.color = "var(--text)";
+      btn.style.borderColor = "rgba(255,255,255,.12)";
+    }
+  });
+}
+
+// 🆕 (T012): โหลดข้อมูล 3 endpoints พร้อมกัน (Promise.all) — ลด latency รวม
+async function loadReports(period) {
+  if (reportsViewState.loading) return;
+  reportsViewState.loading = true;
+  try {
+    // แสดง loading state
+    setReportsLoading(true);
+
+    const [summaryRes, topSongsRes, topDjsRes] = await Promise.all([
+      fetch(`/api/admin/reports/sales-summary?period=${encodeURIComponent(period || "daily")}`, { credentials: "same-origin" }),
+      fetch(`/api/admin/reports/top-songs?limit=10`, { credentials: "same-origin" }),
+      fetch(`/api/admin/reports/top-djs?limit=10`, { credentials: "same-origin" }),
+    ]);
+
+    // ถ้า endpoint ใดส่ง 401 → ส่งไป login ใหม่
+    if (summaryRes.status === 401 || topSongsRes.status === 401 || topDjsRes.status === 401) {
+      if (typeof showLogin === "function") showLogin();
+      return;
+    }
+
+    const summaryData = summaryRes.ok ? await summaryRes.json().catch(() => null) : null;
+    const topSongsData = topSongsRes.ok ? await topSongsRes.json().catch(() => null) : null;
+    const topDjsData = topDjsRes.ok ? await topDjsRes.json().catch(() => null) : null;
+
+    // render summary + bar chart
+    if (summaryData?.ok) {
+      renderReportsSummary(summaryData.summary || {}, summaryData.data || []);
+    } else {
+      renderReportsError("rptBarChart", summaryData?.error || "โหลดสรุปยอดขายไม่สำเร็จ");
+    }
+
+    // render top songs
+    if (topSongsData?.ok) {
+      renderTopSongsTable(topSongsData.top_songs || []);
+    } else {
+      renderReportsError("rptTopSongs", topSongsData?.error || "โหลดเพลงขายดีไม่สำเร็จ");
+    }
+
+    // render top DJs
+    if (topDjsData?.ok) {
+      renderTopDjsTable(topDjsData.top_djs || []);
+    } else {
+      renderReportsError("rptTopDjs", topDjsData?.error || "โหลด DJ ขายดีไม่สำเร็จ");
+    }
+  } catch (err) {
+    console.error("[T012] loadReports error:", err);
+    if (typeof showToast === "function") showToast("โหลดรายงานไม่สำเร็จ: " + (err?.message || err), "error");
+  } finally {
+    reportsViewState.loading = false;
+    setReportsLoading(false);
+  }
+}
+
+function setReportsLoading(isLoading) {
+  // แค่อัปเดต cursor + opacity ของ chart container — ไม่ทับ innerHTML กัน render กระตุก
+  const wrap = document.getElementById("rptBarChartWrap");
+  if (wrap) {
+    wrap.style.opacity = isLoading ? "0.5" : "1";
+    wrap.style.pointerEvents = isLoading ? "none" : "auto";
+  }
+}
+
+function renderReportsSummary(summary, dailyData) {
+  // การ์ดสรุปยอด
+  const totalOrders = document.getElementById("rptTotalOrders");
+  const totalRevenue = document.getElementById("rptTotalRevenue");
+  const avgOrder = document.getElementById("rptAvgOrder");
+  if (totalOrders) totalOrders.textContent = Number(summary.total_orders || 0).toLocaleString("en-US");
+  if (totalRevenue) totalRevenue.textContent = Number(summary.total_revenue || 0).toLocaleString("en-US");
+  if (avgOrder) avgOrder.textContent = Number(summary.avg_order_value || 0).toLocaleString("en-US");
+
+  // bar chart รายวัน — dailyData = [{date, order_count, revenue}]
+  renderReportsBarChart(dailyData);
+}
+
+function renderReportsBarChart(dailyData) {
+  const chart = document.getElementById("rptBarChart");
+  if (!chart) return;
+
+  if (!Array.isArray(dailyData) || dailyData.length === 0) {
+    chart.innerHTML = `<div class="bar-chart-empty">ยังไม่มีข้อมูลยอดขายในช่วงนี้</div>`;
+    return;
+  }
+
+  // dailyData มาจาก API เรียงจากวันล่าสุด → วันเก่าสุด (DESC)
+  // แต่ bar chart อ่านซ้าย → ขวา = เก่า → ใหม่ → ต้อง reverse
+  const sortedAsc = [...dailyData].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+
+  // หาค่าสูงสุดเพื่อ normalize ความสูงแท่ง (0-100%)
+  const maxRevenue = sortedAsc.reduce((m, r) => Math.max(m, Number(r.revenue) || 0), 0);
+  const maxOrders = sortedAsc.reduce((m, r) => Math.max(m, Number(r.order_count) || 0), 0);
+
+  // ถ้าทุกวันยอด 0 → แสดง empty
+  if (maxRevenue === 0 && maxOrders === 0) {
+    chart.innerHTML = `<div class="bar-chart-empty">ยอดขายทุกวันเป็น 0 — ยังไม่มีออเดอร์สำเร็จในช่วงนี้</div>`;
+    return;
+  }
+
+  // สร้างแท่ง — ใช้ revenue เป็นความสูง (normalize 0-100%)
+  //   แต่ละแท่งมี data-value สำหรับ tooltip บน hover (CSS .bar:hover::after)
+  //   ถ้าจำนวนวันเยอะมาก (>60) จะแสดงทุกวัน — bar จะบาง แต่ยังดู trend ได้
+  const bars = sortedAsc.map(r => {
+    const revenue = Number(r.revenue) || 0;
+    const orders = Number(r.order_count) || 0;
+    const heightPct = maxRevenue > 0 ? Math.max(2, (revenue / maxRevenue) * 100) : (orders > 0 ? 5 : 0);
+    const date = String(r.date || "");
+    // short date label เช่น "10/03" (DD/MM)
+    const shortDate = (() => {
+      const parts = date.split("-");
+      if (parts.length === 3) return `${parts[2]}/${parts[1]}`;
+      return date.slice(5);
+    })();
+    const tooltipText = `${date} · ${orders} ออเดอร์ · ${revenue.toLocaleString("en-US")} LAK`;
+    return `<div class="bar" style="height:${heightPct}%;" data-value="${escapeHtml(tooltipText)}" title="${escapeHtml(shortDate)}: ${orders} ออเดอร์"></div>`;
+  }).join("");
+
+  chart.innerHTML = bars;
+}
+
+function renderTopSongsTable(songs) {
+  const wrap = document.getElementById("rptTopSongs");
+  if (!wrap) return;
+  if (!Array.isArray(songs) || songs.length === 0) {
+    wrap.innerHTML = `<div class="reports-empty">ยังไม่มีเพลงที่ขายในช่วงนี้</div>`;
+    return;
+  }
+  const rows = songs.map((s, i) => {
+    const rank = i + 1;
+    const rankBadge = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `${rank}`;
+    return `
+      <div class="reports-row">
+        <div class="reports-rank">${rankBadge}</div>
+        <div class="reports-info">
+          <div class="reports-name">${escapeHtml(s.title || "(ไม่มีชื่อ)")}</div>
+          <div class="reports-sub">${Number(s.sales_count || 0).toLocaleString("en-US")} ครั้ง · ${formatPrice(s.revenue)}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+  wrap.innerHTML = rows;
+}
+
+function renderTopDjsTable(djs) {
+  const wrap = document.getElementById("rptTopDjs");
+  if (!wrap) return;
+  if (!Array.isArray(djs) || djs.length === 0) {
+    wrap.innerHTML = `<div class="reports-empty">ยังไม่มี DJ ที่ขายในช่วงนี้</div>`;
+    return;
+  }
+  const rows = djs.map((d, i) => {
+    const rank = i + 1;
+    const rankBadge = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `${rank}`;
+    return `
+      <div class="reports-row">
+        <div class="reports-rank">${rankBadge}</div>
+        <div class="reports-info">
+          <div class="reports-name">🎧 ${escapeHtml(d.dj_name || "(ไม่ระบุ DJ)")}</div>
+          <div class="reports-sub">${Number(d.sales_count || 0).toLocaleString("en-US")} ครั้ง · ${Number(d.song_count || 0).toLocaleString("en-US")} เพลง · ${formatPrice(d.revenue)}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+  wrap.innerHTML = rows;
+}
+
+function renderReportsError(elementId, message) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  el.innerHTML = `<div class="reports-empty" style="color:var(--danger);">${escapeHtml(message || "เกิดข้อผิดพลาด")}</div>`;
+}

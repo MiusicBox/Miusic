@@ -6,7 +6,7 @@
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): noindex meta — กัน Google index หน้า admin -->
 <meta name="robots" content="noindex, nofollow">
 <title>Admin - Music Store</title>
-<link rel="stylesheet" href="style.css?v=20260922-batch10">
+<link rel="stylesheet" href="style.css?v=20261003-T012">
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1) + 🔒 (Audit Fix H-13): Self-host html2canvas
      เดิม: orders.js ใช้ dynamic import ทุกครั้ง → ช้า + พังถ้า CDN ล่ม
@@ -93,6 +93,8 @@
               <button id="qaOrdersDirect" style="padding:10px 8px;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">📋 รายการออเดอร์</button>
               <button id="qaPaymentsDirect" style="padding:10px 8px;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">🧾 ตรวจสลิป</button>
             </div>
+            <!-- 🆕 (T012): ปุ่มรายงานยอดขาย — ไปยัง view-reports (sales summary + top songs + top DJs) -->
+            <button id="qaReportsNew" type="button" style="padding:10px 8px;font-size:12px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">📊 รายงานยอดขาย</button>
           </div>
         </div>
 
@@ -478,7 +480,46 @@
           <input id="ordHistorySearch" type="text" placeholder="🔍 ค้นหาออเดอร์: ชื่อลูกค้า, เบอร์ WhatsApp, ชื่อเพลง, เพลย์ลิสต์, เลขออเดอร์..." autocomplete="off">
         </div>
         <button type="button" class="search-clear" id="ordHistorySearchClear" title="ล้างการค้นหา">✕ ล้าง</button>
+        <!-- 🆕 (T012): ปุ่มเปิด/ปิด advanced search panel — ค้นหาด้วย date range + status + amount range -->
+        <button type="button" class="btn secondary" id="ordAdvancedSearchToggle" title="ค้นหาขั้นสูง" style="padding:8px 12px;font-size:13px;white-space:nowrap;">🔍 ขั้นสูง</button>
       </div>
+
+      <!-- 🆕 (T012): Advanced search panel — ขยายด้วยปุ่ม "ขั้นสูง" ด้านบน -->
+      <div class="advanced-search-panel" id="advancedSearchPanel" style="display:none;">
+        <div class="filter-row">
+          <label class="filter-label">จากวันที่
+            <input type="date" id="advDateFrom" class="filter-input">
+          </label>
+          <label class="filter-label">ถึงวันที่
+            <input type="date" id="advDateTo" class="filter-input">
+          </label>
+          <label class="filter-label">สถานะ
+            <select id="advStatusFilter" class="filter-input">
+              <option value="">ทั้งหมด</option>
+              <option value="pending_verify">รอตรวจสอบ</option>
+              <option value="processing">กำลังดำเนินการ</option>
+              <option value="verified">ยืนยันโอนแล้ว</option>
+              <option value="completed">เสร็จสิ้น</option>
+              <option value="cancelled">ยกเลิก</option>
+              <option value="rejected">ถูกปฏิเสธ</option>
+            </select>
+          </label>
+        </div>
+        <div class="filter-row">
+          <label class="filter-label">ยอดขั้นต่ำ (LAK)
+            <input type="number" id="advMinAmount" min="0" step="1000" inputmode="numeric" class="filter-input" placeholder="เช่น 10000">
+          </label>
+          <label class="filter-label">ยอดสูงสุด (LAK)
+            <input type="number" id="advMaxAmount" min="0" step="1000" inputmode="numeric" class="filter-input" placeholder="เช่น 100000">
+          </label>
+        </div>
+        <div class="filter-row" style="justify-content:flex-end;">
+          <button type="button" class="btn" id="advSearchBtn" style="padding:8px 16px;font-size:13px;">🔍 ค้นหา</button>
+          <button type="button" class="btn secondary" id="advClearBtn" style="padding:8px 16px;font-size:13px;">✕ ล้างตัวกรอง</button>
+        </div>
+        <div id="advSearchStatus" style="font-size:12px;color:var(--text-dim);margin-top:6px;min-height:16px;" aria-live="polite" role="status"></div>
+      </div>
+
       <div class="status-filter" id="ordStatusFilter"></div>
       <div id="ordHistoryList" class="container" style="padding:0 16px 24px;"></div>
     </div>
@@ -752,6 +793,67 @@
       <!-- ===== Pagination ===== -->
       <div id="auditLogPager" style="padding:0 16px 24px;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;"></div>
     </div>
+
+    <!-- ============================================================ -->
+    <!-- 🆕 (T012): view-reports — รายงานยอดขาย (Admin only)            -->
+    <!--   - การ์ดสรุปยอด (total_orders, total_revenue, avg_order_value) -->
+    <!--   - ปุ่มเลือกช่วงเวลา (daily=30d / weekly=90d / monthly=365d)     -->
+    <!--   - bar chart แสดงยอดขายรายวัน (CSS-only — ไม่ใช้ chart library) -->
+    <!--   - ตาราง Top Songs + Top DJs (จาก /api/admin/reports/*)        -->
+    <!-- ============================================================ -->
+    <div id="view-reports" class="view" style="display:none;">
+      <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
+        <button class="icon-btn back-btn" type="button">←</button>
+        <div style="flex:1;font-weight:800;">📊 รายงานยอดขาย</div>
+        <button class="icon-btn" id="reportsRefreshBtn" type="button" title="โหลดใหม่">🔄</button>
+      </div>
+      <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">
+        สรุปยอดขายจากออเดอร์ที่สำเร็จ (completed / processing / verified) — อ่านอย่างเดียว ไม่กระทบระบบชำระเงิน
+      </p>
+
+      <!-- ===== Period selector ===== -->
+      <div style="padding:0 16px;margin:14px 0 10px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn secondary reports-period-btn" data-period="daily" id="reportsPeriodDaily" style="padding:8px 14px;font-size:13px;font-weight:600;">📅 30 วันล่าสุด</button>
+        <button type="button" class="btn secondary reports-period-btn" data-period="weekly" id="reportsPeriodWeekly" style="padding:8px 14px;font-size:13px;font-weight:600;">📅 90 วันล่าสุด</button>
+        <button type="button" class="btn secondary reports-period-btn" data-period="monthly" id="reportsPeriodMonthly" style="padding:8px 14px;font-size:13px;font-weight:600;">📅 1 ปีล่าสุด</button>
+      </div>
+
+      <!-- ===== Summary cards ===== -->
+      <div class="stat-grid" style="padding:0 16px;margin-bottom:14px;">
+        <div class="stat-card"><div class="num" id="rptTotalOrders">0</div><div class="label">📦 ออเดอร์สำเร็จ</div></div>
+        <div class="stat-card"><div class="num" id="rptTotalRevenue" style="color:var(--success,#29cc71);">0</div><div class="label">💰 ยอดขายรวม (LAK)</div></div>
+        <div class="stat-card" style="grid-column:span 2;"><div class="num" id="rptAvgOrder" style="color:var(--accent-2,#ec4899);">0</div><div class="label">🧮 ยอดเฉลี่ยต่อออเดอร์ (LAK)</div></div>
+      </div>
+
+      <!-- ===== Bar chart — ยอดขายรายวัน ===== -->
+      <div class="section-title" style="padding:0 16px;margin-top:6px;">📈 ยอดขายรายวัน</div>
+      <div id="rptBarChartWrap" style="padding:0 16px;margin-bottom:18px;">
+        <div class="bar-chart" id="rptBarChart" aria-label="กราฟยอดขายรายวัน" role="img">
+          <div class="bar-chart-empty">ยังไม่มีข้อมูล</div>
+        </div>
+        <div id="rptBarChartHint" style="font-size:11px;color:var(--text-dim);margin-top:6px;text-align:center;">เลื่อนเมาส์เหนือแท่งเพื่อดูยอด</div>
+      </div>
+
+      <!-- ===== Top songs + Top DJs (2 คอลัมน์บน desktop, stack บนมือถือ) ===== -->
+      <div style="padding:0 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-bottom:24px;">
+
+        <div>
+          <div class="section-title" style="margin-top:0;">🎵 เพลงขายดี (Top 10)</div>
+          <div id="rptTopSongs" class="reports-table-wrap">
+            <div class="reports-empty">ยังไม่มีข้อมูล</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-title" style="margin-top:0;">🎧 DJ ขายดี (Top 10)</div>
+          <div id="rptTopDjs" class="reports-table-wrap">
+            <div class="reports-empty">ยังไม่มีข้อมูล</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <!-- ===================== /REPORTS VIEW ===================== -->
   </div>
 
   <div class="modal-backdrop" id="songFormBackdrop">
@@ -1530,6 +1632,6 @@
        ให้ screen reader announce toast message ให้ผู้ใช้ตาบอดได้ยินด้วย -->
   <div class="toast" id="toast" aria-live="polite" aria-atomic="true" role="status"></div>
 
-  <script type="module" src="app-admin.js?v=20261002-pw-reset"></script>
+  <script type="module" src="app-admin.js?v=20261003-T012"></script>
 </body>
 </html>
