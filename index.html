@@ -1128,7 +1128,11 @@
           </div>
           <div class="field" style="margin-bottom:14px;">
             <label style="font-size:12px;color:var(--text-dim);">รหัสผ่าน</label>
-            <input id="customerAuthPassword" type="password" placeholder="รหัสผ่าน (อย่างน้อย 6 ตัว)" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
+            <!-- 🆕 (T011-F4): password show/hide toggle — ลูกค้ากดปุ่ม 👁 เพื่อดูรหัสผ่านที่พิมพ์ -->
+            <div class="password-field-wrap">
+              <input id="customerAuthPassword" type="password" placeholder="รหัสผ่าน (อย่างน้อย 6 ตัว)" style="width:100%;padding:8px 36px 8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
+              <button type="button" class="password-toggle-btn" id="passwordToggleBtn" aria-label="แสดง/ซ่อนรหัสผ่าน">👁</button>
+            </div>
           </div>
           <button class="btn" id="customerAuthLoginBtn" type="button" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">เข้าสู่ระบบ</button>
           <!-- 🆕 (2026-10-02 v2): ปุ่ม "ลืมรหัสผ่าน?" — เปิด modal ลืมรหัสผ่าน -->
@@ -1152,7 +1156,16 @@
           </div>
           <div class="field" style="margin-bottom:14px;">
             <label style="font-size:12px;color:var(--text-dim);">รหัสผ่าน</label>
-            <input id="customerAuthPasswordReg" type="password" placeholder="รหัสผ่าน (อย่างน้อย 6 ตัว)" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;" oninput="document.getElementById('customerAuthPassword').value = this.value;">
+            <!-- 🆕 (T011-F4): password show/hide toggle + complexity meter -->
+            <div class="password-field-wrap">
+              <input id="customerAuthPasswordReg" type="password" placeholder="รหัสผ่าน (อย่างน้อย 6 ตัว + ตัวเลข/อักขระพิเศษ)" style="width:100%;padding:8px 36px 8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;" oninput="document.getElementById('customerAuthPassword').value = this.value;">
+              <button type="button" class="password-toggle-btn" id="passwordToggleBtnReg" aria-label="แสดง/ซ่อนรหัสผ่าน">👁</button>
+            </div>
+            <!-- 🆕 (T011-F4): complexity meter — แสดงความแข็งแรงของรหัสผ่านแบบ real-time -->
+            <div id="passwordComplexityMeter" class="password-complexity" aria-live="polite" role="status" style="margin-top:6px;display:none;">
+              <div class="complexity-bar"><span id="complexityBarFill"></span></div>
+              <div class="complexity-label" id="complexityLabel" style="font-size:11px;color:var(--text-dim);">กรอกรหัสผ่าน</div>
+            </div>
           </div>
           <button class="btn" id="customerAuthRegisterBtn" type="button" style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">สมัครสมาชิก</button>
         </div>
@@ -1249,5 +1262,11 @@
       </div>
     </div>
   </div>
+
+  <!-- 🆕 (T011-F6): scroll-to-top floating button
+       - ปุ่มลอยที่ซ้ายล่าง (ใต้ WhatsApp FAB) สำหรับเลื่อนกลับขึ้นบน
+       - ซ่อนตอนเริ่มต้น แสดงเมื่อ user scroll ผ่าน 400px
+       - ไม่ทับซ้อนกับ WhatsApp FAB (อยู่บนซ้าย) หรือ bottom-nav -->
+  <button id="scrollTopBtn" type="button" aria-label="เลื่อนขึ้นบน" title="เลื่อนขึ้นบน">↑</button>
 </body>
 </html>

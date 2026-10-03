@@ -5614,3 +5614,165 @@ html.admin-page body {
   }
 }
 
+/* ==========================================================================
+   🆕 (T011-F4): password show/hide toggle + complexity meter
+   - ปุ่ม 👁 ในช่อง password ของ modal login/register
+   - complexity meter แสดงความแข็งแรงของรหัสผ่านแบบ real-time (register tab)
+   ========================================================================== */
+
+.password-field-wrap {
+  position: relative;
+  display: block;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-dim, #888);
+  cursor: pointer;
+  padding: 4px 6px;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 4px;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.password-toggle-btn:hover,
+.password-toggle-btn:focus {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text, #fff);
+  outline: none;
+}
+
+.password-toggle-btn:active {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* complexity meter — แถบสีแสดงความแข็งแรงของรหัสผ่าน */
+.password-complexity {
+  display: block;
+}
+
+.password-complexity .complexity-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.password-complexity .complexity-bar span {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  transition: width 0.25s ease, background 0.25s ease;
+}
+
+/* ระดับความแข็งแรง — weak / medium / strong */
+.password-complexity.level-weak .complexity-bar span {
+  width: 33%;
+  background: linear-gradient(90deg, #ff6b6b, #ff3b30);
+}
+.password-complexity.level-weak .complexity-label {
+  color: #ff6b6b;
+}
+
+.password-complexity.level-medium .complexity-bar span {
+  width: 66%;
+  background: linear-gradient(90deg, #fbbf24, #f59e0b);
+}
+.password-complexity.level-medium .complexity-label {
+  color: #fbbf24;
+}
+
+.password-complexity.level-strong .complexity-bar span {
+  width: 100%;
+  background: linear-gradient(90deg, #22c55e, #15803d);
+}
+.password-complexity.level-strong .complexity-label {
+  color: #22c55e;
+}
+
+/* ==========================================================================
+   🆕 (T011-F5): cart badge bounce animation + haptic feedback
+   - ตอนเพิ่มสินค้าในตะกร้า badge จะ bounce สั้น ๆ + สั่นมือถือ (ถ้ารองรับ)
+   ========================================================================== */
+
+.cart-badge.bounce {
+  animation: cart-badge-bounce 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes cart-badge-bounce {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+/* ==========================================================================
+   🆕 (T011-F6): scroll-to-top floating button
+   - ปุ่มลอยซ้ายล่าง (ใต้ WhatsApp FAB) เลื่อนขึ้นบน
+   - ซ่อนตอนเริ่มต้น แสดงเมื่อ user scroll ผ่าน 400px
+   ========================================================================== */
+
+#scrollTopBtn {
+  position: fixed;
+  left: 16px;
+  bottom: calc(140px + var(--safe-bottom));
+  z-index: 65;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent, #8b5cf6);
+  color: #fff;
+  border: none;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    0 4px 14px rgba(139, 92, 246, 0.45),
+    0 2px 6px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  opacity: 0;
+}
+
+#scrollTopBtn.is-visible {
+  display: flex;
+  opacity: 1;
+}
+
+#scrollTopBtn:hover {
+  transform: scale(1.1) translateY(-1px);
+  box-shadow:
+    0 6px 20px rgba(139, 92, 246, 0.55),
+    0 3px 8px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+#scrollTopBtn:active {
+  transform: scale(0.95);
+}
+
+/* มือถือจอแคบ ≤ 480px — ขยับปุ่มขึ้นให้พ้น bottom-nav 6 tab */
+@media (max-width: 480px) {
+  #scrollTopBtn {
+    left: 12px;
+    bottom: calc(144px + var(--safe-bottom));
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+  }
+}
+

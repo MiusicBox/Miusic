@@ -301,6 +301,41 @@ async function init() {
   //   - ปุ่มนี้อยู่ใน HTML แล้ว (#whatsappFab) — ตรงนี้แค่ผูก click handler
   //   - ใช้ STATE.settings.whatsapp_number ที่โหลดจาก settings ด้านบน
   try { initWhatsappFab(); } catch (err) { console.warn("[init] initWhatsappFab failed:", err?.message || err); }
+
+  // 🆕 (T011-F6): เริ่มต้น scroll-to-top button — ปุ่มลอยเลื่อนขึ้นบน
+  //   - ผูก scroll listener (passive) + click handler
+  //   - แสดงปุ่มเมื่อ scroll ผ่าน 400px, ซ่อนเมื่อกลับขึ้นบน
+  try { initScrollTopBtn(); } catch (err) { console.warn("[init] initScrollTopBtn failed:", err?.message || err); }
+}
+
+// 🆕 (T011-F6): initScrollTopBtn — ผูก logic ของปุ่ม scroll-to-top
+//   - ใช้ passive scroll listener เพื่อไม่บล็อกการ scroll
+//   - ใช้ smooth scroll behavior ตอนคลิก
+//   - ไม่กระทบ routing/tab logic เดิม — ใช้ window.scroll ตรง ๆ
+//   ผลกระทบระบบเดิม: 0% — เพิ่มปุ่มใหม่ ไม่แตะการ scroll เดิม
+function initScrollTopBtn() {
+  const btn = document.getElementById("scrollTopBtn");
+  if (!btn) return;
+  let ticking = false;
+  function updateVisibility() {
+    ticking = false;
+    if (window.scrollY > 400) {
+      btn.classList.add("is-visible");
+    } else {
+      btn.classList.remove("is-visible");
+    }
+  }
+  window.addEventListener("scroll", () => {
+    if (!ticking) {
+      window.requestAnimationFrame(updateVisibility);
+      ticking = true;
+    }
+  }, { passive: true });
+  btn.addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  // เรียกครั้งแรกเผื่อ user refresh กลางหน้า (scrollY > 400 อยู่แล้ว)
+  updateVisibility();
 }
 
 // 🔧 (2026-09-18 v6 perf): โหลดเพลง page ถัดไป (50 songs/page)

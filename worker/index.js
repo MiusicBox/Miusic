@@ -424,6 +424,35 @@ function parsePagination(url) {
   return { limit, offset };
 }
 
+// 🆕 (T011-L2): isValidEmail — validate email format ก่อน insert ใน register
+//   ปัญหาเดิม: register เก็บ email อะไรก็ได้ (แม้ "abc" หรือ "abc@") → DB สะสม invalid email
+//   วิธีแก้: ตรวจรูปแบบด้วย regex ง่าย ๆ (มี @ + . กลาง) — ไม่เข้มงวดเกินไป
+//   ผลกระทบระบบเดิม: 0% — register ที่ใช้ email ที่ถูกต้องอยู่แล้ว ผ่านได้ปกติ
+function isValidEmail(email) {
+  if (!email) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+// 🆕 (T011-L3): isPasswordStrong — password complexity ขั้นต่ำ
+//   ปัญหาเดิม: register ตรวจแค่ password.length >= 6 → "aaaaaa" หรือ "123456" ผ่าน
+//   วิธีแก้: อย่างน้อย 6 ตัว + ต้องมีตัวเลขหรืออักขระพิเศษ (กัน password ง่ายเกินไป)
+//   ไม่เข้มงวดเกินไป — ไม่บังคับตัวใหญ่/ตัวเล็ก (ลูกค้าทั่วไปใช้ WhatsApp มือถือ)
+//   ผลกระทบระบบเดิม: password ที่มีอยู่แล้วทั้งหมดยังใช้ได้ (ไม่ได้ rehash) — กระทบเฉพาะ register ใหม่
+function isPasswordStrong(password) {
+  if (!password || password.length < 6) return false;
+  // ต้องมีอย่างน้อย 1 ตัวเลข หรือ 1 ตัวอักษรพิเศษ
+  return /[0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+}
+
+// 🆕 (T011-L6): escapeLikePattern — escape LIKE wildcards กัน search แปลก ๆ
+//   ปัญหาเดิม: ส่งค่า `%` หรือ `_` ใน search query → SQLite LIKE ตีความเป็น wildcard
+//     เช่น ค้น "%admin%" → match ทุก row ที่มี "admin" อยู่กลางข้อความ (อาจรั่วข้อมูล)
+//   วิธีแก้: escape `%`, `_`, `\` ด้วย backslash + ใช้ ESCAPE clause ใน SQL
+//   ผลกระทบระบบเดิม: 0% — กรณี search ปกติ (ไม่มี wildcard) ผ่านเหมือนเดิม
+function escapeLikePattern(str) {
+  return String(str || "").replace(/[%_\\]/g, "\\$&");
+}
+
 // สุ่มชื่อไฟล์ปลายทางใน R2 ให้ไม่ชนกัน (คล้าย public_id ของ Cloudinary) แต่ยังเก็บนามสกุลไฟล์เดิมไว้
 // เพื่อให้เบราว์เซอร์/แอปเดา content type และเปิดไฟล์ได้ถูกต้อง
 // 📸 (added STEP 6+) — สร้าง wa.me deep link สำหรับแอดมินส่งข้อความแจ้งลูกค้าหลัง verify/reject slip
@@ -1683,7 +1712,7 @@ async function handleDb(request, env, url) {
     if (actionFilter)          { wheres.push("action = ?");      binds.push(actionFilter); }
     if (collectionFilter)      { wheres.push("collection = ?"); binds.push(collectionFilter); }
     if (targetIdFilter)        { wheres.push("target_id = ?");  binds.push(targetIdFilter); }
-    if (adminEmailFilter)      { wheres.push("admin_email LIKE ? COLLATE NOCASE"); binds.push(`%${adminEmailFilter}%`); }
+    if (adminEmailFilter)      { wheres.push("admin_email LIKE ? ESCAPE '\\' COLLATE NOCASE"); binds.push(`%${escapeLikePattern(adminEmailFilter)}%`); }
     if (fromDate)              { wheres.push("created_at >= ?"); binds.push(fromDate); }
     if (toDate)                { wheres.push("created_at < ?");  binds.push(toDate); }
 
@@ -2086,9 +2115,13 @@ async function handleDb(request, env, url) {
         listSessionCustomer = await getCustomerSession(request, env);
       } catch (_) { /* customer_sessions ไม่มี → ถือว่าไม่ได้ login */ }
       if (listSessionCustomer) {
+        // 🆕 (T011-L11): ใช้ LIMITS.MAX_PAGE แทน magic number 200
+        //   เดิม: `LIMIT 200` hardcoded → ถ้าแก้ที่ constants ต้องมาไล่แก้ทุกจุด
+        //   ใหม่: bind `LIMITS.MAX_PAGE` (200) → single source of truth ที่ constants.js
+        //   ผลกระทบระบบเดิม: 0% — ค่าเท่าเดิม (200) แค่เปลี่ยนจาก literal → constant
         const { results: loginRows } = await env.DB.prepare(
-          "SELECT id, data FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ? ORDER BY created_at DESC LIMIT 200"
-        ).bind(listSessionCustomer.id).all();
+          "SELECT id, data FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ? ORDER BY created_at DESC LIMIT ?"
+        ).bind(listSessionCustomer.id, LIMITS.MAX_PAGE).all();
         const loginDocs = [];
         for (const row of (loginRows || [])) {
           let rowData;
@@ -2144,6 +2177,11 @@ async function handleDb(request, env, url) {
         console.warn("queryDocuments failed, fallback to listDocuments:", err?.message || err);
         candidateDocs = await listDocuments(env, "orders");
       }
+      // 🆕 (T011-L11): cap guest orders ที่ LIMITS.MAX_PAGE — กัน DoS ถ้าเบอร์นั้นมี orders มากผิดปกติ
+      //   เดิม: ไม่มี LIMIT ในฝั่ง guest (queryDocuments ไม่รองรับ LIMIT) → ถ้าเบอร์มี 1,000 orders
+      //     จะ return คืน 1,000 docs (memory + bandwidth บวม)
+      //   วิธีแก้: หลัง fetch + filter ให้ slice ถึง LIMITS.MAX_PAGE เท่านั้น (sort ใหม่ล่าสุดก่อน)
+      //   ผลกระทบระบบเดิม: ต่ำ — กรณีปกติ (orders < 200) ไม่ตัด ออเดอร์เหมือนเดิม
       const queryName = normalizeNameServer(customerName);
       const matched = candidateDocs.filter((d) => {
         const oPhone = normalizePhoneServer(d.data?.whatsapp || "");
@@ -2165,7 +2203,19 @@ async function handleDb(request, env, url) {
         // if (!oName || !queryName) return false;
         // return oName === queryName;
       });
-      return jsonResponse({ docs: matched, scope: "guest" });
+      // 🆕 (T011-L11): ตัดผลลัพธ์ให้ไม่เกิน LIMITS.MAX_PAGE (200) — กัน DoS ถ้าเบอร์มี orders มากผิดปกติ
+      //   เรียงใหม่สุดก่อน (ตาม created_at) แล้วค่อย slice — ให้ลูกค้าเห็นออเดอร์ล่าสุดก่อน
+      const matchedCapped = matched.length > LIMITS.MAX_PAGE
+        ? matched
+            .slice()
+            .sort((a, b) => {
+              const aT = a?.data?.created_at || "";
+              const bT = b?.data?.created_at || "";
+              return bT.localeCompare(aT);
+            })
+            .slice(0, LIMITS.MAX_PAGE)
+        : matched;
+      return jsonResponse({ docs: matchedCapped, scope: "guest" });
     }
 
     // /api/db/:collection  (list ทั้ง collection)
@@ -5100,7 +5150,21 @@ async function handleCustomerAuth(request, env, url) {
     const displayName = String(body.display_name || "").trim();
     // validate
     if (!email && !whatsapp) return jsonResponse({ error: "กรุณากรอกอีเมลหรือเบอร์ WhatsApp อย่างน้อย 1 อย่าง" }, 400);
+    // 🆕 (T011-L2): validate email format ก่อน insert — กัน invalid email สะสมใน DB
+    //   เดิม: เก็บ email อะไรก็ได้ (แม้ "abc" หรือ "abc@") → ลูกค้า login ด้วย email นั้นไม่ได้
+    //   ใหม่: ถ้ามี email ต้องผ่าน isValidEmail() — ถ้า fail → return 400 พร้อมข้อความชัดเจน
+    if (email && !isValidEmail(email)) {
+      return jsonResponse({ error: "รูปแบบอีเมลไม่ถูกต้อง", code: "INVALID_EMAIL", existing_field: "email" }, 400);
+    }
     if (password.length < 6) return jsonResponse({ error: "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร" }, 400);
+    // 🆕 (T011-L3): password complexity — อย่างน้อย 6 ตัว + มีตัวเลขหรือตัวอักษรพิเศษ
+    //   ปัญหาเดิม: ตรวจแค่ length >= 6 → "aaaaaa" หรือ "123456" ผ่าน (password ง่ายเกินไป)
+    //   วิธีแก้: ตรวจเพิ่มว่าต้องมีอย่างน้อย 1 ตัวเลข หรือ 1 ตัวอักขระพิเศษ
+    //   ไม่เข้มงวดเกินไป — ไม่บังคับตัวใหญ่/ตัวเล็ก (ลูกค้าใช้มือถือ WhatsApp)
+    //   ผลกระทบระบบเดิม: password ที่มีอยู่แล้วทั้งหมดยังใช้ได้ — กระทบเฉพาะ register ใหม่
+    if (!isPasswordStrong(password)) {
+      return jsonResponse({ error: "รหัสผ่านต้องมีอย่างน้อย 6 ตัว และมีตัวเลขหรืออักขระพิเศษ", code: "WEAK_PASSWORD" }, 400);
+    }
     if (!displayName) return jsonResponse({ error: "กรุณากรอกชื่อที่แสดง" }, 400);
     // เช็คซ้ำ — email หรือ whatsapp ต้องไม่ซ้ำกับที่มีอยู่
     try {
@@ -7014,7 +7078,12 @@ export default {
         return jsonResponse({ error: "status ต้องเป็น 'verified' หรือ 'rejected'" }, 400);
       }
       const rejectReason = newStatus === "rejected" ? String(body?.reject_reason || "").trim().slice(0, 500) : null;
-      const amountReceived = body?.amount_received != null ? Number(body.amount_received) : null;
+      // 🆕 (T011-L8): ใช้ amount_received แทนที่จะปล่อยเป็น dead variable
+      //   เดิม: `const amountReceived = ...` ถูกประกาศไว้ แต่ไม่ถูกใช้ที่ไหนเลย → dead variable + lint warning
+      //   ใหม่: ตรวจ + sanitize ค่า (เก็บเป็น number หรือ null) → บันทึกลง order data ด้านล่าง
+      //   ผลกระทบระบบเดิม: 0% — ถ้าไม่ส่งมา → null (เหมือนเดิม). ถ้าส่งมา → บันทึกเป็น audit trail
+      const amountReceivedRaw = body?.amount_received != null ? Number(body.amount_received) : null;
+      const amountReceived = Number.isFinite(amountReceivedRaw) ? amountReceivedRaw : null;
 
       // fetch proof
       const proofRow = await env.DB.prepare(
@@ -7104,6 +7173,12 @@ export default {
           orderData.payment_proof_verified_at = verifiedAt;
           orderData.payment_proof_verified_by = admin.id;
           if (rejectReason) orderData.payment_proof_reject_reason = rejectReason;
+          // 🆕 (T011-L8): บันทึก amount_received ลง order data (ถ้าแอดมินส่งมา)
+          //   - ใช้สำหรับ audit trail: แอดมินเห็นยอดที่ลูกค้าโอนจริง (อาจต่างจากยอดออเดอร์ถ้ามีส่วนลดพิเศษ)
+          //   - ถ้าไม่ส่งมา → ไม่เขียน field นี้ (กัน null overwrite ค่าเดิม)
+          if (amountReceived != null) {
+            orderData.payment_amount_received = amountReceived;
+          }
           orderData.updated_at = verifiedAt;
           // status_history
           if (Array.isArray(orderData.status_history)) {
@@ -7145,7 +7220,7 @@ export default {
           proofId,
           `Order ${orderId.slice(0, 8)}... — ${newStatus}`,
           { status: "pending", verified_at: null },
-          { status: newStatus, verified_at: verifiedAt, verified_by: admin.id, reject_reason: rejectReason }
+          { status: newStatus, verified_at: verifiedAt, verified_by: admin.id, reject_reason: rejectReason, amount_received: amountReceived }
         ));
       } catch {}
 
@@ -7163,6 +7238,8 @@ export default {
         receipt_number: receiptNumber,
         order_total: orderFinalTotal,
         reject_reason: rejectReason,
+        // 🆕 (T011-L8): ส่งกลับ amount_received ที่ sanitize แล้ว (เพื่อ frontend แสดงยอดที่บันทึก)
+        amount_received: amountReceived,
         // 📸 (added) สร้าง WhatsApp link สำเร็จรูป ให้ frontend เปิดได้เลย (notification only)
         whatsapp_notify_url: customerWhatsapp
           ? buildAdminNotifyWhatsAppUrl(customerWhatsapp, newStatus, receiptNumber, customerName, orderFinalTotal, rejectReason)
