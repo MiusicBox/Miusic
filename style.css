@@ -37,51 +37,6 @@
   --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.25);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
   --shadow-accent: 0 8px 24px var(--accent-glow);
-
-  /* 🆕 (T005-dark-light-mode): extras สำหรับ dark-specific elements
-     ใช้แทน hardcoded colors ที่ .topbar / .song-card-row → สลับได้ตาม theme */
-  --topbar-bg: rgba(11, 13, 20, 0.95);
-  --song-row-bg: #141824;
-  --song-row-hover: #181d2b;
-}
-
-/* ============================================================
-   🆕 (T005-dark-light-mode): Light theme override
-   - ใช้ Tailwind slate family (#f8fafc bg / #0f172a text = 16.6:1 AAA)
-   - Accent violet-600/pink-600 ลึกขึ้นเพื่อรักษา brand identity ผ่าน WCAG AA
-   - เปิดใช้งานโดย data-theme="light" บน <html> (set โดย app-user.js + inline FOUC script)
-   - ผลกระทบระบบเดิม: 0% — ถ้าไม่ set data-theme จะใช้ :root (dark) เหมือนเดิม
-   ============================================================ */
-[data-theme="light"] {
-  --bg:           #f8fafc;
-  --surface:      #ffffff;
-  --surface-2:    #f1f5f9;
-  --surface-hover:#e2e8f0;
-  --border:       rgba(15, 23, 42, 0.10);
-  --border-focus: rgba(124, 58, 237, 0.55);
-  --text:         #0f172a;
-  --text-dim:     #475569;
-  --accent:       #7c3aed;
-  --accent-glow:  rgba(124, 58, 237, 0.30);
-  --accent-2:     #db2777;
-  --accent-2-glow:rgba(219, 39, 119, 0.30);
-  --success:      #047857;
-  --danger:       #dc2626;
-  --shadow-sm:    0 4px 12px rgba(15, 23, 42, 0.08);
-  --shadow-lg:    0 12px 32px rgba(15, 23, 42, 0.12);
-  --shadow-accent: 0 8px 24px var(--accent-glow);
-  --topbar-bg:     rgba(248, 250, 252, 0.95);
-  --song-row-bg:   #ffffff;
-  --song-row-hover:#f1f5f9;
-}
-
-/* 🆕 (T005): Light mode background gradient (subtle violet/pink tint บน slate-50) */
-[data-theme="light"] body,
-[data-theme="light"] html {
-  background-image:
-    radial-gradient(circle at 50% 0%, rgba(124, 58, 237, 0.08) 0%, transparent 60%),
-    radial-gradient(circle at 100% 50%, rgba(219, 39, 119, 0.05) 0%, transparent 50%);
-  background-attachment: fixed;
 }
 
 * {
@@ -152,8 +107,7 @@ button:active {
   right: 0;
   z-index: 40;
   /* 🔧 (2026-09-22): ใช้พื้นหลังโปร่งใสแทน blur — กัน iOS Safari กระตุก */
-  /* 🆕 (T005): เปลี่ยนจาก hardcoded rgba → var(--topbar-bg) สลับตาม theme */
-  background: var(--topbar-bg);
+  background: rgba(11, 13, 20, 0.95);
   /* เก็บ backdrop-filter ไว้แต่ลด blur ลงมาก เพื่อความปลอดภัย */
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
@@ -2046,22 +2000,6 @@ button:active {
 .icon-btn:hover {
   color: var(--text);
   background: var(--surface-hover);
-}
-
-/* ============================================================
-   🆕 (T005-dark-light-mode): ปุ่มสลับ Dark/Light theme
-   - ใช้ .icon-btn เดิมเป็นฐาน + transition transform ตอนกด
-   - ไอคอน: 🌙 ตอน dark / ☀️ ตอน light (เปลี่ยนใน JS)
-   - ผลกระทบระบบเดิม: 0% — เพิ่ม CSS class ใหม่ ไม่แตะ .icon-btn เดิม
-   ============================================================ */
-.theme-toggle-btn {
-  font-size: 18px;
-  line-height: 1;
-  position: relative;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.theme-toggle-btn:active {
-  transform: rotate(180deg) scale(0.9);
 }
 
 .icon-btn.danger {
@@ -4338,11 +4276,10 @@ button:active {
    - ย้อนกลับ: ลบบล็อกนี้ทั้งบล็อก ระบบจะกลับเป็นหน้าตาเดิมทันที
    ========================================================================== */
 
-/* ---- แถวเพลง (หน้าหลัก + เพลงในเพลย์ลิสต์) : พื้นเรียบ ขอบบาง ไม่มีแสงเมช ----
-   🆕 (T005): background เปลี่ยนจาก hardcoded #141824 → var(--song-row-bg) สลับตาม theme */
+/* ---- แถวเพลง (หน้าหลัก + เพลงในเพลย์ลิสต์) : พื้นเรียบ ขอบบาง ไม่มีแสงเมช ---- */
 .song-card-row,
 .playlist-song-row.song-card-row {
-  background: var(--song-row-bg) !important;
+  background: #141824 !important;
   border: 1px solid rgba(255, 255, 255, 0.10) !important;
   border-radius: 10px !important;
   padding: 10px !important;
@@ -4371,8 +4308,7 @@ button:active {
 .song-card-row:hover,
 .playlist-song-row.song-card-row:hover {
   transform: none !important;
-  /* 🆕 (T005): เปลี่ยนจาก hardcoded #181d2b → var(--song-row-hover) สลับตาม theme */
-  background: var(--song-row-hover) !important;
+  background: #181d2b !important;
   border-color: rgba(167, 139, 250, 0.45) !important;
   box-shadow: none !important;
 }

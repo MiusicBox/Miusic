@@ -39,69 +39,6 @@ import {
   formatDateTime
 } from "./app-promotion.js?v=20261003-login-guest-v10";
 
-// ============================================================
-// 🆕 (T005-dark-light-mode): Dark/Light theme management
-//   - เก็บ preference ใน localStorage key 'miusic_theme'
-//   - Default: respect prefers-color-scheme ของ OS (OS light → light, อื่น ๆ → dark)
-//   - กัน FOUC ด้วย inline script ใน <head> (index.html) ที่ set dataset.theme ก่อน paint
-//   - ผลกระทบระบบเดิม: 0% — ถ้า OS เป็น dark (กรณีส่วนใหญ่) จะใช้ dark เหมือนเดิม
-// ============================================================
-const THEME_STORAGE_KEY = 'miusic_theme';
-
-function getStoredTheme() {
-  try { return localStorage.getItem(THEME_STORAGE_KEY); } catch (_) { return null; }
-}
-
-function getDefaultTheme() {
-  try {
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) return 'light';
-  } catch (_) {}
-  return 'dark'; // default — ไม่ break ผู้ใช้เดิม
-}
-
-function applyTheme(theme) {
-  const t = (theme === 'light') ? 'light' : 'dark';
-  document.documentElement.dataset.theme = t;
-  // อัปเดตไอคอน: 🌙 ตอน dark (พร้อมสลับไป light), ☀️ ตอน light (พร้อมสลับไป dark)
-  const iconEl = document.getElementById('themeToggleIcon');
-  if (iconEl) iconEl.textContent = (t === 'dark') ? '🌙' : '☀️';
-  // อัปเดต aria-label ให้สื่อความหมายถูกต้องตามสถานะปัจจุบัน
-  const btn = document.getElementById('themeToggleBtn');
-  if (btn) btn.setAttribute('aria-label', t === 'dark' ? 'สลับไป Light mode' : 'สลับไป Dark mode');
-}
-
-function toggleTheme() {
-  const current = document.documentElement.dataset.theme || 'dark';
-  const next = (current === 'dark') ? 'light' : 'dark';
-  applyTheme(next);
-  try { localStorage.setItem(THEME_STORAGE_KEY, next); } catch (_) {}
-}
-
-function initTheme() {
-  // อ่านจาก localStorage หรือ default (อาจถูก set โดย inline FOUC script แล้ว แต่เช็คอีกทีเพื่อ sync ไอคอนให้ถูกต้อง)
-  const stored = getStoredTheme();
-  const theme = stored || getDefaultTheme();
-  applyTheme(theme);
-  // ผูกปุ่ม toggle (ถ้ายังไม่ได้ผูก)
-  const btn = document.getElementById('themeToggleBtn');
-  if (btn && !btn.__t005ThemeBound) {
-    btn.addEventListener('click', toggleTheme);
-    btn.__t005ThemeBound = true; // กัน double-bind ถ้า init() ถูกเรียกซ้ำ
-  }
-  // ฟัง OS theme change (ถ้า user ไม่เคยเลือก manually)
-  try {
-    window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
-      if (!getStoredTheme()) {
-        applyTheme(e.matches ? 'light' : 'dark');
-      }
-    });
-  } catch (_) {}
-}
-
-// expose ให้ HTML เรียก (ถ้าต้องการ — เผื่อ inline onclick ในอนาคต)
-window.toggleTheme = toggleTheme;
-window.applyTheme = applyTheme;
-
 const STATE = {
   songs: [], categories: [], djs: [], playlists: [], settings: {},
   discounts: [],  // ← ลดราคาที่ active อยู่ตอนนี้ (โหลดครั้งเดียวตอน init)
@@ -260,7 +197,6 @@ function applyStoreNameAnimation(el) {
 }
 
 async function init() {
-  initTheme(); // 🆕 (T005-dark-light-mode): ตั้ง theme ก่อน load อย่างอื่น — sync ไอคอน + bind ปุ่ม toggle
   loadCart();
   bindCartEvents();
   const [catSnap, djSnap, playlistSnap, settingsSnap] = await Promise.all([
