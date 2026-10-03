@@ -3018,6 +3018,19 @@ async function handleDb(request, env, url) {
         }
         // 🔧 (2026-09-22 fix): audit log — บันทึกการลบ (เก็บ snapshot ของข้อมูลก่อนลบ)
         const beforeDelete = await getDocument(env, collection, id);
+        // 🆕 (T008-L9): ลบไฟล์ R2 ของเพลงก่อนลบ document — กัน orphan files บวม R2 storage
+        //   เดิม: DELETE /api/db/songs/:id ลบเฉพาะ D1 document → ไฟล์ cover + preview + full audio ค้าง
+        //   ใหม่: ถ้า collection="songs" → เรียก cleanupSongFiles() ก่อน deleteDocument
+        //   ถ้า cleanup fail (R2 error) → log warning แต่ไม่ block DELETE document (best-effort)
+        //   ผลกระทบระบบเดิม: 0% สำหรับ collection อื่น — เรียกเฉพาะ songs
+        if (collection === "songs" && beforeDelete?.data) {
+          try {
+            const cleanupResult = await cleanupSongFiles(env, beforeDelete.data);
+            console.log(`[T008-L9] cleanupSongFiles for song ${id}:`, cleanupResult);
+          } catch (cleanupErr) {
+            console.warn(`[T008-L9] cleanupSongFiles failed for song ${id} (continuing with DELETE):`, cleanupErr?.message || cleanupErr);
+          }
+        }
         await deleteDocument(env, collection, id);
         // 🔧 (2026-09-22 fix Bug #2 UI v3): ตรวจหา target_name จากหลาย field (เหมือน PUT/PATCH)
         //   ทำให้ target_name แสดงชื่อจริง ๆ แทน UUID ตอนลบ DJ/หมวดหมู่/ผู้ใช้ ฯลฯ
@@ -3093,6 +3106,72 @@ function getSongR2Key(song, env) {
   const fileUrl = song?.full_file_url || song?.file_url;
   if (!fileUrl) return null;
   return deriveR2KeyFromUrl(fileUrl, env);
+}
+
+// ===================================================
+// 🆕 (T008-L9): cleanupSongFiles — ลบไฟล์ R2 ของเพลงตอน admin DELETE /api/db/songs/:id
+// -----------------------------------------------------------
+// ปัญหา: เดิม DELETE /api/db/:collection/:id ลบเฉพาะ document ใน D1 → ไฟล์ R2
+//   (cover + preview + full audio) ค้างเป็น orphan → R2 storage บวมโดยไม่จำเป็น
+//   (Free plan 10GB → จุดตันเร็วถ้า admin ลบเพลงเก่าบ่อย)
+//
+// ลำดับการ derive R2 key:
+//   - full audio: ใช้ getSongR2Key() ที่มีอยู่ → รองรับทั้ง full_file_public_id + full_file_url/file_url
+//   - cover: deriveR2KeyFromUrl(cover_url) — ถ้ามี cover_public_id ก็ใช้ direct
+//   - preview: deriveR2KeyFromUrl(preview_url) — ถ้ามี preview_public_id ก็ใช้ direct
+//   - ข้าม URL ที่ไม่ใช่ของ R2 bucket นี้ (เช่น Cloudinary เก่า) เงียบ ๆ ไม่ error
+//   - ถ้า R2 delete ล้มเหลว (เช่น key ผิด/object ไม่มี) → log warning แต่ไม่ block DELETE document
+//
+// ผลกระทบระบบเดิม: 0% สำหรับ collection อื่น (call เฉพาะ collection="songs")
+//   สำหรับ songs: ไฟล์ R2 ที่ผูกกับเพลงถูกลบด้วย (ซึ่งเป็นสิ่งที่ admin คาดหวังตอนกด "ลบ")
+// ===================================================
+async function cleanupSongFiles(env, songData) {
+  if (!env.BUCKET || !songData || typeof songData !== "object") return { cleaned: 0, skipped: 0, failed: 0 };
+  const base = (env.R2_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+  const keysToDelete = new Set();
+  let skipped = 0;
+
+  // รวบรวม (public_id, url) pairs สำหรับแต่ละประเภทไฟล์
+  const candidates = [
+    // full audio — ใช้ getSongR2Key ที่มีอยู่ (handles public_id + url)
+    { publicId: songData.full_file_public_id, url: songData.full_file_url || songData.file_url },
+    // cover
+    { publicId: songData.cover_public_id, url: songData.cover_url },
+    // preview
+    { publicId: songData.preview_public_id, url: songData.preview_url },
+  ];
+
+  for (const c of candidates) {
+    // ถ้ามี public_id (R2 key ตรง) → ใช้เลย
+    if (c.publicId && typeof c.publicId === "string" && c.publicId.trim()) {
+      keysToDelete.add(c.publicId.trim());
+      continue;
+    }
+    // ถ้าไม่มี public_id → derive key จาก url (เฉพาะที่เป็น R2 URL ของ bucket นี้)
+    if (c.url && typeof c.url === "string" && c.url.trim()) {
+      const url = c.url.trim();
+      if (base && !url.startsWith(base + "/")) {
+        // URL ไม่ใช่ของ R2 bucket นี้ (เช่น Cloudinary เก่า) → ข้ามเงียบ ๆ
+        skipped += 1;
+        continue;
+      }
+      const derived = deriveR2KeyFromUrl(url, env);
+      if (derived) keysToDelete.add(derived);
+    }
+  }
+
+  let cleaned = 0;
+  let failed = 0;
+  for (const key of keysToDelete) {
+    try {
+      await env.BUCKET.delete(key);
+      cleaned += 1;
+    } catch (err) {
+      failed += 1;
+      console.warn(`[T008-L9] cleanupSongFiles: R2 delete failed for key "${key}":`, err?.message || err);
+    }
+  }
+  return { cleaned, skipped, failed };
 }
 
 // Helper: ทำความสะอาด leftover multipart upload ใน R2 (ถ้ามี)
