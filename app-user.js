@@ -350,6 +350,16 @@ async function init() {
   } catch (err) {
     console.warn("[init] T015 advanced filter setup failed:", err?.message || err);
   }
+
+  // 🆕 (T020): เริ่มต้น song review handlers — ผูก click ดาว + submit + delete + login prompt
+  //   - ทำครั้งเดียวหลัง DOM ready (ไม่ต้องรอ STATE เพราะใช้ element id เท่านั้น)
+  //   - ไม่กระทบระบบเดิม — ถ้า element ไม่อยู่ → ข้ามเงียบ ๆ (defensive)
+  //   - หลังจากนี้ user เปิด song modal → loadSongReviews() จะถูกเรียก → แสดงรีวิว + form
+  try {
+    setupReviewHandlers();
+  } catch (err) {
+    console.warn("[init] T020 review handlers setup failed:", err?.message || err);
+  }
 }
 
 // 🆕 (T011-F6): initScrollTopBtn — ผูก logic ของปุ่ม scroll-to-top
@@ -2169,6 +2179,257 @@ function openSongModal(songId) {
   }
   updatePlayButtonsUI();
   if (backdropEl) backdropEl.classList.add("show");
+
+  // 🆕 (T020): โหลดรีวิวของเพลงนี้ (summary + ล่าสุด 5 รายการ + form state)
+  //   - ทำหลังเปิด modal เพื่อให้ user เห็นรีวิวทันที
+  //   - ไม่กระทบระบบเดิม — ถ้า fail ข้ามไปเงียบ ๆ (defensive)
+  try { loadSongReviews(songId); } catch (err) { console.warn("[T020] loadSongReviews failed:", err?.message || err); }
+}
+
+// ============================================================
+// 🆕 (T020): Song reviews — ลูกค้ารีวิวเพลง (ดาว 1-5 + ความเห็น)
+//   - loadSongReviews(songId)        — โหลด summary + ล่าสุด 5 รายการ + เช็ค login state
+//   - renderReviewsList(reviews)     — วาดรายการรีวิว (ส่งแค่ display_name + is_mine เพื่อ privacy)
+//   - renderReviewSummary(summary)   — วาดคะแนนเฉลี่ย + จำนวนรีวิว
+//   - setupReviewHandlers()          — ผูก click handlers (ดาว + submit + delete + login)
+//   ผลกระทบระบบเดิม: 0% — เพิ่มใหม่ ไม่แตะ like/favorite/cart/checkout
+// ============================================================
+let currentReviewRating = 0;        // ดาวที่เลือกในฟอร์มปัจจุบัน (1-5, 0 = ยังไม่เลือก)
+let currentSongIdForReview = null;  // song_id ของเพลงที่ modal เปิดอยู่ (ใช้ตอน submit/delete)
+let userExistingReviewLoaded = false; // flag กันโหลดซ้ำ — รีเซ็ตทุกครั้งที่เปิด modal
+
+async function loadSongReviews(songId) {
+  currentSongIdForReview = songId;
+  currentReviewRating = 0; // reset ดาวที่เลือก (รีเซ็ตทุกครั้งที่เปิด modal ใหม่)
+  userExistingReviewLoaded = false;
+
+  // โหลด summary + reviews พร้อมกัน (ล่าสุด 5 รายการ)
+  const [summaryRes, reviewsRes] = await Promise.all([
+    fetch(`/api/songs/${encodeURIComponent(songId)}/reviews/summary`, { credentials: "same-origin" }).catch(() => null),
+    fetch(`/api/songs/${encodeURIComponent(songId)}/reviews?limit=5`, { credentials: "same-origin" }).catch(() => null),
+  ]);
+
+  // Render summary
+  if (summaryRes && summaryRes.ok) {
+    try {
+      const data = await summaryRes.json();
+      renderReviewSummary(data.summary || {});
+    } catch (_) { /* ข้ามไปเงียบ ๆ */ }
+  } else {
+    renderReviewSummary(null);
+  }
+
+  // Render reviews list
+  let reviews = [];
+  if (reviewsRes && reviewsRes.ok) {
+    try {
+      const data = await reviewsRes.json();
+      reviews = data.reviews || [];
+    } catch (_) { /* ข้ามไปเงียบ ๆ */ }
+  }
+  renderReviewsList(reviews);
+
+  // เช็ค login state → แสดง form หรือ login prompt
+  const isLoggedIn = window.isCustomerLoggedIn && window.isCustomerLoggedIn();
+  const formEl = document.getElementById("modalReviewForm");
+  const loginPromptEl = document.getElementById("modalReviewLoginPrompt");
+  if (formEl) formEl.style.display = isLoggedIn ? "block" : "none";
+  if (loginPromptEl) loginPromptEl.style.display = isLoggedIn ? "none" : "block";
+
+  // ถ้า login → หารีวิวของ user คนนี้ (ถ้ามี) เพื่อ pre-fill form + แสดงปุ่มลบ
+  if (isLoggedIn) {
+    const myReview = reviews.find(r => r.is_mine === true);
+    if (myReview) {
+      prefillReviewForm(myReview);
+      userExistingReviewLoaded = true;
+    } else {
+      resetReviewForm();
+    }
+  } else {
+    resetReviewForm();
+  }
+}
+
+function renderReviewSummary(summary) {
+  const summaryEl = document.getElementById("modalReviewSummary");
+  if (!summaryEl) return;
+  if (!summary || summary.count === 0) {
+    summaryEl.textContent = "ยังไม่มีรีวิว";
+    return;
+  }
+  // ⭐ 4.5 · 12 รีวิว
+  const stars = "⭐".repeat(Math.round(summary.avg_rating || 0));
+  summaryEl.innerHTML = `<span class="review-summary-stars">${escapeHtml(stars)}</span> <strong>${escapeHtml(String(summary.avg_rating))}</strong> · ${escapeHtml(String(summary.count))} รีวิว`;
+}
+
+function renderReviewsList(reviews) {
+  const listEl = document.getElementById("modalReviewsList");
+  if (!listEl) return;
+  if (!reviews || reviews.length === 0) {
+    listEl.innerHTML = '<div class="modal-reviews-empty">ยังไม่มีรีวิว — เป็นคนแรกที่รีวิวเพลงนี้!</div>';
+    return;
+  }
+  listEl.innerHTML = reviews.map(r => {
+    const initial = escapeHtml(String(r.author_initial || "?"));
+    const name = escapeHtml(r.author_name || "ลูกค้า");
+    const dateStr = r.created_at ? new Date(r.created_at).toLocaleDateString("th-TH") : "";
+    const stars = "⭐".repeat(Number(r.rating) || 0);
+    const comment = r.comment ? escapeHtml(r.comment) : "";
+    const mineBadge = r.is_mine ? '<span class="review-mine-badge">รีวิวของคุณ</span>' : "";
+    return `
+      <div class="review-item${r.is_mine ? " review-item-mine" : ""}">
+        <div class="review-item-head">
+          <div class="review-avatar" aria-hidden="true">${initial}</div>
+          <div class="review-meta">
+            <div class="review-author">${name}${mineBadge}</div>
+            <div class="review-date">${escapeHtml(dateStr)}</div>
+          </div>
+          <div class="review-stars" aria-label="${r.rating} ดาว">${escapeHtml(stars)}</div>
+        </div>
+        ${comment ? `<div class="review-comment">${comment}</div>` : ""}
+      </div>
+    `;
+  }).join("");
+}
+
+function prefillReviewForm(review) {
+  // โหลดรีวิวเดิมของ user มา pre-fill ในฟอร์ม (โหมดแก้ไข)
+  currentReviewRating = Number(review.rating) || 0;
+  const commentEl = document.getElementById("modalReviewComment");
+  if (commentEl) commentEl.value = review.comment || "";
+  // อัปเดต UI ของปุ่มดาว
+  updateStarButtonsUI();
+  // เปลี่ยน label + แสดงปุ่มลบ
+  const labelEl = document.getElementById("modalReviewFormLabel");
+  if (labelEl) labelEl.textContent = "แก้ไขรีวิวของคุณ";
+  const submitBtn = document.getElementById("modalSubmitReviewBtn");
+  if (submitBtn) submitBtn.textContent = "บันทึกการแก้ไข";
+  const delBtn = document.getElementById("modalDeleteReviewBtn");
+  if (delBtn) delBtn.style.display = "inline-block";
+  // ล้าง feedback
+  setReviewFeedback("", "");
+}
+
+function resetReviewForm() {
+  currentReviewRating = 0;
+  const commentEl = document.getElementById("modalReviewComment");
+  if (commentEl) commentEl.value = "";
+  updateStarButtonsUI();
+  const labelEl = document.getElementById("modalReviewFormLabel");
+  if (labelEl) labelEl.textContent = "เพิ่มรีวิวของคุณ";
+  const submitBtn = document.getElementById("modalSubmitReviewBtn");
+  if (submitBtn) submitBtn.textContent = "ส่งรีวิว";
+  const delBtn = document.getElementById("modalDeleteReviewBtn");
+  if (delBtn) delBtn.style.display = "none";
+  setReviewFeedback("", "");
+}
+
+function updateStarButtonsUI() {
+  document.querySelectorAll("#modalStarInput .star-btn").forEach(b => {
+    const r = parseInt(b.dataset.rating, 10);
+    b.classList.toggle("active", r <= currentReviewRating);
+    b.textContent = r <= currentReviewRating ? "⭐" : "☆";
+    b.setAttribute("aria-checked", r === currentReviewRating ? "true" : "false");
+  });
+}
+
+function setReviewFeedback(msg, type) {
+  const fb = document.getElementById("modalReviewFeedback");
+  if (!fb) return;
+  fb.textContent = msg || "";
+  fb.className = "modal-review-feedback" + (type ? " " + type : "");
+}
+
+function setupReviewHandlers() {
+  // 1. Star input — คลิกเลือกดาว 1-5
+  document.querySelectorAll("#modalStarInput .star-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      currentReviewRating = parseInt(btn.dataset.rating, 10);
+      updateStarButtonsUI();
+      setReviewFeedback("", "");
+    });
+    // Hover preview (desktop) — แสดงดาวที่กำลัง hover แบบสด ๆ
+    btn.addEventListener("mouseenter", () => {
+      const hoverRating = parseInt(btn.dataset.rating, 10);
+      document.querySelectorAll("#modalStarInput .star-btn").forEach(b => {
+        const r = parseInt(b.dataset.rating, 10);
+        b.textContent = r <= hoverRating ? "⭐" : "☆";
+      });
+    });
+  });
+  // reset hover preview เมื่อออกจากกลุ่มดาว
+  const starInputEl = document.getElementById("modalStarInput");
+  if (starInputEl) {
+    starInputEl.addEventListener("mouseleave", updateStarButtonsUI);
+  }
+
+  // 2. Submit — ส่งรีวิว (สร้างใหม่ หรือ แก้ไข ผ่าน upsert)
+  document.getElementById("modalSubmitReviewBtn")?.addEventListener("click", async () => {
+    if (!currentSongIdForReview) return;
+    if (currentReviewRating < 1) {
+      setReviewFeedback("กรุณาเลือกคะแนน", "error");
+      return;
+    }
+    const comment = document.getElementById("modalReviewComment")?.value?.trim() || "";
+    const btn = document.getElementById("modalSubmitReviewBtn");
+    if (btn) { btn.disabled = true; btn.textContent = "กำลังส่ง..."; }
+    setReviewFeedback("", "");
+    try {
+      const res = await fetch(`/api/songs/${encodeURIComponent(currentSongIdForReview)}/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ rating: currentReviewRating, comment }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "ส่งรีวิวไม่สำเร็จ");
+      if (typeof showToast === "function") showToast("✅ ส่งรีวิวแล้ว", "success");
+      // reload summary + reviews รีเฟรช
+      await loadSongReviews(currentSongIdForReview);
+    } catch (err) {
+      setReviewFeedback(err.message || "ส่งรีวิวไม่สำเร็จ", "error");
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = userExistingReviewLoaded ? "บันทึกการแก้ไข" : "ส่งรีวิว"; }
+    }
+  });
+
+  // 3. Delete — ลบรีวิวของตัวเอง
+  document.getElementById("modalDeleteReviewBtn")?.addEventListener("click", async () => {
+    if (!currentSongIdForReview) return;
+    if (!confirm("ต้องการลบรีวิวนี้ใช่ไหม?")) return;
+    const btn = document.getElementById("modalDeleteReviewBtn");
+    if (btn) { btn.disabled = true; btn.textContent = "กำลังลบ..."; }
+    setReviewFeedback("", "");
+    try {
+      const res = await fetch(`/api/songs/${encodeURIComponent(currentSongIdForReview)}/reviews`, {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "ลบรีวิวไม่สำเร็จ");
+      if (typeof showToast === "function") showToast("🗑️ ลบรีวิวแล้ว", "success");
+      await loadSongReviews(currentSongIdForReview);
+    } catch (err) {
+      setReviewFeedback(err.message || "ลบรีวิวไม่สำเร็จ", "error");
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "ลบรีวิว"; }
+    }
+  });
+
+  // 4. Login prompt — ถ้ายังไม่ login → เปิด customer auth modal
+  document.getElementById("modalReviewLoginBtn")?.addEventListener("click", () => {
+    if (typeof window.openCustomerAuthModal === "function") {
+      window.openCustomerAuthModal();
+    }
+  });
+
+  // 5. Re-sync เมื่อ login state เปลี่ยน (หลัง login สำเร็จ → โหลดรีวิวใหม่เพื่อแสดง form)
+  //   ใช้ event จาก customer-auth.js (ถ้ามี) หรือ custom event 'customer-auth-changed'
+  window.addEventListener("customer-auth-changed", () => {
+    if (currentSongIdForReview) {
+      loadSongReviews(currentSongIdForReview);
+    }
+  });
 }
 
 // ===== เพิ่มใหม่: helper สำหรับ popup ใหม่ — เหมือนฝั่ง admin (ไม่แตะระบบเดิม) =====

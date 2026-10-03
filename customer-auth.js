@@ -104,6 +104,13 @@ function syncCustomerAuthUI() {
       openCustomerAuthModal();
     });
   }
+
+  // 🆕 (T020): แจ้ง component อื่น ๆ ว่าสถานะ login เปลี่ยน — ใช้สำหรับ re-render review form ใน song modal
+  //   - listener ใน app-user.js setupReviewHandlers จะเรียก loadSongReviews ใหม่เพื่อ sync UI
+  //   - ไม่กระทบระบบเดิม — เพิ่ม custom event 'customer-auth-changed' (no-op ถ้าไม่มี listener)
+  try {
+    window.dispatchEvent(new CustomEvent("customer-auth-changed", { detail: { loggedIn: !!currentCustomer } }));
+  } catch (_) { /* ข้ามไปเงียบ ๆ — กัน browser ที่ไม่รองรับ CustomEvent */ }
 }
 
 // 🆕 ตรวจ session ตอน page load — เรียก /api/customer/me

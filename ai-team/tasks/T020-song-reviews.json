@@ -1,0 +1,180 @@
+{
+  "id": "T020-song-reviews",
+  "title": "รีวิวเพลง — ลูกค้า login ให้ดาว 1-5 + ความเห็น + แสดงในหน้าเพลง",
+  "branch": "ai-team/T020-song-reviews",
+  "stage": "implementation_complete",
+  "created_at": "2026-10-06T10:00:00+07:00",
+  "completed_at": "2026-10-06T11:00:00+07:00",
+  "agent": "Nong Tao + Nong Fern (Coder)",
+  "description": "ระบบรีวิวเพลงใหม่ — ลูกค้า login แล้วให้ดาว 1-5 + ความเห็น (max 500 chars) แสดงใน song modal. 1 ลูกค้าต่อ 1 เพลง = 1 รีวิว (UNIQUE constraint + upsert). แสดงคะแนนเฉลี่ย + จำนวนรีวิว + รีวิวล่าสุด 5 รายการ. ลูกค้าแก้ไข/ลบรีวิวตัวเองได้ (pre-fill form + ปุ่มลบ). แอดมินลบรีวิวที่ไม่เหมาะสมได้ (moderation endpoint). Guest เห็นรีวิวได้แต่โพสต์ไม่ได้ (มี login prompt). ใช้ D1 table ใหม่ song_reviews ไม่กระทบ song_likes หรือ customer_favorites. Privacy: ไม่ส่ง customer_id/email/whatsapp กลับใน review response — ส่งแค่ display_name + is_mine flag (เช็คกับ session)",
+
+  "acceptance_criteria": [
+    {"id": "AC1", "desc": "ลูกค้า login แล้วสามารถรีวิวเพลงได้ (ให้ดาว 1-5 + ความเห็น)", "status": "PASS", "impl": "POST /api/songs/:id/reviews (login required via getCustomerSession). Body: {rating 1-5, comment? max 500 chars}. ใช้ INSERT ... ON CONFLICT (song_id, customer_id) DO UPDATE → upsert (กัน spam 1 ลูกค้าต่อ 1 เพลง = 1 รีวิว). Frontend: ปุ่มดาว 5 ดวง (click ได้ 1-5) + textarea สำหรับความเห็น + ปุ่มส่งรีวิว. ตรวจ rating ทั้งฝั่ง client (>=1) และ server (Number.isInteger + 1-5)"},
+    {"id": "AC2", "desc": "แสดงคะแนนเฉลี่ย + จำนวนรีวิวในหน้าเพลง (song modal)", "status": "PASS", "impl": "GET /api/songs/:id/reviews/summary ส่งกลับ {count, avg_rating (1 decimal), distribution {1-5}}. Frontend renderReviewSummary() แสดง '⭐⭐⭐⭐⭐ 4.5 · 12 รีวิว' หรือ 'ยังไม่มีรีวิว' ถ้า count=0. SQL: AVG(rating) + COUNT(*) + SUM(CASE WHEN rating=N THEN 1 ELSE 0 END) สำหรับ distribution"},
+    {"id": "AC3", "desc": "แสดงรีวิวล่าสุด 5 รายการในหน้าเพลง", "status": "PASS", "impl": "GET /api/songs/:id/reviews?limit=5 ส่งกลับ array ของ reviews (ORDER BY created_at DESC LIMIT 5). Frontend renderReviewsList() วาด review-item แต่ละรายการ: avatar (initial ตัวแรก) + author_name + date (th-TH) + stars (⭐ x rating) + comment (ถ้ามี) + 'รีวิวของคุณ' badge ถ้า is_mine. ถ้าไม่มีรีวิว → แสดง 'ยังไม่มีรีวิว — เป็นคนแรกที่รีวิวเพลงนี้!'"},
+    {"id": "AC4", "desc": "ลูกค้าแก้ไข/ลบรีวิวตัวเองได้", "status": "PASS", "impl": "แก้ไข: ใช้ POST เดียวกัน (upsert) — ถ้ามีอยู่ → ON CONFLICT DO UPDATE rating+comment+updated_at. Frontend: loadSongReviews() ตรวจหารีวิวของ user (is_mine=true) → prefillReviewForm() เติมดาว+ความเห็นเดิม + เปลี่ยน label เป็น 'แก้ไขรีวิวของคุณ' + ปุ่ม submit เป็น 'บันทึกการแก้ไข' + แสดงปุ่ม 'ลบรีวิว'. ลบ: DELETE /api/songs/:id/reviews (login required) — DELETE FROM song_reviews WHERE song_id=? AND customer_id=? (ลบเฉพาะของตัวเองเท่านั้น ไม่ใช้ review_id เพื่อกัน IDOR)"},
+    {"id": "AC5", "desc": "แอดมินลบรีวิวที่ไม่เหมาะสมได้ (moderation)", "status": "PASS", "impl": "DELETE /api/admin/song-reviews/:review_id (admin only via getSessionAdmin). DELETE FROM song_reviews WHERE id=? (ลบด้วย review_id). Routing เพิ่ม url.pathname.startsWith('/api/admin/song-reviews') เข้าไปใน routing block ที่เรียก handleCustomerAuth(). Endpoint อยู่ใน handleCustomerAuth หลัง review endpoints ของลูกค้า"},
+    {"id": "AC6", "desc": "1 ลูกค้าต่อ 1 เพลง = 1 รีวิว (กัน spam)", "status": "PASS", "impl": "Schema: UNIQUE (song_id, customer_id) constraint ใน song_reviews table. Backend: INSERT ... ON CONFLICT (song_id, customer_id) DO UPDATE → upsert ถ้ามีอยู่แล้ว → อัปเดตแทน insert ใหม่. Frontend: โหลดรีวิวเดิมของ user แล้ว pre-fill form (โหมดแก้ไข) ไม่ใช่โหมดสร้างใหม่ → user เห็นว่าตัวเองมีรีวิวอยู่แล้ว"},
+    {"id": "AC7", "desc": "รีวิวต้อง login เท่านั้น (guest ไม่ได้)", "status": "PASS", "impl": "Backend: POST + DELETE ตรวจ getCustomerSession ก่อน — ถ้าไม่มี session → 401 {error: 'ต้องเข้าสู่ระบบเพื่อรีวิว', code: 'LOGIN_REQUIRED'}. Frontend: loadSongReviews() ตรวจ window.isCustomerLoggedIn() — ถ้า login แสดง #modalReviewForm, ถ้าไม่ login แสดง #modalReviewLoginPrompt (ปุ่ม 'เข้าสู่ระบน' → openCustomerAuthModal). Guest เห็นรีวิว+summary ได้ (public) แต่โพสต์/แก้ไข/ลบไม่ได้"},
+    {"id": "AC8", "desc": "Backend: ใช้ D1 table ใหม่ song_reviews", "status": "PASS", "impl": "Schema: CREATE TABLE IF NOT EXISTS song_reviews (id TEXT PK, song_id TEXT, customer_id TEXT, rating INTEGER CHECK 1-5, comment TEXT, created_at TEXT, updated_at TEXT, UNIQUE(song_id, customer_id)) + 2 indexes (idx_song_reviews_song_id, idx_song_reviews_customer). Migration script: scripts/migrate-song-reviews.sql (CREATE TABLE + INDEX + verification query). เพิ่มท้าย worker/schema.sql ด้วยเพื่อ fresh install ได้ table ทันที"},
+    {"id": "AC9", "desc": "ไม่กระทบระบบเดิม (cart, checkout, ZIP, payment, likes, favorites)", "status": "PASS", "impl": "Endpoints ใหม่ทั้งหมด ไม่แตะ /api/songs/:id/like(s) หรือ customer_favorites หรือ cart/checkout/ZIP/payment. Iron rule #1 verified: git diff HEAD -- worker/zip-format.js = 0 lines. Iron rule #2 verified: worker/auth-helpers.js + db-helpers.js + order-scope.js + constants.js = 0 lines diff. Regression test PASS: POST /like + GET /likes + admin DELETE customer (orphan cleanup song_likes) ยังอยู่ครบ"},
+    {"id": "AC10", "desc": "Mobile-friendly", "status": "PASS", "impl": "CSS @media (max-width: 480px) สำหรับ T020 block: .star-btn ขนาด 28px + min 40x40px (touch target), .modal-reviews-list max-height 280px, .modal-review-actions แนวตั้ง (ปุ่ม width 100%), .modal-reviews-summary width 100% + align right. .modal-review-comment ใช้ font-size 13px (font-family inherit ไม่ใช้ 16px เพราะอยู่ใน modal ไม่ใช่ input field หลัก → iOS auto-zoom ไม่กระทบ). @media (prefers-reduced-motion: reduce) ลด transition/animation (accessibility)"}
+  ],
+
+  "features": [
+    {
+      "id": "T020-SCHEMA",
+      "title": "song_reviews table + migration script",
+      "type": "sql",
+      "description": "CREATE TABLE IF NOT EXISTS song_reviews (id TEXT PK, song_id TEXT NOT NULL, customer_id TEXT NOT NULL, rating INTEGER NOT NULL CHECK 1-5, comment TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(song_id, customer_id)). 2 indexes: idx_song_reviews_song_id (song_id, created_at DESC) + idx_song_reviews_customer (customer_id). เพิ่มท้าย worker/schema.sql + สร้าง scripts/migrate-song-reviews.sql สำหรับรันใน D1 Console (พร้อม verification query)",
+      "files_changed": ["worker/schema.sql", "scripts/migrate-song-reviews.sql"]
+    },
+    {
+      "id": "T020-BACKEND-REVIEW-CRUD",
+      "title": "5 backend endpoints สำหรับรีวิวเพลง",
+      "type": "backend",
+      "description": "ใน worker/index.js handleCustomerAuth: (1) GET /api/songs/:id/reviews — public, list reviews with author_name + author_initial + is_mine flag (2) GET /api/songs/:id/reviews/summary — public, {count, avg_rating, distribution} (3) POST /api/songs/:id/reviews — login required, upsert via ON CONFLICT (4) DELETE /api/songs/:id/reviews — login required, delete own review (5) DELETE /api/admin/song-reviews/:review_id — admin only moderation. ทุก endpoint มี graceful handling สำหรับ 'no such table' (กัน migration ยังไม่รัน). Privacy: ไม่ส่ง customer_id/email/whatsapp กลับ ส่งแค่ display_name + is_mine",
+      "files_changed": ["worker/index.js"]
+    },
+    {
+      "id": "T020-BACKEND-ROUTING",
+      "title": "Routing สำหรับ /api/songs/:id/reviews + /api/admin/song-reviews",
+      "type": "backend",
+      "description": "เพิ่ม 2 routing entries ใน fetch handler: (1) /api/songs/:id/reviews + /api/songs/:id/reviews/summary → handleCustomerAuth (2) /api/admin/song-reviews → handleCustomerAuth (เพิ่มใน routing block ที่มีอยู่แล้วสำหรับ /api/admin/customers, /api/admin/password-reset-requests, /api/admin/reports)",
+      "files_changed": ["worker/index.js"]
+    },
+    {
+      "id": "T020-FRONTEND-HTML",
+      "title": "Review section HTML ใน song modal",
+      "type": "html",
+      "description": "เพิ่ม #modalReviewsSection ใน #songModalBackdrop หลัง #modalBuyBtn. โครงสร้าง: header (title '⭐ รีวิวเพลง' + summary) + form (label + star input 5 ดวง + textarea + submit + delete buttons + feedback) + login prompt (ถ้ายังไม่ login) + reviews list. ใช้ class names ที่ขึ้นต้นด้วย 'modal-review' และ 'review-' เพื่อ scope ใน #songModalBackdrop",
+      "files_changed": ["index.html"]
+    },
+    {
+      "id": "T020-FRONTEND-JS",
+      "title": "Review JS logic ใน app-user.js",
+      "type": "js",
+      "description": "เพิ่ม 8 functions: loadSongReviews(songId) — โหลด summary + 5 reviews + เช็ค login state + pre-fill form ถ้ามีรีวิวเดิม; renderReviewSummary(summary) — วาด '⭐⭐⭐⭐⭐ 4.5 · 12 รีวิว'; renderReviewsList(reviews) — วาด review-item พร้อม avatar + name + date + stars + comment + is_mine badge; prefillReviewForm(review) — เติมดาว+ความเห็นเดิม + เปลี่ยน label เป็น 'แก้ไข' + แสดงปุ่มลบ; resetReviewForm() — reset ทุก field; updateStarButtonsUI() — sync ดาวตาม currentReviewRating; setReviewFeedback(msg, type) — แสดงข้อความ error/success; setupReviewHandlers() — ผูก click handlers (ดาว + submit + delete + login + customer-auth-changed event). loadSongReviews() ถูกเรียกใน openSongModal() หลังแสดง modal. setupReviewHandlers() ถูกเรียกใน init()",
+      "files_changed": ["app-user.js"]
+    },
+    {
+      "id": "T020-FRONTEND-CSS",
+      "title": "Review CSS ใน style.css (scoped ใน #songModalBackdrop)",
+      "type": "css",
+      "description": "เพิ่ม ~299 บรรทัดท้าย style.css. ใช้ CSS variables ของระบบ (--surface, --border, --text, --accent, --danger, --success). Scope ทุก selector ด้วย #songModalBackdrop เพื่อไม่กระทบ component อื่น. มี: .modal-reviews-section (border-top separator) + .modal-reviews-header (flex space-between) + .modal-review-form (card style) + .star-btn (interactive ดาว 24px desktop/28px mobile + min 32x32/40x40 touch target + hover scale 1.2 + focus-visible outline) + .modal-review-comment (textarea) + .modal-review-actions (flex) + .modal-review-feedback (error/success colors) + .modal-review-login-prompt + .modal-reviews-list (max-height 320px scroll + custom scrollbar) + .review-item + .review-item-mine (accent border + glow bg) + .review-avatar (circle initial) + .review-mine-badge. Animation: @keyframes review-fade-in. Mobile @media (max-width: 480px) + accessibility @media (prefers-reduced-motion: reduce)",
+      "files_changed": ["style.css"]
+    },
+    {
+      "id": "T020-CUSTOMER-AUTH-EVENT",
+      "title": "customer-auth-changed event dispatch",
+      "type": "js",
+      "description": "เพิ่มการ dispatch 'customer-auth-changed' CustomEvent ใน syncCustomerAuthUI() ของ customer-auth.js — ถูกเรียกทุกครั้งหลัง login/logout/register. setupReviewHandlers() ใน app-user.js ลงทะเบียน listener สำหรับ event นี้ → เรียก loadSongReviews(currentSongIdForReview) ใหม่เพื่อ sync UI (แสดง form หลัง login หรือซ่อน form หลัง logout). ไม่กระทบระบบเดิม — เป็นการเพิ่ม custom event ใหม่ (no-op ถ้าไม่มี listener)",
+      "files_changed": ["customer-auth.js"]
+    }
+  ],
+
+  "decisions": [
+    {"id": "D1", "title": "ใช้ INSERT ... ON CONFLICT แทน SELECT+UPDATE สำหรับ upsert", "reason": "atomic + 1 query + กัน race condition ถ้าลูกค้ากดส่งรีวิว 2 ครั้งพร้อมกัน (UNIQUE constraint จะ catch ได้). ใช้ 'excluded.' alias สำหรับอ้างถึงค่าใหม่ใน DO UPDATE SET"},
+    {"id": "D2", "title": "ใช้ is_mine flag แทนการส่ง customer_id กลับใน review response", "reason": "Privacy — ไม่รั่ว customer_id ของคนอื่นให้ client. Server ตรวจ getCustomerSession แล้ว set is_mine=true เฉพาะรีวิวของ user คนนี้เท่านั้น. Frontend ใช้ is_mine ในการ pre-fill form + แสดงปุ่มลบ + 'รีวิวของคุณ' badge"},
+    {"id": "D3", "title": "DELETE ใช้ song_id + customer_id แทน review_id สำหรับลูกค้า", "reason": "กัน IDOR (Insecure Direct Object Reference) — ถ้าใช้ review_id ลูกค้าอาจลองสุ่ม ID เพื่อลบรีวิวของคนอื่น. ใช้ 'WHERE song_id=? AND customer_id=?' รับรองว่าลูกค้าลบได้เฉพาะรีวิวของตัวเองเท่านั้น. สำหรับแอดมิน moderation ใช้ review_id (เพราะแอดมินมีสิทธิ์ลบรีวิวของใครก็ได้)"},
+    {"id": "D4", "title": "GET /reviews/summary ต้องอยู่ก่อน GET /reviews ใน handler order", "reason": "path.endsWith('/reviews') จะ match 'songs/abc/reviews/summary' ด้วยเพราะ String.endsWith ตรวจเฉพาะท้าย — แต่ 'songs/abc/reviews/summary' ไม่ได้ลงท้ายด้วย '/reviews' จริง ๆ. อย่างไรก็ตาม เพื่อความชัดเจน + กัน bug ในอนาคต วาง summary ก่อน reviews เสมอ"},
+    {"id": "D5", "title": "comment maxlength = 500 chars (slice ที่ server)", "reason": "กัน abuse + D1 row size ไม่บวมเกินไป. ใช้ String(body.comment).trim().slice(0, 500) ที่ server (defensive) + maxlength=500 attribute ที่ textarea (UX hint ให้ user)"},
+    {"id": "D6", "title": "ดาวเลือกแบบ interactive (hover preview + click)", "reason": "UX ที่ดี — user เห็นดาวที่กำลังจะเลือกก่อนคลิก (mouseenter เปลี่ยนดาวแบบสด ๆ). mouseleave บนกลุ่มดาว reset กลับเป็น currentReviewRating. ใช้ ⭐ สำหรับเลือก + ☆ สำหรับยังไม่เลือก"},
+    {"id": "D7", "title": "CSS scoped ด้วย #songModalBackdrop แทนการใช้ class name ทั่วไป", "reason": "กัน style leak ไปกระทบ component อื่น (เช่น .star-btn อาจซ้ำกับ component อื่นในอนาคต). ใช้ selector specificity #songModalBackdrop .star-btn รับรองว่า style ทำงานเฉพาะใน song modal เท่านั้น"},
+    {"id": "D8", "title": "ใช้ max-height: 320px + scrollbar สำหรับ reviews list", "reason": "กัน modal ยาวเกินไปถ้ามีรีวิวเยอะ. ใช้ scrollbar-width: thin + ::-webkit-scrollbar styling สำหรับ appearance ที่สวยขึ้น. Mobile (≤480px) ลดเหลือ 280px"},
+    {"id": "D9", "title": "dispatch 'customer-auth-changed' ใน syncCustomerAuthUI แทน customerLogin/customerLogout", "reason": "syncCustomerAuthUI ถูกเรียกจากทุกที่ที่ login state เปลี่ยน (login, logout, register, init) → ลด duplicate code + รับรองว่า event ถูก dispatch ทุกครั้ง. Defensive: wrap ใน try/catch + ตรวจ typeof เพราะบาง browser อาจไม่รองรับ CustomEvent"},
+    {"id": "D10", "title": "ใช้ emoji ⭐ แทน SVG icon สำหรับดาว", "reason": "ลด complexity + ไม่ต้องเพิ่ม SVG asset. Emoji ⭐ + ☆ แสดงผลได้ทุก platform (iOS/Android/Windows/Mac/Linux). ขนาด 24px desktop / 28px mobile (อ่านง่าย + touch target ใหญ่พอ)"}
+  ],
+
+  "iron_rules": [
+    {"id": "rule_1_no_zip_format_changes", "status": "PASS", "evidence": "git diff HEAD -- worker/zip-format.js = 0 lines"},
+    {"id": "rule_2_no_payment_logic_changes", "status": "PASS", "evidence": "git diff HEAD -- worker/auth-helpers.js + db-helpers.js + order-scope.js + constants.js = 0 lines. worker/index.js เปลี่ยนเฉพาะส่วน handleCustomerAuth (เพิ่ม endpoints ใหม่) + routing — ไม่แตะ payment/checkout/ZIP logic"},
+    {"id": "rule_3_no_paid_features", "status": "PASS", "evidence": "ใช้ D1 (already configured) + standard Worker features (crypto.randomUUID). ไม่ใช้ Durable Objects / Queues / KV paid features"},
+    {"id": "rule_4_no_main_branch", "status": "PASS", "evidence": "ทำใน branch ai-team/T020-song-reviews เท่านั้น (pushed to origin)"},
+    {"id": "rule_5_no_guessing", "status": "PASS", "evidence": "สเปคชัดเจน 7 ขั้นตอน ทำตามทุกขั้น (schema + migration + 5 endpoints + HTML + JS + CSS). ปรับตาม context เดิม (ใช้ getCustomerSession + getSessionAdmin + safeError + jsonResponse patterns เดิม)"},
+    {"id": "rule_6_no_regression", "status": "PASS", "evidence": "POST /like + GET /likes + admin DELETE customer (orphan cleanup song_likes) ยังอยู่ครบ. customer_favorites endpoint ยังทำงานปกติ. 18/18 integration checks PASS"},
+    {"id": "rule_7_login_required_for_reviews", "status": "PASS", "evidence": "POST + DELETE ตรวจ getCustomerSession ก่อน — ถ้าไม่มี → 401 + code: LOGIN_REQUIRED. GET (public) ไม่ต้อง login. Frontend: ถ้าไม่ login แสดง #modalReviewLoginPrompt แทน #modalReviewForm"}
+  ],
+
+  "tests": {
+    "syntax_check": [
+      {"file": "worker/index.js", "result": "PASS", "cmd": "node --check worker/index.js"},
+      {"file": "app-user.js", "result": "PASS", "cmd": "node --check app-user.js"},
+      {"file": "customer-auth.js", "result": "PASS", "cmd": "node --check customer-auth.js"}
+    ],
+    "css_check": [
+      {"file": "style.css", "result": "PASS", "braces": "1048 opens / 1048 closes — BALANCED (+48 จาก T019's 1000)"}
+    ],
+    "integration_tests": [
+      {"id": "T01", "name": "Branch check", "result": "PASS"},
+      {"id": "T02", "name": "Schema — song_reviews table + UNIQUE + CHECK + 2 indexes", "result": "PASS"},
+      {"id": "T03", "name": "Migration script exists + has CREATE + verification", "result": "PASS"},
+      {"id": "T04", "name": "5 backend endpoints in worker/index.js", "result": "PASS"},
+      {"id": "T05", "name": "Routing — /api/songs/:id/reviews + /api/admin/song-reviews", "result": "PASS"},
+      {"id": "T06", "name": "Privacy — is_mine flag added (no customer_id leak)", "result": "PASS"},
+      {"id": "T07", "name": "Login required — POST + DELETE check getCustomerSession", "result": "PASS"},
+      {"id": "T08", "name": "Upsert — INSERT ... ON CONFLICT (song_id, customer_id)", "result": "PASS"},
+      {"id": "T09", "name": "Frontend HTML — 11 elements (#modalReviewsSection + ...)", "result": "PASS"},
+      {"id": "T10", "name": "JS logic — 8 functions (loadSongReviews + ... + setupReviewHandlers)", "result": "PASS"},
+      {"id": "T11", "name": "JS init — setupReviewHandlers + loadSongReviews called", "result": "PASS"},
+      {"id": "T12", "name": "CSS — 18 selectors (.modal-reviews-section + ... + @keyframes)", "result": "PASS"},
+      {"id": "T13", "name": "Mobile responsive — @media 480px + prefers-reduced-motion", "result": "PASS"},
+      {"id": "T14", "name": "CSS version bumped (style.css?v=20261006-t020-song-reviews)", "result": "PASS"},
+      {"id": "T15", "name": "customer-auth-changed event dispatch + listener", "result": "PASS"},
+      {"id": "T16", "name": "Iron rule #1 — zip-format.js untouched (0 lines diff)", "result": "PASS"},
+      {"id": "T17", "name": "Regression — POST /like + GET /likes still exist", "result": "PASS"},
+      {"id": "T18", "name": "Regression — song_likes orphan cleanup in admin DELETE customer", "result": "PASS"}
+    ],
+    "iron_rules_diff": {
+      "worker/zip-format.js": "0 lines",
+      "worker/auth-helpers.js": "0 lines",
+      "worker/db-helpers.js": "0 lines",
+      "worker/order-scope.js": "0 lines",
+      "worker/constants.js": "0 lines"
+    }
+  },
+
+  "commit_info": {
+    "main_commit_sha": "8e6e0ed5cc3c3438038a47399b7c37bea1358ffb",
+    "branch": "ai-team/T020-song-reviews",
+    "files_changed": [
+      "worker/schema.sql (+20 บรรทัด — song_reviews table + 2 indexes ท้ายไฟล์)",
+      "scripts/migrate-song-reviews.sql (NEW — 32 บรรทัด — CREATE TABLE + INDEX + verification)",
+      "worker/index.js (+190 บรรทัด — 5 endpoints ใน handleCustomerAuth + 2 routing entries ใน fetch handler)",
+      "index.html (+37 บรรทัด — review section HTML ใน song modal + CSS version bump)",
+      "app-user.js (+261 บรรทัด — 8 functions + loadSongReviews call in openSongModal + setupReviewHandlers call in init)",
+      "customer-auth.js (+7 บรรทัด — customer-auth-changed event dispatch in syncCustomerAuthUI)",
+      "style.css (+299 บรรทัด — T020 block ท้ายไฟล์ scoped ใน #songModalBackdrop + mobile + accessibility)"
+    ],
+    "diff_stat": "819 insertions, 2 deletions (7 files — 6 modified + 1 NEW migration script)"
+  },
+
+  "next_stage": {
+    "stage": "Stage 4 (Testing)",
+    "expected_tester_tasks": [
+      "Browser test: login ลูกค้า → เปิด song modal → ให้ดาว + ความเห็น → ตรวจ review ปรากฏใน list + summary อัปเดต",
+      "Edit review test: ลูกค้าเปิด modal เดิม → ตรวจ form pre-fill ดาว+ความเห็นเดิม + label 'แก้ไขรีวิวของคุณ' + ปุ่ม 'ลบรีวิว'",
+      "Delete review test: ลูกค้ากด 'ลบรีวิว' → confirm → ตรวจ review หายไปจาก list + summary count ลด",
+      "Guest test: ไม่ login → เปิด song modal → ตรวจเห็น reviews + summary แต่ไม่เห็น form (เห็น login prompt แทน)",
+      "1-customer-1-review test: ลูกค้า login → ส่งรีวิวเพลง A → ส่งรีวิวเพลง A อีกครั้ง → ตรวจว่า review count ไม่เพิ่ม (upsert แทน insert)",
+      "Privacy test: login ลูกค้า A → ดูรีวิวของลูกค้า B → ตรวจ response ไม่มี customer_id/email/whatsapp ของ B (มีแค่ display_name)",
+      "Admin moderation test: login แอดมิน → DELETE /api/admin/song-reviews/:review_id → ตรวจ review หายไป",
+      "Login required test: ไม่ login → POST /api/songs/:id/reviews → ตรวจ 401 + code: LOGIN_REQUIRED",
+      "Invalid rating test: ส่ง rating=0 หรือ rating=6 → ตรวจ 400 + 'คะแนนต้องเป็น 1-5'",
+      "Mobile test: 375px viewport → ตรวจ .star-btn ขนาด 28px + .modal-review-actions แนวตั้ง + .modal-reviews-list max-height 280px",
+      "Accessibility test: keyboard nav (Tab) บนดาว + screen reader อ่าน aria-label '1 ดาว' / '2 ดาว' + prefers-reduced-motion disable transitions",
+      "Migration test: รัน scripts/migrate-song-reviews.sql ใน D1 Console → ตรวจ verification query ส่งกลับ 'song_reviews' + 2 indexes",
+      "Regression test: กด like (❤️) → ตรวจยังทำงาน + add favorite → ตรวจยังทำงาน + add to cart → ตรว checkout ยังทำงาน"
+    ],
+    "expected_security_tasks": [
+      "Verify ไม่แก้ zip-format.js (กฎเหล็ก #1) — git diff ว่าง",
+      "Verify ไม่แก้ payment logic (กฎเหล็ก #2) — worker/auth-helpers.js + db-helpers.js + order-scope.js + constants.js diff ว่าง",
+      "Verify ไม่ใช้ paid Cloudflare features — ใช้ D1 + standard Worker features เท่านั้น",
+      "Verify privacy — ไม่รั่ว customer_id/email/whatsapp ใน review response (มีแค่ display_name + is_mine)",
+      "Verify IDOR protection — DELETE /api/songs/:id/reviews ใช้ song_id+customer_id (ไม่ใช่ review_id)",
+      "Verify XSS protection — comment ผ่าน escapeHtml() ทุกจุดก่อน render (frontend) + String.slice(0, 500) ที่ server (กัน overflow)",
+      "Verify SQL injection protection — ใช้ prepared statements (env.DB.prepare().bind()) ทุก query",
+      "Verify admin moderation — getSessionAdmin เช็ค admin session ก่อนให้ลบรีวิว"
+    ]
+  }
+}

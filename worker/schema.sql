@@ -480,3 +480,23 @@ CREATE INDEX IF NOT EXISTS idx_documents_orders_zip_status
 CREATE INDEX IF NOT EXISTS idx_documents_orders_zip_created_at
   ON documents (json_extract(data, '$.zip_created_at'))
   WHERE collection = 'orders';
+
+-- ===================================================
+-- 🆕 (T020): song_reviews table — ลูกค้ารีวิวเพลง (ดาว + ความเห็น)
+--   - 1 ลูกค้าต่อ 1 เพลง = 1 รีวิว (UNIQUE constraint)
+--   - ใช้สำหรับแสดงคะแนนเฉลี่ย + รีวิวล่าสุดในหน้าเพลง
+--   - ผลกระทบระบบเดิม: 0% — ตารางใหม่ ไม่แตะ song_likes หรือ customer_favorites
+-- ===================================================
+CREATE TABLE IF NOT EXISTS song_reviews (
+  id          TEXT PRIMARY KEY,           -- crypto.randomUUID()
+  song_id     TEXT NOT NULL,
+  customer_id TEXT NOT NULL,               -- ลูกค้า login เท่านั้น (guest ไม่ได้)
+  rating      INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment     TEXT,                         -- ความเห็น (ไม่บังคับ, max 500 chars)
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  UNIQUE (song_id, customer_id)            -- กันซ้ำ: 1 ลูกค้าต่อ 1 เพลง = 1 รีวิว
+);
+
+CREATE INDEX IF NOT EXISTS idx_song_reviews_song_id ON song_reviews (song_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_song_reviews_customer ON song_reviews (customer_id);

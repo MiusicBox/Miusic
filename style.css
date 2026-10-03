@@ -7339,3 +7339,302 @@ html.admin-page body {
     transform: none !important;
   }
 }
+
+/* ============================================================
+   🆕 (T020): Song Reviews — รีวิวเพลงใน song modal (ดาว + ความเห็น)
+   - ไม่กระทบระบบเดิม — scope อยู่ใน #songModalBackdrop เท่านั้น
+   - ใช้ CSS variables ของระบบ (--surface, --border, --text, --accent, --danger, --success)
+   ============================================================ */
+
+#songModalBackdrop .modal-reviews-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+#songModalBackdrop .modal-reviews-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+#songModalBackdrop .modal-reviews-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text);
+}
+
+#songModalBackdrop .modal-reviews-summary {
+  font-size: 13px;
+  color: var(--text-dim, var(--text));
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#songModalBackdrop .modal-reviews-summary strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+#songModalBackdrop .review-summary-stars {
+  letter-spacing: -1px;
+}
+
+/* Review form (login เท่านั้น) */
+#songModalBackdrop .modal-review-form {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+#songModalBackdrop .modal-review-form-label {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
+#songModalBackdrop .modal-star-input {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+#songModalBackdrop .star-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 2px;
+  transition: transform 0.1s ease;
+  min-width: 32px;
+  min-height: 32px;
+  line-height: 1;
+}
+
+#songModalBackdrop .star-btn:hover {
+  transform: scale(1.2);
+}
+
+#songModalBackdrop .star-btn:active {
+  transform: scale(0.95);
+}
+
+#songModalBackdrop .star-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+#songModalBackdrop .modal-review-comment {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2, var(--background));
+  color: var(--text);
+  font-size: 13px;
+  resize: vertical;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+#songModalBackdrop .modal-review-comment:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+#songModalBackdrop .modal-review-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#songModalBackdrop .modal-review-feedback {
+  font-size: 12px;
+  margin-top: 6px;
+  min-height: 14px;
+  color: var(--text-dim, var(--text));
+}
+
+#songModalBackdrop .modal-review-feedback.error {
+  color: var(--danger);
+}
+
+#songModalBackdrop .modal-review-feedback.success {
+  color: var(--success);
+}
+
+/* Login prompt (guest) */
+#songModalBackdrop .modal-review-login-prompt {
+  text-align: center;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+
+#songModalBackdrop .modal-review-login-text {
+  font-size: 13px;
+  color: var(--text-dim, var(--text));
+  margin-bottom: 8px;
+}
+
+/* Reviews list */
+#songModalBackdrop .modal-reviews-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent) transparent;
+}
+
+#songModalBackdrop .modal-reviews-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+#songModalBackdrop .modal-reviews-list::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+#songModalBackdrop .modal-reviews-empty {
+  text-align: center;
+  color: var(--text-dim, var(--text));
+  font-size: 13px;
+  padding: 16px;
+}
+
+#songModalBackdrop .review-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  animation: review-fade-in 0.3s ease;
+}
+
+#songModalBackdrop .review-item-mine {
+  border-color: var(--accent);
+  background: var(--accent-glow, rgba(168, 85, 247, 0.05));
+}
+
+#songModalBackdrop .review-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+#songModalBackdrop .review-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+#songModalBackdrop .review-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+#songModalBackdrop .review-author {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+#songModalBackdrop .review-mine-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#songModalBackdrop .review-date {
+  font-size: 11px;
+  color: var(--text-dim, var(--text));
+  margin-top: 1px;
+}
+
+#songModalBackdrop .review-stars {
+  font-size: 13px;
+  letter-spacing: -1px;
+  flex-shrink: 0;
+}
+
+#songModalBackdrop .review-comment {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.4;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+@keyframes review-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Mobile responsive — ปุ่มดาวใหญ่ขึ้น + list สูงสุด 280px */
+@media (max-width: 480px) {
+  #songModalBackdrop .star-btn {
+    font-size: 28px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+  #songModalBackdrop .modal-reviews-list {
+    max-height: 280px;
+  }
+  #songModalBackdrop .modal-reviews-title {
+    font-size: 14px;
+  }
+  #songModalBackdrop .modal-reviews-summary {
+    font-size: 12px;
+    width: 100%;
+    justify-content: flex-end;
+  }
+  #songModalBackdrop .modal-review-actions {
+    flex-direction: column;
+  }
+  #songModalBackdrop .modal-review-actions .btn {
+    width: 100%;
+  }
+}
+
+/* Accessibility — ลด motion สำหรับ user ที่ตั้งค่า reduce */
+@media (prefers-reduced-motion: reduce) {
+  #songModalBackdrop .star-btn,
+  #songModalBackdrop .review-item {
+    transition: none !important;
+    animation: none !important;
+  }
+  #songModalBackdrop .star-btn:hover {
+    transform: none !important;
+  }
+}
