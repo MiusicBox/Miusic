@@ -37,6 +37,14 @@ import {
   buildDataDescriptor,
   crc32Update,
 } from "./zip-format.js";
+// 🆕 (2026-10-03 v10): กติกาแยก Login / Guest (pure functions — ดู worker/order-scope.js)
+import {
+  ALLOW_LEGACY_GUEST_ORDERS,
+  normalizeGuestId,
+  isOrderInLoginList,
+  isOrderInGuestList,
+  isOrderVisibleForReceiptLookup,
+} from "./order-scope.js";
 
 // โฟลเดอร์เหล่านี้เดิมใช้ toCloudinaryDownloadUrl() เติม fl_attachment ให้บังคับดาวน์โหลด
 // (ไฟล์เพลงเต็ม/ไฟล์ ZIP ออเดอร์ — ไม่ใช่ไฟล์ที่เปิดเล่น/แสดงผลตรงๆ บนเว็บ)
@@ -1918,11 +1926,22 @@ async function handleDb(request, env, url) {
       }
       const queryName = normalizeNameServer(customerName);
       const queryPhone = normalizePhoneServer(whatsapp);
+      // 🆕 (2026-10-03 v10 — แยก Login / Guest): ตรวจ "ขอบเขต" ของผู้ถามจาก session cookie ฝั่ง Server
+      //   - ออเดอร์ของ Login → เปิดได้เฉพาะเจ้าของที่ login อยู่ (กัน guest ที่ชื่อ+เบอร์ซ้ำ ได้ id/ข้อมูลของออเดอร์ login)
+      //   - ออเดอร์ของ Guest → เปิดได้เฉพาะตอนที่ไม่ได้ login (คน login ไม่เห็นออเดอร์ guest)
+      //   ไม่ตรงขอบเขต → ถือว่า "ไม่พบ" (exists:false) เหมือนข้อมูลไม่ตรง — ไม่บอกว่ามีออเดอร์อยู่
+      //   ทุก caller ฝั่ง client จัดการ exists:false ด้วย fallback เดิมอยู่แล้ว (ใช้ order ที่มีในเครื่อง)
+      let receiptSessionCustomerId = null;
+      try {
+        const receiptSession = await getCustomerSession(request, env);
+        receiptSessionCustomerId = receiptSession ? receiptSession.id : null;
+      } catch (_) { /* customer_sessions ไม่มี → ถือว่าไม่ได้ login */ }
       let matchCount = 0;
       let firstMatch = null;
       for (const d of docs) {
         const oName = normalizeNameServer(d.data?.customer_name || "");
         const oPhone = normalizePhoneServer(d.data?.whatsapp || "");
+        if (!isOrderVisibleForReceiptLookup(d.data, receiptSessionCustomerId)) continue;
         if (oName === queryName && oPhone === queryPhone) {
           matchCount++;
           if (!firstMatch) firstMatch = d;
@@ -1972,8 +1991,34 @@ async function handleDb(request, env, url) {
       try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
       const customerName = String(body.customer_name || "").trim();
       const whatsapp = String(body.whatsapp || "").trim();
-      if (!customerName || !whatsapp) {
-        return jsonResponse({ docs: [] });
+      // 🆕 (2026-10-03 v10 — แยก Login / Guest ชัดเจน): "ขอบเขต" ตัดสินที่ Server จาก session cookie เท่านั้น
+      //   (ห้ามเชื่อค่าที่ client ส่งมาบอกว่าเป็น login หรือ guest)
+      //   1) มี customer session → คืนเฉพาะออเดอร์ที่ customer_id ตรงกับ session นั้น
+      //        ไม่ดู WhatsApp/ชื่อที่ client ส่งมาเลย → ลูกค้า guest ที่ใช้เบอร์เดียวกันจะไม่ปนเข้ามา
+      //   2) ไม่มี session (Guest) → ต้องมี guest_id (UUID v4 ของ browser นี้) + WhatsApp ที่ตรง
+      //        คืนเฉพาะออเดอร์ที่ไม่มี customer_id และ guest_id ตรงกัน — WhatsApp อย่างเดียวไม่พอ
+      //        (ออเดอร์เก่าก่อน v10 ที่ไม่มี guest_id → ยังค้นได้ด้วย ชื่อตรงเป๊ะ + เบอร์ ตาม ALLOW_LEGACY_GUEST_ORDERS)
+      const listGuestId = normalizeGuestId(body.guest_id);
+      let listSessionCustomer = null;
+      try {
+        listSessionCustomer = await getCustomerSession(request, env);
+      } catch (_) { /* customer_sessions ไม่มี → ถือว่าไม่ได้ login */ }
+      if (listSessionCustomer) {
+        const { results: loginRows } = await env.DB.prepare(
+          "SELECT id, data FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ? ORDER BY created_at DESC LIMIT 200"
+        ).bind(listSessionCustomer.id).all();
+        const loginDocs = [];
+        for (const row of (loginRows || [])) {
+          let rowData;
+          try { rowData = JSON.parse(row.data); } catch { continue; }
+          // เช็คซ้ำฝั่ง JS (defense-in-depth) ให้ตรงกติกาเดียวกับ order-scope.js
+          if (isOrderInLoginList(rowData, listSessionCustomer.id)) loginDocs.push({ id: row.id, data: rowData });
+        }
+        return jsonResponse({ docs: loginDocs, scope: "login" });
+      }
+      // Guest: ต้องมีเบอร์ + (guest_id หรือ ชื่อ สำหรับออเดอร์เก่า)
+      if (!whatsapp || (!listGuestId && !(ALLOW_LEGACY_GUEST_ORDERS && customerName))) {
+        return jsonResponse({ docs: [], scope: "guest" });
       }
       // 🔧 แก้บั๊ก Bug #6 (2026-09-17): กรอง orders ที่ DB level ด้วย whatsapp แทนโหลดทั้งหมด
       // -----------------------------------------------------------
@@ -2021,21 +2066,24 @@ async function handleDb(request, env, url) {
       const matched = candidateDocs.filter((d) => {
         const oPhone = normalizePhoneServer(d.data?.whatsapp || "");
         if (oPhone !== queryPhone) return false;
-        const oName = normalizeNameServer(d.data?.customer_name || "");
-        if (!oName || !queryName) return false;
+        // 🆕 (2026-10-03 v10): Guest list — ไม่เอาออเดอร์ที่มี customer_id (ของ Login) เด็ดขาด
+        //   มี guest_id → ต้องตรงกับ guest_id ของ browser นี้ / ไม่มี guest_id (ออเดอร์เก่า) → ชื่อต้องตรงเป๊ะ
+        //   (ชื่อตรงเป๊ะสำหรับออเดอร์เก่า = กฎเดิมของ 2026-09-22 fix Bug #5 ด้านล่าง ยังคงไว้)
+        return isOrderInGuestList(d.data, {
+          guestId: listGuestId,
+          queryName,
+          normalizeName: normalizeNameServer,
+          allowLegacy: ALLOW_LEGACY_GUEST_ORDERS,
+        });
         // 🔒 (2026-09-22 fix Bug #5): exact match แทน fuzzy — กัน enumerate ออเดอร์คนอื่น
         //   เดิม: oName.includes(queryName) → พิมพ์ "a" ก็เจอทุกออเดอร์ที่มี "a" ในชื่อ
         //   ใหม่: oName === queryName → ต้องตรงเป๊ะ (case-insensitive เพราะ normalizeNameServer lowercase แล้ว)
-        if (oName !== queryName) return false;
-        // 🆕 (2026-10-02 v10 — fix แยก login/guest ชัดเจน):
-        //   กรองเฉพาะ guest orders (ไม่มี customer_id) → ไม่แสดง login orders
-        //   - ถ้า order มี customer_id → เป็น order ที่ลูกค้า login ซื้อ → ไม่แสดงใน guest search
-        //   - ถ้า order ไม่มี customer_id → เป็น guest order → แสดง
-        //   ทำให้ guest + login ที่เบอร์ WhatsApp ตรงกัน ไม่เห็นออเดอร์ของกัน
-        if (d.data?.customer_id) return false;
-        return true;
+        //   ⚠️ โค้ด 3 บรรทัดเดิมย้ายเข้า isOrderInGuestList() (worker/order-scope.js) ที่ใช้กติกาเดียวกัน
+        // const oName = normalizeNameServer(d.data?.customer_name || "");
+        // if (!oName || !queryName) return false;
+        // return oName === queryName;
       });
-      return jsonResponse({ docs: matched });
+      return jsonResponse({ docs: matched, scope: "guest" });
     }
 
     // /api/db/:collection  (list ทั้ง collection)
@@ -2349,6 +2397,18 @@ async function handleDb(request, env, url) {
           // 🔧 (2026-10-02 fix3): ผูกออเดอร์กับบัญชีลูกค้าที่ login (จาก session เท่านั้น)
           //   ไม่ login → ไม่ใส่ field นี้ (ระบบ track order ด้วยชื่อ+เบอร์ทำงานเหมือนเดิม)
           if (sessionCustomerId) filteredData.customer_id = sessionCustomerId;
+          // 🆕 (2026-10-03 v10 — แยก Login / Guest): ตัดสินที่ Server จาก session เท่านั้น
+          //   - login (มี session) → เก็บ customer_id อย่างเดียว ทิ้ง guest_id ที่ client ส่งมา (กันออเดอร์ login มี 2 ตัวตน)
+          //   - guest (ไม่มี session) → เก็บ guest_id ถ้าเป็น UUID v4 ที่ถูกต้อง ไม่งั้นไม่เก็บ
+          //     (customer_id ไม่อยู่ใน whitelist อยู่แล้ว → client ปลอม customer_id ไม่ได้)
+          //   guest_id คือ "กุญแจ" ของ browser นั้น ใช้คู่กับ WhatsApp เพื่อค้นเฉพาะออเดอร์ guest ของตัวเอง
+          if (sessionCustomerId) {
+            delete filteredData.guest_id;
+          } else {
+            const safeGuestId = normalizeGuestId(data.guest_id);
+            if (safeGuestId) filteredData.guest_id = safeGuestId;
+            else delete filteredData.guest_id;
+          }
 
           // 🔒 (2026-09-22 fix Bug #4): Server re-calculate ราคาจาก DB แทนเชื่อลูกค้า
           //   ปัญหา: ลูกค้าส่ง total=0 หรือราคาเท่าไรก็ได้ → แอดมินเห็นราคาผิด
@@ -2899,6 +2959,17 @@ async function handleDb(request, env, url) {
           const orderName = normalizeNameServer(existing.data?.customer_name || "");
           const orderPhone = normalizePhoneServer(existing.data?.whatsapp || "");
           if (!ownerName || !ownerPhone || ownerName !== orderName || ownerPhone !== orderPhone) {
+            return jsonResponse({ error: "ไม่สามารถลบออเดอร์นี้ได้ — ข้อมูลไม่ตรงกับเจ้าของออเดอร์" }, 403);
+          }
+          // 🆕 (2026-10-03 v10 — แยก Login / Guest): ชื่อ+เบอร์ตรงอย่างเดียวไม่พอ ต้องอยู่ "ขอบเขตเดียวกัน" ด้วย
+          //   ออเดอร์ Login → ลบได้เฉพาะเจ้าของที่ login อยู่ / ออเดอร์ Guest → ลบได้เฉพาะตอนที่ไม่ได้ login
+          //   (กัน guest ที่ชื่อ+เบอร์ซ้ำกับสมาชิก ลบออเดอร์ของสมาชิก และกลับกัน)
+          let delSessionCustomerId = null;
+          try {
+            const delSession = await getCustomerSession(request, env);
+            delSessionCustomerId = delSession ? delSession.id : null;
+          } catch (_) {}
+          if (!isOrderVisibleForReceiptLookup(existing.data, delSessionCustomerId)) {
             return jsonResponse({ error: "ไม่สามารถลบออเดอร์นี้ได้ — ข้อมูลไม่ตรงกับเจ้าของออเดอร์" }, 403);
           }
           // 🔒 แก้บั๊ก I2 (2026-09-18): กัน TOCTOU race — re-check status ทันทีก่อน delete
@@ -5189,30 +5260,50 @@ async function handleCustomerAuth(request, env, url) {
   }
 
   // ---------- GET /api/customer/orders ----------
-  // ดึงออเดอร์ทั้งหมดของลูกค้า login (เรียงจากล่าสุดก่อน)
+  // ดึงออเดอร์ทั้งหมดของลูกค้า (เรียงจากล่าสุดก่อน)
   //
-  // 🆕 (2026-10-02 v10 — fix แยก login/guest ชัดเจน):
-  //   เดิม (v6-v8): query ด้วย customer_id OR customer_whatsapp → login เห็น guest ปนกัน
-  //   ใหม่ (v10): query เฉพาะ customer_id → login เห็นเฉพาะออเดอร์ที่ login ซื้อ
-  //   - ลูกค้า login ดูผ่าน session cookie (HttpOnly) → ดึง customer.id จาก session
-  //   - ไม่ใช้ whatsapp ในการดึงออเดอร์ทั้งหมด → ปลอดภัยกว่า (กัน cross-account access)
-  //   - ถ้าลูกค้าต้องการดูออเดอร์ที่ซื้อแบบ guest → ใช้ modal "ติดตามออเดอร์" + กรอกชื่อ+เบอร์
-  //   ผลกระทบระบบเดิม: ต่ำ — response shape กลับเป็น { ok, orders } แบบเดิม (compat)
+  // 🆕 (2026-10-02 v8 — fix สับสน login vs guest):
+  //   เดิม: รวม login + guest ใน array เดียว → ลูกค้าสับสน ตัวเลขปนกัน
+  //   ใหม่: แยกเป็น 2 arrays:
+  //     - orders_login: ออเดอร์ที่ซื้อตอน login (มี customer_id ตรงกับลูกค้า)
+  //     - orders_guest: ออเดอร์ที่ซื้อแบบ guest (ไม่มี customer_id แต่เบอร์ WhatsApp ตรง)
+  //   ผลกระทบระบบเดิม: ต่ำ — เปลี่ยน response shape จาก { ok, orders } → { ok, orders_login, orders_guest }
+  //                      frontend ต้องอัปเดตให้รองรับด้วย
   if (path === "orders" && request.method === "GET") {
     if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
     const customer = await getCustomerSession(request, env);
     if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
     try {
-      // 🆕 (v10): query เฉพาะ customer_id = customer.id (เห็นเฉพาะออเดอร์ที่ login ซื้อ)
-      const { results } = await env.DB.prepare(
-        "SELECT id, data FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ? ORDER BY created_at DESC LIMIT 200"
-      ).bind(customer.id).all();
-      const orders = (results || []).map(row => {
+      // 🆕 (2026-10-03 v10 — แยก Login / Guest ชัดเจน): ลูกค้า Login เห็นเฉพาะออเดอร์ของ customer_id ตัวเองเท่านั้น
+      //   เดิม (v8): ค้นด้วย customer_id OR customer_whatsapp แล้วแยก orders_guest ให้ → ออเดอร์ guest ที่เบอร์ตรงปนเข้ามาในบัญชี
+      //             (และ field "customer_whatsapp" ไม่มีอยู่จริงในออเดอร์ — ออเดอร์เก็บเบอร์ไว้ที่ field "whatsapp")
+      //   ใหม่: ใช้ customer_id อย่างเดียว — ห้ามใช้ WhatsApp ดึงออเดอร์ในบัญชี
+      //   Guest orders ดูได้จากหน้า "ติดตามออเดอร์" ตอนยังไม่ login (guest_id + WhatsApp) เท่านั้น
+      //   คงรูปแบบ response เดิม (orders / orders_login / orders_guest / counts) เพื่อไม่ให้ frontend เดิมพัง
+      //   → orders_guest เป็น [] เสมอ, counts.guest = 0
+      const sql = "SELECT id, data, created_at FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ? ORDER BY created_at DESC LIMIT 200";
+      const { results } = await env.DB.prepare(sql).bind(customer.id).all();
+      const allOrders = [];
+      for (const row of (results || [])) {
         let data;
         try { data = JSON.parse(row.data); } catch { data = {}; }
-        return { id: row.id, ...data };
+        // เช็คซ้ำฝั่ง JS (defense-in-depth) ให้ตรงกติกาเดียวกับ order-scope.js
+        if (!isOrderInLoginList(data, customer.id)) continue;
+        allOrders.push({ id: row.id, ...data });
+      }
+      const orders_login = allOrders;
+      const orders_guest = [];
+      return jsonResponse({
+        ok: true,
+        orders: allOrders, // 🆕 (compat): เก็บไว้สำหรับ frontend เดิมที่ยังใช้ orders
+        orders_login,
+        orders_guest,
+        counts: {
+          login: orders_login.length,
+          guest: 0,
+          total: allOrders.length,
+        },
       });
-      return jsonResponse({ ok: true, orders });
     } catch (err) {
       return jsonResponse({ error: safeError("โหลดออเดอร์ไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }
@@ -6285,6 +6376,17 @@ export default {
       //    normalize: trim + lowercase + เอา + และ - ออก เทียบแบบ loose
       const norm = (s) => String(s || "").trim().toLowerCase().replace(/[\s+\-()]/g, "");
       if (norm(orderData.customer_name) !== norm(customerName) || norm(orderData.whatsapp) !== norm(whatsapp)) {
+        return jsonResponse({ error: "ข้อมูลลูกค้าไม่ตรงกับใบสั่งซื้อ — กรุณาตรวจสอบชื่อ/เบอร์" }, 403);
+      }
+      // 🆕 (2026-10-03 v10 — แยก Login / Guest): อัปสลิปได้เฉพาะ "ขอบเขตเดียวกับเจ้าของออเดอร์"
+      //   ออเดอร์ Login → ต้อง login เป็นเจ้าของ / ออเดอร์ Guest → ต้องไม่ได้ login
+      //   ข้อความ error เหมือนกรณีชื่อ/เบอร์ไม่ตรง (ไม่บอกว่ามีออเดอร์ของอีกฝั่งอยู่)
+      let slipSessionCustomerId = null;
+      try {
+        const slipSession = await getCustomerSession(request, env);
+        slipSessionCustomerId = slipSession ? slipSession.id : null;
+      } catch (_) {}
+      if (!isOrderVisibleForReceiptLookup(orderData, slipSessionCustomerId)) {
         return jsonResponse({ error: "ข้อมูลลูกค้าไม่ตรงกับใบสั่งซื้อ — กรุณาตรวจสอบชื่อ/เบอร์" }, 403);
       }
 
