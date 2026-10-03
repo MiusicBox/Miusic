@@ -9,6 +9,10 @@
  *   - Google Fonts:                     stale-while-revalidate
  *   - POST / PUT / DELETE:              never cache (always network)
  *
+ *   - 🆕 (T004-SEC-01): authenticated /api/* endpoints (customer/admin/auth/
+ *     orders/payment-proofs/audit-log) are NEVER cached (PII leak prevention
+ *     on shared devices); logout also broadcasts CLEAR_API_CACHE to SW.
+ *
  * Iron rules honored:
  *   - worker/* is NEVER cached (server-side code, not for client)
  *   - /api/* responses are NEVER cache-first (prevents PII leak / stale order)
@@ -19,6 +23,34 @@ const CACHE_VERSION = 'miusic-pwa-v1.0.0';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const FONT_CACHE    = `${CACHE_VERSION}-fonts`;
+
+/* 🆕 (T004-SEC-01): endpoints เหล่านี้มี PII — ห้าม cache เด็ดขาด
+ *   ถ้า cache → shared device อาจรั่วข้อมูล user A ให้ user B
+ *   (offline scenario: user A login → cache /api/customer/me body
+ *    → user B เปิด browser offline → SW serve A's cached PII)
+ *   รายการนี้ cover customer/admin/auth + order/payment/audit endpoints.
+ */
+const NEVER_CACHE_PATTERNS = [
+  /^\/api\/customer\//,      // customer/me, customer/orders, customer/favorites, customer/change-password
+  /^\/api\/admin\//,        // admin/customers, admin/orders, admin/password-reset-requests
+  /^\/api\/auth\//,         // auth/me, auth/has-admin, auth/login, auth/logout
+  /^\/api\/db\/orders\//,   // _customer-query, _customer-list, _batch-get (orders)
+  /^\/api\/db\/payment-proofs/,
+  /^\/api\/db\/audit-log/,
+];
+
+/* 🆕 (T004-SEC-01): ตรวจว่า URL อยู่ใน never-cache list ไหม
+ *   - parse URL → ใช้ pathname match กับ NEVER_CACHE_PATTERNS
+ *   - ถ้า parse ไม่ได้ → return true (safe default: ไม่ cache)
+ */
+function isNeverCache(url) {
+  try {
+    const path = new URL(url, self.location.origin).pathname;
+    return NEVER_CACHE_PATTERNS.some((p) => p.test(path));
+  } catch (_) {
+    return true; // parse ไม่ได้ → ไม่ cache (safe default)
+  }
+}
 
 /* Static assets to precache on install.
  * Query strings (e.g. style.css?v=20260930-...) are stripped by the
@@ -100,10 +132,34 @@ self.addEventListener('activate', (event) => {
 
 /* ----------------------------------------------------------------- *
  *  MESSAGE — support skipWaiting trigger from page
+ *           + CLEAR_API_CACHE (T004-SEC-01): รับ message จาก client
+ *           ให้ล้าง API cache (ใช้ตอน logout กัน PII leak ข้าม session)
  * ----------------------------------------------------------------- */
 self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') {
     self.skipWaiting();
+    return;
+  }
+  // 🆕 (T004-SEC-01): client สั่งล้าง API cache (เรียกจาก customerLogout)
+  if (event.data === 'CLEAR_API_CACHE') {
+    caches.keys().then((names) => {
+      return Promise.all(
+        names.map((name) => {
+          if (name.includes('api')) {
+            console.info('[PWA] clearing API cache:', name);
+            return caches.delete(name);
+          }
+          return undefined;
+        })
+      );
+    }).then(() => {
+      // แจ้ง client ว่าล้างแล้ว (client อาจ refresh หน้าถ้าต้องการ)
+      if (event.source && event.source.postMessage) {
+        event.source.postMessage('API_CACHE_CLEARED');
+      }
+    }).catch((err) => {
+      console.warn('[PWA] CLEAR_API_CACHE error:', err);
+    });
   }
 });
 
@@ -168,20 +224,29 @@ async function cacheFirst(request, cacheName) {
   }
 }
 
-/* Network-first: try network, fall back to cache when offline. */
+/* 🆕 (T004-SEC-01): Network-first พร้อม never-cache list
+ *   - ลอง network ก่อน
+ *   - cache response เฉพาะ res.ok + GET + ไม่ใช่ never-cache endpoint
+ *   - ถ้า network fail → fallback cache เฉพาะถ้าไม่ใช่ never-cache
+ *     (never-cache endpoint ไม่ serve offline cache เพื่อกัน PII leak)
+ */
 async function networkFirst(request, cacheName) {
+  const neverCache = isNeverCache(request.url);
   const cache = await caches.open(cacheName);
   try {
     const res = await fetch(request);
-    // Cache ONLY successful GET responses — never cache errors or
-    // authenticated scope-leaking responses, and never non-GET.
-    if (res && res.ok) {
+    // Cache ONLY successful GET responses that are NOT in never-cache list.
+    // (POST/PUT/DELETE already filtered out before this function.)
+    if (res && res.ok && !neverCache) {
       cache.put(request, res.clone()).catch(() => {});
     }
     return res;
   } catch (err) {
-    const cached = await cache.match(request);
-    if (cached) return cached;
+    // never-cache endpoints ไม่ fallback ไป cache (กัน PII leak ข้าม session)
+    if (!neverCache) {
+      const cached = await cache.match(request);
+      if (cached) return cached;
+    }
     throw err;
   }
 }
