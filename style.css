@@ -2508,6 +2508,45 @@ button:active {
   margin-bottom: 16px;
   border: 1px solid var(--border, rgba(255,255,255,.08));
 }
+/* 🆕 (T014): ส่วน "ค้นหาด้วยเลขใบเสร็จ" ใน tab ออเดอร์ — ย้ายจาก topbar modal เดิม (trackOrderBtn) มาไว้ที่นี่
+   reuse field/input style จาก .my-orders-form .field (เหมือนกันทุกประการ) — แค่ขยาย card style แยก */
+.my-orders-receipt-search {
+  background: var(--surface, #131722);
+  border: 1px solid var(--border, rgba(255,255,255,.08));
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.my-orders-receipt-search h3 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 4px;
+  color: var(--text, #f8fafc);
+}
+/* reuse field + input style จาก .my-orders-form .field — ไม่ต้อง duplicate */
+.my-orders-receipt-search .field {
+  margin-bottom: 12px;
+}
+.my-orders-receipt-search .field label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.my-orders-receipt-search .field input {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--surface-2, #1c2234);
+  border: 1px solid var(--border, rgba(255,255,255,.08));
+  border-radius: var(--radius-sm, 12px);
+  color: var(--text, #f8fafc);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.my-orders-receipt-search .field input:focus {
+  outline: none;
+  border-color: var(--accent, #8b5cf6);
+}
 .my-orders-form .field {
   margin-bottom: 12px;
 }

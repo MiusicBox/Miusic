@@ -3533,13 +3533,12 @@ if (trackOrderAllSubmitBtnEl) trackOrderAllSubmitBtnEl.addEventListener("click",
 const trackOrderAllBackBtnEl = document.getElementById("trackOrderAllBackBtn");
 if (trackOrderAllBackBtnEl) trackOrderAllBackBtnEl.addEventListener("click", closeTrackOrderAllDetail);
 
-const trackOrderBtnEl = document.getElementById("trackOrderBtn");
-if (trackOrderBtnEl) trackOrderBtnEl.addEventListener("click", () => {
-  // 🆕 (2026-10-02 v9): login และไม่ login ใช้ modal "ติดตามออเดอร์" เดียวกัน
-  //   - ลูกค้ากรอกชื่อ+เบอร์เองเสมอ (เหมือนเดิม) — ไม่ auto-fill/auto-submit
-  //   - เพื่อความสม่ำเสมอ + ไม่สับสน
-  openTrackOrder();
-});
+// 🆕 (T014): ลบ click handler ของปุ่ม #trackOrderBtn ออก — ปุ่มถูกลบจาก topbar แล้วใน index.html
+//    ฟีเจอร์ "ค้นหาด้วยเลขใบเสร็จ" ย้ายไปอยู่ใน tab ออเดอร์ (#myOrdersView) แทน — ดู app-promotion.js renderMyOrdersForm()
+//    หมายเหตุ: openTrackOrder/closeTrackOrder/trackOrderBackdrop/modal ยังคงไว้ — อาจถูกเรียกจากที่อื่น เช่น pending order banner
+//    badge function (updateTrackOrderBadge/initTrackOrderBadgeListener/fetchTrackOrderBadgeOnce) ยังคงไว้ —
+//    เพราะยังถูกใช้ผ่าน window.__updateTrackOrderBadge และ window.__refreshTrackOrderBadge (จาก app-promotion.js + app-cart.js)
+//    badge element ที่ถูกลบ → updateTrackOrderBadge early-return เมื่อ getElementById("trackOrderBadge") คืน null — ไม่พัง
 const trackOrderCloseEl = document.getElementById("trackOrderClose");
 if (trackOrderCloseEl) trackOrderCloseEl.addEventListener("click", closeTrackOrder);
 const trackOrderBackdropEl = document.getElementById("trackOrderBackdrop");

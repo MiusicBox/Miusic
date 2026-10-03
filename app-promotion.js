@@ -42,7 +42,11 @@ import {
   collection, doc, getDocs, setDoc, updateDoc, deleteDoc, query,
   // 🔧 (2026-09-17): เพิ่ม fetchCustomerOrdersOnce สำหรับ one-shot fetch (ไม่ polling) ลด D1 quota
   //    ↑ ↑ ↑ ฟังก์ชันนี้แหละที่ใช้จริงในไฟล์นี้ (แทน listenCustomerOrders เดิม) ใน PART 4: MY ORDERS VIEW
-  fetchCustomerOrdersOnce
+  fetchCustomerOrdersOnce,
+  // 🆕 (T014): เพิ่ม queryCustomerOrder สำหรับ "ค้นหาด้วยเลขใบเสร็จ" ใน tab ออเดอร์
+  //    ย้ายมาจาก modal เดิม (trackOrderBtn → openTrackOrder → handleTrackOrderSubmit) ที่ถูกลบใน T014
+  //    ใช้ร่วมกับ window.showReceipt เพื่อแสดงรายละเอียดออเดอร์เดียว (เหมือน renderMyOrdersList ปุ่ม "ดูใบเสร็จ")
+  queryCustomerOrder
 // 🔧 (2026-09-17 v2): เพิ่ม ?v=20260917-polling-fix บังคับ browser โหลด db-client.js ใหม่ (กัน cache เก่า)
 } from "./db-client.js?v=20261003-login-guest-v10";
 
@@ -1573,6 +1577,31 @@ function renderMyOrdersForm() {
       <p>กรอกชื่อและเบอร์ WhatsApp ที่ใช้สั่งซื้อ — กด "รีเฟรช" เพื่อดูข้อมูลล่าสุด (ระบบจะอัปเดตอัตโนมัติเมื่อคุณกลับเข้าหน้านี้ใหม่)</p>
       <p style="font-size:12px;color:var(--text-dim);margin-top:4px;">หน้านี้แสดงเฉพาะออเดอร์ที่สั่งโดยไม่เข้าสู่ระบบ จากเบราว์เซอร์/อุปกรณ์นี้ — ออเดอร์ของสมาชิกดูได้ที่หน้า "บัญชี" หลังเข้าสู่ระบบ</p>
     </div>
+    <!-- 🆕 (T014): ค้นหาด้วยเลขใบเสร็จ — ย้ายจาก topbar modal เดิม (trackOrderBtn) มาไว้ที่นี่
+         ใช้ queryCustomerOrder (db-client.js) ที่เดียวกับ handleTrackOrderSubmit เดิม
+         ผลลัพธ์แสดงผ่าน window.showReceipt เหมือนปุ่ม "ดูใบเสร็จ" ในลิสต์ออเดอร์ -->
+    <div class="my-orders-receipt-search">
+      <h3>🔍 ค้นหาด้วยเลขใบเสร็จ</h3>
+      <p style="font-size:12px;color:var(--text-dim);margin:4px 0 10px;">
+        มีเลขใบเสร็จอยู่แล้ว? กรอกเพื่อดูสถานะออเดอร์ได้เลย
+      </p>
+      <div class="field">
+        <label>เลขใบเสร็จ *</label>
+        <input id="myOrdersReceiptInput" type="text" placeholder="เช่น RCPT-20260909-ABC123" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>ชื่อลูกค้า *</label>
+        <input id="myOrdersReceiptName" type="text" placeholder="ชื่อที่ใช้ตอนสั่งซื้อ" autocomplete="name">
+      </div>
+      <div class="field">
+        <label>เบอร์โทร/WhatsApp *</label>
+        <input id="myOrdersReceiptPhone" type="tel" inputmode="numeric" placeholder="20XXXXXXXX" autocomplete="tel">
+      </div>
+      <button class="btn" id="myOrdersReceiptSearchBtn" type="button">📄 ค้นหาออเดอร์</button>
+      <div id="myOrdersReceiptFeedback" class="my-orders-feedback" style="display:none;" aria-live="polite" role="status"></div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
+    <!-- existing form: ชื่อ+เบอร์ (เดิม) — ดูรายการออเดอร์ทั้งหมดของลูกค้า -->
     <div class="my-orders-form">
       <div class="field">
         <label>ชื่อที่ใช้สั่งซื้อ *</label>
@@ -1596,6 +1625,110 @@ function renderMyOrdersForm() {
       <div id="myOrdersList"></div>
     </div>
   `;
+
+  // 🆕 (T014): ผูกปุ่ม "ค้นหาด้วยเลขใบเสร็จ" — ใช้ queryCustomerOrder (db-client.js)
+  //    reuse logic เดียวกับ handleTrackOrderSubmit เดิมใน app-user.js (ก่อน T014 ลบ)
+  //    success → window.showReceipt (expose จาก app-cart.js/initCart ใน app-user.js)
+  //    ไม่ duplicate logic — ใช้ server-side validation เดิม (_customer-query endpoint)
+  const receiptSearchBtn = document.getElementById("myOrdersReceiptSearchBtn");
+  if (receiptSearchBtn) {
+    receiptSearchBtn.addEventListener("click", async () => {
+      const receipt = document.getElementById("myOrdersReceiptInput")?.value?.trim() || "";
+      const name = document.getElementById("myOrdersReceiptName")?.value?.trim() || "";
+      const phone = document.getElementById("myOrdersReceiptPhone")?.value?.trim() || "";
+      const feedback = document.getElementById("myOrdersReceiptFeedback");
+
+      if (feedback) {
+        feedback.style.display = "block";
+        feedback.textContent = "";
+      }
+
+      // validate — ต้องกรอกครบทั้ง 3 ฟิลด์ (เหมือน handleTrackOrderSubmit เดิม)
+      if (!receipt || !name || !phone) {
+        if (feedback) {
+          feedback.textContent = "กรุณากรอกเลขใบเสร็จ ชื่อ และเบอร์โทรให้ครบ";
+          feedback.style.color = "var(--danger)";
+        }
+        return;
+      }
+
+      // เช็คเน็ตก่อนยิง request กันลูกค้ารอเปล่า ๆ ตอนออฟไลน์
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        if (feedback) {
+          feedback.textContent = "ไม่มีสัญญาณอินเทอร์เน็ต กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง";
+          feedback.style.color = "var(--danger)";
+        }
+        return;
+      }
+
+      // ปุ่มขณะกำลังค้นหา
+      const btn = receiptSearchBtn;
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "กำลังค้นหา...";
+
+      if (feedback) {
+        feedback.textContent = "⏳ กำลังค้นหา...";
+        feedback.style.color = "var(--text-dim)";
+      }
+
+      try {
+        // 🔒 Security: ใช้ queryCustomerOrder (server-side ตรวจ receipt+name+whatsapp พร้อมกัน)
+        //    กัน browser เห็นข้อมูลคนอื่น (เดิมโหลด collection "orders" มากรองเองฝั่ง client)
+        //    ใช้ timeout 15 วิ (เท่า handleTrackOrderSubmit เดิม) — กันค้างตลอด
+        const result = await Promise.race([
+          queryCustomerOrder({
+            receiptNumber: receipt,
+            customerName: name,
+            whatsapp: phone,
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("ค้นหาใช้เวลานานเกินไป ลองอีกครั้ง")), 15000)
+          ),
+        ]);
+
+        if (!result || !result.exists) {
+          if (feedback) {
+            feedback.textContent = "❌ ไม่พบออเดอร์ — ตรวจสอบเลขใบเสร็จ/ชื่อ/เบอร์ แล้วลองใหม่";
+            feedback.style.color = "var(--danger)";
+          }
+          return;
+        }
+
+        // พบออเดอร์ — แสดง feedback สำเร็จ แล้วเปิด receipt modal
+        if (feedback) {
+          feedback.textContent = "✅ พบออเดอร์ — กำลังแสดงรายละเอียด...";
+          feedback.style.color = "var(--success)";
+        }
+
+        // โครงสร้างเดียวกับที่ renderMyOrdersList ใช้ตอนกดปุ่ม "ดูใบเสร็จ"
+        //    ดู app-promotion.js บริเวณ [data-order-pay] handler
+        const order = { ...result.data, _docId: result.id };
+        const receiptNumber = order.receipt_number || receipt;
+        if (typeof window.showReceipt === "function") {
+          window.showReceipt(order, receiptNumber, order.store_name || "Music Store");
+        } else if (typeof window.openPaymentModal === "function") {
+          // fallback — ถ้า showReceipt ยังไม่ถูก expose (กัน regression)
+          window.openPaymentModal(order, receiptNumber);
+        } else {
+          if (feedback) {
+            feedback.textContent = "✅ พบออเดอร์ แต่ไม่สามารถเปิดหน้ารายละเอียดได้ — ลองรีเฟรชหน้าแล้วกดอีกครั้ง";
+            feedback.style.color = "var(--danger)";
+          }
+        }
+      } catch (err) {
+        console.error("myOrdersReceiptSearch error:", err);
+        if (feedback) {
+          const msg = (err && err.message) ? err.message : String(err);
+          feedback.textContent = "❌ เกิดข้อผิดพลาด: " + msg;
+          feedback.style.color = "var(--danger)";
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    });
+  }
 
   const searchBtn = document.getElementById("myOrdersSearchBtn");
   if (searchBtn) searchBtn.addEventListener("click", handleSearchMyOrders);
