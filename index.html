@@ -577,6 +577,77 @@
       </div>
     </div>
     <div class="chip-row" id="categoryChips"></div>
+
+    <!-- ============================================================
+         🆕 (T015): Advanced Filter Panel — ค้นหาเพลงขั้นสูง
+           - ลูกค้ากรองหลาย DJ / หลายหมวด / ช่วงราคา / มีโปร / เรียงลำดับ
+           - ปุ่ม toggle แสดง/ซ่อน panel (default: ซ่อน — กดเพื่อเปิด)
+           - badge แสดงจำนวน active filters (ถ้า > 0)
+           - ส่วน "Result count" แสดงจำนวนผลลัพธ์หลังกดค้นหา
+           - mobile-friendly: panel ใช้ grid + flex-wrap + responsive font/padding
+           - logic ทั้งหมดอยู่ใน app-user.js (setupAdvancedFilters + loadSongsWithFilters)
+         ============================================================ -->
+    <div class="advanced-filter-toggle" id="advancedFilterToggle">
+      <button type="button" id="advancedFilterBtn" aria-expanded="false" aria-controls="advancedFilterPanel">
+        ⚙️ ตัวกรองขั้นสูง <span id="activeFiltersCount" class="filter-badge" style="display:none;">0</span>
+      </button>
+    </div>
+
+    <div class="advanced-filter-panel" id="advancedFilterPanel" style="display:none;" role="region" aria-label="ตัวกรองขั้นสูง">
+      <!-- DJ filter -->
+      <div class="filter-section">
+        <h4>🎧 DJ</h4>
+        <div class="filter-checkboxes" id="djFilterCheckboxes" role="group" aria-label="กรองตาม DJ">
+          <!-- populated by app-user.js renderFilterCheckboxes() -->
+        </div>
+      </div>
+
+      <!-- Category filter -->
+      <div class="filter-section">
+        <h4>📂 หมวดหมู่</h4>
+        <div class="filter-checkboxes" id="categoryFilterCheckboxes" role="group" aria-label="กรองตามหมวดหมู่">
+          <!-- populated by app-user.js renderFilterCheckboxes() -->
+        </div>
+      </div>
+
+      <!-- Price range -->
+      <div class="filter-section">
+        <h4>💰 ราคา (LAK)</h4>
+        <div class="price-range-inputs">
+          <input type="number" id="minPriceInput" placeholder="ต่ำสุด" min="0" inputmode="numeric" aria-label="ราคาต่ำสุด">
+          <span aria-hidden="true">—</span>
+          <input type="number" id="maxPriceInput" placeholder="สูงสุด" min="0" inputmode="numeric" aria-label="ราคาสูงสุด">
+        </div>
+      </div>
+
+      <!-- Has promo -->
+      <div class="filter-section">
+        <label class="filter-toggle">
+          <input type="checkbox" id="hasPromoToggle">
+          <span>🎁 มีโปรโมชั่นเท่านั้น</span>
+        </label>
+      </div>
+
+      <!-- Sort -->
+      <div class="filter-section">
+        <h4>📅 เรียงตาม</h4>
+        <select id="sortSelect" aria-label="เรียงลำดับเพลง">
+          <option value="newest">ล่าสุด</option>
+          <option value="price_asc">ราคาต่ำ → สูง</option>
+          <option value="price_desc">ราคาสูง → ต่ำ</option>
+          <option value="name">ชื่อเพลง (A-Z)</option>
+        </select>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="filter-actions">
+        <button type="button" class="btn" id="applyFilterBtn">🔍 ค้นหา</button>
+        <button type="button" class="btn secondary" id="clearFilterBtn">✕ ล้างตัวกรอง</button>
+      </div>
+    </div>
+
+    <!-- Result count (แสดงหลังกดค้นหา — "พบ X เพลง") -->
+    <div class="search-result-count" id="searchResultCount" style="display:none;" role="status" aria-live="polite"></div>
   </div>
 
   <!-- 🎁 (2026-09-20) แบนเนอร์โปรโมชั่นเด่น บนหน้าแรก — สไตล์ J: CYBERPUNK
