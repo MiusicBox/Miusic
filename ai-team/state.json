@@ -1,6 +1,6 @@
 {
-  "version": "1.5.0",
-  "last_updated": "2026-10-03T13:00:00+07:00",
+  "version": "1.6.0",
+  "last_updated": "2026-10-03T13:30:00+07:00",
   "current_session": {
     "session_id": "web-fa07595c-dcf9-4921-aa7a-8451696ed1c0",
     "started_at": "2026-10-03T10:00:00+07:00",
@@ -10,12 +10,13 @@
     "active": [],
     "pending_user_approval": [],
     "completed": [
-      {"id": "T001-team-24h-v2", "title": "Critical fixes + UI/UX + DB improvements", "pr_number": 1, "completed_at": "2026-10-03T11:00:00+07:00"},
-      {"id": "T002-ai-team-system", "title": "AI Team System: Initial setup", "pr_number": 2, "completed_at": "2026-10-03T11:00:00+07:00"},
-      {"id": "T003-d1-migration", "title": "D1 Migration: 3 indexes", "completed_at": "2026-10-03T11:30:00+07:00", "executed_by": "user"},
-      {"id": "T004-pwa", "title": "PWA — ติดตั้งเป็นแอปมือถือ", "pr_number": 3, "completed_at": "2026-10-03T12:15:00+07:00"},
-      {"id": "T005-dark-light-mode", "title": "Dark/Light Mode Toggle (REVERTED in T006)", "pr_number": 4, "completed_at": "2026-10-03T12:20:00+07:00", "reverted_by": "T006"},
-      {"id": "T006-revert-dark-light", "title": "Revert T005 — Remove Dark/Light mode toggle", "pr_number": 5, "completed_at": "2026-10-03T13:00:00+07:00", "merge_sha": "07790ee1", "deploy_version": "b729e658-deee-4857-84de-324214fdf86e"}
+      {"id": "T001-team-24h-v2", "pr_number": 1, "completed_at": "2026-10-03T11:00:00+07:00"},
+      {"id": "T002-ai-team-system", "pr_number": 2, "completed_at": "2026-10-03T11:00:00+07:00"},
+      {"id": "T003-d1-migration", "completed_at": "2026-10-03T11:30:00+07:00", "executed_by": "user"},
+      {"id": "T004-pwa", "pr_number": 3, "completed_at": "2026-10-03T12:15:00+07:00"},
+      {"id": "T005-dark-light-mode", "pr_number": 4, "completed_at": "2026-10-03T12:20:00+07:00", "reverted_by": "T006"},
+      {"id": "T006-revert-dark-light", "pr_number": 5, "completed_at": "2026-10-03T13:00:00+07:00"},
+      {"id": "T007-fix-tab-scroll-bug", "title": "Fix tab scroll bug — กด tab โปร/ออเดอร์ แล้ว scroll ไปด้านล่างสุด", "pr_number": 6, "completed_at": "2026-10-03T13:25:00+07:00", "merge_sha": "f214be52", "deploy_version": "620e514a-a67e-41fc-8b99-a39a333c683f", "bonus_fixes": ["duplicate songs bug", "playlist tab bug"]}
     ],
     "blocked": []
   },
@@ -32,53 +33,44 @@
     "existing_branches": ["main"],
     "open_prs": [],
     "recent_merges": [
-      {"number": 5, "title": "T006: Revert T005 (remove Dark/Light toggle)", "merged_at": "2026-10-03T13:00:00+07:00", "sha": "07790ee1"}
+      {"number": 6, "title": "T007: Fix tab scroll bug", "merged_at": "2026-10-03T13:25:00+07:00", "sha": "f214be52"}
     ]
   },
   "cloudflare": {
     "worker_name": "miusic-store",
     "production_url": "https://miusic-store.dj-remix.workers.dev",
     "last_deploy": {
-      "timestamp": "2026-10-03T13:00:00+07:00",
-      "version_id": "b729e658-deee-4857-84de-324214fdf86e"
+      "timestamp": "2026-10-03T13:25:00+07:00",
+      "version_id": "620e514a-a67e-41fc-8b99-a39a333c683f"
     }
   },
   "current_features": {
-    "pwa": {"status": "active", "note": "ลูกค้าติดตั้งเป็นแอปมือถือได้ (Add to Home Screen)"},
-    "dark_light_toggle": {"status": "removed", "note": "เอาออกแล้วตามคำขอผู้ใช้ — เว็บเป็น dark mode ถาวรเหมือนเดิม"},
-    "orders_tab": {"status": "active", "note": "tab ออเดอร์ใน bottom-nav"},
-    "whatsapp_fab": {"status": "active", "note": "ปุ่มลอย WhatsApp ด้านซ้ายล่าง"},
-    "guest_login_banner": {"status": "active", "note": "แบนเนอร์เชิญ login ใน tab ออเดอร์"},
-    "iron_rules_3": {"status": "active", "note": "ZIP + payment + Cloudflare Free Plan — ไม่แตะ"}
+    "pwa": "active",
+    "dark_light_toggle": "removed",
+    "orders_tab": "active",
+    "whatsapp_fab": "active",
+    "guest_login_banner": "active",
+    "tab_scroll_fix": "active (T007)",
+    "iron_rules_3": "active"
   },
   "decisions_log": [
     {"id": "D001", "action": "สร้าง AI Team system"},
-    {"id": "D002", "user_answer": "merge PR #1+#2", "action": "merge + deploy"},
+    {"id": "D002", "user_answer": "merge PR #1+#2"},
     {"id": "D003", "user_answer": "รัน migration เอง"},
     {"id": "D004", "user_answer": "ทำ PWA + Dark/Light"},
     {"id": "D005", "action": "สร้าง PR #3 + #4"},
-    {"id": "D006", "user_answer": "merge PR 3 และ 4 ให้หน่อย", "action": "merge + deploy"},
-    {"id": "D007", "timestamp": "2026-10-03T12:50:00+07:00", "user_answer": "เอาฟีเจอร์ Dark/Light toggle ออก", "action": "สร้าง T006 revert + merge PR #5 + deploy"}
+    {"id": "D006", "user_answer": "merge PR 3 และ 4"},
+    {"id": "D007", "user_answer": "เอา Dark/Light toggle ออก"},
+    {"id": "D008", "timestamp": "2026-10-03T13:00:00+07:00", "user_answer": "หน้าโปร + ออเดอร์ มี bug scroll ไปด้านล่างสุด", "action": "T007 — Analyst หา root cause + Coder แก้ + merge PR #6 + deploy"}
   ],
   "resume_instructions": {
-    "how_to_resume": "บอก AI: 'resume ai-team' — AI จะอ่าน state.json และทำงานต่อ",
+    "how_to_resume": "บอก AI: 'resume ai-team'",
     "what_user_can_say": [
       "resume ai-team — ทำงานต่อ",
       "ai-team status — ดูสถานะ",
       "new task: <description> — สร้าง task ใหม่",
-      "approve merge <PR#> — อนุมัติ merge PR",
-      "cancel task <task-id> — ยกเลิก task"
+      "approve merge <PR#>",
+      "cancel task <task-id>"
     ]
-  },
-  "next_actions_pending_user": [
-    {
-      "action": "เลือก task ถัดไป (ถ้าอยากทำต่อ)",
-      "options": [
-        "แก้ Medium bugs 11 ตัว (security + pagination + rate limit)",
-        "แก้ Low bugs 12 ตัว",
-        "ทำฟีเจอร์ใหม่: รายงานยอดขาย, ค้นหาขั้นสูง, แจ้งเตือน, รีวิว, playlist ลูกค้า",
-        "อื่น ๆ — บอกได้เลย"
-      ]
-    }
-  ]
+  }
 }
