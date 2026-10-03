@@ -365,6 +365,11 @@ async function customerLogout() {
 }
 
 // 🆕 escape HTML helper (กัน XSS)
+// 🆕 (T013-R3): TODO: migrate to shared-utils.js in next refactor round
+//   Helper ที่ซ้ำกับ shared-utils.js (สร้างใหม่ใน T013): escapeHtmlCustomer
+//   (≈ escapeHtml ใน shared-utils.js — logic เดียวกัน ต่างแค่ชื่อ)
+//   อย่าลบ helper เดิมทันที — migrate ทีละไฟล์ + test รอบละไฟล์เพื่อความปลอดภัย
+//   ดู /shared-utils.js สำหรับ implementation ที่รวบรวมแล้ว
 function escapeHtmlCustomer(str) {
   if (str == null) return "";
   return String(str)

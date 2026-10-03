@@ -217,6 +217,10 @@ function hideCancelButton(wrapId) {
   if (btn) btn.style.display = "none";
 }
 
+// 🆕 (T013-R3): TODO: migrate to shared-utils.js in next refactor round
+//   Helpers ที่ซ้ำกับ shared-utils.js (สร้างใหม่ใน T013): showToast, escapeHtml, formatPrice, debounce
+//   อย่าลบ helpers เดิมทันที — migrate ทีละไฟล์ + test รอบละไฟล์เพื่อความปลอดภัย
+//   ดู /shared-utils.js สำหรับ implementation ที่รวบรวมแล้ว
 function showToast(message, type) {
   const el = document.getElementById("toast");
   el.textContent = message;
