@@ -7,3 +7,16 @@
   Cache-Control: no-cache
 /*.svg
   Cache-Control: public, max-age=31536000
+
+# 🆕 (T004-pwa): PWA asset cache rules
+#   - manifest.json: no-cache เพื่อให้ลูกค้าเห็น manifest เวอร์ชั่นใหม่ทันทีหลัง deploy
+#   - service-worker.js: no-cache เพื่อให้ browser detect SW update ทุกครั้ง
+#     (browser byte-compares SW แล้ว skip update ถ้าเหมือนเดิม → bandwidth ไม่กระทบ)
+#   - icon-*.png: 1 ปี immutable เพราะ icon เปลี่ยนนาทีละครั้ง + ใช้ชื่อไฟล์เดิม
+#     หมายเหตุ: ถ้าเปลี่ยน icon จริง ๆ ต้อง bump CACHE_VERSION ใน service-worker.js
+/manifest.json
+  Cache-Control: no-cache
+/service-worker.js
+  Cache-Control: no-cache
+/icon-*.png
+  Cache-Control: public, max-age=31536000, immutable
