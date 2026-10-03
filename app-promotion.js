@@ -1583,7 +1583,9 @@ function renderMyOrdersForm() {
         <input id="myOrdersWhatsapp" type="tel" inputmode="numeric" placeholder="20XXXXXXXX" value="${myOrders_escapeHtml(savedWhatsapp)}" autocomplete="off">
       </div>
       <button class="btn" id="myOrdersSearchBtn" type="button">🔍 ดูออเดอร์ของฉัน</button>
-      <div id="myOrdersFeedback" class="my-orders-feedback" style="display:none;"></div>
+      <!-- 🛡️ (r2-fern-mick-critical C7 fix): เพิ่ม aria-live="polite" role="status"
+           ให้ screen reader announce feedback ให้ผู้ใช้ตาบอดได้ยิน -->
+      <div id="myOrdersFeedback" class="my-orders-feedback" style="display:none;" aria-live="polite" role="status"></div>
     </div>
     <div id="myOrdersListContainer" style="display:none;">
       <div class="my-orders-list-header">

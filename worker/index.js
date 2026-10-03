@@ -860,8 +860,16 @@ async function handleAuth(request, env, url) {
           );
         });
         // ใช้ ctx.waitUntil ถ้ามี ctx (Cloudflare Worker context) — ถ้าไม่มี ctx ก็ยอมแพ้ (fire-and-forget)
-        if (typeof ctx !== "undefined" && ctx && typeof ctx.waitUntil === "function") {
-          ctx.waitUntil(deletePromise);
+        // 🔧 (2026-10-01 fix H1): handleAuth(request, env, url) ไม่มี ctx parameter
+        //   เดิม (บรรทัด 863): `typeof ctx !== "undefined"` เป็น false เสมอ เพราะ ctx ไม่ได้ประกาศใน scope
+        //     → ctx.waitUntil() ไม่ถูกเรียก → deletePromise fire-and-forget → Worker อาจ terminate ก่อน fetch เสร็จ
+        //     → ALLOW_BOOTSTRAP secret อาจไม่ถูกลบ → ระหว่าง D1 outage คนอื่น bootstrap main admin ใหม่ได้ (takeover)
+        //   ใหม่: ใช้ env.__ctx เหมือน writeAuditLog (บรรทัด 65) — fetch handler เก็บ ctx ลง env.__ctx ตั้งแต่บรรทัด 5568
+        //   ผลกระทบระบบเดิม: 0% — ถ้า env.__ctx ไม่มี (legacy) → fallback fire-and-forget เหมือนเดิม
+        //                     ถ้า env.__ctx มี → waitUntil ทำงาน → secret ถูกลบปกติ
+        const __ctx = env.__ctx;
+        if (__ctx && typeof __ctx.waitUntil === "function") {
+          __ctx.waitUntil(deletePromise);
         }
       } else {
         // ไม่ได้ตั้ง CLOUDFLARE_ACCOUNT_ID หรือ CLOUDFLARE_API_TOKEN → log warning ให้ operator เห็น
@@ -1468,6 +1476,16 @@ async function handleDb(request, env, url) {
   //       →ลูกค้าได้แค่ song_name, artist, price, status, playlist_id, cover_url, preview_url, ...
   //       → ไม่ได้ full_file_url / full_file_public_id / full_file_name (เพลงเต็ม)
   if (isBatchGetEndpoint) {
+    // 🔒 (2026-10-01 fix C1): whitelist collection ที่ non-admin เรียก _batch-get ได้
+    //   เดิม: auth exception (บรรทัด ~1437) อนุญาต non-admin เรียก _batch-get ของทุก collection
+    //         รวมทั้ง `orders` → handler ส่ง raw docs กลับ (PII: customer_name, whatsapp, total, items, payment_proof_id, status_history)
+    //   ใหม่: อนุญาตเฉพาะ `songs` + `playlists` (ตามเจตนา comment บรรทัด 1463-1469 — สำหรับ checkout)
+    //         collection อื่น (orders, settings, ...) ต้องเป็น admin เท่านั้น → return 401
+    //   ผลกระทบระบบเดิม: 0% — admin ยังใช้ได้ทุก collection, ลูกค้า checkout ยังใช้ songs/playlists ได้
+    const BATCH_GET_PUBLIC_COLLECTIONS = new Set(["songs", "playlists"]);
+    if (!admin && !BATCH_GET_PUBLIC_COLLECTIONS.has(collection)) {
+      return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    }
     let body;
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
     const ids = Array.isArray(body?.ids) ? body.ids : [];
@@ -4862,6 +4880,36 @@ async function handleOrderZipAbort(request, env) {
   return jsonResponse({ ok: true, aborted: true, orderId: jobRow.order_id });
 }
 
+// 🔒 (2026-10-01 fix H2): sanitizeOrderForCustomer — ลบข้อมูลแอดมินที่รั่วผ่าน order document
+//   เดิม: GET /api/customer/orders ส่ง raw order document กลับ → รวม status_history ที่มี
+//         `by: <admin UUID>`, `by_name: <admin display_name>` + top-level `payment_proof_verified_by`,
+//         `assigned_admin_id` → ลูกค้าเห็นชื่อ + UUID ของแอดมินที่จัดการออเดอร์ตัวเอง (privacy breach ฝั่ง staff)
+//   ใหม่: ก่อนส่ง order ให้ลูกค้า → ลบ field เหล่านี้ออก:
+//     - status_history[].by, status_history[].by_name
+//     - top-level: payment_proof_verified_by, assigned_admin_id
+//   ไม่ลบ status, at, note (ลูกค้ายังเห็นประวัติสถานะของตัวเองได้ — แค่ไม่เห็นใครเป็นคนเปลี่ยน)
+//   ไม่ break ระบบเดิม: response shape เหมือนเดิม แค่ลบ field ฝั่ง server ก่อน return
+//   ⚠️ ไม่ mutate input — clone ก่อนแก้ (กัน side effect กับ cache/audit)
+function sanitizeOrderForCustomer(order) {
+  if (!order || typeof order !== "object") return order;
+  // shallow clone + clone status_history แยก (deep clone ไม่จำเป็น เพราะแก้แค่ level 1-2)
+  const cloned = { ...order };
+  // ลบ top-level admin-identifying fields
+  delete cloned.payment_proof_verified_by;
+  delete cloned.assigned_admin_id;
+  // ลบ by / by_name จาก status_history entries
+  if (Array.isArray(cloned.status_history)) {
+    cloned.status_history = cloned.status_history.map(entry => {
+      if (!entry || typeof entry !== "object") return entry;
+      const e = { ...entry };
+      delete e.by;
+      delete e.by_name;
+      return e;
+    });
+  }
+  return cloned;
+}
+
 // ===================================================
 // 🆕 (2026-10-01): /api/customer/* — ระบบสมาชิกลูกค้า (Customer Account)
 //   ลูกค้าเลือกสมัคร/เข้าสู่ระบบ (optional — ไม่ login ก็ซื้อได้)
@@ -4980,10 +5028,27 @@ async function handleCustomerAuth(request, env, url) {
       }
       return jsonResponse({ error: safeError("เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }
-    if (!customer) return jsonResponse({ error: "ไม่พบบัญชีนี้ — กรุณาตรวจสอบอีเมล/เบอร์ WhatsApp" }, 401);
-    // ตรวจรหัสผ่าน
-    const valid = await verifyPassword(password, customer.password_hash);
-    if (!valid) return jsonResponse({ error: "รหัสผ่านไม่ถูกต้อง" }, 401);
+    // 🔒 (2026-10-01 fix H3): ป้องกัน timing oracle — ถ้า customer ไม่พบ ก็ยังต้อง verifyPassword
+    //   เพื่อใช้เวลาเท่ากัน (PBKDF2 100k iterations ใช้ ~100ms)
+    //   เดิม (บรรทัด 5031 เดิม): `if (!customer) return 401` → ถ้า customer ไม่พบ → return เร็วกว่ากรณีพบ
+    //     → attacker วัด timing แยก "ไม่มีบัญชี" กับ "รหัสผิด" ได้ (timing oracle → enumerate accounts)
+    //   ใหม่: ใช้รูปแบบเดียวกับ admin login (บรรทัด 942-957) — ถ้า !customer → verify กับ DUMMY_HASH
+    //   ผลกระทบระบบเดิม: 0%
+    //     - กรณี customer พบ → verify ปกติ (เหมือนเดิม)
+    //     - กรณี customer ไม่พบ → verify กับ dummy hash (เสียเวลา ~100ms + กัน timing oracle)
+    //     - response ทั้ง 2 กรณีเป็น 401 เหมือนกัน (เพื่อไม่ info-disclose ว่าบัญชีมีอยู่จริงไหม)
+    const DUMMY_HASH = "pbkdf2$100000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    let passwordOk = false;
+    if (customer) {
+      passwordOk = await verifyPassword(password, customer.password_hash);
+    } else {
+      // dummy verify — เสียเวลาเท่ากัน แต่ผลต้องเป็น false เสมอ
+      await verifyPassword(password, DUMMY_HASH);
+      passwordOk = false;
+    }
+    if (!customer || !passwordOk) {
+      return jsonResponse({ error: "อีเมล/เบอร์ WhatsApp หรือรหัสผ่านไม่ถูกต้อง", code: "customer/invalid-credential" }, 401);
+    }
     // สร้าง session
     const token = await createCustomerSession(env, customer.id);
     // ส่ง cookie + ข้อมูล customer (ไม่ส่ง password_hash)
@@ -5108,14 +5173,26 @@ async function handleCustomerAuth(request, env, url) {
       sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
       binds.push(limit, offset);
       const { results } = await env.DB.prepare(sql).bind(...binds).all();
-      // นับจำนวนออเดอร์ของแต่ละ customer (ดึงจาก documents)
-      const customers = [];
-      for (const row of results || []) {
-        const orderCountRow = await env.DB.prepare(
-          "SELECT COUNT(*) as cnt FROM documents WHERE collection='orders' AND json_extract(data,'$.customer_id')=?"
-        ).bind(row.id).first();
-        customers.push({ ...row, order_count: orderCountRow?.cnt || 0 });
+      // 🔧 (2026-10-01 fix C2): ใช้ GROUP BY query เดียวแทน N+1 loop
+      //   เดิม (บรรทัด 5123-5128 เดิม): วนลูป COUNT(*) ทีละ customer
+      //     → ถ้า limit=100 → 1 (list) + 100 (count) = 101 subrequests > 50 Free plan limit
+      //     → endpoint พัง 500 เมื่อลูกค้า ≥ 50 ราย
+      //   ใหม่: ดึง order_count ทุก customer ใน query เดียวด้วย GROUP BY
+      //     → ลดจาก N+1 query → 2 query (list + group-by)
+      //   ผลกระทบระบบเดิม: 0% — response shape เหมือนเดิม ({customers, total})
+      const { results: orderCountRows } = await env.DB.prepare(
+        "SELECT json_extract(data,'$.customer_id') as cid, COUNT(*) as cnt " +
+        "FROM documents WHERE collection='orders' AND json_extract(data,'$.customer_id') IS NOT NULL " +
+        "GROUP BY cid"
+      ).all();
+      const orderCountMap = new Map();
+      for (const r of orderCountRows || []) {
+        if (r.cid) orderCountMap.set(r.cid, r.cnt || 0);
       }
+      const customers = (results || []).map(row => ({
+        ...row,
+        order_count: orderCountMap.get(row.id) || 0,
+      }));
       return jsonResponse({ customers, total: customers.length });
     } catch (err) {
       if (String(err?.message || "").includes("no such table")) {
@@ -5157,6 +5234,13 @@ async function handleCustomerAuth(request, env, url) {
     try {
       // ลบ sessions ของลูกค้าก่อน
       await env.DB.prepare("DELETE FROM customer_sessions WHERE customer_id=?").bind(customerId).run();
+      // 🆕 (2026-10-03 team-24h-v2 / L4): ลบ orphan rows ของลูกค้า — กันข้อมูลค้างหลังลบ customer
+      //   ก่อนหน้านี้ลบเฉพาะ sessions + customer record → customer_favorites / song_likes / password_reset_requests ค้างเป็น orphan
+      //   ผลกระทบ: orphan rows บวม D1 storage (Free plan 5GB) + รั่ว profile ลูกค้าที่ถูกลบไปแล้ว (privacy)
+      //   วิธีแก้: DELETE 3 ตารางนี้ทั้งหมดก่อนลบ customer record (ลด FOREIGN KEY risk ถ้ามี constraint ในอนาคต)
+      await env.DB.prepare("DELETE FROM customer_favorites WHERE customer_id=?").bind(customerId).run();
+      await env.DB.prepare("DELETE FROM song_likes WHERE customer_id=?").bind(customerId).run();
+      await env.DB.prepare("DELETE FROM password_reset_requests WHERE customer_id=?").bind(customerId).run();
       // ลบลูกค้า
       await env.DB.prepare("DELETE FROM customers WHERE id=?").bind(customerId).run();
       return jsonResponse({ ok: true });
@@ -5298,7 +5382,10 @@ async function handleCustomerAuth(request, env, url) {
         try { data = JSON.parse(row.data); } catch { data = {}; }
         // เช็คซ้ำฝั่ง JS (defense-in-depth) ให้ตรงกติกาเดียวกับ order-scope.js
         if (!isOrderInLoginList(data, customer.id)) continue;
-        allOrders.push({ id: row.id, ...data });
+        // 🔒 (2026-10-01 fix H2): sanitize order ก่อนส่งให้ customer
+        //   ลบ by/by_name ออกจาก status_history entries + ลบ payment_proof_verified_by/assigned_admin_id ออกจาก top-level
+        //   → กันรั่ว admin UUID + display_name ไปลูกค้า (privacy breach ฝั่ง staff)
+        allOrders.push(sanitizeOrderForCustomer({ id: row.id, ...data }));
       }
       const orders_login = allOrders;
       const orders_guest = [];

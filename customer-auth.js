@@ -634,6 +634,8 @@ async function loadLikeStatus(songId) {
 window.isCustomerLoggedIn = isCustomerLoggedIn;
 window.getCurrentCustomer = getCurrentCustomer;
 window.initCustomerAuth = initCustomerAuth;
+// 🆕 (2026-10-03 team-fix): expose openCustomerAuthModal ให้ app-user.js เรียกจากปุ่ม "เข้าสู่ระบบ" ในแบนเนอร์
+window.openCustomerAuthModal = openCustomerAuthModal;
 // 🆕 (2026-10-02 v7): favorites + like
 window.toggleFavorite = toggleFavorite;
 window.loadCustomerFavorites = loadCustomerFavorites;
@@ -644,6 +646,32 @@ window.getAnonymousFingerprint = getAnonymousFingerprint;
 // 🔧 FIX: เดิมบรรทัดนี้เซ็ต window.showCustomerAccountView = null ทับค่าที่ app-user.js เซ็งไว้ (customer-auth.js โหลดทีหลัง)
 //   ทำให้ปุ่มบัญชี/ดูออเดอร์ตอน login แล้วไม่ทำงาน → ตั้งเป็น null เฉพาะเมื่อยังไม่มีค่าเท่านั้น
 if (typeof window.showCustomerAccountView !== "function") window.showCustomerAccountView = null;
+
+// ============================================================
+// 🆕 (2026-10-03 team-fix): __onOrderScopeChanged — รับ trigger จาก saveCustomerToStorage()
+//   เมื่อ login state เปลี่ยน (guest→login, login→guest, สลับบัญชี):
+//     1. ลบแบนเนอร์เชิญ login ออก (hideGuestOrdersLoginBanner)
+//     2. ถ้ากำลังอยู่ใน tab "ออเดอร์" → re-route ไปยัง view ที่ถูกต้อง (account หรือ guest lookup)
+//   ผลกระทบระบบเดิม: 0% — ฟังก์ชันนี้ถูกเรียกจาก customer-auth.js เอง (saveCustomerToStorage)
+//   และเดิมไม่เคยมีการ assign ฟังก์ชันให้ตัวแปรนี้เลย (dead reference) — ตอนนี้เรา assign ให้ถูกต้อง
+// ============================================================
+window.__onOrderScopeChanged = function onOrderScopeChanged() {
+  try {
+    // 1. ลบแบนเนอร์เชิญ login ออกเสมอ (login แล้วก็ลบ, logout ก็ลบ — จะแสดงใหม่เฉพาะตอนเปิด tab ออเดอร์ตอนเป็น guest)
+    if (typeof window.hideGuestOrdersLoginBanner === "function") window.hideGuestOrdersLoginBanner();
+    // 2. ถ้ากำลังอยู่ใน tab "ออเดอร์" → คลิก tab นั้นใหม่เพื่อ re-route ไปยัง view ที่ถูกต้อง
+    const activeTabBtn = document.querySelector(".bottom-nav button.active[data-tab='myorders']");
+    if (activeTabBtn) {
+      // ใช้ click() เพื่อ trigger handler ใน app-user.js ใหม่ — ง่ายและปลอดภัย (ไม่ต้องเรียกฟังก์ชันภายใน app-user.js โดยตรง)
+      // ใส่ try/catch เผื่อ click handler พัง → ไม่กระทบ flow อื่น
+      try { activeTabBtn.click(); } catch (err) { console.warn("[onOrderScopeChanged] re-click tab failed:", err?.message || err); }
+    }
+    // 3. refresh customer auth UI (ปุ่ม login / ชื่อลูกค้า ด้านบนขวา)
+    syncCustomerAuthUI();
+  } catch (err) {
+    console.warn("[onOrderScopeChanged] failed:", err?.message || err);
+  }
+};
 
 // 🆕 เรียก init ตอน page load (หลัง DOM ready)
 if (document.readyState === "loading") {
