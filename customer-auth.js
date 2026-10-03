@@ -727,4 +727,87 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("forgotPasswordLogin")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") submitForgotPassword();
   });
+
+  // 🆕 (T011-F4): password show/hide toggle — ปุ่ม 👁 ในช่อง password
+  //   - ทำงานกับทั้ง 2 ช่อง (login: #customerAuthPassword + register: #customerAuthPasswordReg)
+  //   - เนื่องจาก 2 ช่อง sync ค่าผ่าน oninput → toggle ต้อง sync type ด้วย
+  //   - ปุ่มเปลี่ยน icon 👁 → 🙈 ตามสถานะ
+  //   ผลกระทบระบบเดิม: 0% — เพิ่มปุ่มใหม่ ไม่แตะ input logic เดิม
+  function togglePasswordVisibility(btnEl, inputEl) {
+    if (!btnEl || !inputEl) return;
+    if (inputEl.type === "password") {
+      inputEl.type = "text";
+      btnEl.textContent = "🙈";
+      btnEl.setAttribute("aria-label", "ซ่อนรหัสผ่าน");
+    } else {
+      inputEl.type = "password";
+      btnEl.textContent = "👁";
+      btnEl.setAttribute("aria-label", "แสดงรหัสผ่าน");
+    }
+  }
+
+  const passwordToggleBtn = document.getElementById("passwordToggleBtn");
+  const passwordToggleBtnReg = document.getElementById("passwordToggleBtnReg");
+  const passwordInputLogin = document.getElementById("customerAuthPassword");
+  const passwordInputReg = document.getElementById("customerAuthPasswordReg");
+
+  // toggle ในหน้า login — sync type ไปยัง register ด้วย (เพราะค่า sync ผ่าน oninput)
+  passwordToggleBtn?.addEventListener("click", function () {
+    togglePasswordVisibility(this, passwordInputLogin);
+    if (passwordInputReg) passwordInputReg.type = passwordInputLogin.type;
+    if (passwordToggleBtnReg) {
+      passwordToggleBtnReg.textContent = this.textContent;
+      passwordToggleBtnReg.setAttribute("aria-label", this.getAttribute("aria-label"));
+    }
+  });
+  // toggle ในหน้า register — sync type ไปยัง login ด้วย
+  passwordToggleBtnReg?.addEventListener("click", function () {
+    togglePasswordVisibility(this, passwordInputReg);
+    if (passwordInputLogin) passwordInputLogin.type = passwordInputReg.type;
+    if (passwordToggleBtn) {
+      passwordToggleBtn.textContent = this.textContent;
+      passwordToggleBtn.setAttribute("aria-label", this.getAttribute("aria-label"));
+    }
+  });
+
+  // 🆕 (T011-F4): complexity meter — แสดงความแข็งแรงของรหัสผ่านแบบ real-time
+  //   - คำนวณ score จาก: ความยาว + มีตัวเลข + มีอักขระพิเศษ + มีตัวใหญ่/เล็กผสม
+  //   - แสดง 3 ระดับ: weak (แดง) / medium (เหลือง) / strong (เขียว)
+  //   - ซ่อนตอนเริ่มต้น แสดงเมื่อเริ่มพิมพ์
+  //   ผลกระทบระบบเดิม: 0% — UI เสริม ไม่บล็อกการ register
+  function calcPasswordStrength(password) {
+    if (!password) return { level: "none", label: "กรอกรหัสผ่าน", score: 0 };
+    let score = 0;
+    if (password.length >= 6) score += 1;
+    if (password.length >= 10) score += 1;
+    if (/[0-9]/.test(password)) score += 1;
+    if (/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) score += 1;
+    if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 1;
+    if (score <= 1) return { level: "weak", label: "อ่อนแอ — ควรเพิ่มตัวเลข/อักขระพิเศษ", score };
+    if (score <= 3) return { level: "medium", label: "ปานกลาง — พอใช้ได้", score };
+    return { level: "strong", label: "แข็งแรง 👍", score };
+  }
+
+  function updateComplexityMeter(password) {
+    const meter = document.getElementById("passwordComplexityMeter");
+    const barFill = document.getElementById("complexityBarFill");
+    const label = document.getElementById("complexityLabel");
+    if (!meter || !label) return;
+    if (!password) {
+      meter.style.display = "none";
+      meter.className = "password-complexity";
+      return;
+    }
+    meter.style.display = "block";
+    const { level, label: text } = calcPasswordStrength(password);
+    meter.className = "password-complexity level-" + level;
+    label.textContent = text;
+    // barFill ไม่ต้อง set width ตรงนี่้ — CSS ของ level-* กำหนด width ให้
+  }
+
+  passwordInputReg?.addEventListener("input", function () {
+    updateComplexityMeter(this.value);
+  });
+  // ซ่อน meter ตอนเริ่มต้น
+  updateComplexityMeter("");
 });

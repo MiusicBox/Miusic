@@ -212,6 +212,22 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     state.cart.push(entry);
     showToast("เพิ่มลงตะกร้าแล้ว", "success");
     saveCart();
+    // 🆕 (T011-F5): cart badge bounce + haptic feedback ตอนเพิ่มสินค้า
+    //   - ทำหลัง saveCart() (badge ถูก render ใหม่แล้วใน renderCart)
+    //   - bounce: เพิ่ม class "bounce" → CSS animation scale 1.3 → 1 (0.4s)
+    //   - haptic: navigator.vibrate(50) บนมือถือที่รองรับ (Android Chrome, Firefox)
+    //   ผลกระทบระบบเดิม: 0% — animation ไม่กระทบ logic, vibrate silent ถ้าไม่รองรับ
+    try {
+      const badge = document.getElementById("cartBadge");
+      if (badge && !badge.hidden) {
+        badge.classList.remove("bounce");
+        void badge.offsetWidth; // trigger reflow เพื่อ restart animation
+        badge.classList.add("bounce");
+      }
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        navigator.vibrate(50);
+      }
+    } catch (_) { /* ignore — animation/haptic ไม่จำเป็น */ }
   }
 
   function removeFromCart(itemId) {
