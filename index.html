@@ -1067,10 +1067,10 @@
   <!-- เปลี่ยนเลข v ทุกครั้งที่อัปโหลดไฟล์ใหม่ เพื่อไม่ให้มือถือใช้ไฟล์ JS จาก cache -->
   <!-- 🔧 v=20260917-p0: P0 แก้ Bug 1 (ลูกค้าตั้ง status เองไม่ได้) + Sec 1 (change-password ต้อง verify เดิม) -->
   <!-- 🔧 v=20260917-polling-fix: Phase 0 ยกเลิก polling ทุก 4 วิ + Phase 1 จุด 5 (admin view cache) + Phase 2 จุด 1 (state ฝั่ง client) -->
-  <script type="module" src="app-user.js?v=20261002-pw-reset"></script>
+  <script type="module" src="app-user.js?v=20261003-login-guest-v10"></script>
   <!-- 🆕 (2026-10-01): ระบบสมาชิกลูกค้า — โหลดทีหลัง app-user.js เพื่อให้ showToast พร้อมใช้ -->
   <!--   ผลกระทบระบบเดิม: 0% — ไฟล์ใหม่ ไม่แตะ app-user.js/app-cart.js -->
-  <script type="module" src="customer-auth.js?v=20261002-pw-reset"></script>
+  <script type="module" src="customer-auth.js?v=20261003-login-guest-v10"></script>
 
   <!-- 🆕 (2026-10-01): Modal สมัคร/เข้าสู่ระบบลูกค้า -->
   <div class="modal-backdrop" id="customerAuthBackdrop" role="dialog" aria-modal="true" aria-hidden="true">
