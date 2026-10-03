@@ -31,9 +31,9 @@
 <meta name="twitter:description" content="โหลดเพลงดีเจรีมิกซ์ ฟังเพลงแดนซ์ออนไลน์ สั่งซื้อผ่าน WhatsApp ส่งทั่วลาวและไทย">
 <meta name="twitter:image" content="default-song-cover.svg">
 
-<!-- 🔧 (2026-09-22 fix): Favicon — แสดง icon ในแท็บ browser -->
+<!-- 🔧 (2026-09-22 fix): Favicon — แสดง icon ในแท็บ browser (desktop) -->
 <link rel="icon" type="image/svg+xml" href="default-song-cover.svg">
-<link rel="apple-touch-icon" href="default-song-cover.svg">
+<!-- apple-touch-icon ย้ายไปอยู่ใน PWA block ก่อน </head> (ใช้ PNG 180x180 สำหรับ iOS) -->
 
 <!-- 🔧 (2026-09-22 fix): Canonical URL — กัน Google index ซ้ำ (เช่น http vs https) -->
 <link rel="canonical" href="https://miusic-store.dj-remix.workers.dev/">
@@ -547,6 +547,22 @@
     }
   })();
 </script>
+
+<!-- 🆕 (T004-pwa): PWA support — manifest + theme-color + iOS/Android install meta -->
+<!--   - manifest.json: W3C Web App Manifest (name/icons/shortcuts/display:standalone)
+     - theme-color #0b0d14 ตรง --bg (Android status bar กลืนกับ header)
+     - apple-touch-icon PNG 180x180 (iOS ไม่รองรับ SVG → ต้องใช้ PNG)
+     - apple-mobile-web-app-capable=yes + status-bar-style=black-translucent → แสดงแบบ standalone บน iOS
+     - mobile-web-app-capable=yes → Android Chrome install prompt
+     - ผลกระทบระบบเดิม: 0% — เป็น meta tags ฝั่ง client อย่างเดียว ไม่แตะ logic
+     - SW registration อยู่ใน app-user.js (ท้ายไฟล์) ไม่ได้ใส่ inline เพื่อรวม logic ฝั่ง user -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0b0d14">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Miusic">
+<meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): h1 สำหรับ SEO (hidden visually, visible to crawlers) -->
