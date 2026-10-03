@@ -307,6 +307,12 @@ async function init() {
 //   - กัน concurrent fetches ผ่าน STATE.songsLoading
 async function loadMoreSongs() {
   if (STATE.songsLoading || !STATE.songsHasMore) return;
+  // 🛡️ (T007 hardening): guard — ถ้า songGrid ซ่อนอยู่ ไม่ต้องโหลด (กัน observer ยิงเปล่า ๆ)
+  //   เหตุผล: defense-in-depth — ถึงแม้ observer callback จะมี guard แล้ว แต่ loadMoreSongs
+  //   อาจถูกเรียกจากที่อื่น (เช่น loadAllRemainingSongs ที่ trigger จาก category click)
+  //   → กันกรณี user อยู่บน tab อื่นแล้ว code เรียก loadMoreSongs โดยตรง
+  const songGrid = document.getElementById("songGrid");
+  if (songGrid && songGrid.style.display === "none") return;
   STATE.songsLoading = true;
   const nextPage = (STATE.songsPage || 0) + 1;
   const offset = (nextPage - 1) * 50;
@@ -436,6 +442,11 @@ function setupSongListInfinityScroll() {
   // (user ยังใช้เว็บได้ปกติ แค่เห็น 50 เพลงแรก)
   if (!("IntersectionObserver" in window)) return;
   const observer = new IntersectionObserver(async (entries) => {
+    // 🛡️ (T007 hardening): guard — ถ้า songGrid ซ่อนอยู่ ไม่ต้องโหลดเพิ่ม
+    //   เหตุผล: defense-in-depth — กัน observer ยิง loadMoreSongs ตอนอยู่บน tab อื่น (โปร/ออเดอร์/เพลย์ลิสต์)
+    //   แม้จะซ่อน sentinel ไว้แล้ว แต่กันกรณี browser ยัง trigger intersect ด้วยเหตุผลอื่น (resize, etc.)
+    const songGrid = document.getElementById("songGrid");
+    if (!songGrid || songGrid.style.display === "none") return;
     for (const entry of entries) {
       if (entry.isIntersecting && STATE.songsHasMore && !STATE.songsLoading) {
         await loadMoreSongs();
@@ -767,14 +778,13 @@ function renderSongGrid() {
   function renderNextBatch() {
     if (STATE._renderedSongCount >= totalSongs) return;
     const startIdx = STATE._renderedSongCount;
-    // สร้าง HTML + insert ก่อน sentinel
+    // สร้าง HTML + insert เข้า grid ตรง ๆ
     const batchHTML = buildBatchHTML(startIdx);
-    const sentinel = document.getElementById("songGridSentinel");
-    if (sentinel) {
-      sentinel.insertAdjacentHTML("beforebegin", batchHTML);
-    } else {
-      grid.insertAdjacentHTML("beforeend", batchHTML);
-    }
+    // 🔧 (T007 fix): insert เข้า grid ตรง ๆ แทน sentinel.beforebegin
+    //   เดิม: sentinel.insertAdjacentHTML("beforebegin", batchHTML) → song cards เป็น siblings ของ #songGrid → ตอนซ่อน #songGrid ด้วย display:none มันซ่อนแค่ตัวว่างเปล่า song cards ยังเห็นอยู่
+    //   ใหม่: grid.insertAdjacentHTML("beforeend", batchHTML) → song cards เป็น children ของ #songGrid → ซ่อน #songGrid แล้ว song cards ซ่อนด้วย
+    //   ผลกระทบ: แก้ bug ที่กด tab โปร/ออเดอร์ แล้วต้อง scroll ผ่านเพลงทั้งหมด + แก้ duplicate songs bug (grid.innerHTML='' ตอนนี้ clear songs ได้จริง)
+    grid.insertAdjacentHTML("beforeend", batchHTML);
     STATE._renderedSongCount = Math.min(startIdx + RENDER_BATCH_SIZE, totalSongs);
     attachBatchListeners(startIdx);
     updatePlayButtonsUI();
@@ -803,6 +813,11 @@ function renderSongGrid() {
       STATE._songGridObserver.disconnect();
     }
     STATE._songGridObserver = new IntersectionObserver((entries) => {
+      // 🛡️ (T007 hardening): guard — ถ้า songGrid ซ่อนอยู่ ไม่ต้อง render batch ถัดไป
+      //   เหตุผล: defense-in-depth — กัน observer ยิง renderNextBatch ตอนอยู่บน tab อื่น
+      //   แม้จะซ่อน sentinel ไว้แล้ว แต่กันกรณี browser ยัง trigger intersect ด้วยเหตุผลอื่น
+      const songGrid = document.getElementById("songGrid");
+      if (!songGrid || songGrid.style.display === "none") return;
       for (const entry of entries) {
         if (entry.isIntersecting && STATE._renderedSongCount < totalSongs) {
           renderNextBatch();
@@ -1094,6 +1109,15 @@ function setView(view) {
   // set display="" ทับค่าที่ renderSongGrid() เพิ่งเซ็ตไว้ถูกต้อง (none ตอนมีเพลง)
   // ทำให้กล่อง "ไม่พบเพลงที่ค้นหา" โผล่ค้างอยู่ใต้รายการเพลงเสมอ ไม่ว่าจะมีผลลัพธ์หรือไม่
   ["#gridTitle", "#songGrid"].forEach(selector => {
+    const el = document.querySelector(selector);
+    if (el) el.style.display = showSongs ? "" : "none";
+  });
+  // 🛡️ (T007 hardening): ซ่อน/แสดง songGridSentinel + songListSentinel ตาม showSongs
+  //   เหตุผล: sentinel ทั้ง 2 ตัวเป็น siblings ของ #songGrid — เมื่อ #songGrid ถูกซ่อน (playlist tab)
+  //   → หน้าสั้นลง → sentinel เข้าใกล้ viewport → observer ยิง loadMoreSongs/renderNextBatch โดยไม่จำเป็น
+  //   → ประหยัด API calls + กัน DOM nodes สะสมใน #songGrid ที่ซ่อนอยู่
+  //   เมื่อกลับหน้า home/category/dj (showSongs=true) → restore display="" ให้ observer ทำงานได้ปกติ
+  ["#songGridSentinel", "#songListSentinel"].forEach(selector => {
     const el = document.querySelector(selector);
     if (el) el.style.display = showSongs ? "" : "none";
   });
@@ -1942,6 +1966,14 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
 function showMyOrdersView() {
   // ซ่อน view อื่นๆ (gridTitle, songGrid, category chips, dj, playlists, emptyState)
   ["#gridTitle", "#songGrid", "#emptyState"].forEach(selector => {
+    const el = document.querySelector(selector);
+    if (el) el.style.display = "none";
+  });
+  // 🛡️ (T007 hardening): ซ่อน songGridSentinel + songListSentinel ตอนอยู่ใน view อื่น
+  //   เหตุผล: sentinel ทั้ง 2 ตัวเป็น siblings ของ #songGrid — เมื่อ #songGrid ถูกซ่อน หน้าจะสั้นลง
+  //   → sentinel เข้าใกล้ viewport → observer ยิง loadMoreSongs/renderNextBatch โดยไม่จำเป็น
+  //   → ประหยัด API calls + กัน DOM nodes สะสมใน #songGrid ที่ซ่อนอยู่
+  ["#songGridSentinel", "#songListSentinel"].forEach(selector => {
     const el = document.querySelector(selector);
     if (el) el.style.display = "none";
   });
@@ -3996,6 +4028,14 @@ function renderPromotionsView() {
 function showPromotionsView() {
   // ซ่อน view อื่น ๆ
   ["#gridTitle", "#songGrid", "#emptyState"].forEach(selector => {
+    const el = document.querySelector(selector);
+    if (el) el.style.display = "none";
+  });
+  // 🛡️ (T007 hardening): ซ่อน songGridSentinel + songListSentinel ตอนอยู่ใน view อื่น
+  //   เหตุผล: sentinel ทั้ง 2 ตัวเป็น siblings ของ #songGrid — เมื่อ #songGrid ถูกซ่อน หน้าจะสั้นลง
+  //   → sentinel เข้าใกล้ viewport → observer ยิง loadMoreSongs/renderNextBatch โดยไม่จำเป็น
+  //   → ประหยัด API calls + กัน DOM nodes สะสมใน #songGrid ที่ซ่อนอยู่
+  ["#songGridSentinel", "#songListSentinel"].forEach(selector => {
     const el = document.querySelector(selector);
     if (el) el.style.display = "none";
   });
