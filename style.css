@@ -2251,6 +2251,43 @@ button:active {
   font-weight: 500;
 }
 
+/* 🆕 (T009-F2): Empty state สวย ๆ สำหรับ list ว่าง
+   ใช้สำหรับ: ตะกร้าว่าง / ไม่มีออเดอร์ / ไม่มีโปรโมชั่น / ไม่มีรายการโปรด
+   ประกอบด้วย icon + title + desc + (optional) CTA button */
+.empty-state-cute {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-dim);
+  gap: 4px;
+}
+.empty-state-cute .empty-icon {
+  font-size: 48px;
+  line-height: 1;
+  margin-bottom: 12px;
+  opacity: 0.85;
+  filter: saturate(0.85);
+}
+.empty-state-cute .empty-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.empty-state-cute .empty-desc {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 16px;
+  max-width: 280px;
+  line-height: 1.5;
+}
+.empty-state-cute .empty-cta {
+  margin-top: 4px;
+}
+
 .spinner {
   width: 20px;
   height: 20px;
