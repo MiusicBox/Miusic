@@ -5,10 +5,12 @@ import {
   collection, doc, query, where, getDoc, getDocs, setDoc, queryCustomerOrder,
   // 🆕 (2026-10-03 v10): guest_id ประจำ browser — แนบกับออเดอร์ของลูกค้าที่ไม่ได้ login
   getGuestId,
+  // 🆕 (2026-10-03 v11): แยกที่เก็บข้อมูลในเครื่อง Login / Guest (ต่อ scope ท้ายชื่อ key)
+  scopedStorageKey, getOrderScope,
   // 🚀 (2026-09-28 fix H7): เพิ่ม getDocsByIds สำหรับ batch fetch แทน N+1
   //   ลด HTTP requests จาก N+1 → 2 (songs + playlists) ใน resolveCartFromDatabase
   getDocsByIds
-} from "./db-client.js?v=20261003-login-guest-v10";
+} from "./db-client.js?v=20261003-login-guest-v11";
 //
 // 🔧 แก้บั๊ก (2026-09-12): "ยังไม่ได้ login" ตอนกดสั่งซื้อ
 // -----------------------------------------------------------
@@ -33,7 +35,7 @@ import {
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่) — import มาจาก app-promotion.js กลาง (รวมไฟล์เดียว) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, computeCartPricing, clearPricingCache
-} from "./app-promotion.js?v=20261003-login-guest-v10";
+} from "./app-promotion.js?v=20261003-login-guest-v11";
 
 const CART_STORAGE_KEY = "music_store_cart_v1";
 const CHECKOUT_ORDER_KEY = "music_store_checkout_order_v1";
@@ -439,12 +441,12 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   // ---- เพิ่มใหม่: จำชื่อ+เบอร์โทร/WhatsApp ของลูกค้าไว้ในเครื่อง (localStorage) เพื่อเติมฟอร์มอัตโนมัติตอนสั่งซื้อครั้งถัดไป ----
   function saveCustomerInfo(customerName, whatsapp) {
     try {
-      localStorage.setItem(CUSTOMER_INFO_STORAGE_KEY, JSON.stringify({ customerName, whatsapp }));
+      localStorage.setItem(scopedStorageKey(CUSTOMER_INFO_STORAGE_KEY), JSON.stringify({ customerName, whatsapp }));
     } catch (_) {}
   }
   function loadCustomerInfo() {
     try {
-      const raw = localStorage.getItem(CUSTOMER_INFO_STORAGE_KEY);
+      const raw = localStorage.getItem(scopedStorageKey(CUSTOMER_INFO_STORAGE_KEY));
       return raw ? JSON.parse(raw) : null;
     } catch (_) {
       return null;
@@ -641,7 +643,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
 
   function getStoredOrderId(checkoutKey) {
     try {
-      const stored = JSON.parse(sessionStorage.getItem(CHECKOUT_ORDER_KEY) || "null");
+      const stored = JSON.parse(sessionStorage.getItem(scopedStorageKey(CHECKOUT_ORDER_KEY)) || "null");
       return stored?.key === checkoutKey && stored.id ? String(stored.id) : null;
     } catch (_) {
       return null;
@@ -650,12 +652,12 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
 
   function storeOrderId(checkoutKey, orderId) {
     try {
-      sessionStorage.setItem(CHECKOUT_ORDER_KEY, JSON.stringify({ key: checkoutKey, id: orderId }));
+      sessionStorage.setItem(scopedStorageKey(CHECKOUT_ORDER_KEY), JSON.stringify({ key: checkoutKey, id: orderId }));
     } catch (_) {}
   }
 
   function clearStoredOrderId() {
-    try { sessionStorage.removeItem(CHECKOUT_ORDER_KEY); } catch (_) {}
+    try { sessionStorage.removeItem(scopedStorageKey(CHECKOUT_ORDER_KEY)); } catch (_) {}
   }
 
   /*
@@ -946,24 +948,28 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   //   ส่งเข้ามาโดย app-user.js ผ่าน updatePendingPaymentInfo() หลัง fetchTrackOrderBadgeOnce()
   //   ไม่แทนที่ระบบ localStorage เดิม (record/getLastOrderRecord) — ใช้ "เสริม" กัน เพื่อไม่ให้กระทบ flow เดิมตอนเพิ่งสั่งซื้อเสร็จ
   let dbPendingOrders = [];
+  // 🆕 (2026-10-03 v11): จำว่า dbPendingOrders ดึงมาใน scope ไหน (guest / login:<id>)
+  //   ถ้าลูกค้า login/logout ระหว่างนั้น → รายการนี้ "ไม่ใช่ของ scope ปัจจุบัน" → ห้ามใช้ทำแถบเตือน (กันปนกัน)
+  let dbPendingScope = null;
 
   function updatePendingPaymentInfo(orders) {
     dbPendingOrders = Array.isArray(orders) ? orders : [];
+    dbPendingScope = getOrderScope();
     renderPendingOrderBanner();
   }
 
   function saveLastOrderRecord(order, receiptNumber) {
     try {
-      localStorage.setItem(LAST_ORDER_STORAGE_KEY, JSON.stringify({ order, receiptNumber, contacted: false }));
+      localStorage.setItem(scopedStorageKey(LAST_ORDER_STORAGE_KEY), JSON.stringify({ order, receiptNumber, contacted: false }));
       // 🔧 (2026-09-22 Batch 7 fix Bug #4): ใช้ localStorage.removeItem แทน sessionStorage.removeItem
       //   เพราะ BANNER_DISMISS_KEY ย้ายไป localStorage แล้ว → ต้องลบจาก localStorage ด้วย
-      localStorage.removeItem(BANNER_DISMISS_KEY);
+      localStorage.removeItem(scopedStorageKey(BANNER_DISMISS_KEY));
     } catch (_) {}
   }
 
   function getLastOrderRecord() {
     try {
-      const raw = localStorage.getItem(LAST_ORDER_STORAGE_KEY);
+      const raw = localStorage.getItem(scopedStorageKey(LAST_ORDER_STORAGE_KEY));
       const parsed = raw ? JSON.parse(raw) : null;
       if (!parsed || !parsed.order || !parsed.receiptNumber) return null;
       return parsed;
@@ -986,7 +992,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         payment_proof_status: "pending",
         payment_proof_uploaded_at: new Date().toISOString(),
       };
-      localStorage.setItem(LAST_ORDER_STORAGE_KEY, JSON.stringify({ ...record, order: updatedOrder, contacted: true }));
+      localStorage.setItem(scopedStorageKey(LAST_ORDER_STORAGE_KEY), JSON.stringify({ ...record, order: updatedOrder, contacted: true }));
     } catch (_) {}
     receiptContacted = true;
     renderPendingOrderBanner();
@@ -1000,6 +1006,11 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     //   แทนที่จะเปิด track order modal (ของลูกค้าไม่ login)
     //   เช็คจาก localStorage เพราะ customer-auth.js อาจยังไม่โหลดเสร็จ
     const isCustomerLoggedIn = !!localStorage.getItem("miusic_customer_session");
+    if (!isCustomerLoggedIn) {
+      // 🆕 (v11): ไม่ได้ login → เอา onclick ของโหมด login ออก (ไม่งั้นหลัง logout ปุ่มจะยังเปิดหน้าบัญชี)
+      const guestPayBtn = document.getElementById("pendingOrderPayBtn");
+      if (guestPayBtn) guestPayBtn.onclick = null;
+    }
     if (isCustomerLoggedIn) {
       // ลูกค้า login แล้ว → ปุ่ม "ชำระเงิน" เปิดหน้าบัญชี (มีออเดอร์ทั้งหมด + ปุ่มชำระ)
       const payBtn = document.getElementById("pendingOrderPayBtn");
@@ -1019,11 +1030,11 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     const DISMISS_TTL_MS = 24 * 60 * 60 * 1000; // 24 ชั่วโมง
     let dismissed = false;
     try {
-      const dismissedUntil = Number(localStorage.getItem(BANNER_DISMISS_KEY) || "0");
+      const dismissedUntil = Number(localStorage.getItem(scopedStorageKey(BANNER_DISMISS_KEY)) || "0");
       dismissed = dismissedUntil > Date.now();
       if (!dismissed) {
         // หมดอายุแล้ว → ลบค่าเก่าออกจาก localStorage (keep clean)
-        localStorage.removeItem(BANNER_DISMISS_KEY);
+        localStorage.removeItem(scopedStorageKey(BANNER_DISMISS_KEY));
       }
     } catch (_) {}
     // 🛡️ (added 2026-09-26 fix banner logic): ใช้ getOrderPaymentState() แทนการเช็คแค่ status
@@ -1038,7 +1049,8 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       const recordState = getOrderPaymentState(record.order);
       recordStillUnpaid = recordState.showPayButton; // unpaid / rejected / cancelled → true
     }
-    const hasDbPending = dbPendingOrders.some(order => {
+    // 🆕 (v11): ใช้รายการจาก DB เฉพาะเมื่อดึงมาใน scope เดียวกับตอนนี้ (login/guest ไม่ปนกัน)
+    const hasDbPending = dbPendingScope === getOrderScope() && dbPendingOrders.some(order => {
       const oState = getOrderPaymentState(order);
       return oState.showPayButton; // unpaid / rejected / cancelled
     });
@@ -2343,7 +2355,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     // 🔧 (2026-09-17): บันทึก name+whatsapp ลง MY_ORDERS_INFO_KEY ด้วย (key เดียวกับ app-promotion.js + app-user.js badge)
     // เพื่อให้ badge บนปุ่ม "ติดตามออเดอร์" สามารถ detect ลูกค้าได้ทันทีหลังสั่งซื้อ — ไม่ต้องรอให้ลูกค้าเปิด My Orders ก่อน
     // 🔧 (2026-09-18): เก็บเบอร์แบบ normalized ด้วย เพื่อให้ตรงกับค่าใน DB และ badge ทำงานถูกต้อง
-    try { localStorage.setItem("music_store_my_orders_info_v1", JSON.stringify({ name: customerName, whatsapp: normalizePhoneForStorage(whatsapp) })); } catch (_) {}
+    try { localStorage.setItem(scopedStorageKey("music_store_my_orders_info_v1"), JSON.stringify({ name: customerName, whatsapp: normalizePhoneForStorage(whatsapp) })); } catch (_) {}
     // 🔧 (2026-09-17): refresh badge ทันที — listener จะ poll ทันที (delay 0) → แสดง badge "1" ภายใน ~200-500ms
     if (window.__refreshTrackOrderBadge) window.__refreshTrackOrderBadge();
     if (nameInput) nameInput.value = "";
@@ -2383,11 +2395,11 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         if (typeof renderCart === "function") renderCart();
         if (typeof renderPendingOrderBanner === "function") renderPendingOrderBanner();
       }
-      if (event.key === BANNER_DISMISS_KEY) {
+      if (event.key === scopedStorageKey(BANNER_DISMISS_KEY)) {
         // banner dismiss เปลี่ยน → re-render banner (sync ระหว่าง tabs)
         if (typeof renderPendingOrderBanner === "function") renderPendingOrderBanner();
       }
-      if (event.key === LAST_ORDER_STORAGE_KEY) {
+      if (event.key === scopedStorageKey(LAST_ORDER_STORAGE_KEY)) {
         // last order เปลี่ยน → re-render banner (เผื่อออเดอร์ใหม่จาก tab อื่น)
         if (typeof renderPendingOrderBanner === "function") renderPendingOrderBanner();
       }
@@ -2439,7 +2451,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       //   ถ้าไม่มีออเดอร์ค้างชำระจริง (state unpaid/rejected/cancelled) → ปิด banner อัตโนมัติ ไม่เปิด modal
       //   ป้องกันกรณีลูกค้ากดปุ่ม "ไปชำระเงิน" แต่จริง ๆ ออเดอร์ถูกยืนยันแล้ว/ส่งสลิปแล้ว → ไม่ต้องเปิด modal ให้สับสน
       //   ใช้ข้อมูล dbPendingOrders ที่ถูก sync ผ่าน updatePendingPaymentInfo() — ไม่ยิง fetch ซ้ำ
-      const pendingOrders = (dbPendingOrders || []).filter(order => {
+      const pendingOrders = (dbPendingScope === getOrderScope() ? (dbPendingOrders || []) : []).filter(order => {
         const oState = getOrderPaymentState(order);
         return oState.showPayButton; // unpaid / rejected / cancelled
       });
@@ -2473,7 +2485,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       //   ใหม่: localStorage เก็บ timestamp หมดอายุ (now + 24h) → ครบ 24h แสดง banner อีกครั้ง
       const DISMISS_TTL_MS = 24 * 60 * 60 * 1000; // 24 ชั่วโมง
       try {
-        localStorage.setItem(BANNER_DISMISS_KEY, String(Date.now() + DISMISS_TTL_MS));
+        localStorage.setItem(scopedStorageKey(BANNER_DISMISS_KEY), String(Date.now() + DISMISS_TTL_MS));
       } catch (_) {}
       renderPendingOrderBanner();
     });
@@ -2490,6 +2502,8 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     getLastOrderRecord,
     showReceipt,
     updatePendingPaymentInfo,
+    // 🆕 (2026-10-03 v11): ให้ app-user.js สั่งวาดแถบเตือนใหม่ตอน login/logout
+    renderPendingOrderBanner,
     // 🛡️ (added 2026-09-26 prevent double payment): export helper สำหรับ app-user.js
     //   เพื่อใช้ใน renderTrackOrderResult / openTrackOrderAllDetail / renderTrackOrderAllList
     //   ทำให้ frontend ทุกส่วนใช้สถานะเดียวกัน (synced) — กัน inconsistency
