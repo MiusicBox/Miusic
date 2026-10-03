@@ -71,7 +71,7 @@
 <!-- 🔧 (2026-09-24 CLS fix): style.css กลับมาเป็น <link rel="stylesheet"> ปกติ (บล็อกการแสดงผลสั้น ๆ)
      สาเหตุ: เทคนิค media="print"+onload ทำให้หน้าเว็บวาดแบบ "ไม่มีสไตล์" ก่อน แล้วสไตล์มาทีหลัง → ทุกอย่างกระโดด
      (CLS 0.649 = ตัวที่ทำให้คะแนนตก 76) ไฟล์/เวอร์ชันเดิมทุกอย่าง แค่เอาการโหลดแบบหน่วงออก -->
-<link rel="stylesheet" href="style.css?v=20261003-theme-v1">
+<link rel="stylesheet" href="style.css?v=20261005-t019-homepage-ui">
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): เพิ่ม .visually-hidden class สำหรับ h1 SEO -->
 <style>
@@ -667,9 +667,38 @@
     </div>
   </div>
 
+  <!-- 🆕 (T019): Hero Banner — แสดงข้อความต้อนรับ / โปรโมชั่นปัจจุบันด้านบนหน้าแรก
+       - title/subtitle ถูกอัปเดตจาก STATE.settings (website_name + meta_description) ใน init()
+       - ปุ่ม CTA เลื่อน scroll ไปที่ #songGrid (เริ่มฟังเพลง)
+       - ซ่อนอัตโนมัติเมื่อ user สลับไป tab อื่น (ออเดอร์/โปรโมชั่น/เพลย์ลิสต์) ผ่าน setView()
+       - lazy: ไม่มีรูป → ไม่ต้อง lazy load; ใช้ gradient bg แทน (ไม่กระทบ performance) -->
+  <div class="hero-banner" id="heroBanner">
+    <div class="hero-banner-content">
+      <h1 class="hero-title" id="heroTitle">🎵 ยินดีต้อนรับสู่ Miusic</h1>
+      <p class="hero-subtitle" id="heroSubtitle">เพลงแดนซ์สายปาตี้ DJ Remix — โหลดเพลงดีเจรีมิกซ์ ส่งทั่วลาวและไทย</p>
+      <div class="hero-actions">
+        <button class="btn hero-cta" id="heroCtaBtn" type="button">🎧 เริ่มฟังเพลง</button>
+      </div>
+    </div>
+    <div class="hero-banner-bg" aria-hidden="true"></div>
+  </div>
+
   <div id="djSection">
-    <div class="section-title">DJ</div>
+    <div class="section-title-row">
+      <h2 class="section-title">🎧 DJ</h2>
+    </div>
     <div class="dj-row" id="djRow"></div>
+  </div>
+
+  <!-- 🆕 (T019): Category Showcase — การ์ดหมวดหมู่แบบ grid (ไม่ใช่ chips)
+       - render โดย renderCategoryGrid() ใน app-user.js (เรียกใน init() หลัง renderCategoryChips)
+       - กดการ์ด → เลือกหมวด + scroll ไปที่ #songGrid
+       - ซ่อนอัตโนมัติเมื่อ user สลับไป tab อื่น (ออเดอร์/โปรโมชั่น/เพลย์ลิสต์) ผ่าน setView() -->
+  <div class="category-showcase" id="categoryShowcase">
+    <div class="section-title-row">
+      <h2 class="section-title">📂 หมวดหมู่แนะนำ</h2>
+    </div>
+    <div class="category-grid" id="categoryGrid"></div>
   </div>
 
   <!-- ส่วน Playlist แบบ Dropdown -->
@@ -681,7 +710,12 @@
     <div id="playlistsContainer" class="playlist-content-box"></div>
   </div>
 
-  <div class="section-title" id="gridTitle">เพลงทั้งหมด</div>
+  <!-- 🆕 (T019): ปรับ section title "เพลงทั้งหมด" ให้ใช้สไตล์ใหม่ (มี icon + ขีดเส้นใต้)
+       หมายเหตุ: id="gridTitle" ย้ายไปที่ .section-title-row (wrapper) เพื่อให้ setView()
+       ซ่อน/แสดงทั้งแถวรวมถึงขีดเส้นใต้ (เดิม id อยู่ที่ .section-title ตรง ๆ ซ่อนแค่ตัวหนังสือ) -->
+  <div class="section-title-row" id="gridTitle">
+    <h2 class="section-title">🎵 เพลงทั้งหมด</h2>
+  </div>
   <div class="song-grid" id="songGrid"></div>
   <div class="empty-state" id="emptyState" style="display:none;">ไม่พบเพลงที่ค้นหา</div>
 

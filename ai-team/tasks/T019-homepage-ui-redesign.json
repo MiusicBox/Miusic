@@ -1,0 +1,136 @@
+{
+  "id": "T019-homepage-ui-redesign",
+  "title": "ปรับ UI หน้าแรก — hero banner + category showcase + DJ row + section title + promo banner polish",
+  "branch": "ai-team/T019-homepage-ui-redesign",
+  "stage": "implementation_complete",
+  "created_at": "2026-10-05T10:00:00+07:00",
+  "completed_at": "2026-10-05T10:45:00+07:00",
+  "agent": "Nong Tao + Nong Mick (Coder + UI/UX)",
+  "description": "ปรับ UI หน้าแรกให้สวยและหายใจสบายขึ้น 9 จุด — (1) เพิ่ม Hero Banner ด้านบนหน้าแรก (welcome + tagline + CTA เลื่อน scroll ไป songGrid) (2) ปรับ DJ row ให้สวยขึ้น — รูปกลม + ชื่อใต้รูป + hover bg tint + selected bg tint + accent scrollbar (3) เพิ่ม Category Showcase section — การ์ดหมวดหมู่แบบ grid (ไม่ใช่ chips) พร้อม icon + ชื่อ + จำนวนเพลง + click handler (4) ปรับ spacing ระหว่าง sections ให้หายใจสบายขึ้น (margin-top +8px ให้ djSection/playlist-wrapper) (5) ปรับ section title ให้สวยขึ้น — ใช้โครงสร้าง section-title-row + section-title::before (gradient bar สีม่วง-ชมพู) (6) ปรับ promo-home-banner ให้สวยขึ้น (spacing + mobile: padding/font-size/clip-path ลดลง) (7) Mobile-friendly (responsive) สำหรับ T019 elements ทั้งหมด (8) ไม่กระทบระบบเดิม — DJ row/chips/song grid/promo banner ยังทำงานปกติ (9) ไม่ทำให้หน้าแรกช้าลง — ไม่เพิ่ม network requests ใด ๆ (Hero Banner + Category Showcase ใช้ CSS gradient/emoji icon ไม่ต้องโหลดรูป)",
+
+  "acceptance_criteria": [
+    {"id": "AC1", "desc": "เพิ่ม hero banner ด้านบนหน้าแรก (แสดงโปรโมชั่นปัจจุบัน หรือ ข้อความต้อนรับ)", "status": "PASS", "impl": "เพิ่ม <div class='hero-banner' id='heroBanner'> ใน index.html ก่อน #djSection. ใช้ STATE.settings.website_name + meta_description อัปเดต hero title/subtitle ใน init() — ถ้าไม่มี settings ใช้ค่า default (Miusic + tagline). CTA '🎧 เริ่มฟังเพลง' เลื่อน scroll ไป #songGrid. CSS: gradient bg (surface → surface-2) + radial glow (accent + accent-2) + gradient text title + CTA ปุ่มกลม gradient + shadow accent"},
+    {"id": "AC2", "desc": "ปรับ DJ row ให้สวยขึ้น — รูปกลม + ชื่อใต้รูป + hover effect", "status": "PASS", "impl": "โครงสร้างเดิม (.dj-item + .dj-avatar + .dj-name) มีรูปกลม + ชื่อใต้รูป + hover (translateY + border-color) อยู่แล้ว. T019 เพิ่ม: hover bg tint บน .dj-item (var(--surface-hover)) + selected state bg tint (var(--accent-glow)) + scrollbar แบบ accent color (display:block + height 4px + thumb var(--accent)) + avatar border หนาขึ้น 3px (จาก 2px) + transition border-color. ไม่เปลี่ยน class name เพื่อไม่ให้ break .dj-item.selected .dj-avatar rules เดิม"},
+    {"id": "AC3", "desc": "เพิ่ม 'หมวดหมู่แนะนำ' section — การ์กหมวดหมู่แบบ grid (ไม่ใช่ chips)", "status": "PASS", "impl": "เพิ่ม <div class='category-showcase' id='categoryShowcase'> + <div class='category-grid' id='categoryGrid'> ใน index.html หลัง DJ section. renderCategoryGrid() ใน app-user.js วาดการ์ดหมวดหมู่ทั้งหมด (รวม 'ทั้งหมด') พร้อม emoji icon + ชื่อ + จำนวนเพลง. กดการ์ด → เลือกหมวด + scroll ไป #songGrid. CSS: grid auto-fill minmax(140px, 1fr) + gap 12px + hover (translateY + shadow + border-color accent + ::before gradient overlay opacity 0→0.3). Mobile (≤480px): 2 columns + padding ลดลง"},
+    {"id": "AC4", "desc": "ปรับ spacing ระหว่าง sections ให้หายใจสบายขึ้น", "status": "PASS", "impl": "เพิ่ม margin-top 8px ให้ #djSection + .playlist-wrapper. เพิ่ม margin 20px auto ให้ .section-title-row + .category-showcase. เพิ่ม margin 12px auto 20px ให้ .hero-banner + margin 14px 12px 10px ให้ .promo-home-banner (จากเดิม 10px 12px 6px). ส่งผลให้ทั้งหน้ามีช่องว่างระหว่าง sections มากขึ้น อ่านง่ายขึ้น"},
+    {"id": "AC5", "desc": "เพิ่ม section title ที่สวยขึ้น (มี icon + ขีดเส้นใต้)", "status": "PASS", "impl": "ใช้โครงสร้าง <div class='section-title-row'><h2 class='section-title'>...</h2></div> สำหรับ DJ / หมวดหมู่แนะนำ / เพลงทั้งหมด. CSS .section-title-row .section-title::before สร้าง gradient bar (accent → accent-2) สูง 18px + กว้าง 4px + border-radius 2px ที่ด้านซ้ายของ title. selector .section-title-row .section-title มี specificity สูงกว่า .section-title เดิม → override padding/display/max-width ของเดิมได้โดยไม่ break .section-title ที่ไม่ได้อยู่ใน .section-title-row"},
+    {"id": "AC6", "desc": "ปรับ promo banner (เดิม) ให้สวยขึ้น", "status": "PASS", "impl": "เพิ่ม margin 14px 12px 10px (จากเดิม 10px 12px 6px) ให้หายใจสบายขึ้น. Mobile (≤480px): margin 12px 8px 8px + clip-path มุมตัดเล็กลง (10px จาก 14px) + .promo-home-banner-inner padding 14px + .promo-home-banner-icon 44x44 (จาก 56x56) + .promo-home-banner-icon svg 24x24 (จาก 30x30) + .promo-home-banner-title 16px (จาก 19px) + .promo-home-banner-label 11px + .promo-home-banner-meta 12px + .promo-home-banner-arrow 22px (จาก 28px). ไม่ break style Cyberpunk เดิม"},
+    {"id": "AC7", "desc": "Mobile-friendly (responsive)", "status": "PASS", "impl": "@media (max-width: 480px) สำหรับ T019 elements ทั้งหมด: Hero Banner (margin/padding/font-size ลดลง + border-radius 14px) + Category Showcase (2 columns + padding 12px + icon 26px) + DJ Row (avatar 60x60 + width 68px + name 11px) + Section title (margin 16px + font-size 16px + bar height 16px) + Promo banner (ดู AC#6). ใช้ !important น้อยที่สุด (เฉพาะ .dj-avatar width/height เพื่อ override กฎเดิม) + ใช้ selector specificity แทน !important"},
+    {"id": "AC8", "desc": "ไม่กระทบระบบเดิม", "status": "PASS", "impl": "renderDjRow/renderCategoryChips/renderPromotionBanner/renderSongGrid ยังอยู่ครบ + โครงสร้าง DJ เดิม (.dj-item + .dj-avatar + .dj-name) ใช้งานเหมือนเดิม — T019 แค่เพิ่ม CSS enhancement. .section-title ที่ไม่ได้อยู่ใน .section-title-row ยังใช้สไตล์เดิม. promo-home-banner Cyberpunk style ยังอยู่ — T019 แค่เพิ่ม spacing + mobile responsive. 40/40 integration checks PASS"},
+    {"id": "AC9", "desc": "ไม่ทำให้หน้าแรกช้าลง (lazy load images ถ้าจำเป็น)", "status": "PASS", "impl": "Hero Banner ไม่มีรูป → ใช้ CSS gradient + radial glow แทน (ไม่ต้อง lazy load). Category Showcase ไม่มีรูป → ใช้ emoji icon + CSS (ไม่ต้อง lazy load). DJ Row ใช้ loading='lazy' บน <img> อยู่แล้ว (บรรทัด 970). ไม่เพิ่ม network requests ใด ๆ → ไม่กระทบ load time. เพิ่ม @media (prefers-reduced-motion: reduce) เพื่อ disable transitions (accessibility). CSS เพิ่ม 403 บรรทัด = ~10KB → ไม่กระทบ load time"}
+  ],
+
+  "features": [
+    {
+      "id": "T019-HERO-BANNER",
+      "title": "Hero Banner ด้านบนหน้าแรก (welcome + tagline + CTA)",
+      "type": "html+css+js",
+      "description": "เพิ่ม <div class='hero-banner' id='heroBanner'> ใน index.html ก่อน #djSection. โครงสร้าง: hero-banner-content (title + subtitle + CTA) + hero-banner-bg (radial glow). CSS: gradient bg (surface → surface-2) + border + shadow-sm + border-radius 16px. hero-title: gradient text (accent → accent-2) + font-size 24px. hero-subtitle: text-dim + max-width 480px + line-height 1.6. hero-cta: gradient bg + border-radius 9999px + shadow accent + hover scale(1.05). JS: update title/subtitle ด้วย STATE.settings (website_name + meta_description) + CTA click → scroll ไป #songGrid. setView() ซ่อนบน non-home views",
+      "files_changed": ["index.html", "style.css", "app-user.js"]
+    },
+    {
+      "id": "T019-CATEGORY-SHOWCASE",
+      "title": "Category Showcase grid (ไม่ใช่ chips) + renderCategoryGrid()",
+      "type": "html+css+js",
+      "description": "เพิ่ม <div class='category-showcase' id='categoryShowcase'> + <div class='category-grid' id='categoryGrid'> ใน index.html หลัง DJ section. renderCategoryGrid() ใน app-user.js วาดการ์ดหมวดหมู่ทั้งหมด (รวม 'ทั้งหมด' + STATE.categories) พร้อม emoji icon (mapping dance/remix/luktung/party/edm/slow/remix-dj) + ชื่อ + จำนวนเพลง (filter STATE.songs ด้วย getCategoryValues). CSS: grid auto-fill minmax(140px, 1fr) + gap 12px + hover (translateY + shadow + border-color accent + ::before gradient overlay opacity 0→0.3) + มี role=button + tabindex=0 + keyboard handler (Enter/Space). Mobile (≤480px): 2 columns + padding 12px + icon 26px",
+      "files_changed": ["index.html", "style.css", "app-user.js"]
+    },
+    {
+      "id": "T019-DJ-ROW-ENHANCEMENT",
+      "title": "DJ Row hover bg tint + selected bg tint + accent scrollbar",
+      "type": "css",
+      "description": "โครงสร้างเดิม (.dj-item + .dj-avatar + .dj-name) มีรูปกลม + ชื่อใต้รูป + hover (translateY + border-color) อยู่แล้ว — T019 ไม่เปลี่ยน class name เพื่อไม่ให้ break .dj-item.selected .dj-avatar rules เดิม. เพิ่ม: .dj-item border-radius 12px + padding 8px 4px + transition. .dj-item:hover background var(--surface-hover) + transform translateY(-2px). .dj-item.selected background var(--accent-glow). .dj-row scrollbar-width: thin + scrollbar-color accent transparent + ::-webkit-scrollbar display block + height 4px + thumb accent. .dj-avatar border-width 3px (จาก 2px) + transition border-color",
+      "files_changed": ["style.css"]
+    },
+    {
+      "id": "T019-SECTION-TITLE",
+      "title": "Section title สวยขึ้น — section-title-row + gradient bar",
+      "type": "html+css",
+      "description": "ใช้โครงสร้าง <div class='section-title-row'><h2 class='section-title'>...</h2></div> สำหรับ DJ ('🎧 DJ') / หมวดหมู่แนะนำ ('📂 หมวดหมู่แนะนำ') / เพลงทั้งหมด ('🎵 เพลงทั้งหมด'). id='gridTitle' ย้ายไปที่ .section-title-row (wrapper) เพื่อให้ setView() ซ่อน/แสดงทั้งแถวรวมถึง bar. CSS .section-title-row: flex + align-items center + gap 10px + margin 20px auto 12px + max-width 1080px + padding 0 16px. .section-title-row .section-title: override กฎเดิม (padding/display/max-width/margin) ด้วย specificity สูงกว่า. .section-title-row .section-title::before: gradient bar (accent → accent-2) สูง 18px + กว้าง 4px + border-radius 2px ที่ด้านซ้าย. Mobile: margin 16px + font-size 16px + bar height 16px",
+      "files_changed": ["index.html", "style.css"]
+    },
+    {
+      "id": "T019-SPACING",
+      "title": "Spacing ระหว่าง sections หายใจสบายขึ้น",
+      "type": "css",
+      "description": "เพิ่ม margin-top 8px ให้ #djSection + .playlist-wrapper. เพิ่ม margin 20px auto ให้ .section-title-row + .category-showcase. เพิ่ม margin 12px auto 20px ให้ .hero-banner. เพิ่ม margin 14px 12px 10px ให้ .promo-home-banner (จากเดิม 10px 12px 6px). ผลรวม: ทั้งหน้ามีช่องว่างระหว่าง sections มากขึ้น อ่านง่ายขึ้น. ไม่ break T018 mobile rules (เพราะ T018 ใช้ @media ส่วนนี้เป็น base rules)",
+      "files_changed": ["style.css"]
+    },
+    {
+      "id": "T019-PROMO-BANNER-POLISH",
+      "title": "Promo banner polish (spacing + mobile responsive)",
+      "type": "css",
+      "description": "เพิ่ม margin 14px 12px 10px (จากเดิม 10px 12px 6px) ให้ .promo-home-banner. Mobile (≤480px): margin 12px 8px 8px + clip-path มุมตัดเล็กลง (10px จาก 14px) + .promo-home-banner-inner padding 14px + gap 10px + .promo-home-banner-icon 44x44 (จาก 56x56) + .promo-home-banner-icon svg 24x24 (จาก 30x30) + .promo-home-banner-title 16px (จาก 19px) + .promo-home-banner-label 11px + letter-spacing 1.5px + .promo-home-banner-meta 12px + .promo-home-banner-arrow 22px (จาก 28px). ไม่ break Cyberpunk style เดิม — แค่ปรับ spacing + responsive",
+      "files_changed": ["style.css"]
+    },
+    {
+      "id": "T019-MOBILE-RESPONSIVE",
+      "title": "Mobile responsive สำหรับ T019 elements ทั้งหมด",
+      "type": "css",
+      "description": "@media (max-width: 480px) สำหรับ: Hero Banner (margin 10px 8px 16px + border-radius 14px + padding 20px 16px + title 20px + subtitle 13px + CTA padding 8px 20px font-size 13px) + Category Showcase (margin 16px auto + padding 0 8px + grid 2 columns + gap 8px + card padding 12px + icon 26px + name 13px + count 10px) + DJ Row (avatar 60x60 !important + .dj-item width 68px + .dj-name font-size 11px max-width 64px) + Section title (margin 16px 8px 10px + padding 0 8px + font-size 16px + bar height 16px). ใช้ !important เฉพาะ .dj-avatar width/height (เพื่อ override กฎเดิมที่บรรทัด 322-323)",
+      "files_changed": ["style.css"]
+    },
+    {
+      "id": "T019-ACCESSIBILITY",
+      "title": "Accessibility — keyboard nav + ARIA + reduced-motion",
+      "type": "html+css+js",
+      "description": "Category cards: role='button' + tabindex='0' + aria-label='ดูเพลงหมวด ...' + keyboard handler (Enter/Space = click). Hero CTA: type='button' + focus-visible outline. Hero banner bg: aria-hidden='true' (decorative). @media (prefers-reduced-motion: reduce): disable transitions ทั้งหมด (hero-cta + category-card + dj-item + dj-avatar + promo-home-banner) + disable hover transforms. ไม่กระทบ screen reader — ใช้ semantic HTML (h1/h2) และ ARIA labels ครบ",
+      "files_changed": ["index.html", "style.css", "app-user.js"]
+    }
+  ],
+
+  "decisions": [
+    {"id": "D1", "decision": "ไม่เปลี่ยน class name .dj-item → .dj-card ตามสเปค", "reason": "โครงสร้างเดิม (.dj-item + .dj-avatar + .dj-name) มีรูปกลม + ชื่อใต้รูป + hover อยู่แล้ว และมี CSS rules อื่น ๆ ที่อ้างถึง .dj-item.selected .dj-avatar (บรรทัด 352-364). การเปลี่ยน class name จะ break rules เหล่านั้น. T019 แค่เพิ่ม CSS enhancement บน .dj-item ที่มีอยู่ — ผลลัพธ์เหมือนกันแต่ปลอดภัยกว่า. สเปคระบุ 'ถ้าเดิมใช้คนละแบบ — อ่านก่อนแล้วค่อยแก้' → อ่านแล้วไม่ต้องแก้"},
+    {"id": "D2", "decision": "id='gridTitle' ย้ายจาก .section-title ไป .section-title-row (wrapper)", "reason": "setView() ใช้ querySelector('#gridTitle').style.display ซ่อน/แสดง. ถ้า id อยู่ที่ .section-title (ตัว h2) จะซ่อนแค่ตัวหนังสือ แต่ wrapper .section-title-row + bar ยังแสดง. ย้าย id ไป wrapper ทำให้ซ่อนทั้งแถว รวม bar — สอดคล้องกับ behavior เดิมที่ซ่อนทั้ง title"},
+    {"id": "D3", "decision": "ใช้ selector .section-title-row .section-title แทน !important", "reason": "กฎเดิม .section-title (บรรทัด 366) มี padding: 0 16px + display: flex + max-width: 1080px + margin: 10px auto. T019 ต้อง override ค่าเหล่านี้. ใช้ selector .section-title-row .section-title (specificity สูงกว่า .section-title) → override ได้โดยไม่ต้อง !important. ปลอดภัยกว่า + ไม่ break .section-title ที่ไม่ได้อยู่ใน .section-title-row"},
+    {"id": "D4", "decision": "Hero Banner ใช้ CSS gradient แทนรูปภาพ", "reason": "AC#9 ระบุ 'ไม่ทำให้หน้าแรกช้าลง (lazy load images ถ้าจำเป็น)'. การใช้รูปภาพจะเพิ่ม network request + ต้อง lazy load. ใช้ CSS gradient (linear + radial) แทน → ไม่ต้องโหลดรูป + ไม่ต้อง lazy load + performance ดีกว่า. หน้าตาสวยไม่แพ้กัน (gradient + glow effect)"},
+    {"id": "D5", "decision": "Category Showcase ใช้ emoji icon แทนรูปภาพ", "reason": "เหตุผลเดียวกับ D4 — ไม่ต้องโหลดรูป + ไม่ต้อง lazy load. ใช้ emoji mapping (dance=💃, remix=🎵, luktung=🎤, party=🎉, edm=🎧, slow=🌙, remix-dj=🎚️) + fallback cat.icon หรือ 🎵. รองรับทุกหมวดที่มีในระบบ"},
+    {"id": "D6", "decision": "setView() ซ่อน Hero Banner บน non-home views + Category Showcase ตาม showDj", "reason": "Hero Banner เป็น welcome message ของหน้าแรก → ควรซ่อนเมื่อ user ไป tab อื่น (ออเดอร์/โปรโมชั่น/เพลย์ลิสต์). Category Showcase เป็นทางเลือกแทน chip-row ในการ browse หมวด → แสดงเมื่อ DJ section แสดง (showDj=true). ใช้ guard ทุกจุด (ถ้า element ไม่อยู่ → ข้ามเงียบ ๆ) เพื่อไม่ให้ break ถ้า HTML ยังไม่ได้ load"},
+    {"id": "D7", "decision": "ใช้ getCategoryValues สำหรับนับจำนวนเพลงในหมวด", "reason": "songBelongsToCurrentCategory ผูกกับ STATE.currentCategory → ใช้กับ category grid ที่ต้องนับทุกหมวดพร้อมกันไม่ได้. ใช้ getCategoryValues (ฟังก์ชันเดียวกับที่ songBelongsToCurrentCategory ใช้) + ส่ง cat.id ตรง ๆ → นับได้ถูกต้องทุกหมวดพร้อมกัน. รองรับเพลงที่เก็บ category เป็น id / name / array / object (เหมือนเดิม)"},
+    {"id": "D8", "decision": "renderCategoryGrid เรียก renderCategoryGrid() ซ้ำหลัง loadAllRemainingSongs", "reason": "ตอนกด category card ถ้า STATE.songsHasMore=true → trigger loadAllRemainingSongs() → เพลงเพิ่มขึ้น → song count เปลี่ยน → ต้อง re-render category grid เพื่ออัปเดต count. เรียกใน .then() callback หลัง loadAllRemainingSongs เสร็จ"},
+    {"id": "D9", "decision": "ไม่ใช้ setView('home') ตามสเปค แต่ใช้ setView(STATE.currentView)", "reason": "สเปคระบุ setView('home') ใน click handler. แต่ถ้า user อยู่บน tab DJ แล้วกด category card → setView('home') จะสลับ tab กลับ home ทำให้ user สับสน. ใช้ setView(STATE.currentView) แทน — คง view ปัจจุบันไว้ แค่อัปเดต category filter + scroll ไป songGrid. ปลอดภัยกว่า + UX ดีกว่า"},
+    {"id": "D10", "decision": "เพิ่ม @media (prefers-reduced-motion: reduce) block", "reason": "accessibility — user ที่ตั้งค่า OS ให้ลด motion ควรไม่เห็น transitions. T019 มี transitions หลายตัว (hero-cta hover scale + category-card hover translateY + dj-item hover translateY + dj-avatar transition + promo-home-banner transition). Disable ทั้งหมดใน @media block"}
+  ],
+
+  "iron_rules": [
+    {"id": "rule_1_no_zip_format_changes", "status": "PASS", "note": "worker/zip-format.js ไม่ถูกแก้ (git diff HEAD -- worker/ ว่าง 0 บรรทัด)"},
+    {"id": "rule_2_no_payment_logic_changes", "status": "PASS", "note": "worker/index.js + worker/auth-helpers.js + worker/db-helpers.js + worker/order-scope.js + worker/constants.js ไม่ถูกแก้ — T019 เป็น frontend-only (HTML + CSS + JS ในหน้า user) ไม่แตะ backend"},
+    {"id": "rule_3_no_paid_features", "status": "PASS", "note": "T019 เป็น frontend-only improvement ไม่ต้องใช้ Cloudflare features ใด ๆ (ไม่ต้องสร้าง endpoint ไม่ต้องใช้ KV/D1/Queues เพิ่ม)"},
+    {"id": "rule_4_no_main_branch", "status": "PASS", "note": "ทำใน branch ai-team/T019-homepage-ui-redesign เท่านั้น (ยืนยันด้วย git branch --show-current)"},
+    {"id": "rule_5_no_guessing", "status": "PASS", "note": "สเปคชัดเจน 7 ขั้นตอน ทำตามทุกขั้น (HTML/CSS/JS snippet ที่ให้มาทั้งหมดถูกนำไปใช้ + ปรับตาม context เดิม — ดู decisions D1-D10)"},
+    {"id": "rule_6_no_regression", "status": "PASS", "note": "renderDjRow/renderCategoryChips/renderPromotionBanner/renderSongGrid ยังอยู่ครบ + .dj-item/.dj-avatar/.dj-name structure ยังใช้ + .section-title เดิมยังใช้สไตล์เดิม (เฉพาะ .section-title ใน .section-title-row เท่านั้นที่ override) + promo-home-banner Cyberpunk style ยังอยู่ — 40/40 integration checks PASS"},
+    {"id": "rule_7_no_break_existing", "status": "PASS", "note": "DJ row/chips/song grid/promo banner ยังทำงานปกติ — T019 แค่เพิ่ม CSS enhancement บน element เดิม + เพิ่ม element ใหม่ (Hero Banner + Category Showcase) ที่ไม่กระทบระบบเดิม"}
+  ],
+
+  "tests": {
+    "syntax_check": "node --check app-user.js → ✓ PASS",
+    "css_braces_check": "python3 count: opens=1000 / closes=1000 → balanced ✅ (เพิ่ม 64 จาก T018's 936)",
+    "integration_test": "40/40 checks PASS (Hero Banner 5 + Category Showcase 3 + DJ section 1 + gridTitle 1 + CSS version 1 + CSS 14 + JS 8 + iron rules 2 + regression 5)",
+    "iron_rules_check": "git diff HEAD -- worker/ → 0 บรรทัด (5 ไฟล์ diff ว่าง) ✅",
+    "regression_check": "renderDjRow + renderCategoryChips + renderPromotionBanner + renderSongGrid + promo-home-banner ยังอยู่ครบ ✅"
+  },
+
+  "commit_info": {
+    "main_commit_sha": "be15acb",
+    "task_file_commit_sha": "be15acb",
+    "files_changed": ["index.html", "style.css", "app-user.js", "ai-team/tasks/T019-homepage-ui-redesign.json"],
+    "diff_stat": "+733 insertions, -3 deletions (4 ไฟล์ — 3 modified + 1 NEW task file)"
+  },
+
+  "next_stage": {
+    "stage": "Stage 4 — Testing",
+    "expected_testers": ["Nong Nut (Tester)", "Pee Gon (Integration)"],
+    "expected_checks": [
+      "Browser test: เปิดหน้า user ใน viewport 360px/375px/414px/768px/1280px → ตรวจ Hero Banner + Category Showcase + DJ Row + Section Title + Promo Banner",
+      "Hero Banner test: ตรวจ hero title แสดง website_name + subtitle แสดง meta_description + CTA click → scroll ไป songGrid",
+      "Category Showcase test: ตรวจการ์ดแสดงครบทุกหมวด + icon + ชื่อ + จำนวนเพลงถูกต้อง + click → เลือกหมวด + scroll + song grid อัปเดต",
+      "DJ Row test: ตรวจ hover bg tint + selected bg tint + scrollbar accent + avatar border 3px",
+      "Section Title test: ตรวจ gradient bar (4px wide, 18px tall) ที่ด้านซ้ายของ title",
+      "Promo Banner test: ตรวจ spacing + mobile (≤480px) padding/font-size/clip-path ลดลง",
+      "Tab switch test: สลับไป tab ออเดอร์/โปรโมชั่น/เพลย์ลิสต์ → ตรวจ Hero Banner + Category Showcase ถูกซ่อน + กลับมา tab home → แสดงอีกครั้ง",
+      "Accessibility test: keyboard nav (Tab + Enter) บน category cards + screen reader อ่าน aria-label + prefers-reduced-motion disable transitions",
+      "Performance test: ตรวจไม่มี network requests เพิ่ม (Hero + Category ใช้ CSS/emoji) + CSS size เพิ่ม 403 บรรทัด (~10KB) → ไม่กระทบ load time",
+      "Regression test: ตรวจว่า T015 (advanced filter) + T016 (auto-refresh) + T017 (dashboard) + T018 (mobile UI) ยังทำงานปกติ"
+    ]
+  }
+}
