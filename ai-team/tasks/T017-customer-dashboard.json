@@ -1,0 +1,107 @@
+{
+  "id": "T017-customer-dashboard",
+  "title": "Dashboard ลูกค้า — สรุปการซื้อของฉัน + ยอดใช้จ่าย + กราฟรายเดือน + Top songs/DJs",
+  "branch": "ai-team/T017-customer-dashboard",
+  "stage": "implementation_complete",
+  "created_at": "2026-10-04T11:00:00+07:00",
+  "completed_at": "2026-10-04T11:45:00+07:00",
+  "agent": "Nong Tao + Nong Fern (Coder)",
+  "description": "เพิ่มหน้า Dashboard ในบัญชีลูกค้า — สรุปการซื้อของฉัน: 4 การ์ดสรุป (ออเดอร์ทั้งหมด / ยอดใช้จ่ายรวม / ออเดอร์สำเร็จ / รอดำเนินการ) + กราฟแท่ง (CSS bar chart จาก T012) ยอดซื้อรายเดือน 6 เดือนล่าสุด + Top 5 เพลงที่ซื้อบ่อย + Top 3 DJ ที่ซื้อบ่อย. คำนวณที่ frontend ทั้งหมด — ประหยัด D1 quota (ไม่ต้องสร้าง backend endpoint ใหม่) ใช้ข้อมูลจาก /api/customer/orders ที่มีอยู่แล้ว (customerOrdersPagination.allLoaded). tab '📊 แดชบอร์ด' เป็น tab แรก (active by default) แทนที่ '👤 โปรไฟล์' ที่เคยเป็น default. lookup dj_name จาก STATE.songs (เพราะ order items ไม่ได้เก็บ dj_name ตอน save). ไม่กระทบระบบเดิม — worker/* diff ว่าง + ใช้ endpoint เดิม + ใช้ bar-chart class จาก T012 ที่มีอยู่แล้ว",
+
+  "acceptance_criteria": [
+    {"id": "AC1", "desc": "ในหน้าบัญชีลูกค้า (#myAccountView) — เพิ่ม section 'สรุปการซื้อของฉัน'", "status": "PASS", "impl": "เพิ่ม #accountSectionDashboard ใน index.html บรรทัด 1293-1316 (ก่อน #accountSectionProfile) — มี 4 sub-sections: #dashboardSummary (4 cards) + #dashboardMonthlyChart (bar chart) + #dashboardTopSongs + #dashboardTopDjs"},
+    {"id": "AC2", "desc": "แสดงการ์ดสรุป 4 ใบ: ออเดอร์ทั้งหมด / ยอดใช้จ่ายรวม / ออเดอร์สำเร็จ / รอดำเนินการ", "status": "PASS", "impl": "renderCustomerDashboard() สร้าง .dashboard-card 4 ใบใน #dashboardSummary — totalOrders (orders.length) + totalSpent (sum final_total/total) + completedOrders (status=completed) + pendingOrders (status=pending_verify|processing)"},
+    {"id": "AC3", "desc": "แสดง Top 5 เพลงที่ซื้อบ่อยที่สุด (ของลูกค้าคนนี้)", "status": "PASS", "impl": "renderDashboardTopSongs() — นับจาก order.items (skip kind=playlist + skip items ไม่มี song_id) → sort by count desc + total desc → slice(0,5). แสดง rank + title + count + total"},
+    {"id": "AC4", "desc": "แสดง Top 3 DJ ที่ซื้อบ่อยที่สุด", "status": "PASS", "impl": "renderDashboardTopDjs() — lookup dj_name จาก item.dj_name || item.dj || STATE.songs (Map by song_id) || 'ไม่ทราบ DJ' → aggregate count + total → sort → slice(0,3). filter ไม่ทราบ DJ ออก (ถ้ามี DJ อื่นอยู่)"},
+    {"id": "AC5", "desc": "แสดงกราฟแท่ง (CSS bar chart) ยอดซื้อรายเดือน (6 เดือนล่าสุด)", "status": "PASS", "impl": "renderDashboardMonthlyChart() — คำนวณ bucket 6 เดือน (YYYY-MM) → นับ total + count ต่อ bucket → max → height% (min 2%) → render .bar (class จาก T012) + data-value tooltip. ถ้าไม่มีข้อมูลใน 6 เดือน → แสดง #dashboardMonthlyEmpty"},
+    {"id": "AC6", "desc": "ใช้ข้อมูลจาก /api/customer/orders (ที่มีอยู่แล้ว)", "status": "PASS", "impl": "ใช้ customerOrdersPagination.allLoaded (cumulative list จาก loadCustomerOrders ที่ fetch จาก /api/customer/orders?limit=50&offset=N) — ไม่่ต้อง fetch ใหม่"},
+    {"id": "AC7", "desc": "คำนวณที่ frontend (ไม่ต้องสร้าง backend endpoint ใหม่ — ประหยัด D1 quota)", "status": "PASS", "impl": "renderCustomerDashboard + 3 helpers ทำงานที่ client ทั้งหมด — ใช้ reduce/filter/sort/Map. lookup dj_name จาก STATE.songs (ที่โหลดไว้แล้ว). worker/* diff ว่าง"},
+    {"id": "AC8", "desc": "ไม่กระทบระบบเดิม", "status": "PASS", "impl": "worker/* diff ว่าง + ใช้ endpoint เดิม + ใช้ .bar-chart class จาก T012 + ใช้ escapeHtml/formatPrice เดิม + switchAccountTab ยังรองรับ profile/orders/favorites/settings + regression 28/28 PASS"},
+    {"id": "AC9", "desc": "Mobile-friendly", "status": "PASS", "impl": "#dashboardSummary ใช้ grid-template-columns: repeat(2,1fr) → 2x2 บนมือถือ + @media (max-width: 480px) ลด padding/font-size ของ .dashboard-card + ลด height ของ #dashboardMonthlyChart เป็น 100px. ใช้ overflow-x:auto สำหรับ tab bar ในจอแคบ"}
+  ],
+
+  "features": [
+    {
+      "id": "T017-DASHBOARD-SECTION",
+      "title": "เพิ่ม #accountSectionDashboard ใน index.html (active by default)",
+      "type": "html",
+      "description": "เพิ่ม tab '📊 แดชบอร์ด' เป็นอันดับ 1 ใน tab bar (color: var(--accent), border-bottom: 2px solid var(--accent) = active). เปลี่ยน accountTabProfile เป็น inactive (color: var(--text-dim), border transparent). เพิ่ม #accountSectionDashboard ก่อน #accountSectionProfile — มี 4 sub-sections: #dashboardSummary (grid 2x2) + #dashboardMonthlyChart (.bar-chart) + #dashboardTopSongs + #dashboardTopDjs. ซ่อน #accountSectionProfile (display:none) เพราะ dashboard เป็น default",
+      "files_changed": ["index.html"]
+    },
+    {
+      "id": "T017-RENDER-DASHBOARD",
+      "title": "ฟังก์ชัน renderCustomerDashboard + 3 helpers + dj lookup cache",
+      "type": "frontend",
+      "description": "renderCustomerDashboard(orders): entry point — empty state (ยังไม่มีข้อมูล) + 4 การ์ดสรุป + เรียก 3 helpers. renderDashboardMonthlyChart: 6-month bucket + bar chart with tooltip. renderDashboardTopSongs: นับจาก order.items (skip playlist) + sort + slice(0,5). renderDashboardTopDjs: lookup dj_name จาก STATE.songs (Map cache by reference) + aggregate + sort + slice(0,3). _t017_getDjLookupMap: cache Map[song_id → dj_name] โดยอ้างอิง reference ของ STATE.songs — ถ้า array เปลี่ยน → rebuild อัตโนมัติ",
+      "files_changed": ["app-user.js"]
+    },
+    {
+      "id": "T017-INTEGRATION-CALL-SITES",
+      "title": "เรียก renderCustomerDashboard ใน 2 จุดของ loadCustomerOrders",
+      "type": "frontend",
+      "description": "จุดที่ 1: หลัง trackOrderAllOrders = customerOrdersPagination.allLoaded (ก่อน empty-state return) — เพื่อให้ empty case แสดง 'ยังไม่มีข้อมูล'. จุดที่ 2: หลัง loadMoreBtn binding (ท้าย try block) — เพื่อ non-empty + load-more cases. ทั้งคู่ใช้ try/catch + console.warn กัน error",
+      "files_changed": ["app-user.js"]
+    },
+    {
+      "id": "T017-TAB-SWITCHING",
+      "title": "ขยาย switchAccountTab ให้รองรับ dashboard + เพิ่ม click handler",
+      "type": "frontend",
+      "description": "เพิ่ม dashboard key ใน tabs + sections object ของ switchAccountTab. active tab ใช้ color: var(--accent) + border-bottom: 2px solid var(--accent) (เดิมใช้ var(--text) — เปลี่ยนเป็น accent เพื่อ consistency กับ dashboard spec). เพิ่ม click handler สำหรับ #accountTabDashboard — ถ้า allLoaded ว่าง → loadCustomerAccountData() (trigger fetch ครั้งแรก) / ถ้ามีข้อมูล → renderCustomerDashboard ทันที (no fetch, ประหยัด D1 quota)",
+      "files_changed": ["app-user.js"]
+    },
+    {
+      "id": "T017-CSS",
+      "title": "CSS .dashboard-card + responsive (bar-chart reuse จาก T012)",
+      "type": "css",
+      "description": "เพิ่ม .dashboard-card (background rgba + border + padding + transition hover translateY -2px) + .dashboard-card-icon (font-size 24px) + .dashboard-card-value (font-size 18px font-weight 800 + word-break) + .dashboard-card-label (font-size 11px text-dim). Reuse .bar-chart จาก T012 (มีอยู่แล้วบรรทัด 5827). @media (max-width: 480px) — ลด padding/font-size + ลด chart height เป็น 100px",
+      "files_changed": ["style.css"]
+    }
+  ],
+
+  "iron_rules_compliance": {
+    "rule_1_no_zip_format_changes": "PASS — worker/zip-format.js ไม่ถูกแก้ (git diff ว่าง — verified ด้วย git diff HEAD -- worker/)",
+    "rule_2_no_payment_logic_changes": "PASS — worker/index.js + worker/auth-helpers.js + worker/db-helpers.js + worker/order-scope.js + worker/constants.js + worker/schema.sql ไม่ถูกแก้ (git diff ว่าง — T017 เป็น frontend-only feature)",
+    "rule_3_no_paid_features": "PASS — ใช้ D1 free tier เท่านั้น (ไม่ต้องสร้าง endpoint ใหม่ → ใช้ D1 reads ที่มีอยู่แล้วจาก /api/customer/orders)",
+    "rule_4_no_main_branch": "PASS — ทำใน branch ai-team/T017-customer-dashboard เท่านั้น (pushed to origin)",
+    "rule_5_no_guessing": "PASS — spec ชัดเจน 6 ขั้นตอน ทำตามทุกขั้น",
+    "rule_6_no_regression": "PASS — regression test 28/28 PASS (existing elements + handlers + flows ยังอยู่ครบ); switchAccountTab ยังรองรับ profile/orders/favorites/settings + เพิ่ม dashboard",
+    "rule_7_frontend_calculation": "PASS — คำนวณที่ frontend ทั้งหมด (reduce/filter/sort/Map) — ประหยัด D1 quota (ไม่ต้องสร้าง backend endpoint ใหม่)"
+  },
+
+  "decisions": [
+    {"id": "T017-D1", "action": "ใช้ customerOrdersPagination.allLoaded แทนการ fetch ใหม่ — allLoaded เป็น cumulative list ที่ loadCustomerOrders สะสมทุกครั้ง (first-load + load-more) → ไม่ต้อง fetch เพิ่มเลย"},
+    {"id": "T017-D2", "action": "เรียก renderCustomerDashboard ใน 2 จุดของ loadCustomerOrders — จุดที่ 1 ก่อน empty-state return (เพื่อ empty case), จุดที่ 2 หลัง loadMoreBtn binding (เพื่อ non-empty + load-more). ทั้งคู่ idempotent (render ซ้ำไม่มีผลข้างเคียง)"},
+    {"id": "T017-D3", "action": "lookup dj_name จาก STATE.songs ด้วย Map cache — เพราะ order.items ไม่ได้เก็บ dj_name ตอน save (เก็บแค่ song_id+title+price+quantity). cache โดยอ้างอิง reference ของ STATE.songs — ถ้า array เปลี่ยน (re-load) → rebuild อัตโนมัติ (O(1) lookup)"},
+    {"id": "T017-D4", "action": "skip playlist items ใน Top songs + Top DJs — เพราะ playlist item (kind=playlist) เป็น wrapper ไม่ใช่เพลงเดี่ยว (มี playlist_id แทน song_id). กรองออกเพื่อนับเฉพาะเพลงจริง"},
+    {"id": "T017-D5", "action": "เปลี่ยน active tab color จาก var(--text) เป็น var(--accent) สำหรับทุก tab — เพื่อ consistency กับ dashboard spec (color: var(--accent); border-bottom: 2px solid var(--accent)). ไม่ใช่ breaking change — แค่ active tab ดูเด่นขึ้น (เดิมใช้ text color เข้ม)"},
+    {"id": "T017-D6", "action": "filter 'ไม่ทราบ DJ' ออกจาก Top DJs (ถ้ามี DJ อื่นอยู่) — กันกรณี lookup ไม่เจอแล้ว 'ไม่ทราบ DJ' ขึ้น Top. ถ้าทุกเพลงเป็น 'ไม่ทราบ DJ' หมด → ยังแสดงอันนั้น (size === 1 condition)"},
+    {"id": "T017-D7", "action": "dashboard tab click handler เช็ค allLoaded.length ก่อน — ถ้าว่าง → loadCustomerAccountData (trigger fetch ครั้งแรก). ถ้ามีข้อมูล → renderCustomerDashboard ทันที (no fetch, ประหยัด D1 quota). กัน redundant fetch ถ้า user สลับ tab ไป-กลับ"},
+    {"id": "T017-D8", "action": "ใช้ .bar-chart class จาก T012 ที่มีอยู่แล้ว (บรรทัด 5827) — ไม่เพิ่ม CSS ใหม่ ลด code ซ้ำ. เพิ่มเฉพาะ .dashboard-card class ใหม่ + responsive"},
+    {"id": "T017-D9", "action": "Monthly chart ใช้ toLocaleDateString('th-TH', {month: 'short'}) สำหรับ label — แสดงชื่อเดือนภาษาไทย (ม.ค., ก.พ., ...). เก็บ key เป็น YYYY-MM เพื่อ match กับ order.created_at. ถ้า created_at invalid (NaN) → skip"},
+    {"id": "T017-D10", "action": "empty state ของ dashboard แสดงการ์ดเดียวพูดว่า 'ยังไม่มีข้อมูล — สั่งซื้อเพลงครั้งแรก' แทน 4 การ์ดเปล่า ๆ — เพื่อ UX ที่ดีกว่า (ไม่่ใช่ 0/0/0/0)"}
+  ],
+
+  "tests": {
+    "syntax_check": ["app-user.js", "app-cart.js", "app-promotion.js", "orders.js"],
+    "css_braces_check": "PASS — balanced 889/889 (+12 จาก T016's 877, +24 จาก T015's 865)",
+    "html_structure_check": "PASS — T017 elements 7 ตัวครบ (accountTabDashboard + accountSectionDashboard + dashboardSummary + dashboardMonthlyChart + dashboardMonthlyEmpty + dashboardTopSongs + dashboardTopDjs) + regression elements 16 ตัวยังอยู่ + section ordering (Dashboard ก่อน Profile) + tab ordering (Dashboard ก่อน Profile) + default visibility (Profile ซ่อน, Dashboard แสดง) + default tab state (Dashboard active, Profile inactive)",
+    "js_function_check": "PASS — renderCustomerDashboard + renderDashboardMonthlyChart + renderDashboardTopSongs + renderDashboardTopDjs + _t017_getDjLookupMap ครบ + call sites 2 จุด + window.renderCustomerDashboard exposed + tab handler + switchAccountTab รองรับ dashboard",
+    "functional_self_test": "7/7 PASS — (1) Summary cards math (orders=6, spent=175000, completed=4, pending=2) (2) Monthly chart buckets (5 orders in 6-month window, o6 excluded — total 165000) (3) Top 5 songs sorted by count desc + total desc (Song C1=2/60000 > Song A1=2/50000 > Song B1=2/30000 > Song A2=1/25000 > Song Old=1/10000) (4) Top 3 DJs (DJ A=3/75000 > DJ C=2/60000 > DJ B=2/30000) (5) Empty orders no crash (6) Skip playlist items (7) dj_name fallback from STATE.songs lookup map",
+    "regression_test": "28/28 PASS — loadCustomerAccountData + loadCustomerOrders + loadMoreCustomerOrders + switchAccountTab (5 keys) + 5 tab click handlers + myAccountBackBtn/RefreshBtn/LogoutBtn handlers + customerChangePasswordBtn/ResetPasswordBtn handlers + 4 window exports + T015 SONG_SEARCH_STATE + T016 polling hooks (stopOrdersPolling + beforeunload) + iron rules (worker/* 5 files diff ว่าง)",
+    "iron_rules_check": "PASS — worker/zip-format.js + worker/index.js + worker/auth-helpers.js + worker/db-helpers.js + worker/order-scope.js diff ว่าง (กฎเหล็ก #1 + #2)"
+  },
+
+  "commit_info": {
+    "sha": "cd6b361",
+    "pushed_to": "origin/ai-team/T017-customer-dashboard",
+    "pr_url": "https://github.com/MiusicBox/Miusic/pull/new/ai-team/T017-customer-dashboard",
+    "files_changed": [
+      "app-user.js (+253 บรรทัด)",
+      "index.html (+33 บรรทัด)",
+      "style.css (+68 บรรทัด)"
+    ],
+    "diff_stat": "348 insertions, 6 deletions (3 ไฟล์หลัก)"
+  },
+
+  "next_stage": "Stage 4 (Testing) — ส่งให้ น้องนัท + พี่ก้อน ต่อ คาดว่าจะเพิ่ม:\n  - Browser-level test (Playwright/Puppeteer): login → เข้าหน้าบัญชี → ตรวจว่า tab '📊 แดชบอร์ด' เป็น default active + #accountSectionDashboard แสดง + 4 การ์ดสรุปแสดงค่าถูกต้อง\n  - Dashboard math test: stub customerOrdersPagination.allLoaded ให้เป็น mock orders → ตรวจ 4 การ์ด (totalOrders + totalSpent + completed + pending) คำนวณถูก\n  - Top songs test: stub orders ที่มีเพลงซื้อซ้ำ → ตรวจ Top 5 เรียงตาม count desc + total desc + skip playlist items\n  - Top DJs test: stub orders ที่ไม่มี dj_name ใน item → ตรวจ lookup dj_name จาก STATE.songs + filter 'ไม่ทราบ DJ' ออก\n  - Monthly chart test: stub orders กระจาย 6 เดือน → ตรวจ bar height% + tooltip + label ภาษาไทย + bucket ที่ไม่มีข้อมูล height=2% (min)\n  - Tab switch test: คลิก '👤 โปรไฟล์' → ตรวจ #accountSectionDashboard ซ่อน + #accountSectionProfile แสดง → คลิก '📊 แดชบอร์ด' กลับ → ตรวจกลับเป็นเดิม\n  - D1 quota test: ตรวจว่าไม่มี fetch request ใหม่เมื่อ user สลับ tab ไป-กลับ (ใช้ allLoaded ที่มีอยู่แล้ว)\n  - Empty state test: ลูกค้าใหม่ไม่มีออเดอร์ → ตรวจ dashboard แสดง 'ยังไม่มีข้อมูล' แทน 0/0/0/0\n  - Mobile viewport test: 375px + 360px → 4 การ์ดเป็น 2x2 grid + bar chart height 100px + tab bar scroll-x ได้\n  - Accessibility test: screen reader announce 4 การ์ด + bar chart tooltip + Top songs/DJs list (semantic ul/li หรือ role=list)\n  - Regression test: ตรวจว่า profile/orders/favorites/settings tabs ยังใช้งานได้ปกติ + loadCustomerAccountData ยังทำงาน + myAccountLogoutBtn ยัง logout ได้\n  - Security test (พี่เบนซ์): ตรวจว่า worker/* ไม่ถูกแก้ (กฎเหล็ก #1 + #2) + ไม่เพิ่ม endpoint ใหม่ + ใช้ /api/customer/orders เดิม + คำนวณที่ frontend (ประหยัด D1 quota)"
+}
