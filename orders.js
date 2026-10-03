@@ -1852,16 +1852,17 @@ function handleHistorySearchInput(e) {
   //   ถ้าไม่มีคำค้นหา → ใช้ state.allOrders (200 ล่าสุด) เหมือนเดิม
   //   ผลกระทบระบบเดิม: 0% — ถ้า q="" → renderHistory() ทำงานเหมือนเดิม (filter state.allOrders)
   //   ถ้า q!="xyz" → renderHistory() ใช้ server results (เจอออเดอร์เก่า 201+ ได้)
-  if (raw) {
+  // 🆕 (T012): ถ้ามี advanced filters → ใช้ server search แม้ q="" ก็ตาม (filter-only query)
+  if (raw || _hasAdvancedFilters()) {
     // debounced server search — ใช้ helper _adminSearchDebounced (set ด้านล่าง)
     if (typeof _adminSearchDebounced === "function") {
-      _adminSearchDebounced(raw);
+      _adminSearchDebounced(raw, _collectAdvancedFilters());
     } else {
       // fallback: ใช้ renderHistory (filter state.allOrders ฝั่ง client) เหมือนเดิม
       renderHistory();
     }
   } else {
-    // ไม่มีคำค้นหา → เคลียร์ server search cache + render จาก state.allOrders
+    // ไม่มีคำค้นหา และไม่มี filter → เคลียร์ server search cache + render จาก state.allOrders
     state._adminSearchResults = null;
     renderHistory();
   }
@@ -1870,46 +1871,147 @@ function handleHistorySearchInput(e) {
 // 🔒 (Audit Fix H-7): debounced server-side search
 //   ใช้ debounce 300ms → กันยิงทุก keystroke
 //   cache ผลลัพธ์ใน state._adminSearchResults → renderHistory ใช้แทน state.allOrders
+// 🆕 (T012): รองรับ advanced filters (date_from, date_to, status, min_amount, max_amount)
+//   - filters เป็น optional parameter (back-compatible)
+//   - ถ้า filters มีค่า → ส่งไปใน body ของ _admin-search endpoint
+//   - cache key ใช้ q + JSON.stringify(filters) เพื่อกัน cached results ผิด
 let _adminSearchTimer = null;
 let _adminSearchLastQ = null;
+let _adminSearchLastFiltersKey = null;
 let _adminSearchLoading = false;
-async function _adminSearchDebounced(q) {
+async function _adminSearchDebounced(q, filters) {
   clearTimeout(_adminSearchTimer);
   _adminSearchTimer = setTimeout(async () => {
-    // ถ้า q เดิม → ไม่ re-search
-    if (_adminSearchLastQ === q && state._adminSearchResults) {
+    const filtersKey = filters ? JSON.stringify(filters) : "";
+    // ถ้า q + filters เดิม → ไม่ re-search
+    if (_adminSearchLastQ === q && _adminSearchLastFiltersKey === filtersKey && state._adminSearchResults) {
       renderHistory();
       return;
     }
     _adminSearchLastQ = q;
+    _adminSearchLastFiltersKey = filtersKey;
     _adminSearchLoading = true;
     state._adminSearchResults = null; // clear old results (UI shows loading)
     renderHistory();
     try {
+      // 🆕 (T012): สร้าง body — ใส่ filters ถ้ามี (ส่งเป็น top-level fields ใน body)
+      const body = { q, limit: 200, offset: 0 };
+      if (filters && typeof filters === "object") {
+        if (filters.date_from) body.date_from = filters.date_from;
+        if (filters.date_to) body.date_to = filters.date_to;
+        if (filters.status) body.status = filters.status;
+        if (filters.min_amount != null) body.min_amount = filters.min_amount;
+        if (filters.max_amount != null) body.max_amount = filters.max_amount;
+      }
       const res = await fetch("/api/db/orders/_admin-search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ q, limit: 200, offset: 0 }),
+        body: JSON.stringify(body),
       });
       if (res.ok) {
         const data = await res.json();
         const docs = Array.isArray(data?.docs) ? data.docs : [];
         state._adminSearchResults = docs.map(d => ({ id: d.id, ...d.data }));
         state._adminSearchTotal = data?.total || 0;
+        // 🆕 (T012): อัปเดต status indicator ของ advanced search panel
+        _updateAdvancedSearchStatus(data?.total || 0);
       } else {
         // fallback: ถ้า endpoint ใหม่ไม่มี (Worker เก่า) → ใช้ state.allOrders filter ฝั่ง client
         console.warn("[H-7] _admin-search endpoint failed, falling back to client-side filter:", res.status);
         state._adminSearchResults = null; // signal: use state.allOrders
+        _updateAdvancedSearchStatus(null, "endpoint ไม่รองรับ — ใช้ client-side filter");
       }
     } catch (err) {
       console.warn("[H-7] _admin-search network error, falling back to client-side:", err?.message || err);
       state._adminSearchResults = null;
+      _updateAdvancedSearchStatus(null, "เครือข่ายผิดพลาด — ใช้ client-side filter");
     } finally {
       _adminSearchLoading = false;
       renderHistory();
     }
   }, 300);
+}
+
+// ============================================================
+// 🆕 (T012): Advanced Search Panel — ค้นหาออเดอร์ด้วย date range + status + amount range
+//   - ปุ่ม "🔍 ขั้นสูง" เปิด/ปิด panel
+//   - ปุ่ม "🔍 ค้นหา" ภายใน panel → ใช้ filter ส่งให้ _adminSearchDebounced
+//   - ปุ่ม "✕ ล้างตัวกรอง" → เคลียร์ทุก filter + renderHistory ใหม่
+//   ผลกระทบระบบเดิม: 0% — เพิ่ม panel + helper functions, ไม่แตะ flow เดิม
+// ============================================================
+
+// อ่านค่าจาก filter inputs → ส่งกลับเป็น object (เป็น null ถ้าไม่มี field ใน DOM)
+function _collectAdvancedFilters() {
+  const dateFromEl = document.getElementById("advDateFrom");
+  const dateToEl = document.getElementById("advDateTo");
+  const statusEl = document.getElementById("advStatusFilter");
+  const minEl = document.getElementById("advMinAmount");
+  const maxEl = document.getElementById("advMaxAmount");
+  if (!dateFromEl && !dateToEl && !statusEl && !minEl && !maxEl) return null;
+
+  const filters = {};
+  const dateFrom = (dateFromEl?.value || "").trim();
+  const dateTo = (dateToEl?.value || "").trim();
+  const status = (statusEl?.value || "").trim();
+  const minVal = minEl?.value !== "" ? Number(minEl.value) : null;
+  const maxVal = maxEl?.value !== "" ? Number(maxEl.value) : null;
+
+  if (dateFrom) filters.date_from = dateFrom + "T00:00:00.000Z"; // รวมทั้งวันเริ่มต้น
+  if (dateTo) filters.date_to = dateTo + "T23:59:59.999Z";       // รวมทั้งวันสิ้นสุด
+  if (status) filters.status = status;
+  if (Number.isFinite(minVal) && minVal >= 0) filters.min_amount = minVal;
+  if (Number.isFinite(maxVal) && maxVal >= 0) filters.max_amount = maxVal;
+
+  return Object.keys(filters).length > 0 ? filters : null;
+}
+
+function _hasAdvancedFilters() {
+  return _collectAdvancedFilters() !== null;
+}
+
+function _updateAdvancedSearchStatus(total, errorMsg) {
+  const status = document.getElementById("advSearchStatus");
+  if (!status) return;
+  if (errorMsg) {
+    status.textContent = "⚠ " + errorMsg;
+    status.style.color = "var(--warning,#f59e0b)";
+    return;
+  }
+  if (total == null) {
+    status.textContent = "";
+    return;
+  }
+  status.textContent = `พบ ${Number(total).toLocaleString("en-US")} ออเดอร์ที่ตรงตัวกรอง`;
+  status.style.color = "var(--text-dim)";
+}
+
+function _clearAdvancedFilters() {
+  ["advDateFrom", "advDateTo", "advStatusFilter", "advMinAmount", "advMaxAmount"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+  _updateAdvancedSearchStatus(null);
+  // หลังล้าง filter → re-search ถ้ายังมี q อยู่, ถ้าไม่มี q และไม่มี filter → กลับไปใช้ state.allOrders
+  const q = (state.historySearch || "").trim();
+  if (q || _hasAdvancedFilters()) {
+    _adminSearchDebounced(q, _collectAdvancedFilters());
+  } else {
+    state._adminSearchResults = null;
+    renderHistory();
+  }
+}
+
+function _toggleAdvancedSearchPanel() {
+  const panel = document.getElementById("advancedSearchPanel");
+  if (!panel) return;
+  const isHidden = panel.style.display === "none";
+  panel.style.display = isHidden ? "block" : "none";
+  // อัปเดต label ปุ่ม toggle ให้สะท้อน state
+  const toggleBtn = document.getElementById("ordAdvancedSearchToggle");
+  if (toggleBtn) {
+    toggleBtn.textContent = isHidden ? "🔍 ขั้นสูง" : "▲ ปิดขั้นสูง";
+  }
 }
 
 /* ---------------- Render: ประวัติออเดอร์ ---------------- */
@@ -4048,8 +4150,38 @@ export async function initOrdersView() {
         state.historySearch = "";
         const inp = document.getElementById("ordHistorySearch");
         if (inp) inp.value = "";
+        // 🆕 (T012): ล้าง advanced filter ด้วย — "✕ ล้าง" หมายถึงล้างทั้งหมด (text + filters)
+        _clearAdvancedFilters();
+        // _clearAdvancedFilters จะ re-search ให้แล้ว — แต่ถ้าไม่มี q และไม่มี filter → set null + renderHistory
+        state._adminSearchResults = null;
         renderHistory();
       });
+    }
+
+    // 🆕 (T012): Advanced search panel — toggle + search + clear buttons
+    //   - toggle: เปิด/ปิด panel (display:none ↔ block)
+    //   - search: trigger _adminSearchDebounced ด้วย current q + current filters
+    //   - clear: ล้าง filter inputs ทั้งหมด (ไม่ล้าง q)
+    const advToggleBtn = document.getElementById("ordAdvancedSearchToggle");
+    if (advToggleBtn) {
+      advToggleBtn.addEventListener("click", _toggleAdvancedSearchPanel);
+    }
+    const advSearchBtn = document.getElementById("advSearchBtn");
+    if (advSearchBtn) {
+      advSearchBtn.addEventListener("click", () => {
+        // ใช้ q ปัจจุบัน + filters ปัจจุบัน → trigger debounced search ทันที (ไม่ debounce จาก input)
+        const q = (state.historySearch || "").trim();
+        const filters = _collectAdvancedFilters();
+        if (!q && !filters) {
+          _updateAdvancedSearchStatus(0, "กรุณาใส่ตัวกรองอย่างน้อย 1 อย่าง");
+          return;
+        }
+        _adminSearchDebounced(q, filters);
+      });
+    }
+    const advClearBtn = document.getElementById("advClearBtn");
+    if (advClearBtn) {
+      advClearBtn.addEventListener("click", _clearAdvancedFilters);
     }
 
     // ปุ่ม/ช่องค้นหาของ modal แก้ไขออเดอร์
@@ -4087,6 +4219,17 @@ export async function initOrdersView() {
   state.historySearch = "";
   const ordHistorySearchInput = document.getElementById("ordHistorySearch");
   if (ordHistorySearchInput) ordHistorySearchInput.value = "";
+  // 🆕 (T012): รีเซ็ต advanced search panel — ปิด panel + ล้าง filter inputs + ล้าง status
+  //   กันค่าค้างจาก session ก่อน (เช่น เปิดไว้ → ออก → เข้าใหม่ → ค่าเดิมยังอยู่)
+  const advPanel = document.getElementById("advancedSearchPanel");
+  if (advPanel) advPanel.style.display = "none";
+  ["advDateFrom", "advDateTo", "advStatusFilter", "advMinAmount", "advMaxAmount"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+  _updateAdvancedSearchStatus(null);
+  const advToggleBtnReset = document.getElementById("ordAdvancedSearchToggle");
+  if (advToggleBtnReset) advToggleBtnReset.textContent = "🔍 ขั้นสูง";
   renderCart();
   renderSearchResults();
   renderPlaylistSelected();

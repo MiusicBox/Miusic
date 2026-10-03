@@ -1,0 +1,82 @@
+{
+  "id": "T012-sales-report-search",
+  "title": "ฟีเจอร์ใหม่ — รายงานยอดขาย + ค้นหาขั้นสูง",
+  "branch": "ai-team/T012-sales-report-search",
+  "stage": "implementation_complete",
+  "created_at": "2026-10-03T19:45:00+07:00",
+  "completed_at": "2026-10-03T20:30:00+07:00",
+  "agent": "Nong Tao + Nong Fern (Coder)",
+  "description": "เพิ่มฟีเจอร์ใหม่ 2 ตัวสำหรับแอดมิน: (1) รายงานยอดขาย พร้อม bar chart และ Top Songs/DJs, (2) ค้นหาออเดอร์ขั้นสูงด้วย date range + status + amount range",
+
+  "features": [
+    {
+      "id": "F1-sales-summary",
+      "title": "GET /api/admin/reports/sales-summary",
+      "type": "backend",
+      "description": "สรุปยอดขายรายวัน/สัปดาห์/เดือน ใช้ SQL aggregate GROUP BY DATE",
+      "files_changed": ["worker/index.js"]
+    },
+    {
+      "id": "F2-top-songs",
+      "title": "GET /api/admin/reports/top-songs",
+      "type": "backend",
+      "description": "Top songs ที่ขายดี ใช้ json_each บน items array + GROUP BY song_id",
+      "files_changed": ["worker/index.js"]
+    },
+    {
+      "id": "F3-top-djs",
+      "title": "GET /api/admin/reports/top-djs",
+      "type": "backend",
+      "description": "Top DJs ที่ขายดี ใช้ 2 D1 queries (aggregate + IN clause lookup) + JS re-aggregate",
+      "files_changed": ["worker/index.js"]
+    },
+    {
+      "id": "F4-advanced-search",
+      "title": "Extend _admin-search รองรับ date range + status + amount range",
+      "type": "backend",
+      "description": "เพิ่ม optional body fields date_from/date_to/status/min_amount/max_amount — back-compatible",
+      "files_changed": ["worker/index.js"]
+    },
+    {
+      "id": "F5-reports-view",
+      "title": "view-reports ใน admin (HTML + JS + CSS)",
+      "type": "frontend",
+      "description": "หน้ารายงานยอดขาย มี period selector + summary cards + bar chart (CSS-only) + Top Songs/DJs tables",
+      "files_changed": ["admin.html", "app-admin.js", "style.css"]
+    },
+    {
+      "id": "F6-advanced-search-panel",
+      "title": "Advanced search panel ใน view-orders",
+      "type": "frontend",
+      "description": "Panel ขยายด้วยปุ่ม '🔍 ขั้นสูง' มี date range + status + amount range inputs + ปุ่มค้นหา/ล้าง",
+      "files_changed": ["admin.html", "orders.js", "style.css"]
+    }
+  ],
+
+  "iron_rules_compliance": {
+    "rule_1_no_zip_format_changes": "PASS — worker/zip-format.js ไม่ถูกแก้",
+    "rule_2_no_payment_logic_changes": "PASS — รายงานเป็น read-only ไม่แตะ logic ระบบชำระเงิน (status='verified'/'completed' ใช้แค่ WHERE clause ไม่ได้แก้ status เอง)",
+    "rule_3_no_paid_features": "PASS — ใช้แค่ D1 + Workers Free plan",
+    "rule_4_no_main_branch": "PASS — ทำใน branch ai-team/T012-sales-report-search เท่านั้น",
+    "rule_5_no_guessing": "PASS — spec ชัดเจน ทำตามที่ได้รับมอบหมาย",
+    "rule_6_no_regression": "PASS — regression test ผ่าน (39/39), integration test ผ่าน (29/29) หลัง commit"
+  },
+
+  "decisions": [
+    {"id": "T012-D1", "action": "รายงานยอดขายใช้ status IN ('completed','processing','verified') เพราะ verified คือแอดมินยืนยันสลิปแล้ว ถือว่าขายสำเร็จแม้ยังไม่ completed"},
+    {"id": "T012-D2", "action": "top-songs ใช้ json_each กรอง song_id IS NOT NULL (ข้าม playlist items เพราะ playlist ไม่มี song_id ตรง ๆ)"},
+    {"id": "T012-D3", "action": "top-djs ใช้ 2 D1 queries (aggregate + batch IN clause) ไม่ใช่ N+1; re-aggregate dj_name ฝั่ง JS bounded โดย SONG_LOOKUP_LIMIT=200"},
+    {"id": "T012-D4", "action": "_admin-search ขยายด้วย optional body fields — back-compatible (client เดิมที่ส่งแค่ {q} ยังทำงาน)"},
+    {"id": "T012-D5", "action": "bar chart ใช้ CSS-only (ไม่ใช้ Chart.js) ประหยัด bundle + กัน dependency ใหม่"}
+  ],
+
+  "tests": {
+    "syntax_check": ["worker/index.js", "app-admin.js", "orders.js"],
+    "regression_test": "39/39 PASS (หลัง commit)",
+    "integration_test": "29/29 PASS (หลัง commit)",
+    "html_structure_check": "PASS — view-reports + advancedSearchPanel + ทุก id ครบ",
+    "css_class_check": "PASS — bar-chart, reports-table-wrap, advanced-search-panel, filter-row, filter-label, filter-input ครบ"
+  },
+
+  "next_stage": "Stage 4 (Testing) — ส่งให้ น้องนัท + พี่ก้อน ต่อ คาดว่าจะเพิ่ม HTTP-level test (Miniflare) สำหรับ reports endpoints + advanced search filters"
+}
