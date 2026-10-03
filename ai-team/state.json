@@ -1,0 +1,63 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2026-10-03T09:37:29.601Z",
+  "current_session": {
+    "session_id": "web-fa07595c-dcf9-4921-aa7a-8451696ed1c0",
+    "started_at": "2026-10-03T10:00:00+07:00",
+    "user_timezone": "Asia/Vientiane"
+  },
+  "tasks": {
+    "active": [],
+    "pending_user_approval": [],
+    "completed": [],
+    "blocked": []
+  },
+  "credentials": {
+    "github_token": "stored_in_env_GH_TOKEN",
+    "cloudflare_token": "stored_in_env_CF_API_TOKEN",
+    "cloudflare_account_id": "01b48fd0746fb6fff50a18d02c4ceeb4",
+    "cloudflare_worker_name": "miusic-store"
+  },
+  "github": {
+    "repo": "MiusicBox/Miusic",
+    "default_branch": "main",
+    "team_branch_prefix": "ai-team",
+    "existing_branches": [
+      "team-24h-v2"
+    ],
+    "open_prs": [
+      {
+        "number": 1,
+        "title": "Team 24h v2: Critical fixes + UI/UX + DB improvements",
+        "url": "https://github.com/MiusicBox/Miusic/pull/1",
+        "status": "waiting_user_merge",
+        "created_at": "2026-10-03T09:30:00+07:00"
+      }
+    ]
+  },
+  "cloudflare": {
+    "worker_name": "miusic-store",
+    "production_url": "https://miusic-store.dj-remix.workers.dev",
+    "deploy_method": "wrangler",
+    "last_known_deploy": "2026-10-03T09:28:35Z"
+  },
+  "decisions_log": [
+    {
+      "id": "D001",
+      "timestamp": "2026-10-03T10:00:00+07:00",
+      "question": "ต้องการ AI Team system ที่ทำงานผ่าน GitHub + Cloudflare",
+      "user_answer": "สร้างระบบ AI Team 5 roles + state persistence",
+      "action_taken": "สร้าง ai-team/ directory + team.json + state.json"
+    }
+  ],
+  "resume_instructions": {
+    "how_to_resume": "บอก AI: 'resume ai-team' หรือ 'ทำงานต่อ' — AI จะอ่าน state.json และทำงานต่อจากที่ค้างไว้",
+    "what_user_can_say": [
+      "resume ai-team — ทำงานต่อ",
+      "ai-team status — ดูสถานะปัจจุบัน",
+      "new task: <description> — สร้าง task ใหม่",
+      "approve merge <PR#> — อนุมัติ merge PR",
+      "cancel task <task-id> — ยกเลิก task"
+    ]
+  }
+}
