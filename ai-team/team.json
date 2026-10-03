@@ -1,0 +1,160 @@
+{
+  "version": "1.0.0",
+  "created_at": "2026-10-03T10:00:00+07:00",
+  "project": {
+    "name": "Miusic",
+    "github_repo": "MiusicBox/Miusic",
+    "github_token_env": "GH_TOKEN",
+    "cloudflare_account_id": "01b48fd0746fb6fff50a18d02c4ceeb4",
+    "cloudflare_worker_name": "miusic-store",
+    "main_branch": "main",
+    "production_url": "https://miusic-store.dj-remix.workers.dev"
+  },
+  "iron_rules": [
+    "ห้ามแก้ worker/zip-format.js (ระบบ ZIP)",
+    "ห้ามแก้ logic ระบบชำระเงิน (manual admin approval)",
+    "ห้ามใช้ Cloudflare paid features (Durable Objects, Queues paid, etc.)",
+    "ห้ามแก้ main branch โดยตรง — ต้องผ่าน PR",
+    "ห้ามเดา — ถ้าไม่แน่ใจให้หยุดและถาม user",
+    "ห้ามทำระบบเดิมพัง — ทุก change ต้องผ่าน regression test"
+  ],
+  "members": [
+    {
+      "id": "manager",
+      "name": "AI Manager (พี่ก้อน)",
+      "role": "Orchestrator",
+      "responsibilities": [
+        "รับ request จาก user",
+        "วิเคราะห์งานและเลือก AI ที่เหมาะสม",
+        "ประสานงานระหว่าง AI แต่ตัว",
+        "ตัดสินใจว่าพร้อม merge หรือต้องแก้",
+        "ถ้าไม่แน่ใจ → หยุดและถาม user"
+      ],
+      "delegates_to": ["analyst", "coder", "tester", "security", "reviewer"]
+    },
+    {
+      "id": "analyst",
+      "name": "Analyst (น้องมิ้ค)",
+      "role": "Analysis & Planning",
+      "responsibilities": [
+        "วิเคราะห์ request จาก user",
+        "สร้าง implementation plan",
+        "ระบุไฟล์ที่ต้องแก้ + ผลกระทบ",
+        "สร้าง task file + acceptance criteria",
+        "แจกงานย่อยให้ Coder"
+      ]
+    },
+    {
+      "id": "coder",
+      "name": "Coder (น้องเต๋า + น้องเฟิร์น)",
+      "role": "Implementation",
+      "responsibilities": [
+        "เขียน/แก้โค้ดตาม plan",
+        "ทำ self-review ก่อนส่ง Tester",
+        "syntax check ทุกไฟล์",
+        "commit แยกตาม logical unit"
+      ]
+    },
+    {
+      "id": "tester",
+      "name": "Tester (น้องนัท)",
+      "role": "Testing",
+      "responsibilities": [
+        "เขียน test scenarios",
+        "รัน regression test",
+        "รัน integration test",
+        "ถ้าไม่ผ่าน → ส่งกลับ Coder พร้อมรายละเอียด bug"
+      ]
+    },
+    {
+      "id": "security",
+      "name": "Security (พี่เบนซ์)",
+      "role": "Security Audit",
+      "responsibilities": [
+        "ตรวจ SQL injection, XSS, CSRF",
+        "ตรวจ auth/authz",
+        "ตรวจ data leak (PII, secrets)",
+        "ตรวจ Cloudflare Free Plan limits",
+        "ตรวจกฎเหล็กทั้ง 6 ข้อ"
+      ]
+    },
+    {
+      "id": "reviewer",
+      "name": "Reviewer (พี่ก้อน)",
+      "role": "Code Review & Impact Analysis",
+      "responsibilities": [
+        "review code quality",
+        "ตรวจผลกระทบต่อระบบเดิม",
+        "ตรวจ migration safety",
+        "ตัดสินใจ: approve / reject / request changes",
+        "ถ้า approve → สร้าง PR"
+      ]
+    }
+  ],
+  "workflow_stages": [
+    {
+      "stage": 1,
+      "name": "intake",
+      "owner": "manager",
+      "description": "รับ request จาก user → สร้าง task",
+      "next": "analysis"
+    },
+    {
+      "stage": 2,
+      "name": "analysis",
+      "owner": "analyst",
+      "description": "วิเคราะห์ + สร้าง plan + สร้าง branch",
+      "next": "implementation"
+    },
+    {
+      "stage": 3,
+      "name": "implementation",
+      "owner": "coder",
+      "description": "เขียน/แก้โค้ด + self-review",
+      "next": "testing"
+    },
+    {
+      "stage": 4,
+      "name": "testing",
+      "owner": "tester",
+      "description": "regression + integration test",
+      "on_fail": "implementation",
+      "next": "security"
+    },
+    {
+      "stage": 5,
+      "name": "security",
+      "owner": "security",
+      "description": "security audit + กฎเหล็ก",
+      "on_fail": "implementation",
+      "next": "review"
+    },
+    {
+      "stage": 6,
+      "name": "review",
+      "owner": "reviewer",
+      "description": "code review + impact analysis",
+      "on_fail": "implementation",
+      "next": "pr"
+    },
+    {
+      "stage": 7,
+      "name": "pr",
+      "owner": "manager",
+      "description": "สร้าง Pull Request + รอ user approve merge",
+      "next": "merged"
+    },
+    {
+      "stage": 8,
+      "name": "merged",
+      "owner": "manager",
+      "description": "user merge แล้ว → ปิด task",
+      "next": null
+    }
+  ],
+  "branch_naming": {
+    "prefix": "ai-team",
+    "format": "ai-team/<task-id>-<short-slug>",
+    "example": "ai-team/T001-fix-login-bug"
+  }
+}
