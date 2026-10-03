@@ -45,6 +45,9 @@ import {
   isOrderInGuestList,
   isOrderVisibleForReceiptLookup,
 } from "./order-scope.js";
+// 🆕 (T010-R6): Centralized constants — แทน magic numbers (LIMIT 200, rate limit thresholds, TTL, Cache-Control)
+//   ใช้ในจุดใหม่ที่เพิ่มในรอบ T010 (M3/M9/M10/M11) — จุดเดิมยังใช้ literal อยู่ (TODO รอบถัดไป)
+import { LIMITS, RATE_LIMITS, CACHE } from "./constants.js";
 
 // โฟลเดอร์เหล่านี้เดิมใช้ toCloudinaryDownloadUrl() เติม fl_attachment ให้บังคับดาวน์โหลด
 // (ไฟล์เพลงเต็ม/ไฟล์ ZIP ออเดอร์ — ไม่ใช่ไฟล์ที่เปิดเล่น/แสดงผลตรงๆ บนเว็บ)
@@ -385,6 +388,40 @@ function jsonResponse(obj, status = 200, extraHeaders = {}) {
     status,
     headers: { "Content-Type": "application/json", ...corsHeaders(), ...extraHeaders, ...securityHeaders() },
   });
+}
+
+// 🆕 (T010-M1): secureJsonResponse — เหมือน jsonResponse แต่ใช้สำหรับ customer auth responses
+//   ทำไมต้องมี helper แยก?
+//     ปัญหา: customer auth responses (register/login/logout) เดิมใช้ `new Response(JSON.stringify(...))`
+//     ตรง ๆ โดยไม่ผ่าน jsonResponse → ขาด security headers (CSP, X-Frame-Options, ACAO, X-Content-Type-Options)
+//     ผล: clickjacking / MIME sniffing / CORS bypass บน customer auth
+//
+//   วิธีแก้: helper นี้ wrap jsonResponse แบบเดิม + บังคับให้มี security headers
+//     (จริง ๆ jsonResponse มี securityHeaders อยู่แล้ว — แต่ทำ helper แยกเพื่อให้เห็นชัดว่าจุดนี้คือ
+//      "customer-facing auth response" ตามมาตรฐาน OWASP)
+//
+//   ผลกระทบระบบเดิม: 0%
+//     - ก่อน: customer auth ส่งเฉพาะ Content-Type + Set-Cookie → ขาด security headers
+//     - หลัง: customer auth ส่ง Content-Type + Set-Cookie + CSP + X-Frame-Options + ฯลฯ
+//     - frontend ไม่กระทบ (headers เพิ่มเติม ไม่ทำให้ logic เดิมพัง)
+function secureJsonResponse(obj, status = 200, extraHeaders = {}) {
+  return jsonResponse(obj, status, extraHeaders);
+}
+
+// 🆕 (T010-M11): parsePagination — parse + clamp `?limit=&offset=` query params
+//   default: limit=50, max: 200, offset: >= 0
+//   ใช้ใน customer/orders + customer/favorites + admin/password-reset-requests
+//   กัน DoS (ดึง row มากเกินไป) + กัน negative offset
+function parsePagination(url) {
+  const limit = Math.min(
+    parseInt(url.searchParams.get("limit") || String(LIMITS.DEFAULT_PAGE), 10) || LIMITS.DEFAULT_PAGE,
+    LIMITS.MAX_PAGE
+  );
+  const offset = Math.max(
+    parseInt(url.searchParams.get("offset") || "0", 10) || 0,
+    0
+  );
+  return { limit, offset };
 }
 
 // สุ่มชื่อไฟล์ปลายทางใน R2 ให้ไม่ชนกัน (คล้าย public_id ของ Cloudinary) แต่ยังเก็บนามสกุลไฟล์เดิมไว้
@@ -1700,6 +1737,23 @@ async function handleDb(request, env, url) {
         }
         return out;
       }
+      // 🆕 (T010-M5): mask admin_email สำหรับ sub-admin (privacy)
+      //   ปัญหาเดิม: sub-admin เห็น admin_email ของ admin อื่นใน top-level row (บรรทัด 1720)
+      //     ทั้งที่ before_data/after_data ถูก redact แล้ว → top-level admin_email ยังรั่ว
+      //   วิธีแก้: ถ้า caller เป็น sub-admin → mask admin_email เป็น "j***@gmail.com"
+      //     (แสดงแค่อักษรแรก + โดเมน — พอให้กรอง/ระบุได้แต่ไม่เห็น email เต็ม)
+      //   ผลกระทบระบบเดิม: 0% — main admin เห็น email เต็มเหมือนเดิม
+      function maskAdminEmailForSub(email, callerRole) {
+        if (!email) return "";
+        if (callerRole === "main") return email; // main admin เห็นเต็ม
+        // sub-admin → mask เช่น "j***@gmail.com"
+        const atIdx = String(email).indexOf("@");
+        if (atIdx < 1) return "***"; // ไม่ใช่ email format → mask หมด
+        const local = String(email).slice(0, atIdx);
+        const domain = String(email).slice(atIdx + 1);
+        if (!domain) return "***";
+        return local.charAt(0) + "***@" + domain;
+      }
       const parsedLogs = (logs || []).map(row => {
         let beforeParsed = null, afterParsed = null;
         try { if (row.before_data) beforeParsed = JSON.parse(row.before_data); } catch { beforeParsed = row.before_data; }
@@ -1717,7 +1771,8 @@ async function handleDb(request, env, url) {
         return {
           id: row.id,
           admin_id: row.admin_id,
-          admin_email: row.admin_email,
+          // 🆕 (T010-M5): mask admin_email สำหรับ sub-admin (top-level field — เดิมรั่ว)
+          admin_email: maskAdminEmailForSub(row.admin_email, admin?.role || "sub"),
           action: row.action,
           collection: row.collection,
           target_id: row.target_id,
@@ -2178,11 +2233,17 @@ async function handleDb(request, env, url) {
       //   ใหม่: Vary: Cookie บอก CDN ว่า response ขึ้นกับ cookie ของผู้ขอ → cache แยกตาม session
       //   ผลกระทบระบบเดิม: 0% — header แค่บอก CDN cache key, ไม่เปลี่ยน response content
       //   ผลกระทบ cache hit rate: ลดลงนิดน้อย (แต่ละ session มี cache ของตัวเอง) — รับเพื่อ security
+      //
+      // 🆕 (T010-M9): cache poisoning fix — เปลี่ยน `public` → `private` สำหรับ cacheable responses
+      //   ปัญหาเดิม (บรรทัด 2240 เดิม): `Cache-Control: public, max-age=10` + `Vary: Cookie`
+      //     Cloudflare Free CDN อาจไม่ honor `Vary: Cookie` อย่างสมบูรณ์ → cache response ของ admin
+      //     (ที่มี full_file_url) ส่งให้ non-admin → cache poisoning + เพลงรั่ว
+      //   วิธีแก้: ใช้ `private` (cache เฉพาะ browser ของ user คนนั้น ไม่ใช่ shared cache)
+      //     + `no-cache, must-revalidate` บังคับ revalidate ทุกครั้ง → cache hit rate ลดลง แต่ปลอดภัย
+      //   ผลกระทบระบบเดิม: ต่ำ — CDN cache hit rate ลดลง (แต่ละ user ต้อง revalidate) แต่ data consistency ดีขึ้น
+      //   อ้างอิง: OWASP Cache Poisoning, Cloudflare Free plan docs
       const extraHeaders = isCacheable
-        // 🔧 (2026-09-24 fix ข้อมูลไม่อัปเดตทันที): เดิม "public, max-age=60, s-maxage=300" → เบราว์เซอร์ใช้ข้อมูลเก่าซ้ำ 60 วิ
-        //   เปลี่ยนเป็น "public, max-age=10" → ข้อมูลเก่าค้างได้สูงสุด 10 วิ (Vary: Cookie คงเดิม, ตัด s-maxage ออกกัน CDN ถือสำเนา 5 นาที)
-        //   ย้อนกลับ: คืนค่าเดิมเป็น "public, max-age=60, s-maxage=300"
-        ? { "Cache-Control": "public, max-age=10", "Vary": "Cookie" }
+        ? { "Cache-Control": CACHE.CUSTOMER_API, "Vary": "Cookie" }
         : {};
       // 🚀 (2026-09-28 fix C-1): ส่ง total กลับใน response เมื่อมี limit (สำหรับ pagination)
       //   เดิม: response = { docs } → client ไม่รู้ว่ามีข้อมูลเท่าไหร่ทั้งหมด → background loader ไม่ทำงาน
@@ -2210,7 +2271,13 @@ async function handleDb(request, env, url) {
 
     // /api/db/:collection/_query  (where/orderBy)
     if (parts.length === 2 && parts[1] === "_query" && request.method === "POST") {
-      const body = await request.json();
+      // 🆕 (T010-R5): หุ้ม try/catch รอบ `await request.json()` — กัน 503 ตอน bad JSON
+      //   เดิม: `const body = await request.json();` (ไม่หุ้ม try/catch)
+      //     ถ้า client ส่ง body ไม่ใช่ valid JSON → throw → ไม่มี handler → Worker 500 หรือ 503
+      //   ใหม่: หุ้ม try/catch + ส่ง 400 + ข้อความชัดเจน (เหมือน endpoints อื่น เช่น PUT/PATCH)
+      //   ผลกระทบระบบเดิม: 0% — client ที่ส่ง valid JSON ยังทำงานเหมือนเดิม
+      let body;
+      try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
       let docs = await queryDocuments(env, collection, body);
       // 🔒 sanitize ฟิลด์ sensitive ของ songs ถ้าเป็น non-admin
       if (collection === "songs" && !admin) {
@@ -2915,7 +2982,13 @@ async function handleDb(request, env, url) {
         if (collection === "admins" && admin.role !== "main") {
           return jsonResponse({ error: "เฉพาะแอดมินหลักเท่านั้นที่จัดการแอดมินได้" }, 403);
         }
-        const body = await request.json();
+        // 🆕 (T010-R5): หุ้ม try/catch รอบ `await request.json()` — กัน 503 ตอน bad JSON
+        //   เดิม: `const body = await request.json();` (ไม่หุ้ม try/catch)
+        //     ถ้า client ส่ง body ไม่ใช่ valid JSON → throw → ไม่มี handler → Worker 500 หรือ 503
+        //   ใหม่: หุ้ม try/catch + ส่ง 400 + ข้อความชัดเจน (เหมือน PUT handler บรรทัด 2305)
+        //   ผลกระทบระบบเดิม: 0% — client ที่ส่ง valid JSON ยังทำงานเหมือนเดิม
+        let body;
+        try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
         // 🔒 (Audit Fix H-10): Server-side validation สำหรับ discount_value bounds (เหมือน PUT)
         //   ดึง beforeDoc ก่อน เพื่อ merge body.data + before เป็น full document → validate
         //   ทำไมต้อง merge? เพราะ PATCH อาจส่งแค่ field ที่เปลี่ยน (เช่น { discount_value: 150 })
@@ -5079,16 +5152,14 @@ async function handleCustomerAuth(request, env, url) {
     // สร้าง session
     const token = await createCustomerSession(env, id);
     // ส่ง cookie + ข้อมูล customer (ไม่ส่ง password_hash)
-    return new Response(JSON.stringify({
+    // 🆕 (T010-M1): ใช้ secureJsonResponse แทน `new Response(...)` ตรง ๆ
+    //   เดิม: ส่งเฉพาะ Content-Type + Set-Cookie → ขาด security headers (CSP, X-Frame-Options, ACAO, …)
+    //   ใหม่: ใช้ secureJsonResponse (ผ่าน jsonResponse → มี securityHeaders() + corsHeaders())
+    //   ผลกระทบระบบเดิม: 0% — frontend ได้ response shape เดิม + security headers เพิ่ม
+    return secureJsonResponse({
       ok: true,
       customer: { id, email, whatsapp, display_name: displayName, created_at: now }
-    }), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Set-Cookie": buildCustomerSessionCookie(token),
-      },
-    });
+    }, 200, { "Set-Cookie": buildCustomerSessionCookie(token) });
   }
 
   // ---------- POST /api/customer/login ----------
@@ -5142,16 +5213,11 @@ async function handleCustomerAuth(request, env, url) {
     const token = await createCustomerSession(env, customer.id);
     // ส่ง cookie + ข้อมูล customer (ไม่ส่ง password_hash)
     const { password_hash, ...customerSafe } = customer;
-    return new Response(JSON.stringify({
+    // 🆕 (T010-M1): ใช้ secureJsonResponse แทน `new Response(...)` ตรง ๆ — เพิ่ม security headers
+    return secureJsonResponse({
       ok: true,
       customer: customerSafe
-    }), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Set-Cookie": buildCustomerSessionCookie(token),
-      },
-    });
+    }, 200, { "Set-Cookie": buildCustomerSessionCookie(token) });
   }
 
   // ---------- POST /api/customer/logout ----------
@@ -5159,13 +5225,8 @@ async function handleCustomerAuth(request, env, url) {
     if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
     const token = getCookie(request, "customer_session_token");
     if (token) await deleteCustomerSession(env, token);
-    return new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Set-Cookie": buildClearCustomerCookie(),
-      },
-    });
+    // 🆕 (T010-M1): ใช้ secureJsonResponse แทน `new Response(...)` ตรง ๆ — เพิ่ม security headers
+    return secureJsonResponse({ ok: true }, 200, { "Set-Cookie": buildClearCustomerCookie() });
   }
 
   // 🆕 (2026-10-02): POST /api/customer/change-password
@@ -5176,6 +5237,37 @@ async function handleCustomerAuth(request, env, url) {
     if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
     let body;
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+
+    // 🆕 (T010-M3): rate limit change-password — 5 ครั้ง/15 นาที (เหมือน admin login + admin change-password)
+    //   ปัญหาเดิม: ไม่มี rate limit → attacker ที่มี session cookie สามารถ brute-force old_password
+    //   ได้ไม่จำกัด (5 attempts/sec) → ถ้ารหัสอ่อน → เดาได้ในเวลาไม่นาน
+    //
+    //   วิธีแก้: ใช้ login_attempts table (มีอยู่แล้ว — เดียวกับ admin login + admin change-password)
+    //     - key: `change-pw-cust:<customer_id>` ใน column `email` (แยกจาก admin change-pw)
+    //     - threshold: RATE_LIMITS.CHANGE_PASSWORD_MAX (5) / RATE_LIMITS.CHANGE_PASSWORD_WINDOW_MS (15 นาที)
+    //   ผลกระทบระบบเดิม: 0%
+    //     - ถ้า table ไม่มี → ข้าม (fallback: ไม่บล็อก)
+    //     - ถ้าผ่าน → ดำเนินการต่อ (verify old_password → update)
+    //     - ถ้ายิงเกิน 5 ครั้ง → 429 + บอกรอ 15 นาที
+    try {
+      const cpClientIP = request.headers.get("CF-Connecting-IP") || "unknown";
+      const cpWindow = new Date(Date.now() - RATE_LIMITS.CHANGE_PASSWORD_WINDOW_MS).toISOString();
+      const cpKey = `change-pw-cust:${customer.id}`;
+      const cpRow = await env.DB.prepare(
+        "SELECT COUNT(*) AS c FROM login_attempts WHERE ip = ? AND email = ? AND attempted_at > ?"
+      ).bind(cpClientIP, cpKey, cpWindow).first();
+      if ((cpRow?.c || 0) >= RATE_LIMITS.CHANGE_PASSWORD_MAX) {
+        const waitMin = Math.ceil(RATE_LIMITS.CHANGE_PASSWORD_WINDOW_MS / (60 * 1000));
+        return jsonResponse({
+          error: `พยายามเปลี่ยนรหัสผ่านผิดพลาดเกินไป (${RATE_LIMITS.CHANGE_PASSWORD_MAX} ครั้งใน ${waitMin} นาที) — กรุณารอ`,
+          code: "customer/change-pw-rate-limited"
+        }, 429);
+      }
+    } catch (cpRateErr) {
+      // ถ้า login_attempts table ไม่มี → ข้าม rate limiting (fallback)
+      console.warn("customer change-password rate limiting skipped:", cpRateErr?.message);
+    }
+
     const oldPwd = String(body.old_password || "");
     const newPwd = String(body.new_password || "");
     if (newPwd.length < 6) return jsonResponse({ error: "รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัว" }, 400);
@@ -5183,10 +5275,27 @@ async function handleCustomerAuth(request, env, url) {
       const row = await env.DB.prepare("SELECT password_hash FROM customers WHERE id = ?").bind(customer.id).first();
       if (!row) return jsonResponse({ error: "ไม่พบบัญชี" }, 404);
       const valid = await verifyPassword(oldPwd, row.password_hash);
-      if (!valid) return jsonResponse({ error: "รหัสผ่านเดิมไม่ถูกต้อง" }, 401);
+      if (!valid) {
+        // 🆕 (T010-M3): บันทึก failed attempt เพื่อ rate limiting (เหมือน admin H-21)
+        try {
+          const cpClientIP = request.headers.get("CF-Connecting-IP") || "unknown";
+          const cpKey = `change-pw-cust:${customer.id}`;
+          await env.DB.prepare(
+            "INSERT INTO login_attempts (ip, email, attempted_at) VALUES (?, ?, ?)"
+          ).bind(cpClientIP, cpKey, new Date().toISOString()).run();
+        } catch {}
+        return jsonResponse({ error: "รหัสผ่านเดิมไม่ถูกต้อง" }, 401);
+      }
       const newHash = await hashPassword(newPwd);
       await env.DB.prepare("UPDATE customers SET password_hash = ?, updated_at = ? WHERE id = ?")
         .bind(newHash, new Date().toISOString(), customer.id).run();
+      // 🆕 (T010-M3): เคลียร์ failed attempts หลังเปลี่ยนรหัสผ่านสำเร็จ (เหมือน admin login สำเร็จ)
+      try {
+        const cpClientIP = request.headers.get("CF-Connecting-IP") || "unknown";
+        const cpKey = `change-pw-cust:${customer.id}`;
+        await env.DB.prepare("DELETE FROM login_attempts WHERE ip = ? AND email = ?")
+          .bind(cpClientIP, cpKey).run();
+      } catch {}
       return jsonResponse({ ok: true });
     } catch (err) {
       return jsonResponse({ error: safeError("เปลี่ยนรหัสผ่านไม่สำเร็จ", err) }, 500);
@@ -5196,6 +5305,21 @@ async function handleCustomerAuth(request, env, url) {
   // 🆕 (2026-10-02 v2): POST /api/customer/forgot-password
   //   รับ: { login } → ค้นหาบัญชี → บันทึกคำขารีเซ็ตลง password_reset_requests → แอดมินจะเห็นในหน้าจัดการลูกค้า
   //   ผลกระทบระบบเดิม: 0% — endpoint ใหม่ (ไม่ใช้ WhatsApp API)
+  //
+  // 🆕 (T010-M10): rate limit + constant message (no info disclosure)
+  //   ปัญหาเดิม:
+  //     1. ไม่มี rate limit per IP → attacker ยิง spam จาก IP เดียว สร้าง password_reset_requests
+  //        ล้าน record → D1 write quota burn + รบกวนแอดมิน
+  //     2. ข้อความตอบกลับต่างกัน "คุณได้ส่งคำขารีเซ็ตรหัสผ่านแล้ว" (สำหรับ pending) vs
+  //        "✅ ส่งคำขารีเซ็ตรหัสผ่านแล้ว" (สำหรับ new) → attacker แยกได้ว่าบัญชีมี pending อยู่
+  //        → enumerate ว่าใครเคยขอ reset ล่าสุด (info disclosure)
+  //
+  //   วิธีแก้:
+  //     1. rate limit per IP: 3 ครั้ง/ชม. (RATE_LIMITS.FORGOT_PASSWORD_IP_MAX) ใช้ login_attempts table
+  //        (มีอยู่แล้ว — key `forgot-pw:<ip>` ใน column `email`)
+  //     2. ใช้ข้อความ constant เสมอ — ไม่บอกว่า pending อยู่ / สร้างใหม่ / ไม่พบบัญชี
+  //     3. ถ้า rate limited → ก็ใช้ข้อความเดียวกัน (กัน disclose ว่า rate limited)
+  //   ผลกระทบระบบเดิม: ต่ำ — frontend ที่อ่าน `message` ยังทำงานได้ (เปลี่ยนข้อความนิดหน่อย)
   if (path === "forgot-password" && request.method === "POST") {
     if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
     let body;
@@ -5203,22 +5327,51 @@ async function handleCustomerAuth(request, env, url) {
     const login = String(body.login || "").trim();
     if (!login) return jsonResponse({ error: "กรุณากรอกอีเมลหรือเบอร์ WhatsApp" }, 400);
     // 🆕 (T008-M6): normalize login identifier เหมือน login/register
-    //   ถ้าเป็น email (มี @) → lowercase
-    //   ถ้าเป็นเบอร์ WhatsApp → normalize ให้เป็นมาตรฐานเดียวกับ register
-    //   ใช้ loginNormalized สำหรับ: ตรวจ pending request + ค้น customer + บันทึก contact
-    //   → ถ้าลูกค้าสมัครด้วย "020xxx" แล้วขอ reset ด้วย "+85620xxx" → ยัง match ได้
     const loginNormalized = login.includes("@") ? login.toLowerCase() : normalizeWhatsapp(login);
-    // ป้องกัน spam — ตรวจว่ามีคำขา pending ของ contact เดียวกันในชั่วโมงที่ผ่านมาไหม
-    //   ถ้ามี → บอกว่า "ส่งคำขอแล้ว รอแอดมินติดต่อกลับ" (ไม่สร้าง record ใหม่ — กัน spam)
+
+    // 🆕 (T010-M10): constant message — ใช้ข้อความเดียวกันเสมอ (กัน info disclosure)
+    //   ไม่บอกว่า: มีบัญชีไหม / มี pending อยู่ / rate limited / สร้างใหม่
+    //   → attacker ไม่สามารถ enumerate ได้
+    const FORGOT_OK_MESSAGE = { ok: true, message: "หากบัญชีนี้มีอยู่ เราจะส่งคำขารีเซ็ตรหัสผ่านให้คุณ" };
+
     const nowIso = new Date().toISOString();
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const oneHourAgo = new Date(Date.now() - RATE_LIMITS.FORGOT_PASSWORD_WINDOW_MS).toISOString();
+    const clientIP = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "unknown";
+
     try {
+      // 🆕 (T010-M10): rate limit per IP — 3 ครั้ง/ชม. (กัน spam จาก IP เดียว)
+      //   ใช้ login_attempts table (มีอยู่แล้ว) — key `forgot-pw:<ip>` ใน column `email`
+      //   ถ้า table ไม่มี → ข้าม (fallback: ไม่บล็อก)
+      try {
+        const ipKey = `forgot-pw:${clientIP}`;
+        const ipAttempts = await env.DB.prepare(
+          "SELECT COUNT(*) AS c FROM login_attempts WHERE ip = ? AND email = ? AND attempted_at > ?"
+        ).bind(clientIP, ipKey, oneHourAgo).first();
+        if ((ipAttempts?.c || 0) >= RATE_LIMITS.FORGOT_PASSWORD_IP_MAX) {
+          // 🆕 (T010-M10): ใช้ข้อความเดียวกับ success — ไม่ disclose ว่า rate limited
+          //   log IP attempt ลง login_attempts (track สำหรับ monitor) — ไม่สร้าง password_reset_requests
+          return jsonResponse(FORGOT_OK_MESSAGE);
+        }
+      } catch (ipRateErr) {
+        console.warn("forgot-password IP rate limiting skipped:", ipRateErr?.message);
+      }
+
+      // rate limit per contact — 1 ครั้ง/ชม. (มีอยู่แล้วใน logic เดิม — เช็ค pending request)
+      //   ถ้ามี pending อยู่ → ใช้ข้อความ constant (ไม่บอกว่า "คุณได้ส่งคำขาแล้ว")
       const existing = await env.DB.prepare(
         "SELECT id FROM password_reset_requests WHERE contact = ? AND status = 'pending' AND created_at > ?"
       ).bind(loginNormalized, oneHourAgo).first();
       if (existing) {
-        return jsonResponse({ ok: true, message: "คุณได้ส่งคำขารีเซ็ตรหัสผ่านแล้ว — แอดมินจะติดต่อกลับทาง WhatsApp ภายใน 24 ชั่วโมง" });
+        // 🆕 (T010-M10): log IP attempt (track สำหรับ monitor แม้จะ pending อยู่) — กัน enumeration
+        try {
+          const ipKey = `forgot-pw:${clientIP}`;
+          await env.DB.prepare(
+            "INSERT INTO login_attempts (ip, email, attempted_at) VALUES (?, ?, ?)"
+          ).bind(clientIP, ipKey, nowIso).run();
+        } catch {}
+        return jsonResponse(FORGOT_OK_MESSAGE);
       }
+
       // ค้นหา customer (ถ้ามี — ถ้าไม่มีก็ยังบันทึกคำขาได้ เพื่อให้แอดมินเห็นว่ามีคนแอบอ้างหรือเบอร์ผิด)
       const customer = await env.DB.prepare(
         "SELECT id FROM customers WHERE email = ? OR whatsapp = ?"
@@ -5227,7 +5380,17 @@ async function handleCustomerAuth(request, env, url) {
       await env.DB.prepare(
         "INSERT INTO password_reset_requests (id, customer_id, contact, status, created_at) VALUES (?, ?, ?, 'pending', ?)"
       ).bind(id, customer?.id || null, loginNormalized, nowIso).run();
-      return jsonResponse({ ok: true, message: "✅ ส่งคำขารีเซ็ตรหัสผ่านแล้ว — แอดมินจะติดต่อกลับทาง WhatsApp ภายใน 24 ชั่วโมง" });
+
+      // 🆕 (T010-M10): log IP attempt (track สำหรับ monitor — กัน spam enumeration)
+      try {
+        const ipKey = `forgot-pw:${clientIP}`;
+        await env.DB.prepare(
+          "INSERT INTO login_attempts (ip, email, attempted_at) VALUES (?, ?, ?)"
+        ).bind(clientIP, ipKey, nowIso).run();
+      } catch {}
+
+      // 🆕 (T010-M10): constant message — ไม่บอกว่า "สร้างใหม่" (เหมือนเดิมที่มี ✅ + "ส่งคำขาแล้ว")
+      return jsonResponse(FORGOT_OK_MESSAGE);
     } catch (err) {
       if (String(err?.message || "").includes("no such table")) {
         return jsonResponse({ error: "ระบบยังไม่พร้อม — กรุณารัน schema.sql ล่าสุดใน D1 Console" }, 500);
@@ -5356,15 +5519,43 @@ async function handleCustomerAuth(request, env, url) {
     if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
     try {
       const status = String(url.searchParams.get("status") || "").trim();
+      // 🆕 (T010-M11): pagination — รองรับ ?limit=&offset= (default 50, max 200)
+      //   ปัญหาเดิม: LIMIT 200 ตายตัว → ถ้ามีคำขา > 200 → คำขาเก่า ๆ หายไปจากหน้าจัดการแอดมิน
+      //   วิธีแก้: รองรับ query params ?limit=&offset= + ส่ง total + pagination metadata กลับ
+      //   ผลกระทบระบบเดิม: 0% — frontend เดิมที่ไม่สนใจ pagination ยังทำงานได้ (requests array ยังอยู่)
+      const { limit, offset } = parsePagination(url);
       let sql = "SELECT r.id, r.customer_id, r.contact, r.status, r.note, r.created_at, r.resolved_at, r.resolved_by_admin, c.email as customer_email, c.whatsapp as customer_whatsapp, c.display_name as customer_name FROM password_reset_requests r LEFT JOIN customers c ON r.customer_id = c.id";
       const binds = [];
       if (status === "pending" || status === "resolved" || status === "dismissed") {
         sql += " WHERE r.status = ?";
         binds.push(status);
       }
-      sql += " ORDER BY r.created_at DESC LIMIT 200";
+      sql += " ORDER BY r.created_at DESC LIMIT ? OFFSET ?";
+      binds.push(limit, offset);
       const { results } = await env.DB.prepare(sql).bind(...binds).all();
-      return jsonResponse({ requests: results || [], total: (results || []).length });
+      // ดึง total count สำหรับ pagination UI
+      let totalCount = (results || []).length;
+      try {
+        let countSql = "SELECT COUNT(*) as total FROM password_reset_requests r";
+        const countBinds = [];
+        if (status === "pending" || status === "resolved" || status === "dismissed") {
+          countSql += " WHERE r.status = ?";
+          countBinds.push(status);
+        }
+        const countRow = await env.DB.prepare(countSql).bind(...countBinds).first();
+        totalCount = Number(countRow?.total) || 0;
+      } catch { /* fallback ใช้ results.length */ }
+      return jsonResponse({
+        requests: results || [],
+        total: totalCount,
+        // 🆕 (T010-M11): pagination metadata — frontend ใช้ lazy load หน้าถัดไป
+        pagination: {
+          limit,
+          offset,
+          total: totalCount,
+          has_more: (offset + limit) < totalCount,
+        },
+      });
     } catch (err) {
       // 🆕 (2026-10-02 v3 debug): ถ้าตารางยังไม่ถูกสร้าง → ส่ง error จริง (พร้อม hint) แทนที่จะ silent empty
       //   ปัญหา: เดิมส่ง empty array → frontend คิดว่า "ไม่มีคำขา" ทั้งที่จริงคือตารางยังไม่สร้าง → debug ยาก
@@ -5468,8 +5659,22 @@ async function handleCustomerAuth(request, env, url) {
       //   Guest orders ดูได้จากหน้า "ติดตามออเดอร์" ตอนยังไม่ login (guest_id + WhatsApp) เท่านั้น
       //   คงรูปแบบ response เดิม (orders / orders_login / orders_guest / counts) เพื่อไม่ให้ frontend เดิมพัง
       //   → orders_guest เป็น [] เสมอ, counts.guest = 0
-      const sql = "SELECT id, data, created_at FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ? ORDER BY created_at DESC LIMIT 200";
-      const { results } = await env.DB.prepare(sql).bind(customer.id).all();
+      //
+      // 🆕 (T010-M11): pagination — รองรับ ?limit=&offset= (default 50, max 200)
+      //   ปัญหาเดิม: LIMIT 200 ตายตัว → ถ้าลูกค้าสั่ง > 200 ครั้ง → ออเดอร์เก่า ๆ หายไป (frontend ไม่เห็น)
+      //   วิธีแก้: รองรับ query params ?limit=&offset= → frontend ทำ lazy load หน้าถัดไปได้
+      //   + เพิ่ม total count + pagination metadata ใน response (frontend ใช้คำนวณหน้าถัดไป)
+      //   ผลกระทบระบบเดิม: 0% — ถ้าไม่ส่ง limit/offset → default 50 (เดิม 200 — ลดลงเพราะ default ที่เซฟกว่า)
+      //                       frontend เดิมที่ไม่สนใจ pagination ยังทำงานได้ (orders array ยังอยู่)
+      const { limit, offset } = parsePagination(url);
+      const sql = "SELECT id, data, created_at FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ? ORDER BY created_at DESC LIMIT ? OFFSET ?";
+      const { results } = await env.DB.prepare(sql).bind(customer.id, limit, offset).all();
+      // ดึง total count สำหรับ frontend คำนวณ pagination
+      const totalRow = await env.DB.prepare(
+        "SELECT COUNT(*) as total FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ?"
+      ).bind(customer.id).first();
+      const totalCount = Number(totalRow?.total) || 0;
+
       const allOrders = [];
       for (const row of (results || [])) {
         let data;
@@ -5491,7 +5696,15 @@ async function handleCustomerAuth(request, env, url) {
         counts: {
           login: orders_login.length,
           guest: 0,
-          total: allOrders.length,
+          // 🆕 (T010-M11): total = จำนวนออเดอร์ทั้งหมดของ customer (ไม่ใช่ page size)
+          total: totalCount,
+        },
+        // 🆕 (T010-M11): pagination metadata — frontend ใช้ lazy load หน้าถัดไป
+        pagination: {
+          limit,
+          offset,
+          total: totalCount,
+          has_more: (offset + limit) < totalCount,
         },
       });
     } catch (err) {
@@ -5515,6 +5728,13 @@ async function handleCustomerAuth(request, env, url) {
       //   เดิม: ส่งกลับแค่ song_id → frontend แสดง "เพลง ID: <uuid>" ไม่สวย
       //   ใหม่: JOIN ดึง song_name, cover_url, dj_name, artist, price, discount_price มาด้วย
       //   ใช้ json_extract ดึง fields จาก JSON blob ของเพลง
+      //
+      // 🆕 (T010-M11): pagination — รองรับ ?limit=&offset= (default 50, max 200)
+      //   ปัญหาเดิม: LIMIT 200 ตายตัว → ถ้าลูกค้าชอบเพลง > 200 เพลง → เพลงโปรดเก่า ๆ หายไป
+      //   วิธีแก้: รองรับ query params ?limit=&offset= → frontend lazy load หน้าถัดไปได้
+      //   + เพิ่ม total count + pagination metadata
+      //   ผลกระทบระบบเดิม: 0% — frontend เดิมที่ไม่สนใจ pagination ยังทำงานได้ (favorites array ยังอยู่)
+      const { limit, offset } = parsePagination(url);
       const { results } = await env.DB.prepare(
         "SELECT f.song_id, f.created_at as favorited_at, " +
         "json_extract(d.data, '$.song_name') as song_name, " +
@@ -5526,8 +5746,13 @@ async function handleCustomerAuth(request, env, url) {
         "FROM customer_favorites f " +
         "LEFT JOIN documents d ON d.collection = 'songs' AND d.id = f.song_id " +
         "WHERE f.customer_id = ? " +
-        "ORDER BY f.created_at DESC LIMIT 200"
-      ).bind(customer.id).all();
+        "ORDER BY f.created_at DESC LIMIT ? OFFSET ?"
+      ).bind(customer.id, limit, offset).all();
+      // ดึง total count สำหรับ frontend คำนวณ pagination
+      const totalRow = await env.DB.prepare(
+        "SELECT COUNT(*) as total FROM customer_favorites WHERE customer_id = ?"
+      ).bind(customer.id).first();
+      const totalCount = Number(totalRow?.total) || 0;
       // ตรวจว่าเพลงยังมีอยู่จริง (ถ้าถูกลบ → song_name จะเป็น NULL → ข้ามไปใน frontend)
       const favorites = (results || []).map(r => ({
         song_id: r.song_id,
@@ -5541,7 +5766,17 @@ async function handleCustomerAuth(request, env, url) {
           discount_price: r.discount_price,
         } : null,
       }));
-      return jsonResponse({ ok: true, favorites });
+      return jsonResponse({
+        ok: true,
+        favorites,
+        // 🆕 (T010-M11): pagination metadata — frontend ใช้ lazy load หน้าถัดไป
+        pagination: {
+          limit,
+          offset,
+          total: totalCount,
+          has_more: (offset + limit) < totalCount,
+        },
+      });
     } catch (err) {
       if (String(err?.message || "").includes("no such table")) {
         return jsonResponse({ error: "ระบบยังไม่พร้อม — กรุณารัน scripts/migrate-customer-v6.sql ใน D1 Console", code: "TABLE_NOT_CREATED" }, 500);
