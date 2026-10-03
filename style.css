@@ -6687,3 +6687,252 @@ html.admin-page body {
     height: 100px !important;
   }
 }
+
+/* ============================================================
+   🆕 (T018): Mobile UI Improvements — touch target + spacing + full-screen modal + font-size
+   ------------------------------------------------------------
+   Agent: Nong Tao + Nong Mick (Coder + UI/UX) — Stage 3
+   Goal: ปรับ UI มือถือให้สบายขึ้น (10 AC)
+     1. bottom-nav touch target min 44px (เพิ่มเป็น 56-60px)
+     2. topbar buttons (.icon-btn) min 44x44px
+     3. song-card spacing ไม่แคบเกินไปบนมือถือ
+     4. modal full-screen บนมือถือ (≤600px)
+     5. font-size อ่านง่าย (min 13px body, 16px input กัน iOS zoom)
+     6. search box ใหญ่ขึ้น + กัน iOS zoom
+     7. filter panel (T015) สบายบนมือถือ
+     8. cart/checkout modal full-screen บนมือถือ (ใช้ .modal.cart-modal)
+     9. player bar ไม่บังเนื้อหา (bottom เพิ่มจาก 65px → 70px)
+     10. ทดสอบบน 360px (iPhone SE) + 375px (iPhone) + 414px (iPhone Plus)
+   Iron rules:
+     - ไม่แก้ worker/* (5 ไฟล์ diff ว่าง)
+     - ไม่ใช้ paid Cloudflare features
+     - ใช้ !important เฉพาะจำเป็น (override เดิมที่ใช้ !important)
+     - ไม่ break desktop layout (desktop ≥ 640px ไม่ถูกแตะ)
+   ============================================================ */
+
+/* ---------- ขั้นตอนที่ 2: bottom-nav touch target ใหญ่ขึ้น ----------
+   หมายเหตุ: กฎเดิมที่บรรทัด 4868 ใช้ `padding: 8px 4px !important` → ต้องใช้ !important เพื่อ override
+   ปรับ min-height จาก 44px → 56px (พื้นฐาน) / 60px (มือถือ ≤480px) */
+.bottom-nav button {
+  min-height: 56px;
+  padding: 10px 4px 8px !important; /* override บรรทัด 4868's !important */
+}
+
+@media (max-width: 480px) {
+  .bottom-nav button {
+    min-height: 60px; /* ใหญ่ขึ้นอีกบนมือถือ */
+    padding: 8px 2px 6px !important; /* override บรรทัด 4868's !important */
+    font-size: 10px;
+  }
+  .bottom-nav button svg {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+@media (max-width: 360px) {
+  .bottom-nav button {
+    font-size: 9px;
+    padding: 6px 2px 4px !important; /* override บรรทัด 4868's !important */
+  }
+  .bottom-nav button svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+/* ---------- ขั้นตอนที่ 3: topbar buttons (.icon-btn) touch target ----------
+   กฎเดิมที่บรรทัด 1988 ใช้ width:45px; height:45px — ครอบคลุม ≥44px อยู่แล้ว
+   ที่นี่เน้น min-width/min-height 44x44px เป็น baseline ตาม AC#2
+   (สเปคเดิมเขียน 40px บนมือถือ แต่ AC#2 ระบุ min 44px → ยึด AC ใช้ 44px) */
+.icon-btn {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 480px) {
+  .icon-btn {
+    /* คงไว้ที่ 44x44px ตาม AC#2 (touch target ขั้นต่ำ WCAG 2.5.5)
+       ไม่ลดลงเหลือ 40px เหมือนสเปคเดิม — ยึด AC เป็นหลัก */
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* ---------- ขั้นตอนที่ 4: song cards spacing บนมือถือ ----------
+   หมายเหตุ: .song-grid เป็น flex column (display:flex; flex-direction:column)
+     → grid-template-columns ไม่มีผล (display ไม่ใช่ grid) — ข้ามไป
+     แต่ละ .song-card เป็น row เต็มความกว้าง (มี .song-cover + .song-info)
+     ปรับ gap/padding/font-size ให้สบายตาบนมือถือ */
+@media (max-width: 480px) {
+  .song-grid {
+    /* gap ปรับจาก 2px → 8px (พื้นที่หายใจระหว่างแถวมากขึ้น)
+       padding ลดจาก 0 16px → 0 8px (ขยายพื้นที่การ์ดให้กว้างขึ้นบนจอแคบ) */
+    gap: 8px !important;
+    padding: 0 8px 20px !important;
+  }
+  .song-card {
+    padding: 8px !important;
+  }
+  .song-card .song-cover img {
+    border-radius: 8px;
+  }
+  .song-card .song-name {
+    font-size: 13px !important; /* min 13px ตาม AC#5 */
+  }
+  .song-card .song-price {
+    font-size: 12px !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .song-grid {
+    gap: 6px !important; /* กระชับขึ้นบนจอเล็กมาก */
+  }
+}
+
+/* ---------- ขั้นตอนที่ 5: modal full-screen บนมือถือ (≤600px) ----------
+   หมายเหตุ: .modal-backdrop ปกติใช้ align-items:flex-end (สไลด์ขึ้นด้านล่าง)
+   บนมือถือ ≤600px เปลี่ยนเป็น align-items:stretch + full-screen modal */
+@media (max-width: 600px) {
+  .modal-backdrop {
+    padding: 0 !important;
+    align-items: stretch !important;
+  }
+  .modal {
+    max-width: 100% !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+  /* sticky header ให้ user เห็นปุ่ม ✕ ตลอดเวลาตอน scroll */
+  .modal-header {
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    z-index: 10;
+  }
+}
+
+/* ---------- ขั้นตอนที่ 6: font-size ทั่วไป (กัน iOS Safari auto-zoom) ----------
+   หมายเหตุ: iOS Safari auto-zoom ถ้า input font-size < 16px → บังคับ 16px
+     body ปรับจาก default → 14px (อ่านง่าย)
+     .field input/select/textarea บังคับ 16px กัน zoom + เพิ่ม padding */
+@media (max-width: 480px) {
+  body {
+    font-size: 14px;
+  }
+  .container {
+    padding: 0 12px;
+  }
+  h1, h2, h3 {
+    line-height: 1.3;
+  }
+  .field label {
+    font-size: 13px; /* min 13px ตาม AC#5 */
+  }
+  .field input,
+  .field select,
+  .field textarea {
+    font-size: 16px !important; /* 16px กัน iOS Safari auto-zoom */
+    padding: 10px 12px;
+  }
+}
+
+/* ---------- ขั้นตอนที่ 7: search box ใหญ่ขึ้น + กัน iOS zoom ---------- */
+@media (max-width: 480px) {
+  .search-box {
+    padding: 10px 14px;
+    border-radius: 12px;
+  }
+  .search-box input {
+    font-size: 16px !important; /* กัน iOS zoom */
+    padding: 4px 0;
+  }
+  .search-box svg {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* ---------- ขั้นตอนที่ 8: filter panel (T015) บนมือถือ ----------
+   เสริมกฎ T015 เดิม (บรรทัด 6462-6510) ให้ใช้งานสบายขึ้นบนมือถือ
+   - filter-checkbox สูงขึ้น 30px → 36px (touch target)
+   - price-range-inputs เรียงแนวตั้งบนมือถือ (ไม่ต้องเลื่อนซ้าย-ขวา) */
+@media (max-width: 600px) {
+  .advanced-filter-panel {
+    padding: 12px;
+    border-radius: 12px;
+  }
+  .filter-checkboxes {
+    gap: 6px;
+  }
+  .filter-checkbox {
+    font-size: 12px;
+    padding: 6px 10px;
+    min-height: 36px; /* ใหญ่ขึ้นจาก 30px */
+  }
+  .filter-section h4 {
+    font-size: 13px; /* min 13px ตาม AC#5 */
+  }
+  /* price-range-inputs เรียงแนวตั้ง + input กว้างเต็ม — พิมพ์ง่ายบนมือถือ */
+  .price-range-inputs {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .price-range-inputs input[type="number"] {
+    width: 100% !important;
+    margin-bottom: 6px;
+  }
+  /* action buttons เรียงแนวตั้ง + กว้างเต็ม */
+  .filter-actions {
+    flex-direction: column;
+  }
+  .filter-actions .btn {
+    width: 100%;
+  }
+}
+
+/* ---------- ขั้นตอนที่ 9: cart + checkout full-screen บนมือถือ ----------
+   หมายเหตุ: ในโครงสร้างจริง cart (#cartBackdrop) + checkout (#checkoutBackdrop)
+     ใช้ <div class="modal cart-modal"> ภายใน <div class="modal-backdrop">
+     ดังนั้นกฎ .modal full-screen (ขั้นตอนที่ 5) ครอบไปแล้ว — ส่วนนี้เป็น safety net
+     + รองรับ .cart-drawer/.checkout-modal ถ้ามีการใช้ในอนาคต */
+@media (max-width: 600px) {
+  .modal.cart-modal,
+  .cart-drawer,
+  .checkout-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    border-radius: 0 !important;
+  }
+}
+
+/* ---------- ขั้นตอนที่ 10: player bar บนมือถือ (ไม่บังเนื้อหา) ----------
+   หมายเหตุ: bottom-nav ใหญ่ขึ้น (60px + safe-bottom) → player-bar ต้องขยับขึ้น
+   เดิม: bottom: calc(65px + var(--safe-bottom))
+   ใหม่: bottom: calc(70px + var(--safe-bottom)) — ขยับขึ้น 5px ให้พ้น bottom-nav */
+@media (max-width: 480px) {
+  .player-bar {
+    width: calc(100% - 12px) !important; /* เดิม calc(100% - 16px) → ลดลงเล็กน้อย */
+    bottom: calc(70px + var(--safe-bottom)) !important; /* ขยับขึ้น 5px */
+    padding: 6px 8px !important;
+  }
+  .player-bar .player-meta .t1 {
+    font-size: 12px !important;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .player-bar .player-meta .t2 {
+    font-size: 10px !important;
+  }
+}
