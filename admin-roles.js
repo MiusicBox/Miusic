@@ -11,7 +11,7 @@
 import { db, auth } from "./firebase-init.js";
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc
-} from "./db-client.js?v=20261003-login-guest-v10";
+} from "./db-client.js?v=20261003-login-guest-v11";
 import {
   getAuth, createUserWithEmailAndPassword, signOut
 } from "./auth-client.js";
