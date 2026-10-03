@@ -1507,7 +1507,18 @@ let MY_ORDERS_STATE = {
   customerWhatsapp: "",
   allOrders: [],
   myOrders: [],
-  expandedOrderIds: new Set()
+  expandedOrderIds: new Set(),
+
+  // 🆕 (T016): auto-refresh polling state — ทุก 30 วิ เมื่ออยู่ใน tab ออเดอร์
+  //   - หยุดเมื่อออกจาก tab + tab hidden (กิน D1 quota น้อย สูงสุด 2880 ครั้ง/วัน)
+  //   - แสดง toast + vibrate ถ้ามีออเดอร์ใหม่
+  //   - _visibilityHandler ถูกใช้ร่วมกับ renderMyOrdersForm (one-shot refresh) — startOrdersPolling
+  //     จะไม่ re-register ถ้ามี handler อยู่แล้ว (กัน listener ซ้ำ)
+  _pollingTimer: null,         // setInterval ID
+  _pollingActive: false,
+  _lastRefreshAt: null,        // ISO timestamp
+  _visibilityHandler: null,    // visibilitychange handler (ใช้ร่วมกับ renderMyOrdersForm)
+  _lastOrderCount: 0,          // ใช้ detect ออเดอร์ใหม่ (toast + vibrate)
 };
 
 const MY_ORDER_STATUS_CONFIG = {
@@ -1619,6 +1630,19 @@ function renderMyOrdersForm() {
     <div id="myOrdersListContainer" style="display:none;">
       <div class="my-orders-list-header">
         <span id="myOrdersCountText" style="color:var(--text-dim);font-size:13px;"></span>
+
+        <!-- 🆕 (T016): auto-refresh status — แสดง "อัตโนมัติ" + อัปเดตล่าสุด HH:MM:SS + ปุ่มรีเฟรชเอง
+             - ซ่อนตอนเริ่มต้น (display:none) → แสดงเมื่อ startOrdersPolling() ทำงาน (updateAutoRefreshUI(true))
+             - polling ทุก 30 วิ + หยุดเมื่อ tab hidden / ออกจาก tab ออเดอร์
+             - กิน D1 quota สูงสุด 2880 ครั้ง/วัน (24*60*60/30) -->
+        <div class="auto-refresh-status" id="autoRefreshStatus" style="display:none;">
+          <span class="auto-refresh-dot" aria-hidden="true"></span>
+          <span>อัตโนมัติ</span>
+          <span style="color:var(--text-dim);">·</span>
+          <span style="font-size:11px;">ล่าสุด: <span id="lastRefreshTime">—</span></span>
+          <button type="button" class="auto-refresh-btn" id="manualRefreshBtn" aria-label="รีเฟรชเอง" title="รีเฟรชเอง">🔄</button>
+        </div>
+
         <button class="btn secondary" id="myOrdersRefreshBtn" type="button" style="padding:6px 12px;font-size:13px;">🔄 รีเฟรช</button>
         <button class="btn secondary" id="myOrdersClearBtn" type="button" style="padding:6px 12px;font-size:13px;">↺ เปลี่ยนชื่อ/เบอร์</button>
       </div>
@@ -1745,6 +1769,29 @@ function renderMyOrdersForm() {
   const clearBtn = document.getElementById("myOrdersClearBtn");
   if (clearBtn) clearBtn.addEventListener("click", handleClearMyOrders);
 
+  // 🆕 (T016): ผูกปุ่ม "รีเฟรชเอง" (manualRefreshBtn) ในแถบ auto-refresh status
+  //   - หมุน 360° 0.5 วิ แล้วคืนค่า (visual feedback)
+  //   - เรียก fetchMyOrdersOnce() เหมือนปุ่ม myOrdersRefreshBtn แต่ไม่ toast (กัน noise)
+  //   - ปุ่มนี้ทำงานได้แม้ polling ยังไม่ start (เช่น guest ยังไม่กรอก name+phone ก็กดได้ — แต่จะ no-op)
+  const manualRefreshBtn = document.getElementById("manualRefreshBtn");
+  if (manualRefreshBtn) {
+    manualRefreshBtn.addEventListener("click", () => {
+      // visual feedback — หมุน 360° ครั้งเดียว
+      manualRefreshBtn.style.transition = "transform 0.5s ease";
+      manualRefreshBtn.style.transform = "rotate(360deg)";
+      setTimeout(() => {
+        manualRefreshBtn.style.transition = "";
+        manualRefreshBtn.style.transform = "";
+      }, 500);
+      // ยิง fetch จริง — ถ้ามี name+phone อยู่
+      if (MY_ORDERS_STATE.customerName && MY_ORDERS_STATE.customerWhatsapp) {
+        fetchMyOrdersOnce();
+      } else {
+        myOrders_showToast("กรอกชื่อและเบอร์ WhatsApp ก่อน", "error");
+      }
+    });
+  }
+
   if (savedName && savedWhatsapp) {
     setTimeout(() => handleSearchMyOrders(), 100);
   }
@@ -1800,6 +1847,13 @@ async function fetchMyOrdersOnce() {
       ).length;
       window.__updateTrackOrderBadge(activeCount);
     }
+    // 🆕 (T016): check for new orders + update "อัปเดตล่าสุด" timestamp
+    //   - checkForNewOrders: เทียบจำนวนกับ _lastOrderCount → ถ้าเพิ่ม → toast + vibrate
+    //   - _lastRefreshAt + updateLastRefreshDisplay: อัปเดต "ล่าสุด: HH:MM:SS" ในแถบ auto-refresh
+    //   - ทำงานทุกครั้งหลัง fetch สำเร็จ (รวมจาก polling + manual refresh + visibilitychange)
+    try { checkForNewOrders(myOrders); } catch (e) { /* defensive — กัน toast พัง block flow */ }
+    MY_ORDERS_STATE._lastRefreshAt = new Date().toISOString();
+    updateLastRefreshDisplay();
   } catch (err) {
     console.error("fetchMyOrdersOnce error:", err);
     if (listEl) listEl.innerHTML = `<div class="empty-state">⚠️ โหลดออเดอร์ไม่สำเร็จ: ${myOrders_escapeHtml(err.message || "")}</div>`;
@@ -2163,6 +2217,123 @@ export function cleanupMyOrdersView() {
     MY_ORDERS_STATE._visibilityHandler = null;
   }
 }
+
+// ============================================================
+// 🆕 (T016): Auto-refresh polling — ทุก 30 วิ เมื่ออยู่ใน tab ออเดอร์
+//   - หยุดเมื่อออกจาก tab + tab hidden (กิน D1 quota น้อย)
+//   - แสดง toast + vibrate ถ้ามีออเดอร์ใหม่
+//   - D1 quota: 30 วิ = 2880 ครั้ง/วัน สูงสุด (24*60*60/30)
+//   - เรียกจาก app-user.js (tab "myorders" handler) — start หลังเข้า tab, stop เมื่อออก
+// ============================================================
+const ORDERS_POLL_INTERVAL_MS = 30 * 1000; // 30 วินาที — กฎเหล็ก: ห้ามน้อยกว่านี้
+
+function startOrdersPolling() {
+  // กัน double-start — ถ้า polling ทำงานอยู่แล้ว ไม่ต้องตั้ง interval ซ้ำ
+  if (MY_ORDERS_STATE._pollingActive) return;
+  MY_ORDERS_STATE._pollingActive = true;
+
+  console.log("[T016] start polling — interval:", ORDERS_POLL_INTERVAL_MS, "ms");
+  updateAutoRefreshUI(true);
+  updateLastRefreshDisplay();
+
+  // visibility handler — refresh ทันทีเมื่อ tab visible อีกครั้ง (real-time feel)
+  //   - ใช้ร่วมกับ handler เดิมจาก renderMyOrdersForm (one-shot refresh) — ถ้ามีอยู่แล้วไม่ re-register
+  //   - เหตุผล: renderMyOrdersForm อาจถูกเรียกก่อน startOrdersPolling ทำให้ _visibilityHandler ถูก set แล้ว
+  if (!MY_ORDERS_STATE._visibilityHandler) {
+    MY_ORDERS_STATE._visibilityHandler = () => {
+      if (document.visibilityState === "visible") {
+        console.log("[T016] tab visible — refresh immediately");
+        fetchMyOrdersOnce();
+      } else {
+        console.log("[T016] tab hidden — polling will skip next tick");
+      }
+    };
+    document.addEventListener("visibilitychange", MY_ORDERS_STATE._visibilityHandler);
+  }
+
+  // interval — ทุก 30 วิ ยิง fetchMyOrdersOnce ถ้ายังอยู่ใน tab ออเดอร์ + tab visible
+  MY_ORDERS_STATE._pollingTimer = setInterval(() => {
+    // ข้ามถ้า tab hidden — กิน D1 quota น้อย
+    if (document.visibilityState === "hidden") return;
+    // ข้ามถ้าไม่ได้อยู่ใน tab ออเดอร์ (เช็คทั้ง guest view + account view)
+    //   - myOrdersView: guest lookup (name+phone)
+    //   - myAccountView: logged-in customer (profile + orders)
+    const myOrdersView = document.getElementById("myOrdersView");
+    const myAccountView = document.getElementById("myAccountView");
+    const isOrdersVisible = (myOrdersView && myOrdersView.style.display !== "none") ||
+                            (myAccountView && myAccountView.style.display !== "none");
+    if (!isOrdersVisible) return;
+    // ข้ามถ้ายังไม่มี name+phone (guest ที่ยังไม่กรอกข้อมูล) — กัน fetch เปล่า ๆ
+    if (!MY_ORDERS_STATE.customerName || !MY_ORDERS_STATE.customerWhatsapp) return;
+    fetchMyOrdersOnce();
+  }, ORDERS_POLL_INTERVAL_MS);
+}
+
+function stopOrdersPolling() {
+  if (MY_ORDERS_STATE._pollingTimer) {
+    clearInterval(MY_ORDERS_STATE._pollingTimer);
+    MY_ORDERS_STATE._pollingTimer = null;
+  }
+  MY_ORDERS_STATE._pollingActive = false;
+  // ล้าง visibility handler ด้วย (set ใน startOrdersPolling หรือ renderMyOrdersForm)
+  //   - ถ้า handler ถูก set โดย renderMyOrdersForm (มาก่อน) → ลบตรงนี้ก็ OK
+  //     เพราะเราออกจาก tab แล้ว ไม่ต้องการ refresh อีก
+  //   - cleanupMyOrdersView ก็ลบ handler นี้เหมือนกัน — ทำงานร่วมกันได้ (idempotent)
+  if (MY_ORDERS_STATE._visibilityHandler) {
+    document.removeEventListener("visibilitychange", MY_ORDERS_STATE._visibilityHandler);
+    MY_ORDERS_STATE._visibilityHandler = null;
+  }
+  console.log("[T016] stop polling");
+  updateAutoRefreshUI(false);
+}
+
+function updateAutoRefreshUI(active) {
+  // แสดง/ซ่อนแถบ "อัตโนมัติ · ล่าสุด: HH:MM:SS · 🔄" ในหัวลิสต์ออเดอร์
+  const statusEl = document.getElementById("autoRefreshStatus");
+  if (statusEl) statusEl.style.display = active ? "inline-flex" : "none";
+}
+
+function updateLastRefreshDisplay() {
+  const el = document.getElementById("lastRefreshTime");
+  if (!el) return;
+  if (!MY_ORDERS_STATE._lastRefreshAt) {
+    el.textContent = "—";
+    return;
+  }
+  try {
+    const d = new Date(MY_ORDERS_STATE._lastRefreshAt);
+    el.textContent = d.toLocaleTimeString("th-TH", {
+      hour: "2-digit", minute: "2-digit", second: "2-digit"
+    });
+  } catch (_) {
+    el.textContent = "—";
+  }
+}
+
+function checkForNewOrders(orders) {
+  // เทียบจำนวนออเดอร์กับครั้งก่อน → ถ้าเพิ่ม → toast + vibrate
+  //   - ข้ามครั้งแรก (_lastOrderCount = 0) เพราะยังไม่มี baseline — กัน toast ตอนโหลดครั้งแรก
+  //   - ใช้ myOrders_showToast (local) เป็นหลัก — window.showToast อาจไม่ถูก expose ใน module scope
+  const newCount = Array.isArray(orders) ? orders.length : 0;
+  if (MY_ORDERS_STATE._lastOrderCount > 0 && newCount > MY_ORDERS_STATE._lastOrderCount) {
+    const diff = newCount - MY_ORDERS_STATE._lastOrderCount;
+    if (typeof myOrders_showToast === "function") {
+      myOrders_showToast(`🆕 มีออเดอร์ใหม่ ${diff} รายการ`, "success");
+    } else if (typeof window.showToast === "function") {
+      window.showToast(`🆕 มีออเดอร์ใหม่ ${diff} รายการ`, "success");
+    }
+    // vibrate — ทำงานเฉพาะ Android Chrome (iOS Safari ไม่ support)
+    if (navigator.vibrate) {
+      try { navigator.vibrate([50, 30, 50]); } catch (_) {}
+    }
+  }
+  MY_ORDERS_STATE._lastOrderCount = newCount;
+}
+
+// expose ให้ app-user.js เรียกจาก tab handler + beforeunload
+window.startOrdersPolling = startOrdersPolling;
+window.stopOrdersPolling = stopOrdersPolling;
+
 
 // 🆕 (2026-10-02 fix): expose fetchMyOrdersOnce + MY_ORDERS_STATE ให้ customer-auth.js ใช้ได้
 window.fetchMyOrdersOnce = fetchMyOrdersOnce;

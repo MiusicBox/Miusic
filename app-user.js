@@ -2440,6 +2440,10 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
     hidePromotionsView();
     hideCustomerAccountView(); // 🔧 (2026-10-02 fix2): กัน overlay บัญชีของฉันค้างทับหน้าอื่น
     hideGuestOrdersLoginBanner(); // 🆕 (2026-10-03 team-fix): ลบแบนเนอร์เชิญ login ออกเมื่อออกจาก tab ออเดอร์
+    // 🆕 (T016): stop polling เมื่อออกจาก tab ออเดอร์ — กิน D1 quota น้อย
+    //   - เรียกทุกครั้งก่อนเข้า branch ของแต่ละ tab (รวม tab ออเดอร์เอง — startOrdersPolling กัน double-start)
+    //   - ใช้ typeof check กัน ReferenceError ถ้า app-promotion.js ยังโหลดไม่เสร็จ
+    if (typeof window.stopOrdersPolling === "function") window.stopOrdersPolling();
     if (tab === "home") {
       hideMyOrdersView();
       cleanupMyOrdersView();
@@ -2502,6 +2506,18 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
         hideMyOrdersView();
         cleanupMyOrdersView();
         showCustomerAccountView();
+        // 🆕 (T016): start polling — หน่วง 1 วิ ให้ showCustomerAccountView ทำงานก่อน
+        //   - ใช้ setTimeout เพราะ showCustomerAccountView เป็น async (โหลด orders จาก server)
+        //   - ถ้า user ออกจาก tab ก่อน 1 วิ → startOrdersPolling จะไม่ทำงาน (stop ถูกเรียกที่ท็อป)
+        //   - แต่ถ้า user ยังอยู่ → polling เริ่ม + แสดงแถบ "อัตโนมัติ · ล่าสุด: HH:MM:SS"
+        if (typeof window.startOrdersPolling === "function") {
+          setTimeout(() => {
+            // re-check ตอน fire — กันกรณี user ออกจาก tab ไปแล้ว
+            if (typeof window.startOrdersPolling === "function") {
+              try { window.startOrdersPolling(); } catch (e) { console.warn("[T016] start polling failed:", e?.message || e); }
+            }
+          }, 1000);
+        }
       } else {
         // ซ่อน account view ถ้าเปิดอยู่
         hideCustomerAccountView();
@@ -2509,6 +2525,17 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
         initMyOrdersView();
         // 🆕 (2026-10-03 team-fix): แสดงแบนเนอร์เชิญเข้าสู่ระบบ (ลูกค้า guest จะได้รู้ว่ามีทางเลือก)
         showGuestOrdersLoginBanner();
+        // 🆕 (T016): start polling ถ้ามี name+phone แล้ว (guest เคยค้นหาแล้ว) — หน่วง 1.5 วิ
+        //   - ถ้ายังไม่มี name+phone → รอจนกว่าจะกด "ดูออเดอร์ของฉัน" (handleSearchMyOrders)
+        //   - ที่ไม่ start ใน handleSearchMyOrders: กันซับซ้อน — start ที่นี่ + polling interval จะเช็ค name+phone เอง
+        //   - polling interval มี guard `if (!customerName || !customerWhatsapp) return` อยู่แล้ว
+        if (typeof window.startOrdersPolling === "function") {
+          setTimeout(() => {
+            if (window.MY_ORDERS_STATE && window.MY_ORDERS_STATE.customerName && window.MY_ORDERS_STATE.customerWhatsapp) {
+              try { window.startOrdersPolling(); } catch (e) { console.warn("[T016] start polling failed:", e?.message || e); }
+            }
+          }, 1500);
+        }
         scrollPageToTop();
       }
     }
@@ -4851,4 +4878,14 @@ if ('serviceWorker' in navigator) {
       .catch(err => console.warn('[PWA] SW registration failed:', err?.message || err));
   });
 }
+
+// 🆕 (T016): Cleanup polling เมื่อ page unload — กัน setInterval ค้างหลัง reload/close
+//   - beforeunload ทำงานทั้ง reload, close tab, navigate ไปหน้าอื่น
+//   - ใช้ typeof check กัน ReferenceError ถ้า app-promotion.js ยังโหลดไม่เสร็จ
+//   - ผลกระทบระบบเดิม: 0% — แค่ clear interval + removeEventListener
+window.addEventListener('beforeunload', () => {
+  try {
+    if (typeof window.stopOrdersPolling === 'function') window.stopOrdersPolling();
+  } catch (_) {}
+});
 
