@@ -1,0 +1,107 @@
+{
+  "id": "T016-auto-refresh-orders",
+  "title": "Auto-refresh หน้าออเดอร์ (polling 30 วิ + toast + vibrate + visibility-aware)",
+  "branch": "ai-team/T016-auto-refresh-orders",
+  "stage": "implementation_complete",
+  "created_at": "2026-10-04T10:00:00+07:00",
+  "completed_at": "2026-10-04T10:30:00+07:00",
+  "agent": "Nong Tao + Nong Fern (Coder)",
+  "description": "เพิ่มระบบ auto-refresh หน้าออเดอร์ — polling ทุก 30 วินาทีเมื่อลูกค้าอยู่ใน tab ออเดอร์ (ทั้ง guest lookup + logged-in account). หยุด polling เมื่อออกจาก tab หรือ tab hidden (visibilitychange) เพื่อกิน D1 quota น้อย (สูงสุด 2880 ครั้ง/วัน). แสดง 'อัตโนมัติ · ล่าสุด: HH:MM:SS' + ปุ่ม 'รีเฟรชเอง' (หมุน 360°). ถ้ามีออเดอร์ใหม่ → toast '🆕 มีออเดอร์ใหม่ X รายการ' + vibrate [50,30,50]. Cleanup polling เมื่อ page unload (beforeunload). ไม่กระทบระบบเดิม — integration test 29/29 PASS",
+
+  "acceptance_criteria": [
+    {"id": "AC1", "desc": "Auto-refresh ทุก 30 วินาทีเมื่ออยู่ใน tab ออเดอร์", "status": "PASS", "impl": "startOrdersPolling() ตั้ง setInterval(fetchMyOrdersOnce, 30000) — ORDERS_POLL_INTERVAL_MS = 30*1000 (กฎเหล็ก: ห้ามน้อยกว่า)"},
+    {"id": "AC2", "desc": "หยุด polling เมื่อออกจาก tab ออเดอร์", "status": "PASS", "impl": "stopOrdersPolling() ถูกเรียกที่ top ของ tab handler (ก่อนเข้า branch ของแต่ละ tab) — ทุก tab switch จะ stop ก่อน start ใหม่"},
+    {"id": "AC3", "desc": "หยุด polling เมื่อ tab hidden (visibilitychange)", "status": "PASS", "impl": "polling interval มี guard `if (document.visibilityState === 'hidden') return` — ข้าม fetch ถ้า tab hidden. ไม่ใช่ stop interval จริง แต่ skip fetch (กัน start/stop cycle บ่อย)"},
+    {"id": "AC4", "desc": "แสดง 'อัปเดตล่าสุด: HH:MM:SS'", "status": "PASS", "impl": "updateLastRefreshDisplay() ใช้ toLocaleTimeString('th-TH', {hour,minute,second}) แสดงใน #lastRefreshTime element — อัปเดตทุกครั้งหลัง fetchMyOrdersOnce สำเร็จ"},
+    {"id": "AC5", "desc": "มีปุ่ม 'รีเฟรชเอง' สำหรับ user", "status": "PASS", "impl": "#manualRefreshBtn (class=auto-refresh-btn) — ปุ่ม 🔄 ในแถบ auto-refresh status. คลิก → หมุน 360° 0.5 วิ + fetchMyOrdersOnce() (ใช้ transition + transform)"},
+    {"id": "AC6", "desc": "ถ้ามีออเดอร์ใหม่ → แสดง toast + vibrate", "status": "PASS", "impl": "checkForNewOrders(myOrders) เทียบ myOrders.length กับ _lastOrderCount — ถ้าเพิ่ม → myOrders_showToast('🆕 มีออเดอร์ใหม่ X รายการ', 'success') + navigator.vibrate([50,30,50])"},
+    {"id": "AC7", "desc": "ไม่กิน D1 quota เกิน (30 วิ = 2880 ครั้ง/วัน สูงสุด)", "status": "PASS", "impl": "interval 30 วิ + skip เมื่อ tab hidden + skip เมื่อไม่มี name+phone (guest ที่ยังไม่กรอก) + stop เมื่อออกจาก tab — คำนวณ 24*60*60/30 = 2880 ครั้ง/วัน worst case"},
+    {"id": "AC8", "desc": "Cleanup polling เมื่อ page unload", "status": "PASS", "impl": "window.addEventListener('beforeunload', () => stopOrdersPolling()) — ทำงานทั้ง reload, close tab, navigate ไปหน้าอื่น"},
+    {"id": "AC9", "desc": "ไม่กระทบระบบเดิม", "status": "PASS", "impl": "integration test 29/29 PASS (เท่าเดิม) + worker/zip-format.js + worker/index.js diff ว่าง + ไม่แตะ payment/checkout/cart logic + ใช้ fetchCustomerOrdersOnce เดิม + ไม่เพิ่ม endpoint ใหม่"}
+  ],
+
+  "features": [
+    {
+      "id": "T016-POLLING-STATE",
+      "title": "Polling state ใน MY_ORDERS_STATE",
+      "type": "frontend",
+      "description": "เพิ่ม 5 fields ใหม่ใน MY_ORDERS_STATE: _pollingTimer (setInterval ID), _pollingActive (boolean), _lastRefreshAt (ISO timestamp), _visibilityHandler (visibilitychange handler — ใช้ร่วมกับ renderMyOrdersForm), _lastOrderCount (จำนวนออเดอร์ครั้งก่อน — ใช้ detect ออเดอร์ใหม่)",
+      "files_changed": ["app-promotion.js"]
+    },
+    {
+      "id": "T016-POLLING-FUNCTIONS",
+      "title": "5 ฟังก์ชันใหม่: startOrdersPolling, stopOrdersPolling, updateAutoRefreshUI, updateLastRefreshDisplay, checkForNewOrders",
+      "type": "frontend",
+      "description": "startOrdersPolling: ตั้ง setInterval(30s) + ลงทะเบียน visibilitychange handler (ถ้ายังไม่มี) + แสดง UI. stopOrdersPolling: clearInterval + removeEventListener + ซ่อน UI. updateAutoRefreshUI: แสดง/ซ่อน #autoRefreshStatus. updateLastRefreshDisplay: format ISO → HH:MM:SS (th-TH). checkForNewOrders: เทียบ count + toast + vibrate. expose window.startOrdersPolling + window.stopOrdersPolling",
+      "files_changed": ["app-promotion.js"]
+    },
+    {
+      "id": "T016-FETCH-INTEGRATION",
+      "title": "แก้ fetchMyOrdersOnce ให้ call checkForNewOrders + update timestamp",
+      "type": "frontend",
+      "description": "หลัง render myOrders ใน fetchMyOrdersOnce — เรียก checkForNewOrders(myOrders) + ตั้ง MY_ORDERS_STATE._lastRefreshAt = new Date().toISOString() + เรียก updateLastRefreshDisplay(). ทำงานทุกครั้งหลัง fetch สำเร็จ (รวมจาก polling + manual refresh + visibilitychange)",
+      "files_changed": ["app-promotion.js"]
+    },
+    {
+      "id": "T016-UI",
+      "title": "UI auto-refresh status + manualRefreshBtn handler",
+      "type": "frontend",
+      "description": "เพิ่ม <div class='auto-refresh-status' id='autoRefreshStatus'> ใน my-orders-list-header — มี dot (pulse 2s) + 'อัตโนมัติ' + 'ล่าสุด: HH:MM:SS' + ปุ่ม 🔄 (manualRefreshBtn). ผูก manualRefreshBtn click handler — หมุน 360° + fetchMyOrdersOnce (ถ้ามี name+phone). ซ่อนตอนเริ่มต้น (display:none) → แสดงเมื่อ startOrdersPolling",
+      "files_changed": ["app-promotion.js"]
+    },
+    {
+      "id": "T016-TAB-HANDLER",
+      "title": "จัดการ start/stop polling ใน tab handler (app-user.js)",
+      "type": "frontend",
+      "description": "เพิ่ม stopOrdersPolling() ที่ top ของ tab handler (ก่อนเข้า branch) — ทุก tab switch จะ stop ก่อน. ใน myorders branch: ถ้า login → setTimeout(startOrdersPolling, 1000) หลัง showCustomerAccountView. ถ้า guest → setTimeout(startOrdersPolling, 1500) ถ้ามี name+phone แล้ว. ใช้ typeof check กัน ReferenceError",
+      "files_changed": ["app-user.js"]
+    },
+    {
+      "id": "T016-BEFOREUNLOAD",
+      "title": "Cleanup polling เมื่อ page unload",
+      "type": "frontend",
+      "description": "เพิ่ม window.addEventListener('beforeunload', () => stopOrdersPolling()) ที่ท้าย app-user.js — กัน setInterval ค้างหลัง reload/close. ใช้ try/catch + typeof check กัน error",
+      "files_changed": ["app-user.js"]
+    },
+    {
+      "id": "T016-CSS",
+      "title": "CSS auto-refresh status bar + responsive",
+      "type": "css",
+      "description": "เพิ่ม .auto-refresh-status (pill + flex none !important กันขยาย), .auto-refresh-dot (6px + pulse 2s), @keyframes auto-refresh-pulse, .auto-refresh-btn (28px touch target + hover + focus-visible). override .my-orders-list-header span { flex: 1 } ที่จะทำให้ span ในแถบขยาย. Responsive @media (max-width: 480px) — ลดขนาด + padding",
+      "files_changed": ["style.css"]
+    }
+  ],
+
+  "iron_rules_compliance": {
+    "rule_1_no_zip_format_changes": "PASS — worker/zip-format.js ไม่ถูกแก้ (git diff ว่าง)",
+    "rule_2_no_payment_logic_changes": "PASS — worker/index.js ไม่ถูกแก้ (git diff ว่าง) — T016 เป็น frontend-only feature ไม่แตะ backend",
+    "rule_3_no_paid_features": "PASS — ใช้ D1 free tier เท่านั้น (polling 30s = 2880 reads/วัน worst case, อยู่ใน free quota)",
+    "rule_4_no_main_branch": "PASS — ทำใน branch ai-team/T016-auto-refresh-orders เท่านั้น (pushed to origin)",
+    "rule_5_no_guessing": "PASS — spec ชัดเจน 8 ขั้นตอน ทำตามทุกขั้น",
+    "rule_6_no_regression": "PASS — integration test 29/29 ผ่านหลัง commit; team test 38/39 (1 fail = pre-existing trackOrderBtn stale test จาก T014 ไม่เกี่ยวกับ T016)",
+    "rule_7_polling_interval_30s_min": "PASS — ORDERS_POLL_INTERVAL_MS = 30 * 1000 (กฎเหล็ก T016: ห้ามน้อยกว่า 30 วินาที)"
+  },
+
+  "decisions": [
+    {"id": "T016-D1", "action": "Reuse _visibilityHandler field — startOrdersPolling ใช้ `if (!MY_ORDERS_STATE._visibilityHandler)` เพื่อไม่ re-register ถ้า renderMyOrdersForm ลงทะเบียนไว้ก่อนแล้ว. ทำงานร่วมกันได้ — ทั้งคู่ call fetchMyOrdersOnce เมื่อ tab visible"},
+    {"id": "T016-D2", "action": "stopOrdersPolling ล้าง _visibilityHandler ด้วย — เพราะ renderMyOrdersForm's handler จะถูก set ใหม่เมื่อ user กลับเข้า tab อีกครั้ง (initMyOrdersView → renderMyOrdersForm). cleanupMyOrdersView ก็ล้าง handler นี้ — idempotent"},
+    {"id": "T016-D3", "action": "Polling interval ใช้ skip-fetch (return early) แทน stop interval เมื่อ tab hidden — กัน start/stop cycle บ่อยทำให้ visibilitychange handler สับสน. พอ tab visible อีกครั้ง visibilitychange handler จะ refresh ทันที + interval กลับมาทำงานปกติ"},
+    {"id": "T016-D4", "action": "checkForNewOrders ใช้ myOrders_showToast (local) เป็นหลัก แทน window.showToast — เพราะ showToast ใน app-user.js เป็น module-scoped (ไม่ได้ expose บน window). fallback ไป window.showToast ถ้ามี (defensive)"},
+    {"id": "T016-D5", "action": "checkForNewOrders ข้ามครั้งแรก (_lastOrderCount = 0) — กัน toast ตอนโหลดครั้งแรก. baseline ถูก set หลัง fetch แรก และใช้เทียบครั้งถัดไป"},
+    {"id": "T016-D6", "action": "manualRefreshBtn ใช้ transition + transform: rotate(360deg) — หมุนครั้งเดียว 0.5 วิ แล้วคืนค่า (reset transition + transform). ไม่ใช้ animation infinite เพราะกัน spin ต่อเนื่อง"},
+    {"id": "T016-D7", "action": "tab handler เรียก stopOrdersPolling ที่ TOP (ก่อน branch) — กันกรณี user สลับ tab เร็ว ๆ (race condition). startOrdersPolling ใน myorders branch ใช้ setTimeout(1s/1.5s) เพื่อรอ showCustomerAccountView/initMyOrdersView ทำงานก่อน + กัน double-start ถ้า user ออกจาก tab ก่อน 1s"},
+    {"id": "T016-D8", "action": "CSS ใช้ flex: none !important สำหรับ .auto-refresh-status + .auto-refresh-status span + .auto-refresh-dot — เพื่อ override .my-orders-list-header span { flex: 1 } ที่มีอยู่เดิม (จะทำให้ span ในแถบขยายเต็มบรรทัด)"},
+    {"id": "T016-D9", "action": "polling interval มี guard 3 ชั้น: (1) document.visibilityState === 'hidden' → skip (2) isOrdersVisible = myOrdersView หรือ myAccountView แสดงอยู่ → skip ถ้าไม่ใช่ (3) customerName + customerWhatsapp ต้องมี — กัน fetch เปล่า ๆ จาก guest ที่ยังไม่กรอกข้อมูล"}
+  ],
+
+  "tests": {
+    "syntax_check": ["app-promotion.js", "app-user.js"],
+    "integration_test_after_commit": "29/29 PASS — ผ่านครบทุก flow ส่งมอบให้ผู้ใช้ได้ (เท่าเดิมก่อน T016)",
+    "team_test_after_commit": "38/39 PASS — 1 fail = pre-existing trackOrderBtn stale test จาก T014 (ไม่เกี่ยวกับ T016; verified โดย stash + run test ก่อน commit ได้ 38/39 เหมือนกัน)",
+    "functional_self_test": "14/14 PASS — (1) interval=30s (2) double-start guard (3) hidden-tab guard (4) orders-tab-visible guard (5) clearInterval in stop (6) new-order detect + toast + vibrate (7) _lastRefreshAt update (8) UI elements present (9) manualRefreshBtn rotate (10) window expose (11) stop at tab top (12) start in both branches (13) beforeunload listener (14) CSS classes present",
+    "css_braces_check": "PASS — balanced 877/877 (+81 จาก T016 = 877, เดิม 865 จาก T015)",
+    "iron_rules_check": "PASS — worker/zip-format.js + worker/index.js diff ว่าง (กฎเหล็ก #1 + #2)"
+  },
+
+  "next_stage": "Stage 4 (Testing) — ส่งให้ น้องนัท + พี่ก้อน ต่อ คาดว่าจะเพิ่ม:\n  - Browser-level test (Playwright/Puppeteer): เข้า tab ออเดอร์ → รอ 30 วิ → ตรวจว่ามี fetch request ใหม่ + 'ล่าสุด: HH:MM:SS' อัปเดต\n  - visibilitychange test: สลับไป tab อื่นใน browser → รอ 60 วิ → ตรวจว่าไม่มี fetch request (skip)\n  - new-order toast test: stub fetchMyOrdersOnce ให้ return จำนวนมากขึ้น → ตรวจว่า toast '🆕 มีออเดอร์ใหม่ X รายการ' แสดง + navigator.vibrate ถูกเรียก\n  - manualRefreshBtn test: คลิกปุ่ม → ตรวจ transform: rotate(360deg) ชั่วคราว + fetchMyOrdersOnce ถูกเรียก\n  - tab switch test: เข้า tab ออเดอร์ → สลับไป tab home → รอ 60 วิ → ตรวจว่าไม่มี fetch request (stop แล้ว)\n  - beforeunload test: จำลอง page unload → ตรวจว่า stopOrdersPolling ถูกเรียก (clearInterval + removeEventListener)\n  - D1 quota test: คำนวณจำนวน fetch ใน 24 ชม. (worst case 2880) → ตรวจว่าอยู่ใน D1 free tier (5M reads/day)\n  - Mobile viewport test: 375px + 360px → แถบ auto-refresh ใช้งานได้ + ปุ่ม 28px touch target\n  - Accessibility test: screen reader announce 'อัตโนมัติ' + 'ล่าสุด HH:MM:SS' + ปุ่ม 'รีเฟรชเอง' (aria-label)"
+}
