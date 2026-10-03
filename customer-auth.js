@@ -352,6 +352,13 @@ async function customerLogout() {
   } catch (_) {}
   currentCustomer = null;
   saveCustomerToStorage(null); // 🆕 ลบจาก localStorage
+  // 🆕 (T004-SEC-01): สั่ง SW ล้าง API cache หลัง logout
+  //   กัน PII ของ user A ที่อาจถูก cache อยู่รั่วให้ user B (shared device + offline)
+  try {
+    if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage("CLEAR_API_CACHE");
+    }
+  } catch (_) {}
   syncCustomerAuthUI();
   if (typeof showToast === "function") showToast("ออกจากระบบแล้ว", "info");
   else alert("ออกจากระบบแล้ว");

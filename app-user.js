@@ -4140,3 +4140,17 @@ function startPromoCountdown() {
   _promoCountdownInterval = setInterval(updatePromoCountdowns, 1000);
 }
 
+// 🆕 (T004-pwa): Register Service Worker
+//   - ลงทะเบียน SW หลัง window 'load' เพื่อไม่บล็อก first paint
+//   - ถ้า SW ลงทะเบียนไม่สำเร็จ (browser เก่า / ปิดใช้งาน) → log warning เท่านั้น
+//     ไม่ throw เพราะ PWA fail ต้องไม่ทำให้เว็บพัง
+//   - scope '/' ครอบคลุมทุก path ใต้ origin เดียวกัน
+//   - ผลกระทบระบบเดิม: 0% — SW ทำงานฝั่ง client เท่านั้น ไม่แตะ /api/* logic ฝั่ง worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+      .then(reg => console.log('[PWA] SW registered:', reg.scope))
+      .catch(err => console.warn('[PWA] SW registration failed:', err?.message || err));
+  });
+}
+
