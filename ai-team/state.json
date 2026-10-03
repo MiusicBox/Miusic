@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0",
-  "last_updated": "2026-10-03T13:30:00+07:00",
+  "version": "1.7.0",
+  "last_updated": "2026-10-03T14:30:00+07:00",
   "current_session": {
     "session_id": "web-fa07595c-dcf9-4921-aa7a-8451696ed1c0",
     "started_at": "2026-10-03T10:00:00+07:00",
@@ -10,13 +10,9 @@
     "active": [],
     "pending_user_approval": [],
     "completed": [
-      {"id": "T001-team-24h-v2", "pr_number": 1, "completed_at": "2026-10-03T11:00:00+07:00"},
-      {"id": "T002-ai-team-system", "pr_number": 2, "completed_at": "2026-10-03T11:00:00+07:00"},
-      {"id": "T003-d1-migration", "completed_at": "2026-10-03T11:30:00+07:00", "executed_by": "user"},
-      {"id": "T004-pwa", "pr_number": 3, "completed_at": "2026-10-03T12:15:00+07:00"},
-      {"id": "T005-dark-light-mode", "pr_number": 4, "completed_at": "2026-10-03T12:20:00+07:00", "reverted_by": "T006"},
-      {"id": "T006-revert-dark-light", "pr_number": 5, "completed_at": "2026-10-03T13:00:00+07:00"},
-      {"id": "T007-fix-tab-scroll-bug", "title": "Fix tab scroll bug — กด tab โปร/ออเดอร์ แล้ว scroll ไปด้านล่างสุด", "pr_number": 6, "completed_at": "2026-10-03T13:25:00+07:00", "merge_sha": "f214be52", "deploy_version": "620e514a-a67e-41fc-8b99-a39a333c683f", "bonus_fixes": ["duplicate songs bug", "playlist tab bug"]}
+      {"id": "T001-T007", "completed_at": "2026-10-03T13:30:00+07:00", "note": "ดูรายละเอียดใน state.json ก่อนหน้า"},
+      {"id": "T008-urgent-bugs", "title": "แก้ Bug ด่วน 5 ตัว (M6, M2, L7, L9, L10)", "pr_number": 7, "completed_at": "2026-10-03T14:00:00+07:00", "merge_sha": "e0de042e", "deploy_version": "49686104-cca1-41d6-b822-2102370cc965", "bugs_fixed": ["M6 whatsapp normalize", "M2 safeError", "L7 amount_claimed NaN", "L9 R2 cleanup", "L10 favorites toggle"]},
+      {"id": "T009-ux-improvements", "title": "UX เร็ว 3 ตัว (F3 Toast, F2 Empty states, F1 Skeleton)", "pr_number": 8, "completed_at": "2026-10-03T14:30:00+07:00", "merge_sha": "f9b5eb55", "deploy_version": "04fd2f61-13ac-42aa-bea3-e560a9aa2ec8", "features_added": ["F3 toast multi-line", "F2 empty states (cart/orders/promo/favorites)", "F1 skeleton loaders"]}
     ],
     "blocked": []
   },
@@ -33,15 +29,16 @@
     "existing_branches": ["main"],
     "open_prs": [],
     "recent_merges": [
-      {"number": 6, "title": "T007: Fix tab scroll bug", "merged_at": "2026-10-03T13:25:00+07:00", "sha": "f214be52"}
+      {"number": 7, "title": "T008: Bug ด่วน 5 ตัว", "merged_at": "2026-10-03T14:00:00+07:00"},
+      {"number": 8, "title": "T009: UX 3 ตัว", "merged_at": "2026-10-03T14:30:00+07:00"}
     ]
   },
   "cloudflare": {
     "worker_name": "miusic-store",
     "production_url": "https://miusic-store.dj-remix.workers.dev",
     "last_deploy": {
-      "timestamp": "2026-10-03T13:25:00+07:00",
-      "version_id": "620e514a-a67e-41fc-8b99-a39a333c683f"
+      "timestamp": "2026-10-03T14:30:00+07:00",
+      "version_id": "04fd2f61-13ac-42aa-bea3-e560a9aa2ec8"
     }
   },
   "current_features": {
@@ -51,26 +48,51 @@
     "whatsapp_fab": "active",
     "guest_login_banner": "active",
     "tab_scroll_fix": "active (T007)",
+    "whatsapp_normalize": "active (T008-M6)",
+    "safe_error_messages": "active (T008-M2)",
+    "amount_validation": "active (T008-L7)",
+    "song_r2_cleanup": "active (T008-L9)",
+    "favorites_toggle": "active (T008-L10)",
+    "toast_multi_line": "active (T009-F3)",
+    "empty_states": "active (T009-F2) — cart/orders/promo/favorites",
+    "skeleton_loaders": "active (T009-F1)",
     "iron_rules_3": "active"
   },
   "decisions_log": [
-    {"id": "D001", "action": "สร้าง AI Team system"},
-    {"id": "D002", "user_answer": "merge PR #1+#2"},
-    {"id": "D003", "user_answer": "รัน migration เอง"},
-    {"id": "D004", "user_answer": "ทำ PWA + Dark/Light"},
-    {"id": "D005", "action": "สร้าง PR #3 + #4"},
-    {"id": "D006", "user_answer": "merge PR 3 และ 4"},
-    {"id": "D007", "user_answer": "เอา Dark/Light toggle ออก"},
-    {"id": "D008", "timestamp": "2026-10-03T13:00:00+07:00", "user_answer": "หน้าโปร + ออเดอร์ มี bug scroll ไปด้านล่างสุด", "action": "T007 — Analyst หา root cause + Coder แก้ + merge PR #6 + deploy"}
+    {"id": "D001-D007", "note": "ดูใน state.json ก่อนหน้า"},
+    {"id": "D008", "action": "T007 fix tab scroll bug"},
+    {"id": "D009", "timestamp": "2026-10-03T13:45:00+07:00", "user_answer": "ประชุมทีม", "action": "TEAM-MEETING-001 — 4 roles รายงาน bug + UX + tech debt + security"},
+    {"id": "D010", "timestamp": "2026-10-03T13:50:00+07:00", "user_answer": "เลือก A — เริ่มจาก bug ด่วน + UX เร็ว", "action": "T008 + T009 ครบ"}
   ],
   "resume_instructions": {
     "how_to_resume": "บอก AI: 'resume ai-team'",
     "what_user_can_say": [
       "resume ai-team — ทำงานต่อ",
       "ai-team status — ดูสถานะ",
-      "new task: <description> — สร้าง task ใหม่",
+      "new task: <description>",
       "approve merge <PR#>",
       "cancel task <task-id>"
     ]
-  }
+  },
+  "next_actions_pending_user": [
+    {
+      "action": "เลือกขั้นถัดไป (สัปดาห์ที่ 2-4 จากแผน)",
+      "options": [
+        "🅱️ สัปดาห์ที่ 2: Security hardening (M1, M3, M10, M5, L1-L4) — 13-15 ชม.",
+        "🅲️ สัปดาห์ที่ 3: ฟีเจอร์ใหม่ (รายงานยอดขาย + ค้นหาขั้นสูง) — 10-15 ชม.",
+        "🅳️ สัปดาห์ที่ 4: Refactor + ฟีเจอร์เสริม (F4 password, F5 cart badge, F6 scroll-to-top)",
+        "อื่น ๆ — บอกได้เลย"
+      ]
+    },
+    {
+      "action": "ทดสอบบนมือถือจริง (optional แต่แนะนำ)",
+      "tests": [
+        "Toast: ทำให้เกิด error ยาว ๆ → ดูว่าขึ้นหลายบรรทัดไหม",
+        "Empty states: เปิดตะกร้าว่าง → ดูว่ามี icon + CTA ไหม",
+        "Skeleton: refresh หน้าแรก → ดูว่ามี shimmer ตอนโหลดไหม",
+        "Favorites toggle: กด ❤️ ซ้ำ → ดูว่ายกเลิกได้ไหม",
+        "WhatsApp login: ลอง login ด้วยเบอร์ format ต่าง ๆ (+85620xxx, 020xxx, 85620xxx)"
+      ]
+    }
+  ]
 }
