@@ -4880,6 +4880,36 @@ async function handleOrderZipAbort(request, env) {
   return jsonResponse({ ok: true, aborted: true, orderId: jobRow.order_id });
 }
 
+// 🔒 (2026-10-01 fix H2): sanitizeOrderForCustomer — ลบข้อมูลแอดมินที่รั่วผ่าน order document
+//   เดิม: GET /api/customer/orders ส่ง raw order document กลับ → รวม status_history ที่มี
+//         `by: <admin UUID>`, `by_name: <admin display_name>` + top-level `payment_proof_verified_by`,
+//         `assigned_admin_id` → ลูกค้าเห็นชื่อ + UUID ของแอดมินที่จัดการออเดอร์ตัวเอง (privacy breach ฝั่ง staff)
+//   ใหม่: ก่อนส่ง order ให้ลูกค้า → ลบ field เหล่านี้ออก:
+//     - status_history[].by, status_history[].by_name
+//     - top-level: payment_proof_verified_by, assigned_admin_id
+//   ไม่ลบ status, at, note (ลูกค้ายังเห็นประวัติสถานะของตัวเองได้ — แค่ไม่เห็นใครเป็นคนเปลี่ยน)
+//   ไม่ break ระบบเดิม: response shape เหมือนเดิม แค่ลบ field ฝั่ง server ก่อน return
+//   ⚠️ ไม่ mutate input — clone ก่อนแก้ (กัน side effect กับ cache/audit)
+function sanitizeOrderForCustomer(order) {
+  if (!order || typeof order !== "object") return order;
+  // shallow clone + clone status_history แยก (deep clone ไม่จำเป็น เพราะแก้แค่ level 1-2)
+  const cloned = { ...order };
+  // ลบ top-level admin-identifying fields
+  delete cloned.payment_proof_verified_by;
+  delete cloned.assigned_admin_id;
+  // ลบ by / by_name จาก status_history entries
+  if (Array.isArray(cloned.status_history)) {
+    cloned.status_history = cloned.status_history.map(entry => {
+      if (!entry || typeof entry !== "object") return entry;
+      const e = { ...entry };
+      delete e.by;
+      delete e.by_name;
+      return e;
+    });
+  }
+  return cloned;
+}
+
 // ===================================================
 // 🆕 (2026-10-01): /api/customer/* — ระบบสมาชิกลูกค้า (Customer Account)
 //   ลูกค้าเลือกสมัคร/เข้าสู่ระบบ (optional — ไม่ login ก็ซื้อได้)
@@ -5335,7 +5365,10 @@ async function handleCustomerAuth(request, env, url) {
         try { data = JSON.parse(row.data); } catch { data = {}; }
         // เช็คซ้ำฝั่ง JS (defense-in-depth) ให้ตรงกติกาเดียวกับ order-scope.js
         if (!isOrderInLoginList(data, customer.id)) continue;
-        allOrders.push({ id: row.id, ...data });
+        // 🔒 (2026-10-01 fix H2): sanitize order ก่อนส่งให้ customer
+        //   ลบ by/by_name ออกจาก status_history entries + ลบ payment_proof_verified_by/assigned_admin_id ออกจาก top-level
+        //   → กันรั่ว admin UUID + display_name ไปลูกค้า (privacy breach ฝั่ง staff)
+        allOrders.push(sanitizeOrderForCustomer({ id: row.id, ...data }));
       }
       const orders_login = allOrders;
       const orders_guest = [];
