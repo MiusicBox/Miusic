@@ -6536,5 +6536,86 @@ html.admin-page body {
   }
 }
 
+/* ============================================================
+   🆕 (T016): auto-refresh status bar — แถบ "อัตโนมัติ · ล่าสุด: HH:MM:SS · 🔄"
+   - แสดงในหัวลิสต์ออเดอร์ (#myOrdersListContainer .my-orders-list-header)
+   - ซ่อนตอนเริ่มต้น (display:none) → แสดงเมื่อ startOrdersPolling() ทำงาน
+   - มี dot สีเขียวกระพริบ (pulse animation) บอกว่ากำลัง polling อยู่
+   - มีปุ่ม 🔄 สำหรับรีเฟรชเอง (หมุน 360° ตอนคลิก)
+   ============================================================ */
+.auto-refresh-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 4px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  /* override .my-orders-list-header > * ที่อาจมี flex: 1 — กันแถบขยายเต็มบรรทัด */
+  flex: none !important;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+/* override .my-orders-list-header span ที่มี flex: 1 — กัน span ในแถบขยาย */
+.auto-refresh-status span {
+  flex: none !important;
+  min-width: auto;
+}
+.auto-refresh-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: auto-refresh-pulse 2s infinite;
+  /* override flex: 1 อีกชั้น — กัน dot ขยาย */
+  flex: none !important;
+  flex-shrink: 0;
+}
+@keyframes auto-refresh-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.auto-refresh-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 14px;
+  line-height: 1;
+  transition: transform 0.3s ease, color 0.2s ease;
+  /* touch target ขั้นต่ำ 28px (กดง่ายบนมือถือ แต่ไม่ใหญ่เกินในแถบเล็ก ๆ) */
+  min-width: 28px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.auto-refresh-btn:hover {
+  color: var(--text);
+}
+.auto-refresh-btn:focus-visible {
+  outline: 2px solid var(--accent, #a78bfa);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* 📱 Responsive — จอเล็ก (มือถือ 360-414px) ลดขนาดแถบ + ปุ่ม */
+@media (max-width: 480px) {
+  .auto-refresh-status {
+    font-size: 10px;
+    padding: 3px 8px;
+    gap: 4px;
+  }
+  .auto-refresh-btn {
+    font-size: 13px;
+    min-width: 26px;
+    min-height: 26px;
+    padding: 2px 3px;
+  }
+}
+
 
 
