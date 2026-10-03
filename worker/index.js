@@ -4940,7 +4940,10 @@ async function handleCustomerAuth(request, env, url) {
     let body;
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
     const email = String(body.email || "").trim().toLowerCase() || null;
-    const whatsapp = String(body.whatsapp || "").trim() || null;
+    // 🆕 (T008-M6): normalize whatsapp ก่อนเก็บ/เช็คซ้ำ — กัน duplicate account + login ไม่ติด
+    //   เดิม: เก็บตรง ๆ (เช่น "+85620xxx" หรือ "020xxx") → login ด้วย format ต่างกัน → หาไม่เจอ → สมัครซ้ำ
+    //   ใหม่: normalize ทุก format → มาตรฐานเดียว (85620xxx สำหรับลาว / 66xxx สำหรับไทย) → uniqueness check แม่นยำ
+    const whatsapp = normalizeWhatsapp(String(body.whatsapp || "").trim()) || null;
     const password = String(body.password || "");
     const displayName = String(body.display_name || "").trim();
     // validate
@@ -5015,13 +5018,17 @@ async function handleCustomerAuth(request, env, url) {
     const login = String(body.login || "").trim();
     const password = String(body.password || "");
     if (!login || !password) return jsonResponse({ error: "กรุณากรอกอีเมล/เบอร์ WhatsApp และรหัสผ่าน" }, 400);
+    // 🆕 (T008-M6): normalize login identifier ก่อนค้นหา — ให้ตรงกับที่ register เก็บไว้
+    //   ถ้าเป็น email (มี @) → lowercase ธรรมดา
+    //   ถ้าเป็นเบอร์ WhatsApp → normalize ให้เป็นมาตรฐานเดียวกับ register (85620xxx / 66xxx)
+    //   bind ค่า normalized ทั้ง 2 ช่อง (email + whatsapp) เพราะเราไม่รู้ว่าลูกค้ากรอก email หรือเบอร์
+    const loginNormalized = login.includes("@") ? login.toLowerCase() : normalizeWhatsapp(login);
     // ค้นหา customer ด้วย email หรือ whatsapp (ลองทั้งสองแบบ)
-    const loginLower = login.toLowerCase();
     let customer;
     try {
       customer = await env.DB.prepare(
         "SELECT id, email, whatsapp, password_hash, display_name, created_at FROM customers WHERE email = ? OR whatsapp = ?"
-      ).bind(loginLower, login).first();
+      ).bind(loginNormalized, loginNormalized).first();
     } catch (err) {
       if (String(err?.message || "").includes("no such table")) {
         return jsonResponse({ error: "ระบบสมาชิกยังไม่พร้อม — กรุณารัน schema.sql ล่าสุดใน D1 Console" }, 500);
@@ -5113,6 +5120,12 @@ async function handleCustomerAuth(request, env, url) {
     try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
     const login = String(body.login || "").trim();
     if (!login) return jsonResponse({ error: "กรุณากรอกอีเมลหรือเบอร์ WhatsApp" }, 400);
+    // 🆕 (T008-M6): normalize login identifier เหมือน login/register
+    //   ถ้าเป็น email (มี @) → lowercase
+    //   ถ้าเป็นเบอร์ WhatsApp → normalize ให้เป็นมาตรฐานเดียวกับ register
+    //   ใช้ loginNormalized สำหรับ: ตรวจ pending request + ค้น customer + บันทึก contact
+    //   → ถ้าลูกค้าสมัครด้วย "020xxx" แล้วขอ reset ด้วย "+85620xxx" → ยัง match ได้
+    const loginNormalized = login.includes("@") ? login.toLowerCase() : normalizeWhatsapp(login);
     // ป้องกัน spam — ตรวจว่ามีคำขา pending ของ contact เดียวกันในชั่วโมงที่ผ่านมาไหม
     //   ถ้ามี → บอกว่า "ส่งคำขอแล้ว รอแอดมินติดต่อกลับ" (ไม่สร้าง record ใหม่ — กัน spam)
     const nowIso = new Date().toISOString();
@@ -5120,19 +5133,18 @@ async function handleCustomerAuth(request, env, url) {
     try {
       const existing = await env.DB.prepare(
         "SELECT id FROM password_reset_requests WHERE contact = ? AND status = 'pending' AND created_at > ?"
-      ).bind(login, oneHourAgo).first();
+      ).bind(loginNormalized, oneHourAgo).first();
       if (existing) {
         return jsonResponse({ ok: true, message: "คุณได้ส่งคำขารีเซ็ตรหัสผ่านแล้ว — แอดมินจะติดต่อกลับทาง WhatsApp ภายใน 24 ชั่วโมง" });
       }
       // ค้นหา customer (ถ้ามี — ถ้าไม่มีก็ยังบันทึกคำขาได้ เพื่อให้แอดมินเห็นว่ามีคนแอบอ้างหรือเบอร์ผิด)
-      const loginLower = login.toLowerCase();
       const customer = await env.DB.prepare(
         "SELECT id FROM customers WHERE email = ? OR whatsapp = ?"
-      ).bind(loginLower, login).first();
+      ).bind(loginNormalized, loginNormalized).first();
       const id = crypto.randomUUID();
       await env.DB.prepare(
         "INSERT INTO password_reset_requests (id, customer_id, contact, status, created_at) VALUES (?, ?, ?, 'pending', ?)"
-      ).bind(id, customer?.id || null, login, nowIso).run();
+      ).bind(id, customer?.id || null, loginNormalized, nowIso).run();
       return jsonResponse({ ok: true, message: "✅ ส่งคำขารีเซ็ตรหัสผ่านแล้ว — แอดมินจะติดต่อกลับทาง WhatsApp ภายใน 24 ชั่วโมง" });
     } catch (err) {
       if (String(err?.message || "").includes("no such table")) {
@@ -5615,6 +5627,44 @@ async function handleCustomerAuth(request, env, url) {
   }
 
   return jsonResponse({ error: "ไม่พบ endpoint นี้" }, 404);
+}
+
+// ===================================================
+// 🆕 (T008-M6): normalizeWhatsapp — normalize เบอร์ WhatsApp ของลูกค้า
+// -----------------------------------------------------------
+// ปัญหา: register/login/forgot-password เก็บและค้น whatsapp แบบตรงตัว →
+//   ลูกค้าสมัครด้วย "+85620XXX" แล้ว login ด้วย "020XXX" → หาไม่เจอ →
+//   บัญชีซ้ำซ้อน (สมัครใหม่อีกรอบด้วย format ต่างกัน)
+//
+// กฎการ normalize:
+//   - +85620XXXXXXXX → 85620XXXXXXXX (ละ +)
+//   - 020XXXXXXXX     → 85620XXXXXXXX (เติม 856 ละ 0 นำหน้า)
+//   - 20XXXXXXXX (10 หลัก) → 85620XXXXXXXX (เติม 856)
+//   - 0XXXXXXXXX (เบอร์ไทย 10 หลัก) → 66XXXXXXXXX
+//   - 66XXXXXXXXX     → 66XXXXXXXXX (คงเดิม)
+//   - 85620XXXXXXXX   → 85620XXXXXXXX (คงเดิม)
+//   - ไม่มีตัวเลขอื่นนอกจากตัวเลข + ละ + ต้น → คืน ""
+//
+// ผลกระทบระบบเดิม: เฉพาะระบบ customer auth (register/login/forgot-password)
+//   ไม่กระทบระบบ order tracking ที่ใช้ normalizePhoneServer() เดิม (เก็บ format 20XXXXXXXX)
+// ===================================================
+function normalizeWhatsapp(v) {
+  if (!v) return "";
+  let s = String(v).trim();
+  // ละ + ต้น
+  if (s.startsWith("+")) s = s.slice(1);
+  // เก็บเฉพาะตัวเลข
+  s = s.replace(/[^0-9]/g, "");
+  if (!s) return "";
+  // เบอร์ลาว: 020XXXXXXXX → 85620XXXXXXXX
+  if (s.startsWith("020")) return "856" + s.slice(1);
+  // เบอร์ลาว: 20XXXXXXXX (ไม่มี 0 นำ, 10 หลัก) → 85620XXXXXXXX
+  if (s.startsWith("20") && s.length === 10) return "856" + s;
+  // เบอร์ไทย: 0XXXXXXXXX (10 หลัก) → 66XXXXXXXXX
+  if (s.startsWith("0") && s.length === 10) return "66" + s.slice(1);
+  // เบอร์ไทย 66XXXXXXXXX → คงเดิม
+  // เบอร์ลาว 856XXXXXXXXX → คงเดิม
+  return s;
 }
 
 export default {
