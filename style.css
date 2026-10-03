@@ -2303,6 +2303,117 @@ button:active {
   to { transform: rotate(360deg); }
 }
 
+/* 🆕 (T009-F1): Skeleton loader — แสดงตอนกำลังโหลดข้อมูล
+   ใช้ shimmer animation เพื่อให้ feel ว่ากำลังโหลดอยู่ (ลด perceived wait time)
+   ประกอบด้วย skeleton-card (container) + skeleton-cover (รูป) + skeleton-line (text) */
+.skeleton-card {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  position: relative;
+  pointer-events: none;
+  user-select: none;
+}
+.skeleton-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 100%
+  );
+  animation: skeleton-shimmer 1.5s infinite;
+  z-index: 1;
+}
+@keyframes skeleton-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.skeleton-cover {
+  width: 100%;
+  aspect-ratio: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.skeleton-line {
+  height: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  margin-bottom: 6px;
+  position: relative;
+  z-index: 2;
+}
+.skeleton-line.short { width: 60%; }
+.skeleton-line.medium { width: 80%; }
+
+/* 🆕 (T009-F1): skeleton แบบ row — เลียนแบบ .song-card-row (flex: cover 80x80 + info column)
+   ใช้ใน #songGrid ตอนกำลังโหลดเพลง ก่อน renderSongGrid() จะแทนที่ด้วยการ์ดจริง */
+.skeleton-row {
+  display: flex;
+  gap: 14px;
+  padding: 12px;
+  background: var(--surface);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  position: relative;
+  pointer-events: none;
+  user-select: none;
+  margin-bottom: 2px;
+}
+.skeleton-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 100%
+  );
+  animation: skeleton-shimmer 1.5s infinite;
+  z-index: 1;
+}
+.skeleton-cover-row {
+  width: 80px;
+  height: 80px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  position: relative;
+  z-index: 2;
+}
+.skeleton-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  position: relative;
+  z-index: 2;
+}
+
+/* ลด motion ตาม user preference (accessibility) */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-card::before,
+  .skeleton-row::before {
+    animation: none;
+    background: rgba(255, 255, 255, 0.04);
+  }
+}
+
 /* =====================================================================
    เพิ่มใหม่: utility classes สำหรับระบบลดราคา + โปรโมชั่น + ออเดอร์ของฉัน
    ใช้ร่วมกันทั้งฝั่งลูกค้า (index.html) และฝั่งแอดมิน (admin.html)

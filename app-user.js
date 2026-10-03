@@ -199,6 +199,10 @@ function applyStoreNameAnimation(el) {
 async function init() {
   loadCart();
   bindCartEvents();
+  // 🆕 (T009-F1): แสดง skeleton loader ทันทีก่อนโหลดข้อมูล — กันจอว่าง ๆ ตอนรอ fetch
+  //   ใส่ก่อน Promise.all (categories/djs/playlists) เพราะขั้นตอนนี้ใช้เวลาเช่นกัน
+  //   skeleton จะถูกแทนที่ด้วยการ์ดเพลงจริงเมื่อ renderSongGrid() ถูกเรียกท้าย init()
+  renderSongSkeleton(12);
   const [catSnap, djSnap, playlistSnap, settingsSnap] = await Promise.all([
     getDocs(collection(db, "categories")),
     getDocs(collection(db, "djs")),
@@ -623,6 +627,30 @@ function getFilteredSongs() {
     }
     return true;
   });
+}
+
+// 🆕 (T009-F1): Skeleton loader สำหรับ song grid — แสดงตอนกำลังโหลดข้อมูล
+//   วาด card skeleton แบบ row (เลียนแบบ .song-card-row) จำนวน count ใบ ลงใน #songGrid
+//   เมื่อ renderSongGrid() ถูกเรียก จะแทนที่ skeleton ด้วยการ์ดเพลงจริงทันที
+//   - ใช้ CSS class .skeleton-row + .skeleton-cover-row + .skeleton-info + .skeleton-line
+//   - shimmer animation ทำงานใน CSS (ดู style.css) → ไม่ต้องเขียน JS
+function renderSongSkeleton(count = 12) {
+  const grid = document.getElementById("songGrid");
+  if (!grid) return;
+  const safeCount = Math.max(1, Math.min(60, Number(count) || 12));
+  // ซ่อน empty state ตอน skeleton แสดง (กัน "ไม่พบเพลง" โผล่ค้างอยู่ใต้ skeleton)
+  const empty = document.getElementById("emptyState");
+  if (empty) empty.style.display = "none";
+  const skeletonHTML = Array.from({ length: safeCount }).map(() => `
+    <div class="skeleton-row" aria-hidden="true">
+      <div class="skeleton-cover-row"></div>
+      <div class="skeleton-info">
+        <div class="skeleton-line medium"></div>
+        <div class="skeleton-line short"></div>
+      </div>
+    </div>
+  `).join("");
+  grid.innerHTML = skeletonHTML;
 }
 
 function renderSongGrid() {
@@ -1949,6 +1977,9 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       cleanupMyOrdersView();
       STATE.currentCategory = "all";
       STATE.currentDj = null;
+      // 🆕 (T009-F1): ถ้า songs ยังไม่โหลด (edge case — user กด tab ก่อน init เสร็จ)
+      //   → แสดง skeleton ก่อน เพื่อกันจอว่าง ๆ พอ loadMoreSongs เสร็จ → renderSongGrid จะแทนที่
+      if (!Array.isArray(STATE.songs) || STATE.songs.length === 0) renderSongSkeleton(12);
       setView("home");
       renderCategoryChips();
       renderDjRow(); // 🎧 (2026-09-20) re-render DJ row เพื่อลบ class selected (วงกลมแดง) หลังออกจากหน้า DJ
@@ -1969,6 +2000,8 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       cleanupMyOrdersView();
       STATE.currentCategory = "all";
       STATE.currentDj = null;
+      // 🆕 (T009-F1): skeleton ตอน songs ยังไม่โหลด (เหมือน branch home ด้านบน)
+      if (!Array.isArray(STATE.songs) || STATE.songs.length === 0) renderSongSkeleton(12);
       setView("category");
       renderCategoryChips();
       renderDjRow(); // 🎧 (2026-09-20) re-render DJ row เพื่อลบ class selected (วงกลมแดง) หลังออกจากหน้า DJ
@@ -1981,6 +2014,8 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       cleanupMyOrdersView();
       STATE.currentCategory = "all";
       STATE.currentDj = null;
+      // 🆕 (T009-F1): skeleton ตอน songs ยังไม่โหลด (เหมือน branch home ด้านบน)
+      if (!Array.isArray(STATE.songs) || STATE.songs.length === 0) renderSongSkeleton(12);
       setView("dj");
       renderDjRow();
       renderSongGrid();
