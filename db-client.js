@@ -238,6 +238,44 @@ export async function deleteDoc(ref, options = {}) {
 // 🚀 (2026-09-28 fix): เพิ่ม queryCustomerOrder กลับ — ถูกลบไปพร้อม dead code โดยไม่ตั้งใจ
 //   ใช้ใน app-user.js บรรทัด 2113 สำหรับค้นหาออเดอร์เดียว (track order)
 //   ถ้าไม่มี export นี้ → SyntaxError → JavaScript ไม่ทำงานทั้งหน้า
+// ===================================================
+// 🆕 (2026-10-03 v10 — แยก Login / Guest): guest_id ประจำ browser
+// -----------------------------------------------------------
+// ใช้กับลูกค้าที่ "ไม่ได้ login" เท่านั้น — เป็น UUID v4 ที่สร้างครั้งเดียวแล้วเก็บใน localStorage
+//   - ตอน checkout: ส่งไปกับออเดอร์ (Server เก็บเฉพาะเมื่อไม่มี customer session — ถ้า login จะทิ้งค่านี้)
+//   - ตอนดูประวัติ: ส่งไปกับ _customer-list คู่กับ WhatsApp → Server คืนเฉพาะ guest order ของ guest_id นี้
+// กุญแจนี้ไม่ใช่รหัสผ่าน — ถ้าล้าง browser/เปลี่ยนเครื่อง จะมองไม่เห็นประวัติ guest เดิม
+//   (ยังเปิดทีละใบด้วยเลขใบเสร็จ + ชื่อ + เบอร์ ได้เหมือนเดิม)
+// ===================================================
+const GUEST_ID_STORAGE_KEY = "miusic_guest_id";
+const GUEST_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+let _guestIdInMemory = null; // fallback กรณี localStorage ถูกบล็อก (เช่น private mode บางเบราว์เซอร์)
+
+function generateGuestUuidV4() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // fallback สำหรับ browser เก่า — สร้าง UUID v4 จาก crypto.getRandomValues
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0"));
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
+}
+
+export function getGuestId() {
+  try {
+    const stored = localStorage.getItem(GUEST_ID_STORAGE_KEY);
+    if (stored && GUEST_ID_REGEX.test(stored)) return stored.toLowerCase();
+  } catch (_) { /* localStorage ใช้ไม่ได้ → ใช้ค่าในหน่วยความจำ */ }
+  if (_guestIdInMemory) return _guestIdInMemory;
+  const fresh = generateGuestUuidV4().toLowerCase();
+  _guestIdInMemory = fresh;
+  try { localStorage.setItem(GUEST_ID_STORAGE_KEY, fresh); } catch (_) {}
+  return fresh;
+}
+
 // ค้นหาออเดอร์เดียวด้วย receipt_number + customer_name + whatsapp
 // Server ตรวจทั้ง 3 ฟิลด์ คืน { exists:true, id, data } ถ้าตรงทั้งหมด ไม่งั้น { exists:false }
 export async function queryCustomerOrder({ receiptNumber, customerName, whatsapp }) {
@@ -264,12 +302,18 @@ export async function queryCustomerOrder({ receiptNumber, customerName, whatsapp
 //   ที่ใช้ snap.forEach(...) / snap.docs / snap.empty / snap.size
 // throw error ถ้า fetch ไม่สำเร็จ (caller ต้อง try/catch เอง)
 // ===================================================
+//
+// 🆕 (2026-10-03 v10 — แยก Login / Guest): ขอบเขตของผลลัพธ์ตัดสินที่ Server จาก session cookie
+//   - login อยู่ → ได้เฉพาะออเดอร์ของบัญชีนั้น (ชื่อ/เบอร์ที่ส่งไปไม่ถูกใช้ดึงออเดอร์)
+//   - ไม่ได้ login (Guest) → ได้เฉพาะ guest order ที่ guest_id ของ browser นี้ + WhatsApp ตรงกัน
+//   ส่ง guest_id ไปทุกครั้ง (Server เมินเองถ้า login) — caller เดิมทุกจุดไม่ต้องแก้
 export async function fetchCustomerOrdersOnce({ customerName, whatsapp }) {
   const res = await apiFetch(`/orders/_customer-list`, {
     method: "POST",
     body: JSON.stringify({
       customer_name: customerName,
       whatsapp: whatsapp,
+      guest_id: getGuestId(),
     }),
   });
   const docs = (res && res.docs) || [];
