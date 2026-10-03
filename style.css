@@ -6030,4 +6030,135 @@ html.admin-page body {
   }
 }
 
+/* ============================================================
+   🆕 (T013-F7): "โหลดเพิ่มเติม" button — pagination UI สำหรับ customer order list
+   - ใช้ในหน้าบัญชีลูกค้า (#myAccountOrdersList) — เมื่อ customer มีออเดอร์เกิน 50
+   - .btn.secondary สไตล์มีอยู่แล้ว — เพิ่มเติมเฉพาะ hover + disabled state
+   ============================================================ */
+.load-more-orders-btn {
+  display: block;
+  margin: 8px auto 0;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s, opacity 0.15s;
+}
+.load-more-orders-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+.load-more-orders-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+.load-more-orders-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+@media (max-width: 480px) {
+  .load-more-orders-btn {
+    width: 100%;
+    font-size: 12px;
+    padding: 9px 12px;
+  }
+}
+
+/* ============================================================
+   🆕 (T013-F8): Slip upload zone — drag-drop + preview UI
+   - ใช้ใน modal อัปโหลดสลิป (#uploadSlipBackdrop > #uploadSlipContent)
+   - .slip-upload-zone: drop area (dashed border) — คลิกเพื่อเลือกไฟล์ หรือลากไฟล์มาวาง
+   - .slip-upload-zone.drag-over: state ตอนลากไฟล์อยู่เหนือ zone (highlight)
+   - .slip-preview: แสดงรูปสลิป + ปุ่มลบ
+   ============================================================ */
+.slip-upload-zone {
+  position: relative;
+  display: block;
+  border: 2px dashed var(--border, rgba(255, 255, 255, 0.15));
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+  transition: border-color 0.2s, background 0.2s;
+  cursor: pointer;
+  overflow: hidden;
+}
+.slip-upload-zone:hover {
+  border-color: var(--accent, #ec4899);
+}
+.slip-upload-zone.drag-over {
+  border-color: var(--accent, #ec4899);
+  background: rgba(236, 72, 153, 0.08);
+}
+.slip-upload-zone .upload-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+.slip-upload-zone .upload-text {
+  font-size: 14px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.slip-upload-zone .upload-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.slip-preview {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.slip-preview img {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  max-height: 280px;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+}
+.slip-remove-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s, transform 0.1s;
+  z-index: 5;
+}
+.slip-remove-btn:hover {
+  background: rgba(239, 68, 68, 0.85);
+  transform: scale(1.05);
+}
+.slip-remove-btn:active {
+  transform: scale(0.95);
+}
+@media (max-width: 480px) {
+  .slip-upload-zone {
+    padding: 18px 12px;
+  }
+  .slip-upload-zone .upload-icon {
+    font-size: 28px;
+  }
+  .slip-preview img {
+    max-height: 220px;
+  }
+  .slip-remove-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+}
+
 

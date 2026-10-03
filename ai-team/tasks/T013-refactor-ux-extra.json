@@ -1,0 +1,76 @@
+{
+  "id": "T013-refactor-ux-extra",
+  "title": "Refactor + UX เสริม 5 ตัว (R3, Q10, P4, F7, F8)",
+  "branch": "ai-team/T013-refactor-ux-extra",
+  "stage": "implementation_complete",
+  "created_at": "2026-10-03T21:00:00+07:00",
+  "completed_at": "2026-10-03T21:30:00+07:00",
+  "agent": "Nong Tao + Nong Fern (Coder)",
+  "description": "Refactor ลดโค้ดซ้ำ + lazy-load library + event delegation + 2 ฟีเจอร์ UX (pagination UI + slip drag-drop) — ทั้งหมดเป็น frontend เท่านั้น ไม่แตะ worker/index.js หรือ worker/zip-format.js",
+
+  "features": [
+    {
+      "id": "R3-shared-utils",
+      "title": "สร้าง shared-utils.js รวม helpers ที่ซ้ำกัน",
+      "type": "refactor",
+      "description": "สร้างไฟล์ใหม่ /shared-utils.js ที่รวม escapeHtml, formatPrice, showToast, debounce, normalizePhone, normalizeName, buildWhatsAppLink, formatDateTime + expose window.SharedUtils สำหรับหน้าที่ยังไม่ใช้ ES modules. ยังไม่ migrate helpers เดิม (เพิ่ม TODO comments ใน 6 ไฟล์ — migrate ทีละไฟล์ + test รอบละไฟล์ใน round ถัดไป)",
+      "files_changed": ["shared-utils.js (NEW)", "app-user.js", "app-cart.js", "app-admin.js", "admin-roles.js", "orders.js", "customer-auth.js"]
+    },
+    {
+      "id": "Q10-lazy-load-html2canvas",
+      "title": "Lazy-load html2canvas — dynamic import ตอนใช้ แทน script tag ตลอด",
+      "type": "performance",
+      "description": "ลบ <script src='/vendor/html2canvas.min.js' defer> ออกจาก index.html (โหลด 195KB ทุกหน้าทั้งที่ใช้แค่ตอนใบเสร็จ) + ปรับ getHtml2Canvas() ใน app-cart.js + orders.js ให้ dynamic import /vendor/html2canvas.min.js ตอนใช้ + cache ใน module scope + fallback CDN esm.sh ถ้า self-host fail. admin.html ยังคง script tag ไว้ (admin ใช้บ่อย)",
+      "files_changed": ["index.html", "app-cart.js", "orders.js"]
+    },
+    {
+      "id": "P4-event-delegation",
+      "title": "renderHistory ใช้ event delegation แทน re-attach listeners ทุก render",
+      "type": "refactor",
+      "description": "เพิ่ม setupOrderListDelegation() ที่ attach click + change listener ที่ #ordHistoryList (parent) ครั้งเดียว ใช้ closest() หา button — ลดการ re-attach ~350 listeners ทุก renderHistory() call. เพิ่ม aria-label + type='button' บน icon-btn (accessibility + satisfy F8.3 test). ใช้ __t013Delegated flag กัน re-bind",
+      "files_changed": ["orders.js"]
+    },
+    {
+      "id": "F7-customer-orders-pagination",
+      "title": "Pagination UI — ปุ่ม 'โหลดเพิ่มเติม' ในหน้าบัญชีลูกค้า",
+      "type": "feature",
+      "description": "Refactor loadCustomerAccountData → แยก loadCustomerOrders(reset) รองรับ pagination. ใช้ customerOrdersPagination state (offset, limit, total, has_more, allLoaded) + dedup by id + re-sort by created_at DESC. แสดงปุ่ม 'โหลดเพิ่มเติม (N/total)' เมื่อ has_more=true. Backend รองรับ ?limit=&offset= ตั้งแต่ T010-M11 แล้ว → ไม่ต้องแก้ worker/index.js",
+      "files_changed": ["app-user.js", "style.css"]
+    },
+    {
+      "id": "F8-slip-drag-drop-preview",
+      "title": "Slip upload: drag-drop + preview + remove button",
+      "type": "feature",
+      "description": "Refactor openUploadSlipModal ใน app-cart.js — ใช้ .slip-upload-zone + .slip-preview + .slip-remove-btn CSS classes. รองรับ drag-drop (dragenter/dragover/dragleave/drop) + click-to-select + keyboard (Enter/Space) + remove button. รักษา URL.createObjectURL + revoke pattern เดิมไว้ (กัน memory leak) + FileReader fallback. เพิ่ม CSS สำหรับ .slip-upload-zone, .slip-preview, .slip-remove-btn + responsive @media (max-width: 480px)",
+      "files_changed": ["app-cart.js", "index.html (comment only)", "style.css"]
+    }
+  ],
+
+  "iron_rules_compliance": {
+    "rule_1_no_zip_format_changes": "PASS — worker/zip-format.js ไม่ถูกแก้ (git diff ว่าง)",
+    "rule_2_no_payment_logic_changes": "PASS — ไม่แตะ worker/index.js; F8 slip upload flow (selectedFile → uploadSlipToServer) เหมือนเดิม แค่เปลี่ยน UI zone + เพิ่ม drag-drop + remove btn",
+    "rule_3_no_paid_features": "PASS — ใช้แค่ D1 + R2 + Workers Free plan",
+    "rule_4_no_main_branch": "PASS — ทำใน branch ai-team/T013-refactor-ux-extra เท่านั้น",
+    "rule_5_no_guessing": "PASS — spec ชัดเจน ทำตามที่ได้รับมอบหมายทั้ง 5 ตัว",
+    "rule_6_no_regression": "PASS — regression test ผ่าน (39/39), integration test ผ่าน (29/29) ก่อน commit",
+    "rule_7_R3_no_break": "PASS — R3 สร้าง shared-utils.js ใหม่ + TODO comments ในไฟล์เดิม ไม่ลบ helpers เดิม (migrate pending)"
+  },
+
+  "decisions": [
+    {"id": "T013-D1", "action": "R3 — สร้าง shared-utils.js แต่ยังไม่ migrate helpers เดิม (migrate ทีละไฟล์ + test รอบละไฟล์เพื่อความปลอดภัย — กัน break เหมือน T012 pattern)"},
+    {"id": "T013-D2", "action": "Q10 — dynamic import self-host /vendor/html2canvas.min.js แทน script tag (lazy-load ~195KB) + CDN esm.sh fallback; admin.html ยังคง script tag ไว้เพราะ admin ใช้บ่อย"},
+    {"id": "T013-D3", "action": "P4 — event delegation ที่ #ordHistoryList (parent) ครั้งเดียว แทน re-attach ~350 listeners ทุก renderHistory() call; เพิ่ม aria-label + type='button' บน icon-btn (satisfy F8.3 accessibility test)"},
+    {"id": "T013-D4", "action": "F7 — ใช้ pagination state (customerOrdersPagination) + สะสม allLoaded + re-sort + dedup; backend รองรับ ?limit=&offset= ตั้งแต่ T010-M11 แล้ว → ไม่ต้องแก้ worker/index.js"},
+    {"id": "T013-D5", "action": "F8 — drag-drop + .slip-upload-zone + .slip-preview + .slip-remove-btn; รักษา URL.createObjectURL + revoke pattern เดิมไว้ (กัน memory leak)"}
+  ],
+
+  "tests": {
+    "syntax_check": ["shared-utils.js", "app-cart.js", "app-user.js", "app-admin.js", "admin-roles.js", "orders.js", "customer-auth.js"],
+    "regression_test": "39/39 PASS (ก่อน commit — worker/index.js และ zip-format.js diff ว่าง)",
+    "integration_test": "29/29 PASS (ก่อน commit — F8.3 orders.js accessibility attributes check ผ่านเพราะมี aria-label + type='button' ใน diff)",
+    "html_structure_check": "PASS — ไม่ลบ element เดิม; เพิ่ม comment ใน index.html (uploadSlipBackdrop + html2canvas removal note)",
+    "css_class_check": "PASS — .load-more-orders-btn, .slip-upload-zone, .slip-preview, .slip-remove-btn ครบ"
+  },
+
+  "next_stage": "Stage 4 (Testing) — ส่งให้ น้องนัท + พี่ก้อน ต่อ คาดว่าจะเพิ่ม HTTP-level test (Miniflare) สำหรับ F7 pagination (limit/offset) และ browser-level test (Playwright/Puppeteer) สำหรับ F8 drag-drop + Q10 lazy-load (Network tab)"
+}

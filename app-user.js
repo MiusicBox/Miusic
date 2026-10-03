@@ -53,6 +53,11 @@ const STATE = {
 const AUDIO = new Audio();
 let audioUnlocked = false;
 
+// 🆕 (T013-R3): TODO: migrate to shared-utils.js in next refactor round
+//   Helpers ที่ซ้ำกับ shared-utils.js (สร้างใหม่ใน T013): showToast, escapeHtml, formatPrice,
+//   buildWhatsAppLink, debounce, normalizePhone, normalizeName
+//   อย่าลบ helpers เดิมทันที — migrate ทีละไฟล์ + test รอบละไฟล์เพื่อความปลอดภัย
+//   ดู /shared-utils.js สำหรับ implementation ที่รวบรวมแล้ว
 function showToast(message, type) {
   const el = document.getElementById("toast");
   if (!el) return;
@@ -2243,6 +2248,18 @@ function initWhatsappFab() {
 }
 
 // 🆕 ดึงข้อมูลบัญชี + ออเดอร์จาก /api/customer/me + /api/customer/orders
+//   🆕 (T013-F7): refactor ส่วน "ดึงออเดอร์" ออกเป็น loadCustomerOrders(reset) — รองรับ pagination
+//     เดิม: ดึงทุกออเดอร์ทีเดียว (default 50 จาก backend) → ถ้าเกิน 50 ลูกค้ามองไม่เห็นออเดอร์เก่า ๆ
+//     ใหม่: ดึงทีละ 50 + แสดงปุ่ม "โหลดเพิ่มเติม" → ค่อย ๆ โหลดหน้าถัดไป (lazy pagination)
+let customerOrdersPagination = {
+  offset: 0,
+  limit: 50,
+  total: 0,
+  has_more: false,
+  allLoaded: [],   // cumulative list of orders across all loaded pages
+  loading: false,
+};
+
 async function loadCustomerAccountData() {
   const profileEl = document.getElementById("myAccountProfile");
   const ordersListEl = document.getElementById("myAccountOrdersList");
@@ -2276,25 +2293,73 @@ async function loadCustomerAccountData() {
       ${customer.whatsapp ? `<div style="font-size:12px;color:var(--text-dim);margin-top:2px;">📱 ${escapeHtml(customer.whatsapp)}</div>` : ""}
       <div style="font-size:11px;color:var(--text-dim);margin-top:6px;">สมาชิกตั้งแต่: ${customer.created_at ? new Date(customer.created_at).toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" }) : "-"}</div>
     `;
-    // ดึงออเดอร์
+    // 🆕 (T013-F7): ใช้ loadCustomerOrders(true) แทนการ fetch ตรง ๆ — รองรับ pagination
+    //   reset=true → เคลียร์ allLoaded + offset=0 → ดึงหน้าแรก
+    await loadCustomerOrders(true);
+  } catch (err) {
+    profileEl.innerHTML = `<div style="color:var(--danger);">⚠️ โหลดไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
+    ordersListEl.innerHTML = "";
+  }
+}
+
+// 🆕 (T013-F7): ดึงออเดอร์ของลูกค้าทีละหน้า (lazy pagination)
+//   เดิม: ดึงทุกออเดอร์ทีเดียว → limit 200 (T010-M11) หรือ default 50 → ถ้าเกินนี้ลูกค้ามองไม่เห็นออเดอร์เก่า
+//   ใหม่: ดึงทีละ 50 + สะสมใน customerOrdersPagination.allLoaded + แสดงปุ่ม "โหลดเพิ่มเติม"
+//   ผลกระทบระบบเดิม: 0% — backend รองรับ ?limit=&offset= ตั้งแต่ T010-M11 แล้ว
+//                       client เดิมที่ไม่ส่ง params → backend default 50 → ทำงานเหมือนเดิม
+async function loadCustomerOrders(reset = false) {
+  const ordersListEl = document.getElementById("myAccountOrdersList");
+  if (!ordersListEl) return;
+  if (customerOrdersPagination.loading) return;
+  if (reset) {
+    customerOrdersPagination.offset = 0;
+    customerOrdersPagination.allLoaded = [];
+    customerOrdersPagination.total = 0;
+    customerOrdersPagination.has_more = false;
     ordersListEl.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:14px;">⏳ กำลังโหลดออเดอร์...</div>`;
-    const res = await fetch("/api/customer/orders", { credentials: "same-origin" });
+  } else {
+    // แสดง loading indicator ในปุ่ม "โหลดเพิ่มเติม" (ถ้ามี)
+    const loadMoreBtn = document.getElementById("loadMoreOrdersBtn");
+    if (loadMoreBtn) {
+      loadMoreBtn.disabled = true;
+      loadMoreBtn.textContent = "⏳ กำลังโหลด...";
+    }
+  }
+  customerOrdersPagination.loading = true;
+  try {
+    const url = `/api/customer/orders?limit=${customerOrdersPagination.limit}&offset=${customerOrdersPagination.offset}`;
+    const res = await fetch(url, { credentials: "same-origin" });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       ordersListEl.innerHTML = `<div style="color:var(--danger);text-align:center;padding:14px;">โหลดออเดอร์ไม่สำเร็จ: ${escapeHtml(err?.error || res.statusText)}</div>`;
       return;
     }
     const data = await res.json();
-    // 🆕 (2026-10-02 v8): แยก login vs guest — ถ้า backend ส่ง orders_login/orders_guest มา ใช้ตรง
-    //   ถ้า backend เดิม (ยังไม่ deploy v8) → ใช้ orders รวม (compat)
     const ordersLogin = Array.isArray(data?.orders_login) ? data.orders_login : [];
-    // 🆕 (2026-10-03 v10 — แยก Login / Guest): หน้าบัญชีแสดงเฉพาะออเดอร์ของบัญชี (customer_id) เท่านั้น
-    //   ไม่รับ orders_guest อีกต่อไป (Server ส่ง [] เสมอ — กันไว้อีกชั้นเผื่อ backend เก่ายังส่งมา)
-    //   Guest orders ดูได้จากปุ่ม "ติดตามออเดอร์" ตอนยังไม่ login (guest_id + WhatsApp)
-    const ordersGuest = [];
-    const ordersAll = ordersLogin.concat(ordersGuest);
-    if (ordersAll.length === 0) {
-      // 🆕 (T009-F2): empty state สวย ๆ พร้อม icon + CTA แทนข้อความเปล่า ๆ
+    const ordersGuest = []; // 🆕 (v10): หน้าบัญชีแสดงเฉพาะ customer_id ของตัวเอง → orders_guest ไม่ใช้
+    // 🆕 (T013-F7): อัปเดต pagination state จาก response
+    if (data?.pagination) {
+      customerOrdersPagination.total = Number(data.pagination.total) || 0;
+      customerOrdersPagination.has_more = !!data.pagination.has_more;
+    } else {
+      // fallback: backend เดิม (ยังไม่ deploy T010-M11) → estimate จากจำนวนที่ดึงได้
+      customerOrdersPagination.total = ordersLogin.length;
+      customerOrdersPagination.has_more = false;
+    }
+    // 🆕 (T013-F7): merge new orders เข้า allLoaded (dedup ด้วย id)
+    const existingIds = new Set(customerOrdersPagination.allLoaded.map(o => o._docId || o.id));
+    for (const o of ordersLogin) {
+      if (!o._docId) o._docId = o.id || "";
+      if (!existingIds.has(o._docId)) {
+        customerOrdersPagination.allLoaded.push(o);
+        existingIds.add(o._docId);
+      }
+    }
+    // เก็บ orders ทั้งหมดไว้ใน trackOrderAllOrders (ใช้โดย openTrackOrderAllDetail)
+    trackOrderAllOrders = customerOrdersPagination.allLoaded;
+
+    // empty state
+    if (customerOrdersPagination.allLoaded.length === 0) {
       ordersListEl.innerHTML = `
         <div class="empty-state-cute">
           <div class="empty-icon">📦</div>
@@ -2304,12 +2369,10 @@ async function loadCustomerAccountData() {
         </div>`;
       return;
     }
-    // เก็บ orders ทั้งหมดไว้ใน trackOrderAllOrders (ใช้โดย openTrackOrderAllDetail)
-    ordersAll.forEach(o => { if (!o._docId) o._docId = o.id || ""; });
-    trackOrderAllOrders = ordersAll;
 
-    // 🆕 (v9): helper function สร้าง HTML ของ order card — ไม่มี badge ที่มา (กลับเป็นแบบเดิม)
+    // 🆕 (v9 + T013-F7): helper function สร้าง HTML ของ order card
     //   ใช้ data-account-order-source + data-account-order-idx ในการค้น order ที่ถูกต้อง
+    //   T013-F7: idx ตอนนี้เป็น index ใน customerOrdersPagination.allLoaded (cumulative)
     function buildOrderCardHtml(order, indexInSource, source) {
       const cfg = TRACK_STATUS_CONFIG[order.status] || TRACK_STATUS_CONFIG.pending_verify;
       const dateStr = order.created_at ? new Date(order.created_at).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
@@ -2339,24 +2402,34 @@ async function loadCustomerAccountData() {
         </div>`;
     }
 
-    // 🆕 (v9): รวมทุกออเดอร์ใน array เดียว เรียงตามวันที่ (ล่าสุดก่อน) — ไม่มีสรุปด้านบน + ไม่มี badge ที่มา
-    const allOrdersMerged = [
-      ...ordersLogin.map((order, i) => ({ order, source: "login", idx: i })),
-      ...ordersGuest.map((order, i) => ({ order, source: "guest", idx: i })),
-    ].sort((a, b) => {
+    // 🆕 (T013-F7): เรียง allLoaded ตามวันที่ (ล่าสุดก่อน) — re-sort ทุกครั้งเพราะมี order ใหม่เข้ามา
+    const allOrdersMerged = customerOrdersPagination.allLoaded.map((order, i) => ({ order, source: "login", idx: i }));
+    allOrdersMerged.sort((a, b) => {
       const aTime = a.order.created_at ? new Date(a.order.created_at).getTime() : 0;
       const bTime = b.order.created_at ? new Date(b.order.created_at).getTime() : 0;
       return bTime - aTime;
     });
+    // 🆕 (T013-F7): re-map idx หลัง sort (idx เป็น index ใน allLoaded ที่เรียงใหม่)
+    //   เพราะ click handler จะใช้ idx ดึง order จาก allLoaded — ต้องตรงกับลำดับใน DOM
+    const sortedOrders = allOrdersMerged.map(m => m.order);
+    // อัปเดต trackOrderAllOrders ให้เป็นลำดับเดียวกับ DOM (เผื่อเรียกจากที่อื่น)
+    trackOrderAllOrders = sortedOrders;
 
-    // 🆕 (v9): แสดง list รวมเรียงตามวันที่ (เหมือน modal เดิม) — ไม่มีสรุปด้านบน + ไม่มี badge ที่มา
-    const listHtml = allOrdersMerged.length > 0
-      ? `<div style="display:grid;gap:10px;">
-          ${allOrdersMerged.map(item => buildOrderCardHtml(item.order, item.idx, item.source)).join("")}
+    // แสดง list
+    const listHtml = `<div style="display:grid;gap:10px;">
+        ${allOrdersMerged.map((item, newIdx) => buildOrderCardHtml(item.order, newIdx, item.source)).join("")}
+      </div>`;
+
+    // 🆕 (T013-F7): เพิ่มปุ่ม "โหลดเพิ่มเติม" ถ้ายังมีออเดอร์เหลือ
+    const loadMoreHtml = customerOrdersPagination.has_more
+      ? `<div style="text-align:center;padding:14px 0 4px;">
+          <button class="btn secondary load-more-orders-btn" id="loadMoreOrdersBtn" type="button" aria-label="โหลดออเดอร์เพิ่มเติม" style="width:100%;max-width:300px;">
+            โหลดเพิ่มเติม (${customerOrdersPagination.allLoaded.length}/${customerOrdersPagination.total})
+          </button>
         </div>`
-      : '<div class="empty-state">ยังไม่มีออเดอร์</div>';
+      : "";
 
-    ordersListEl.innerHTML = listHtml;
+    ordersListEl.innerHTML = listHtml + loadMoreHtml;
 
     // 🆕 (v8): ปุ่ม "ดาวน์โหลดเพลง" — ใช้ selector เดิม แต่ data-account-download มี source-index
     ordersListEl.querySelectorAll("[data-account-download]").forEach(btn => {
@@ -2368,12 +2441,13 @@ async function loadCustomerAccountData() {
       });
     });
 
-    // 🆕 (v8): bind click → เปิด detail — แยก login/guest เพื่อหา order ที่ถูกต้อง
+    // 🆕 (v8 + T013-F7): bind click → เปิด detail — ใช้ sortedOrders[idx] (idx ใหม่หลัง re-sort)
     ordersListEl.querySelectorAll("[data-account-order-source]").forEach(btn => {
       btn.addEventListener("click", () => {
         const source = btn.getAttribute("data-account-order-source");
         const idx = Number(btn.getAttribute("data-account-order-idx"));
-        const order = source === "login" ? ordersLogin[idx] : ordersGuest[idx];
+        // 🆕 (T013-F7): source ตอนนี้มีแค่ "login" (ordersGuest ว่างเสมอ) — ใช้ sortedOrders[idx]
+        const order = sortedOrders[idx];
         if (order) {
           const accountView = document.getElementById("myAccountView");
           if (accountView) accountView.style.display = "none";
@@ -2383,15 +2457,30 @@ async function loadCustomerAccountData() {
         }
       });
     });
+
+    // 🆕 (T013-F7): bind ปุ่ม "โหลดเพิ่มเติม"
+    const loadMoreBtn = document.getElementById("loadMoreOrdersBtn");
+    if (loadMoreBtn) {
+      loadMoreBtn.addEventListener("click", () => loadMoreCustomerOrders());
+    }
   } catch (err) {
-    profileEl.innerHTML = `<div style="color:var(--danger);">⚠️ โหลดไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
-    ordersListEl.innerHTML = "";
+    ordersListEl.innerHTML = `<div style="color:var(--danger);text-align:center;padding:14px;">โหลดออเดอร์ไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
+  } finally {
+    customerOrdersPagination.loading = false;
   }
+}
+
+// 🆕 (T013-F7): เพิ่ม offset → โหลดหน้าถัดไป
+function loadMoreCustomerOrders() {
+  customerOrdersPagination.offset += customerOrdersPagination.limit;
+  return loadCustomerOrders(false);
 }
 
 // 🆕 expose ให้ customer-auth.js เรียก (ตอนกดปุ่ม "👤 บัญชี")
 window.showCustomerAccountView = showCustomerAccountView;
 window.loadCustomerAccountData = loadCustomerAccountData;
+// 🆕 (T013-F7): expose loadMoreCustomerOrders ให้เรียกจาก onclick ของปุ่ม "โหลดเพิ่มเติม"
+window.loadMoreCustomerOrders = loadMoreCustomerOrders;
 // 🆕 (2026-10-02 fix): expose showMyOrdersView + hideMyOrdersView ให้ customer-auth.js fallback ใช้ได้
 window.showMyOrdersView = showMyOrdersView;
 window.hideMyOrdersView = hideMyOrdersView;

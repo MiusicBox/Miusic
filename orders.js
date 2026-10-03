@@ -63,6 +63,11 @@ const STATUS_CONFIG = {
   cancelled:      { emoji: "🔴", label: "ยกเลิก", color: "var(--danger)", bg: "rgba(255,107,107,.15)" },
 };
 
+// 🆕 (T013-R3): TODO: migrate to shared-utils.js in next refactor round
+//   Helpers ที่ซ้ำกับ shared-utils.js (สร้างใหม่ใน T013): escapeHtml, normalizePhoneForStorage,
+//   buildWhatsAppLink, debounce
+//   อย่าลบ helpers เดิมทันที — migrate ทีละไฟล์ + test รอบละไฟล์เพื่อความปลอดภัย
+//   ดู /shared-utils.js สำหรับ implementation ที่รวบรวมแล้ว
 function escapeHtml(str) {
   return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -2044,6 +2049,57 @@ function buildAdminHistoryDiscountBadge(order) {
   return `<div class="n2" style="color:var(--accent-2,#ec4899);">⚡ ${label} · ลด ${formatLAK(totalDiscount)} · ยอดชำระ ${formatLAK(finalTotal)}</div>`;
 }
 
+// 🆕 (T013-P4): event delegation สำหรับ ordHistoryList — ลดการ re-attach listeners ทุก render
+//   เดิม: ทุกครั้งที่ renderHistory() ทำ innerHTML → ทำลาย listeners เดิมทั้งหมด
+//          → ต้อง re-attach listeners ใหม่ให้ 8 selectors (data-order-id, data-receipt-order, ...,
+//          data-delete-order) = ~50 ออเดอร์ × 7 buttons = ~350 addEventListener calls ต่อ render
+//   ใหม่: attach listener ที่ #ordHistoryList (parent) ครั้งเดียว → ใช้ closest() หา button ที่ถูกคลิก
+//          → ไม่ต้อง re-attach อีก → render เร็วขึ้น + กิน memory น้อยลง
+//   ผลกระทบระบบเดิม: 0% — handlers ทำงานเหมือนเดิม แค่ย้ายจากแต่ละ button ไปที่ parent
+//   กันลืม: ใช้ __t013Delegated flag บน element กัน re-bind ถ้า initOrdersView ถูกเรียกซ้ำ
+function setupOrderListDelegation() {
+  const wrap = document.getElementById("ordHistoryList");
+  if (!wrap || wrap.__t013Delegated) return;
+  wrap.__t013Delegated = true;
+
+  // click delegation — จัดการทุกปุ่มใน card (receipt/fullfiles/retry-zip/delete-zip/abort-zip/edit/delete)
+  //   + ปุ่ม "แสดงเพิ่ม" (#loadMoreHistoryBtn)
+  wrap.addEventListener("click", (e) => {
+    // ปุ่ม "แสดงเพิ่ม" (pagination)
+    const loadMoreBtn = e.target.closest("#loadMoreHistoryBtn");
+    if (loadMoreBtn) {
+      const HISTORY_PAGE_SIZE = 50;
+      state._historyVisibleCount = (state._historyVisibleCount || HISTORY_PAGE_SIZE) + HISTORY_PAGE_SIZE;
+      renderHistory();
+      return;
+    }
+    // ปุ่ม icon-btn ใน card
+    const btn = e.target.closest("[data-receipt-order], [data-fullfiles-order], [data-retry-zip-order], [data-delete-zip-order], [data-abort-zip-order], [data-edit-order], [data-delete-order]");
+    if (!btn) return;
+    const receiptId = btn.getAttribute("data-receipt-order");
+    if (receiptId) { openReceipt(receiptId); return; }
+    const fullFilesId = btn.getAttribute("data-fullfiles-order");
+    if (fullFilesId) { openFullFilesModal(fullFilesId); return; }
+    const retryZipId = btn.getAttribute("data-retry-zip-order");
+    if (retryZipId) { retryOrderZip(retryZipId); return; }
+    const deleteZipId = btn.getAttribute("data-delete-zip-order");
+    if (deleteZipId) { handleDeleteOrderZip(deleteZipId); return; }
+    const abortZipId = btn.getAttribute("data-abort-zip-order");
+    if (abortZipId) { abortOrderZip(abortZipId); return; }
+    const editId = btn.getAttribute("data-edit-order");
+    if (editId) { openEditOrderModal(editId); return; }
+    const deleteId = btn.getAttribute("data-delete-order");
+    if (deleteId) { handleDeleteOrder(deleteId); return; }
+  });
+
+  // change delegation — จัดการ <select class="status-select"> (เปลี่ยนสถานะออเดอร์)
+  wrap.addEventListener("change", (e) => {
+    const sel = e.target.closest("select.status-select[data-order-id]");
+    if (!sel) return;
+    handleStatusChange(sel.getAttribute("data-order-id"), sel.value);
+  });
+}
+
 function renderHistory() {
   const wrap = document.getElementById("ordHistoryList");
   const keywords = (state.historySearch || "")
@@ -2143,7 +2199,7 @@ function renderHistory() {
         <span class="status-badge" style="background:${cfg.bg};color:${cfg.color};">${cfg.emoji} ${cfg.label}</span>
         <select class="status-select" data-order-id="${o.id}">${options}</select>
         <div class="row-actions" style="justify-content:flex-end;">
-          <button class="icon-btn" data-receipt-order="${o.id}" title="ดูใบเสร็จ">🧾</button>
+          <button class="icon-btn" type="button" data-receipt-order="${o.id}" title="ดูใบเสร็จ" aria-label="ดูใบเสร็จ">🧾</button>
           ${/* 🐛 (2026-09-27 fix): เดิมปุ่ม "📥 ไฟล์เต็มสำหรับส่งลูกค้า" โชว์ตาม o.status อย่างเดียว
                 → หลังแอดมินลบ ZIP ออกจาก Cloud (zip_download_url ถูกเคลียร์เป็น "") ปุ่มนี้ก็ยังโชว์อยู่เหมือนเดิม
                 → กดเข้าไปดูได้ และเพลงแต่ละเพลงยังฟัง/โหลดได้ เพราะโมดัลดึงลิงก์ตรงจาก song.full_file_url ของแต่ละเพลง
@@ -2151,63 +2207,36 @@ function renderHistory() {
                 แก้: ปุ่ม 📥 โชว์เฉพาะตอนมี ZIP อยู่จริง (o.zip_download_url) เท่านั้น
                      ถ้าไม่มี ZIP (ลบไปแล้ว/ยังไม่เคยสร้าง/สร้างไม่สำเร็จ) และไม่ได้กำลังสร้างอยู่ (ไม่ใช่ preparing)
                      → โชว์ปุ่ม 🔁 "สร้าง ZIP ใหม่" แทนที่ */""}
-          ${(o.status === "processing" || o.status === "completed") && o.zip_download_url ? `<button class="icon-btn" data-fullfiles-order="${o.id}" title="ไฟล์เต็มสำหรับส่งลูกค้า">📥</button>` : ""}
-          ${(o.status === "processing" || o.status === "completed") && !o.zip_download_url && o.zip_status !== "preparing" ? `<button class="icon-btn" data-retry-zip-order="${o.id}" title="สร้าง ZIP ใหม่">🔁</button>` : ""}
-          ${o.zip_download_url ? `<button class="icon-btn" data-delete-zip-order="${o.id}" title="ลบไฟล์ ZIP ออกจาก Cloud (ไม่ลบออเดอร์ — ประหยัดพื้นที่จัดเก็บ)">🧹</button>` : ""}
+          ${(o.status === "processing" || o.status === "completed") && o.zip_download_url ? `<button class="icon-btn" type="button" data-fullfiles-order="${o.id}" title="ไฟล์เต็มสำหรับส่งลูกค้า" aria-label="ไฟล์เต็มสำหรับส่งลูกค้า">📥</button>` : ""}
+          ${(o.status === "processing" || o.status === "completed") && !o.zip_download_url && o.zip_status !== "preparing" ? `<button class="icon-btn" type="button" data-retry-zip-order="${o.id}" title="สร้าง ZIP ใหม่" aria-label="สร้าง ZIP ใหม่">🔁</button>` : ""}
+          ${o.zip_download_url ? `<button class="icon-btn" type="button" data-delete-zip-order="${o.id}" title="ลบไฟล์ ZIP ออกจาก Cloud (ไม่ลบออเดอร์ — ประหยัดพื้นที่จัดเก็บ)" aria-label="ลบไฟล์ ZIP">🧹</button>` : ""}
           ${/* v5: ปุ่ม "ยกเลิก" แสดงตอนกำลังสร้าง ZIP */""}
-          ${zipJobs.has(o.id) ? `<button class="icon-btn danger" data-abort-zip-order="${o.id}" title="ยกเลิกการสร้าง ZIP ระหว่างทำ (cleanup R2 multipart + D1 row)">✕</button>` : ""}
+          ${zipJobs.has(o.id) ? `<button class="icon-btn danger" type="button" data-abort-zip-order="${o.id}" title="ยกเลิกการสร้าง ZIP ระหว่างทำ (cleanup R2 multipart + D1 row)" aria-label="ยกเลิกการสร้าง ZIP">✕</button>` : ""}
           ${/* 🔒 (Audit Fix H-31): persistent progress indicator ตอนกำลังสร้าง ZIP */""}
           ${zipJobs.has(o.id) ? `<span class="zip-progress-badge" style="font-size:11px;color:var(--accent-2,#ec4899);margin-left:4px;">กำลังสร้าง ZIP...</span>` : ""}
-          <button class="icon-btn" data-edit-order="${o.id}" title="แก้ไขออเดอร์">✏️</button>
-          ${isMainAdmin() ? `<button class="icon-btn danger" data-delete-order="${o.id}" title="ลบออเดอร์">🗑</button>` : ""}
+          <button class="icon-btn" type="button" data-edit-order="${o.id}" title="แก้ไขออเดอร์" aria-label="แก้ไขออเดอร์">✏️</button>
+          ${isMainAdmin() ? `<button class="icon-btn danger" type="button" data-delete-order="${o.id}" title="ลบออเดอร์" aria-label="ลบออเดอร์">🗑</button>` : ""}
         </div>
       </div>
     `;
   }).join("");
 
   // 🔧 (2026-09-22 Batch 7 fix Bug #7): เพิ่มปุ่ม "แสดงเพิ่ม" ถ้ายังมีออเดอร์เหลือ
+  //   🆕 (T013-P4): ปุ่มนี้ถูกจัดการโดย event delegation ใน setupOrderListDelegation() — ไม่ต้อง attach แยก
   if (remainingCount > 0) {
     wrap.insertAdjacentHTML("beforeend", `
       <div style="text-align:center;padding:16px;">
-        <button class="btn" id="loadMoreHistoryBtn" type="button" style="width:100%;max-width:300px;">
+        <button class="btn" id="loadMoreHistoryBtn" type="button" aria-label="แสดงออเดอร์เพิ่มเติม" style="width:100%;max-width:300px;">
           แสดงเพิ่มอีก ${Math.min(HISTORY_PAGE_SIZE, remainingCount)} จาก ${remainingCount} ออเดอร์ที่เหลือ
         </button>
       </div>
     `);
-    const loadMoreBtn = document.getElementById("loadMoreHistoryBtn");
-    if (loadMoreBtn) {
-      loadMoreBtn.addEventListener("click", () => {
-        state._historyVisibleCount = (state._historyVisibleCount || HISTORY_PAGE_SIZE) + HISTORY_PAGE_SIZE;
-        renderHistory();
-      });
-    }
   }
 
-  wrap.querySelectorAll("[data-order-id]").forEach((sel) => {
-    sel.addEventListener("change", () => handleStatusChange(sel.getAttribute("data-order-id"), sel.value));
-  });
-  wrap.querySelectorAll("[data-receipt-order]").forEach((btn) => {
-    btn.addEventListener("click", () => openReceipt(btn.getAttribute("data-receipt-order")));
-  });
-  wrap.querySelectorAll("[data-fullfiles-order]").forEach((btn) => {
-    btn.addEventListener("click", () => openFullFilesModal(btn.getAttribute("data-fullfiles-order")));
-  });
-  wrap.querySelectorAll("[data-retry-zip-order]").forEach((btn) => {
-    btn.addEventListener("click", () => retryOrderZip(btn.getAttribute("data-retry-zip-order")));
-  });
-  wrap.querySelectorAll("[data-delete-zip-order]").forEach((btn) => {
-    btn.addEventListener("click", () => handleDeleteOrderZip(btn.getAttribute("data-delete-zip-order")));
-  });
-  // 🔧 (2026-09-18 v5): listener สำหรับปุ่ม "ยกเลิก" (data-abort-zip-order)
-  wrap.querySelectorAll("[data-abort-zip-order]").forEach((btn) => {
-    btn.addEventListener("click", () => abortOrderZip(btn.getAttribute("data-abort-zip-order")));
-  });
-  wrap.querySelectorAll("[data-edit-order]").forEach((btn) => {
-    btn.addEventListener("click", () => openEditOrderModal(btn.getAttribute("data-edit-order")));
-  });
-  wrap.querySelectorAll("[data-delete-order]").forEach((btn) => {
-    btn.addEventListener("click", () => handleDeleteOrder(btn.getAttribute("data-delete-order")));
-  });
+  // 🆕 (T013-P4): เรียก setupOrderListDelegation() — จะ no-op ถ้าเคย bind แล้ว (กัน re-bind)
+  //   เดิม: ต้อง querySelectorAll + addEventListener ทุกครั้ง (~350 listeners ต่อ render)
+  //   ใหม่: attach ที่ parent ครั้งเดียว — ใช้ closest() หา button ที่ถูกคลิก
+  setupOrderListDelegation();
 }
 
 /* ---------------- ใบเสร็จดิจิทัล ---------------- */
@@ -2266,18 +2295,50 @@ async function copyReceiptDetails(order, receiptNumber, total, playlistName) {
 
 // แคปเฉพาะส่วนใบเสร็จสีขาว (.receipt-paper) เป็น canvas — ใช้กับปุ่มดาวน์โหลดใบเสร็จเป็นรูป
 // เรนเดอร์ฝั่ง client ล้วนๆ ด้วย html2canvas ไม่มีการอัปโหลดรูปขึ้นเซิร์ฟเวอร์ใดๆ
-// 🔧 (2026-09-22 Batch 7 fix Bug #1): ใช้ window.html2canvas (จาก script tag ใน admin.html) ก่อน
-//   ถ้าโหลดจาก script tag ไม่สำเร็จ → fallback ไป dynamic import (เดิม)
-//   ผลกระทบระบบเดิม: 0% — ถ้า script tag โหลดสำเร็จ → ใช้เลย (เร็วกว่า), ถ้าไม่ → fallback เหมือนเดิม
+// 🆕 (T013-Q10): lazy-load html2canvas — โหลดเฉพาะตอนใช้ (ใบเสร็จ)
+//   เดิม: <script src="/vendor/html2canvas.min.js" defer> ใน index.html → โหลดทุกหน้า 195KB
+//          + admin.html มี script tag อยู่ (admin ใช้บ่อย → คงไว้)
+//   ใหม่: dynamic import /vendor/html2canvas.min.js ตอนจะใช้เท่านั้น (lazy-load)
+//          + cache ใน module scope กันโหลดซ้ำ
+//          + fallback ไป CDN esm.sh ถ้า self-host fail
+//   ผลกระทบระบบเดิม: 0% — admin.html ยังมี script tag → window.html2canvas ถูก set ตอนเปิด admin
+//                     → ใช้ window.html2canvas เลย (เร็วกว่า dynamic import)
 let _html2canvasCache = null;
+let _html2canvasLoadPromise = null;
 async function getHtml2Canvas() {
+  // 1. cache hit (เคยโหลดแล้ว)
+  if (_html2canvasCache) return _html2canvasCache;
+  // 2. window.html2canvas ถูก set แล้ว (จาก script tag ใน admin.html)
   if (typeof window !== "undefined" && window.html2canvas) {
-    return window.html2canvas;
+    _html2canvasCache = window.html2canvas;
+    return _html2canvasCache;
   }
-  if (!_html2canvasCache) {
-    _html2canvasCache = await import("https://esm.sh/html2canvas@1.4.1");
+  // 3. 🆕 (T013-Q10): dynamic import /vendor/html2canvas.min.js (self-host)
+  //    กัน concurrent calls จาก import ซ้ำด้วย promise cache
+  if (!_html2canvasLoadPromise) {
+    _html2canvasLoadPromise = (async () => {
+      try {
+        await import("/vendor/html2canvas.min.js");
+        if (typeof window !== "undefined" && window.html2canvas) {
+          _html2canvasCache = window.html2canvas;
+          return _html2canvasCache;
+        }
+        throw new Error("html2canvas not exposed on window after import");
+      } catch (err) {
+        console.warn("[T013-Q10] self-host html2canvas failed:", err?.message || err);
+        // fallback: dynamic import จาก CDN (esm.sh รองรับ ES modules)
+        try {
+          const mod = await import("https://esm.sh/html2canvas@1.4.1");
+          _html2canvasCache = mod?.default || mod;
+          return _html2canvasCache;
+        } catch (err2) {
+          console.error("[T013-Q10] CDN fallback failed:", err2?.message || err2);
+          throw err2;
+        }
+      }
+    })();
   }
-  return _html2canvasCache.default || _html2canvasCache;
+  return _html2canvasLoadPromise;
 }
 
 async function captureReceiptCanvas() {

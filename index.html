@@ -520,16 +520,15 @@
   }
 </style>
 
-<!-- 🔧 (2026-09-22 Batch 7 fix Bug #1) + 🔒 (Audit Fix H-13): Self-host html2canvas
-     เดิม: app-cart.js ใช้ `await import("https://esm.sh/html2canvas@1.4.1")` ทุกครั้งที่สร้างใบเสร็จ
-            → ถ้า esm.sh ล่ม → ลูกค้าไม่มีใบเสร็จ
-            → ถ้าเน็ตช้า → โหลดช้าทุกครั้งที่สร้าง
-     ใหม่: โหลดครั้งเดียวตอน page load → cache ไว้ใน window.html2canvas
-     🔒 (H-13): ย้ายจาก cdn.jsdelivr.net → self-hosted /vendor/html2canvas.min.js
-       กัน supply-chain risk: ถ้า CDN ถูกแฮ็ก → โค้ดรันในหน้าลูกค้า
-       ผลกระทบระบบเดิม: 0% — window.html2canvas ยังเหมือนเดิม, app-cart.js fallback dynamic import ถ้าไม่โหลด -->
-<script src="/vendor/html2canvas.min.js" defer
-  onerror="console.warn('html2canvas self-host failed to load — will fallback to dynamic import');"></script>
+<!-- 🆕 (T013-Q10): Lazy-load html2canvas — ลบ <script src="/vendor/html2canvas.min.js" defer> ออก
+     เดิม (H-13): โหลดครั้งเดียวตอน page load → cache ไว้ใน window.html2canvas
+            → แต่โหลด 195KB ทุกหน้า ทั้งที่ใช้แค่ตอนใบเสร็จ (เสียแบนด์วิดท์ + ทำ initial render ช้าลง)
+     ใหม่ (Q10): dynamic import ใน app-cart.js + orders.js — โหลดเฉพาะตอนจะสร้างใบเสร็จ
+            → หน้าอื่น ๆ ที่ไม่ได้สร้างใบเสร็จ ไม่ต้องโหลด html2canvas เลย (ประหยัด ~195KB)
+            → cache ไว้ในตัวแปร module (_html2canvasCache) → ใช้ซ้ำได้ถ้าสร้างหลายใบ
+     fallback: self-host /vendor/html2canvas.min.js → ถ้า fail ลอง CDN esm.sh
+     ผลกระทบระบบเดิม: 0% — window.html2canvas ยังถูก set (หลัง dynamic import) → app-cart.js fallback chain ยังทำงาน
+     ไฟล์ที่ใช้ html2canvas: app-cart.js (ลูกค้า), orders.js (แอดมิน), admin.html (ยังใช้ script tag อยู่ — admin ใช้บ่อย) -->
 
 <!-- 🆕 (T004-pwa): PWA support — manifest + theme-color + iOS/Android install meta -->
 <!--   - manifest.json: W3C Web App Manifest (name/icons/shortcuts/display:standalone)
@@ -918,6 +917,8 @@
   </div>
 
   <!-- 📸 Upload Slip Modal (added STEP 3) — เลือกไฟล์ + preview + ยืนยัน -->
+  <!--   🆕 (T013-F8): เพิ่ม drag-drop + remove button + .slip-upload-zone / .slip-preview CSS classes
+         (logic ทั้งหมดอยู่ใน app-cart.js openUploadSlipModal → เนื้อหาโหลด dynamic เข้า #uploadSlipContent) -->
   <div class="modal-backdrop" id="uploadSlipBackdrop" role="dialog" aria-modal="true" aria-hidden="true">
     <div class="modal" style="max-width:420px;">
       <div class="modal-header">

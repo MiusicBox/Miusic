@@ -19,6 +19,10 @@ import {
   initializeApp, deleteApp
 } from "./auth-client.js";
 
+// 🆕 (T013-R3): TODO: migrate to shared-utils.js in next refactor round
+//   Helpers ที่ซ้ำกับ shared-utils.js (สร้างใหม่ใน T013): escapeHtml, showToast
+//   อย่าลบ helpers เดิมทันที — migrate ทีละไฟล์ + test รอบละไฟล์เพื่อความปลอดภัย
+//   ดู /shared-utils.js สำหรับ implementation ที่รวบรวมแล้ว
 function escapeHtml(str) {
   return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }

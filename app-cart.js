@@ -594,6 +594,11 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   //         → รองรับทั้งลาว + ไทย
   //   ผลกระทบระบบเดิม: 0% — ถ้าเว็บยังไม่เปิด → ไม่มีออเดอร์เก่าใน DB → ไม่มีปัญหา
   //     ถ้ามีออเดอร์เก่า → ต้องรัน migration script เพิ่ม country code 856
+  // 🆕 (T013-R3): TODO: migrate to shared-utils.js in next refactor round
+  //   Helper ที่ซ้ำกับ shared-utils.js (สร้างใหม่ใน T013): normalizePhoneForStorage
+  //   (≈ normalizePhone ใน shared-utils.js — logic เดียวกัน ต่างแค่ชื่อ)
+  //   อย่าลบ helper เดิมทันที — migrate ทีละไฟล์ + test รอบละไฟล์
+  //   ดู /shared-utils.js สำหรับ implementation ที่รวบรวมแล้ว
   function normalizePhoneForStorage(v) {
     let s = String(v || "").replace(/[^0-9+]/g, "");
     s = s.replace(/^\+/, "");
@@ -1188,20 +1193,50 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   }
 
   // แคปเฉพาะส่วนใบเสร็จสีขาว (.receipt-paper) เป็นรูป — โค้ดเดียวกับฝั่งแอดมิน (captureReceiptCanvas/downloadReceiptAsImage ใน orders.js)
-  // 🔧 (2026-09-22 Batch 7 fix Bug #1): ใช้ window.html2canvas (จาก script tag ใน HTML) ก่อน
-  //   ถ้าโหลดจาก script tag ไม่สำเร็จ → fallback ไป dynamic import (เดิม)
-  //   วิธีทำ: สร้าง helper function getHtml2Canvas() ที่ cache module → เรียกครั้งแรก fetch จาก CDN, ครั้งถัดไปใช้ cache
+  // 🆕 (T013-Q10): lazy-load html2canvas — โหลดเฉพาะตอนใช้ (ใบเสร็จ)
+  //   เดิม: <script src="/vendor/html2canvas.min.js" defer> ใน index.html → โหลดทุกหน้า 195KB
+  //          + fallback ใช้ esm.sh CDN
+  //   ใหม่: dynamic import /vendor/html2canvas.min.js ตอนจะใช้เท่านั้น (lazy-load)
+  //          + cache ใน module scope กันโหลดซ้ำ
+  //          + fallback ไป CDN esm.sh ถ้า self-host fail
+  //   ผลกระทบระบบเดิม: 0% — ถ้า window.html2canvas ถูก set จากที่อื่น (เช่น admin.html ยังมี script tag) → ใช้เลย
+  //                     ถ้าไม่ → dynamic import self-host → ใช้ window.html2canvas หลัง import
   let _html2canvasCache = null;
+  let _html2canvasLoadPromise = null;
   async function getHtml2Canvas() {
-    // ลองใช้ window.html2canvas ก่อน (จาก script tag)
+    // 1. cache hit (เคยโหลดแล้ว)
+    if (_html2canvasCache) return _html2canvasCache;
+    // 2. window.html2canvas ถูก set แล้ว (จาก script tag อื่น เช่น admin.html)
     if (typeof window !== "undefined" && window.html2canvas) {
-      return window.html2canvas;
+      _html2canvasCache = window.html2canvas;
+      return _html2canvasCache;
     }
-    // Fallback: dynamic import (เดิม)
-    if (!_html2canvasCache) {
-      _html2canvasCache = await import("https://esm.sh/html2canvas@1.4.1");
+    // 3. 🆕 (T013-Q10): dynamic import /vendor/html2canvas.min.js (self-host)
+    //    กัน concurrent calls จาก import ซ้ำด้วย promise cache
+    if (!_html2canvasLoadPromise) {
+      _html2canvasLoadPromise = (async () => {
+        try {
+          await import("/vendor/html2canvas.min.js");
+          if (typeof window !== "undefined" && window.html2canvas) {
+            _html2canvasCache = window.html2canvas;
+            return _html2canvasCache;
+          }
+          throw new Error("html2canvas not exposed on window after import");
+        } catch (err) {
+          console.warn("[T013-Q10] self-host html2canvas failed:", err?.message || err);
+          // fallback: dynamic import จาก CDN (esm.sh รองรับ ES modules)
+          try {
+            const mod = await import("https://esm.sh/html2canvas@1.4.1");
+            _html2canvasCache = mod?.default || mod;
+            return _html2canvasCache;
+          } catch (err2) {
+            console.error("[T013-Q10] CDN fallback failed:", err2?.message || err2);
+            throw err2;
+          }
+        }
+      })();
     }
-    return _html2canvasCache.default || _html2canvasCache;
+    return _html2canvasLoadPromise;
   }
 
   async function captureReceiptCanvas() {
@@ -1730,6 +1765,11 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     const content = document.getElementById("uploadSlipContent");
     if (!backdrop || !content) return;
     const amount = order?.final_total ?? order?.total ?? 0;
+    // 🆕 (T013-F8): slip upload with drag-drop + preview — ปรับ UI ให้สวยขึ้น + รองรับ drag-drop
+    //   เดิม: <input> overlay + <div id="slipPreviewArea"> เดียวที่เปลี่ยน innerHTML ตาม state
+    //   ใหม่: แยก #slipUploadPrompt (state เริ่มต้น) + #slipPreview (state แสดงรูป) ใน .slip-upload-zone
+    //          + drag-drop handlers + ปุ่มลบ (#slipRemoveBtn) บน preview
+    //   ผลกระทบระบบเดิม: 0% — flow ยืนยันการชำระเงิน (selectedFile → uploadSlipToServer) เหมือนเดิม
     content.innerHTML = `
       <div style="padding:14px 8px 6px;">
         <div style="margin-bottom:12px;">
@@ -1741,12 +1781,17 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
           <div style="font-size:24px;font-weight:800;color:var(--success);">${formatPrice(amount)}</div>
         </div>
         <div style="margin-bottom:8px;font-size:13px;font-weight:600;">รูปหลักฐานการโอนเงิน</div>
-        <div style="position:relative;display:block;">
-          <input type="file" id="slipFileInput" accept="image/jpeg,image/png,image/webp" style="position:absolute;width:100%;height:100%;top:0;left:0;opacity:0;cursor:pointer;z-index:10;">
-          <div id="slipPreviewArea" style="position:relative;border:2px dashed var(--border, #ccc);border-radius:10px;padding:24px;text-align:center;color:var(--text-dim);overflow:hidden;">
-            <div style="font-size:36px;">📷</div>
-            <div style="font-size:13px;margin-top:4px;">คลิกเพื่อเลือกรูปสลิป</div>
-            <div style="font-size:11px;margin-top:2px;color:var(--text-dim);">JPEG / PNG / WEBP • สูงสุด 5MB</div>
+        <div class="slip-upload-zone" id="slipUploadZone" role="button" tabindex="0" aria-label="เลือกหรือลากไฟล์สลิปมาวางที่นี่">
+          <input type="file" id="slipFileInput" accept="image/jpeg,image/png,image/webp" style="display:none;">
+          <div id="slipUploadPrompt">
+            <div class="upload-icon">📸</div>
+            <div class="upload-text">ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อเลือกรูปสลิป</div>
+            <div class="upload-hint">JPEG / PNG / WEBP • สูงสุด 5MB</div>
+          </div>
+          <div class="slip-preview" id="slipPreview" style="display:none;">
+            <img id="slipPreviewImg" alt="รูปสลิปตัวอย่าง">
+            <button type="button" class="slip-remove-btn" id="slipRemoveBtn" aria-label="ลบรูปสลิปและเลือกใหม่">✕</button>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:6px;text-align:center;">✅ เลือกรูปแล้ว — กด "ยืนยันการชำระเงิน" ด้านล่าง</div>
           </div>
         </div>
         <div style="font-size:12px;color:var(--text-dim);margin-top:8px;display:flex;justify-content:space-between;">
@@ -1766,70 +1811,143 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
 
     let selectedFile = null;
     let selectedObjectURL = null;  // 🆕 (2026-10-01 fix preview): เก็บ object URL เพื่อ revoke ตอนปิด modal (กัน memory leak)
+    const zone = document.getElementById("slipUploadZone");
     const fileInput = document.getElementById("slipFileInput");
-    const previewArea = document.getElementById("slipPreviewArea");
+    const prompt = document.getElementById("slipUploadPrompt");
+    const preview = document.getElementById("slipPreview");
     const confirmBtn = document.getElementById("uploadSlipConfirmBtn");
 
-    if (fileInput) fileInput.onchange = () => {
-      const file = fileInput.files?.[0];
+    // 🆕 (T013-F8): helper แสดง preview จากไฟล์ — ใช้ URL.createObjectURL + fallback FileReader
+    //   รวม logic เดิม (2026-10-01 fix preview) ไว้ในฟังก์ชันเดียว → ใช้ได้ทั้งตอน onchange + ตอน drop
+    function showSlipPreview(file) {
+      if (preview) preview.innerHTML = `<div style="font-size:13px;color:var(--text-dim);padding:20px;">⏳ กำลังโหลดรูป...</div>`;
+      // แกะ preview เดิมออก (เพราะ innerHTML ทับ → removeBtn หาย)
+      // ใช้วิธีสร้างโครงใหม่ + เติมรูปกลับเข้าไป เพื่อรักษา removeBtn + caption ไว้
+      try {
+        if (selectedObjectURL) {
+          try { URL.revokeObjectURL(selectedObjectURL); } catch (_) {}
+        }
+        selectedObjectURL = URL.createObjectURL(file);
+        try {
+          const backdropEl = document.getElementById("uploadSlipBackdrop");
+          if (backdropEl) backdropEl.dataset.slipObjectUrl = selectedObjectURL;
+        } catch (_) {}
+        preview.innerHTML = `
+          <img src="${selectedObjectURL}" alt="รูปสลิปตัวอย่าง" style="display:block;margin:0 auto;max-width:100%;max-height:240px;border-radius:6px;border:1px solid var(--border, #eee);">
+          <button type="button" class="slip-remove-btn" id="slipRemoveBtn" aria-label="ลบรูปสลิปและเลือกใหม่">✕</button>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:6px;text-align:center;">✅ เลือกรูปแล้ว — กด "ยืนยันการชำระเงิน" ด้านล่าง</div>
+        `;
+        bindRemoveBtn();
+        if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.style.opacity = "1"; }
+      } catch (err) {
+        console.warn("[T013-F8 slip preview] URL.createObjectURL failed, fallback to FileReader:", err);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          preview.innerHTML = `
+            <img src="${e.target.result}" alt="รูปสลิปตัวอย่าง" style="display:block;margin:0 auto;max-width:100%;max-height:240px;border-radius:6px;border:1px solid var(--border, #eee);">
+            <button type="button" class="slip-remove-btn" id="slipRemoveBtn" aria-label="ลบรูปสลิปและเลือกใหม่">✕</button>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:6px;text-align:center;">✅ เลือกรูปแล้ว — กด "ยืนยันการชำระเงิน" ด้านล่าง</div>
+          `;
+          bindRemoveBtn();
+          if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.style.opacity = "1"; }
+        };
+        reader.onerror = () => {
+          if (preview) {
+            preview.innerHTML = `<div style="font-size:13px;color:var(--danger);padding:20px;">❌ โหลดรูปไม่สำเร็จ — กรุณาเลือกรูปใหม่</div>`;
+          }
+          showToast("โหลดรูปไม่สำเร็จ — กรุณาเลือกรูปใหม่", "error");
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    // 🆕 (T013-F8): รวม validation + preview ไว้ในฟังก์ชันเดียว — ใช้ได้ทั้ง onchange + drop
+    function handleSlipFile(file) {
       if (!file) return;
       // size check 5MB
       if (file.size > 5 * 1024 * 1024) {
         showToast("ไฟล์ใหญ่เกิน 5MB — กรุณาลดขนาดรูป", "error");
-        fileInput.value = "";
+        if (fileInput) fileInput.value = "";
         return;
       }
       // MIME check
       const allowedMimes = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
       if (!allowedMimes.includes((file.type || "").toLowerCase())) {
         showToast("อนุญาตเฉพาะ JPEG, PNG, WEBP", "error");
-        fileInput.value = "";
+        if (fileInput) fileInput.value = "";
         return;
       }
       selectedFile = file;
-      // 🆕 (2026-10-01 fix preview): แสดง loading state ทันที (กันลูกค้าคิดว่ารูปไม่แสดง)
-      if (previewArea) {
-        previewArea.innerHTML = `<div style="font-size:13px;color:var(--text-dim);padding:20px;">⏳ กำลังโหลดรูป...</div>`;
-      }
-      // 🆕 (2026-10-01 fix preview): ใช้ URL.createObjectURL แทน FileReader.readAsDataURL
-      //   ปัญหาเดิม: FileReader.readAsDataURL เป็น async → ในบางกรณี (iOS Safari / ไฟล์ใหญ่) onload ไม่ trigger
-      //   → preview ไม่แสดง + ไม่มี loading indicator → ลูกค้าคิดว่า "รูปไม่แสดง"
-      //   วิธีแก้: URL.createObjectURL ทำงานทันที (sync) + เร็วกว่า + กิน memory น้อยกว่า
-      //   ต้อง revoke URL หลังใช้เพื่อกัน memory leak
-      try {
-        // revoke object URL เก่าถ้ามี (กัน leak ถ้าลูกค้าเลือกรูปใหม่)
+      // สลับจาก prompt → preview state
+      if (prompt) prompt.style.display = "none";
+      if (preview) preview.style.display = "block";
+      showSlipPreview(file);
+    }
+
+    // 🆕 (T013-F8): bind ปุ่มลบรูป → รีเซ็ต state กลับไป prompt
+    function bindRemoveBtn() {
+      const btn = document.getElementById("slipRemoveBtn");
+      if (!btn) return;
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        selectedFile = null;
         if (selectedObjectURL) {
           try { URL.revokeObjectURL(selectedObjectURL); } catch (_) {}
+          selectedObjectURL = null;
         }
-        selectedObjectURL = URL.createObjectURL(file);
-        // 🆕 (2026-10-01 fix preview): เก็บ URL ใน backdrop.dataset เพื่อ revoke ตอนปิด modal
-        //   (เพราะ selectedObjectURL อยู่ใน closure ของ openUploadSlipModal → closeUploadSlipModal ไม่เข้าถึง)
         try {
           const backdropEl = document.getElementById("uploadSlipBackdrop");
-          if (backdropEl) backdropEl.dataset.slipObjectUrl = selectedObjectURL;
+          if (backdropEl) delete backdropEl.dataset.slipObjectUrl;
         } catch (_) {}
-        if (previewArea) {
-          previewArea.innerHTML = `<img src="${selectedObjectURL}" alt="รูปสลิปตัวอย่าง" style="display:block;margin:0 auto;max-width:100%;max-height:240px;border-radius:6px;border:1px solid var(--border, #eee);"><div style="font-size:11px;color:var(--text-dim);margin-top:6px;text-align:center;">✅ เลือกรูปแล้ว — กด "ยืนยันการชำระเงิน" ด้านล่าง</div>`;
+        if (fileInput) fileInput.value = "";
+        if (preview) { preview.style.display = "none"; preview.innerHTML = ""; }
+        if (prompt) prompt.style.display = "block";
+        if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.style.opacity = "0.5"; }
+      });
+    }
+
+    // 🆕 (T013-F8): click ที่ zone (ยกเว้น remove btn) → เปิด file picker
+    if (zone) {
+      zone.addEventListener("click", (e) => {
+        if (e.target.closest("#slipRemoveBtn")) return; // ปุ่มลบจัดการเอง
+        if (fileInput) fileInput.click();
+      });
+      // รองรับ keyboard (Enter / Space) — เพราะ zone มี role="button" + tabindex="0"
+      zone.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          if (fileInput) fileInput.click();
         }
-        if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.style.opacity = "1"; }
-      } catch (err) {
-        // fallback: ถ้า URL.createObjectURL ล้มเหลว → ลอง FileReader (เหมือนเดิม)
-        console.warn("[slip preview] URL.createObjectURL failed, fallback to FileReader:", err);
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          if (previewArea) {
-            previewArea.innerHTML = `<img src="${e.target.result}" alt="รูปสลิปตัวอย่าง" style="display:block;margin:0 auto;max-width:100%;max-height:240px;border-radius:6px;border:1px solid var(--border, #eee);"><div style="font-size:11px;color:var(--text-dim);margin-top:6px;text-align:center;">✅ เลือกรูปแล้ว — กด "ยืนยันการชำระเงิน" ด้านล่าง</div>`;
-          }
-          if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.style.opacity = "1"; }
-        };
-        reader.onerror = () => {
-          if (previewArea) {
-            previewArea.innerHTML = `<div style="font-size:13px;color:var(--danger);padding:20px;">❌ โหลดรูปไม่สำเร็จ — กรุณาเลือกรูปใหม่</div>`;
-          }
-          showToast("โหลดรูปไม่สำเร็จ — กรุณาเลือกรูปใหม่", "error");
-        };
-        reader.readAsDataURL(file);
-      }
+      });
+      // 🆕 (T013-F8): drag-drop handlers
+      //   dragenter/dragover → preventDefault (กัน browser เปิดไฟล์แทน) + เพิ่ม .drag-over
+      //   dragleave/drop → ลบ .drag-over
+      //   drop → ใช้ handleSlipFile กับไฟล์แรกใน DataTransfer
+      ["dragenter", "dragover"].forEach(evt => {
+        zone.addEventListener(evt, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          zone.classList.add("drag-over");
+        });
+      });
+      ["dragleave", "drop"].forEach(evt => {
+        zone.addEventListener(evt, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          zone.classList.remove("drag-over");
+        });
+      });
+      zone.addEventListener("drop", (e) => {
+        const files = e.dataTransfer?.files;
+        if (files && files.length > 0) handleSlipFile(files[0]);
+      });
+    }
+
+    if (fileInput) fileInput.onchange = () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      handleSlipFile(file);
     };
 
     if (confirmBtn) confirmBtn.onclick = async () => {
