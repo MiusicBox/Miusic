@@ -247,6 +247,69 @@ export async function deleteDoc(ref, options = {}) {
 // กุญแจนี้ไม่ใช่รหัสผ่าน — ถ้าล้าง browser/เปลี่ยนเครื่อง จะมองไม่เห็นประวัติ guest เดิม
 //   (ยังเปิดทีละใบด้วยเลขใบเสร็จ + ชื่อ + เบอร์ ได้เหมือนเดิม)
 // ===================================================
+// ===================================================
+// 🆕 (2026-10-03 v11 — แยกที่เก็บข้อมูลในเครื่อง Login / Guest)
+// -----------------------------------------------------------
+// ทุกอย่างที่เกี่ยวกับออเดอร์ที่เก็บใน browser (ชื่อ+เบอร์ที่จำไว้, ออเดอร์ล่าสุด, สถานะปิดแถบเตือน,
+// id ออเดอร์ที่กำลัง checkout) ต้อง "แยกกัน" ระหว่าง:
+//   - Guest (ไม่ได้ login)      → scope = "guest"
+//   - สมาชิกที่ login อยู่        → scope = "login:<customer_id>"  (คนละบัญชี = คนละที่เก็บ)
+// วิธีทำ: ต่อ scope ท้ายชื่อ key เช่น  music_store_last_order_v1::guest  /  ...::login:abc123
+// scope คำนวณ "ทุกครั้งที่เรียก" (ไม่ cache) → login/logout แล้วอ่านคนละ key ทันที
+// ใช้ได้กับทั้ง localStorage และ sessionStorage
+// หมายเหตุ: ใช้ "miusic_customer_session" (เขียนโดย customer-auth.js) เป็นตัวบอกว่า login อยู่ — แหล่งเดียวกับที่โค้ดเดิมใช้
+// ===================================================
+const CUSTOMER_SESSION_STORAGE_KEY = "miusic_customer_session";
+
+export function getLoggedInCustomerId() {
+  try {
+    const raw = localStorage.getItem(CUSTOMER_SESSION_STORAGE_KEY);
+    if (!raw) return "";
+    const c = JSON.parse(raw);
+    return c && c.id ? String(c.id) : "";
+  } catch (_) { return ""; }
+}
+
+export function getOrderScope() {
+  const id = getLoggedInCustomerId();
+  return id ? `login:${id}` : "guest";
+}
+
+export function scopedStorageKey(baseKey) {
+  return `${baseKey}::${getOrderScope()}`;
+}
+
+// ย้ายข้อมูลรุ่นเก่า (key ไม่มี scope — ใช้ปนกันทั้ง login/guest) ออกจากเครื่อง ครั้งเดียว
+//   - ออเดอร์ล่าสุด (music_store_last_order_v1): ถ้าในออเดอร์มี customer_id → ย้ายไป scope ของบัญชีนั้น,
+//     ไม่มี customer_id → ย้ายไป guest (แยกได้ชัดเจนจากข้อมูลในออเดอร์เอง)
+//   - ชื่อ/เบอร์ที่จำไว้ + สถานะปิดแถบเตือน: ไม่รู้ว่ามาจาก login หรือ guest → ลบทิ้ง (ลูกค้ากรอกใหม่ครั้งต่อไป)
+//   ไม่แตะตะกร้า (music_store_cart_v1) และไม่แตะ miusic_guest_id / miusic_customer_session
+const LEGACY_LAST_ORDER_KEY = "music_store_last_order_v1";
+const LEGACY_UNSCOPED_KEYS = [
+  "music_store_customer_info_v1",
+  "music_store_my_orders_info_v1",
+  "music_store_banner_dismissed_v1",
+  "miusic_track_all_name",
+  "miusic_track_all_phone",
+];
+(function migrateLegacyOrderStorage() {
+  try {
+    const raw = localStorage.getItem(LEGACY_LAST_ORDER_KEY);
+    if (raw) {
+      try {
+        const rec = JSON.parse(raw);
+        const ownerId = rec && rec.order && rec.order.customer_id ? String(rec.order.customer_id) : "";
+        const target = `${LEGACY_LAST_ORDER_KEY}::${ownerId ? "login:" + ownerId : "guest"}`;
+        if (rec && rec.order && rec.receiptNumber && !localStorage.getItem(target)) {
+          localStorage.setItem(target, raw);
+        }
+      } catch (_) { /* ข้อมูลเสีย → ลบทิ้งด้านล่าง */ }
+      localStorage.removeItem(LEGACY_LAST_ORDER_KEY);
+    }
+    for (const k of LEGACY_UNSCOPED_KEYS) localStorage.removeItem(k);
+  } catch (_) { /* localStorage ใช้ไม่ได้ → ข้าม */ }
+})();
+
 const GUEST_ID_STORAGE_KEY = "miusic_guest_id";
 const GUEST_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 let _guestIdInMemory = null; // fallback กรณี localStorage ถูกบล็อก (เช่น private mode บางเบราว์เซอร์)
@@ -287,7 +350,7 @@ export async function queryCustomerOrder({ receiptNumber, customerName, whatsapp
       whatsapp: whatsapp,
     }),
   });
-  if (!res || !res.exists) return { exists: false };
+  if (!res || !res.exists) return { exists: false, scopeMismatch: (res && res.scope_mismatch) || null };
   return { exists: true, id: res.id, data: res.data };
 }
 
