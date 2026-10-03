@@ -1,0 +1,66 @@
+{
+  "name": "Miusic — เพลงแดนซ์สายปาตี้ DJ Remix",
+  "short_name": "Miusic",
+  "description": "เพลงแดนซ์สายปาตี้ DJ Remix — โหลดเพลงดีเจรีมิกซ์ ฟังเพลงแดนซ์ออนไลน์ สั่งซื้อผ่าน WhatsApp ส่งทั่วลาวและไทย",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0b0d14",
+  "background_color": "#0b0d14",
+  "lang": "th",
+  "dir": "ltr",
+  "categories": ["music", "entertainment", "shopping"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "ค้นหาเพลง",
+      "short_name": "ค้นหา",
+      "description": "เปิดหน้าค้นหาเพลงแดนซ์สายปาตี้",
+      "url": "/?tab=home",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "ออเดอร์ของฉัน",
+      "short_name": "ออเดอร์",
+      "description": "ดูรายการสั่งซื้อของฉัน",
+      "url": "/?tab=myorders",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}
