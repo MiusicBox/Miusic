@@ -5028,10 +5028,27 @@ async function handleCustomerAuth(request, env, url) {
       }
       return jsonResponse({ error: safeError("เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }
-    if (!customer) return jsonResponse({ error: "ไม่พบบัญชีนี้ — กรุณาตรวจสอบอีเมล/เบอร์ WhatsApp" }, 401);
-    // ตรวจรหัสผ่าน
-    const valid = await verifyPassword(password, customer.password_hash);
-    if (!valid) return jsonResponse({ error: "รหัสผ่านไม่ถูกต้อง" }, 401);
+    // 🔒 (2026-10-01 fix H3): ป้องกัน timing oracle — ถ้า customer ไม่พบ ก็ยังต้อง verifyPassword
+    //   เพื่อใช้เวลาเท่ากัน (PBKDF2 100k iterations ใช้ ~100ms)
+    //   เดิม (บรรทัด 5031 เดิม): `if (!customer) return 401` → ถ้า customer ไม่พบ → return เร็วกว่ากรณีพบ
+    //     → attacker วัด timing แยก "ไม่มีบัญชี" กับ "รหัสผิด" ได้ (timing oracle → enumerate accounts)
+    //   ใหม่: ใช้รูปแบบเดียวกับ admin login (บรรทัด 942-957) — ถ้า !customer → verify กับ DUMMY_HASH
+    //   ผลกระทบระบบเดิม: 0%
+    //     - กรณี customer พบ → verify ปกติ (เหมือนเดิม)
+    //     - กรณี customer ไม่พบ → verify กับ dummy hash (เสียเวลา ~100ms + กัน timing oracle)
+    //     - response ทั้ง 2 กรณีเป็น 401 เหมือนกัน (เพื่อไม่ info-disclose ว่าบัญชีมีอยู่จริงไหม)
+    const DUMMY_HASH = "pbkdf2$100000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    let passwordOk = false;
+    if (customer) {
+      passwordOk = await verifyPassword(password, customer.password_hash);
+    } else {
+      // dummy verify — เสียเวลาเท่ากัน แต่ผลต้องเป็น false เสมอ
+      await verifyPassword(password, DUMMY_HASH);
+      passwordOk = false;
+    }
+    if (!customer || !passwordOk) {
+      return jsonResponse({ error: "อีเมล/เบอร์ WhatsApp หรือรหัสผ่านไม่ถูกต้อง", code: "customer/invalid-credential" }, 401);
+    }
     // สร้าง session
     const token = await createCustomerSession(env, customer.id);
     // ส่ง cookie + ข้อมูล customer (ไม่ส่ง password_hash)
