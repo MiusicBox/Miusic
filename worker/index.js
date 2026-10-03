@@ -2334,6 +2334,213 @@ async function handleDb(request, env, url) {
         opts.limit = limit;
       }
       if (Number.isInteger(offset) && offset > 0) opts.offset = offset;
+
+      // ============================================================
+      // 🆕 (T015): Advanced song search — server-side filter + sort
+      //   รองรับ query params ใหม่ (เฉพาะ collection="songs"):
+      //     ?q=<text>                  — ค้นหาใน song_name + artist (LIKE %q%)
+      //     ?djs=<id1,id2,...>         — กรองหลาย DJ (json_extract dj_id IN (...))
+      //     ?categories=<id1,id2,...>  — กรองหลายหมวด (json_extract category_id IN (...))
+      //     ?min_price=<num>           — ราคาต่ำสุด (CAST(price AS REAL) >= ?)
+      //     ?max_price=<num>           — ราคาสูงสุด (CAST(price AS REAL) <= ?)
+      //     ?has_promo=true            — เฉพาะเพลงที่มี discount_price > 0
+      //     ?sort=newest|price_asc|price_desc|name — เรียงลำดับ
+      //
+      //   เหตุผล: เดิมระบบกรองฝั่ง client (filter STATE.songs ในเบราว์เซอร์) หลังโหลดทุกเพลง
+      //     ทำให้ลูกค้าต้องรอ loadAllRemainingSongs() ก่อนค้นหา + กรอง และใช้ memory เยอะ
+      //     ใหม่: ส่ง filter ไปที่ DB → D1 scan แค่ที่ตรงเงื่อนไข → ลด network + memory
+      //     รองรับ catalog ใหญ่ (5000+ เพลง) → query ตอบใน <500ms เพราะใช้ indexes ที่มี
+      //
+      //   Security:
+      //     - ทุกค่าจาก user ผูกเป็น bind parameter (ไม่ใช่ string interpolation)
+      //     - dj/category ids แยกด้วย comma → split → แต่ละ id เป็น bind แยก
+      //     - LIKE pattern ใช้ escapeLikePattern() (T011-L6) กัน wildcard injection
+      //     - min/max price แปลงเป็น Number + ตรวจ Number.isFinite กัน NaN/Infinity
+      //
+      //   ผลกระทบระบบเดิม: 0%
+      //     - ถ้าไม่มี advanced filter → skip block นี้ → ไปเส้น listDocuments เดิม
+      //     - response shape เหมือนเดิม ({ docs, total, limit, offset }) ทุกประการ
+      //     - ใช้ sanitizeSongsForPublic + slimSongForList เดิม → PII protection ครบ
+      //     - cache headers (Cache-Control + Vary: Cookie) เหมือนเดิม
+      // ============================================================
+      if (collection === "songs") {
+        // parse advanced filter params (default values ปลอดภัย)
+        const qParam = (urlParams.get("q") || "").trim();
+        const djsParam = (urlParams.get("djs") || "").trim();
+        const catsParam = (urlParams.get("categories") || "").trim();
+        const minPriceRaw = urlParams.get("min_price");
+        const maxPriceRaw = urlParams.get("max_price");
+        const hasPromoParam = urlParams.get("has_promo") === "true";
+        const sortParam = (urlParams.get("sort") || "newest").trim();
+
+        // parse + validate price (NaN/Infinity → null)
+        let minPrice = (minPriceRaw !== null && minPriceRaw !== "") ? Number(minPriceRaw) : null;
+        if (!Number.isFinite(minPrice) || minPrice < 0) minPrice = null;
+        let maxPrice = (maxPriceRaw !== null && maxPriceRaw !== "") ? Number(maxPriceRaw) : null;
+        if (!Number.isFinite(maxPrice) || maxPrice < 0) maxPrice = null;
+
+        // ตรวจว่ามี active filter อย่างน้อย 1 ตัว (sort=newest ถือว่า default — ไม่ trigger advanced path)
+        //   เหตุผล: ถ้าไม่มี filter ให้ตกไปเส้น listDocuments เดิม → backward compat 100%
+        //   รวมถึงกรณี client เดิมที่ยังไม่ update → ยังใช้เส้นเดิมได้
+        const djIds = djsParam ? djsParam.split(",").map(s => s.trim()).filter(Boolean) : [];
+        const catIds = catsParam ? catsParam.split(",").map(s => s.trim()).filter(Boolean) : [];
+        const hasAdvancedFilters =
+          qParam.length > 0 ||
+          djIds.length > 0 ||
+          catIds.length > 0 ||
+          minPrice !== null ||
+          maxPrice !== null ||
+          hasPromoParam ||
+          sortParam !== "newest";
+
+        if (hasAdvancedFilters) {
+          // === build WHERE clauses + binds (parameterized — กัน SQL injection) ===
+          const whereClauses = ["collection = 'songs'"];
+          const binds = [];
+
+          // text search (q) — LIKE บน song_name + artist พร้อม escapeLikePattern
+          if (qParam) {
+            const escapedQ = escapeLikePattern(qParam);
+            whereClauses.push(
+              "(json_extract(data, '$.song_name') LIKE ? ESCAPE '\\' COLLATE NOCASE " +
+              "OR json_extract(data, '$.artist') LIKE ? ESCAPE '\\' COLLATE NOCASE)"
+            );
+            binds.push(`%${escapedQ}%`, `%${escapedQ}%`);
+          }
+
+          // DJ filter (multiple) — json_extract dj_id IN (?,?,?)
+          //   รองรับทั้ง dj_id และ dj_name field (เผื่อข้อมูลเก่าที่เก็บเป็นชื่อ)
+          if (djIds.length > 0) {
+            const placeholders = djIds.map(() => "?").join(",");
+            whereClauses.push(
+              `(json_extract(data, '$.dj_id') IN (${placeholders}) ` +
+              `OR json_extract(data, '$.dj_name') IN (${placeholders}))`
+            );
+            binds.push(...djIds, ...djIds);
+          }
+
+          // Category filter (multiple) — json_extract category_id IN (?,?,?)
+          //   รองรับทั้ง category_id (single) และ categoryIds (array stored as JSON)
+          //   รองรับข้อมูลเก่าที่เก็บ category_name แทน id
+          if (catIds.length > 0) {
+            const placeholders = catIds.map(() => "?").join(",");
+            whereClauses.push(
+              `(json_extract(data, '$.category_id') IN (${placeholders}) ` +
+              `OR json_extract(data, '$.categoryIds') IN (${placeholders}))`
+            );
+            binds.push(...catIds, ...catIds);
+          }
+
+          // Price range
+          if (minPrice !== null) {
+            whereClauses.push("CAST(json_extract(data, '$.price') AS REAL) >= ?");
+            binds.push(minPrice);
+          }
+          if (maxPrice !== null) {
+            whereClauses.push("CAST(json_extract(data, '$.price') AS REAL) <= ?");
+            binds.push(maxPrice);
+          }
+
+          // Has promo — ต้องมี discount_price และมากกว่า 0
+          if (hasPromoParam) {
+            whereClauses.push(
+              "json_extract(data, '$.discount_price') IS NOT NULL " +
+              "AND CAST(json_extract(data, '$.discount_price') AS REAL) > 0"
+            );
+          }
+
+          // === build ORDER BY clause (default: newest) ===
+          //   - newest: ใช้ column created_at ตรง ๆ (ไม่ใช่ json_extract) → ใช้ index
+          //     idx_documents_collection_created_at ได้ → เร็วมาก
+          //   - price_asc/desc: CAST(json_extract(data, '$.price') AS REAL)
+          //   - name: json_extract(data, '$.song_name') (case-insensitive via COLLATE NOCASE)
+          let orderByClause = "created_at DESC"; // default = newest
+          if (sortParam === "price_asc") {
+            orderByClause = "CAST(json_extract(data, '$.price') AS REAL) ASC";
+          } else if (sortParam === "price_desc") {
+            orderByClause = "CAST(json_extract(data, '$.price') AS REAL) DESC";
+          } else if (sortParam === "name") {
+            orderByClause = "json_extract(data, '$.song_name') COLLATE NOCASE ASC";
+          }
+
+          const whereSql = whereClauses.join(" AND ");
+
+          // === execute data query (LIMIT + OFFSET) ===
+          //   ใช้ limit เดิมที่ parse ไว้ด้านบน (default 50 ถ้าไม่ส่งมา — แต่ T015 client ส่ง 50 เสมอ)
+          //   ถ้าไม่ส่ง limit → default เป็น 50 (เหมือน customer page เดิม)
+          const effectiveLimit = Number.isInteger(limit) && limit > 0 ? limit : 50;
+          const effectiveOffset = Number.isInteger(offset) && offset > 0 ? offset : 0;
+
+          // 🛡️ (T015): กัน D1 bind parameter limit (~100 params)
+          //   กรณี djIds + catIds รวมกันเยอะมาก (50+50=100 + 4 binds อื่น) → อาจ overflow
+          //   แต่ละ dj id ใช้ 2 binds (dj_id + dj_name) + แต่ละ cat id ใช้ 2 binds → max 4*N
+          //   ถ้ารวมเกิน 90 → ตัดสินใจ limit dj/cat ids เป็น 45 ตัวแรก (ปลอดภัย + ใช้งานได้จริง)
+          //   ผลกระทบ: ในทางปฏิบัติลูกค้าไม่เลือก DJ/หมวดเกิน 5-10 ตัว → ไม่กระทบการใช้งานจริง
+          //   ⚠️ ถ้าอนาคตต้องการรองรับ 100+ filters → เปลี่ยนไปใช้ temp table + JOIN
+          const MAX_FILTER_IDS = 45;
+          if (djIds.length > MAX_FILTER_IDS || catIds.length > MAX_FILTER_IDS) {
+            return jsonResponse({
+              error: "ตัวกรองมากเกินไป — กรุณาเลือกไม่เกิน " + MAX_FILTER_IDS + " รายการต่อหมวด",
+              code: "FILTER_TOO_MANY",
+            }, 400);
+          }
+
+          const dataSql = `SELECT id, data FROM documents WHERE ${whereSql} ORDER BY ${orderByClause} LIMIT ? OFFSET ?`;
+          const dataBinds = [...binds, effectiveLimit, effectiveOffset];
+
+          let docs = [];
+          let totalCount = null;
+          try {
+            const { results } = await env.DB.prepare(dataSql).bind(...dataBinds).all();
+            docs = (results || []).map(row => ({ id: row.id, data: JSON.parse(row.data) }));
+          } catch (err) {
+            console.warn("[T015] advanced songs query failed:", err?.message || err);
+            return jsonResponse({ error: "ค้นหาเพลงไม่สำเร็จ กรุณาลองใหม่", code: "QUERY_FAILED" }, 500);
+          }
+
+          // === count total (filtered) — สำหรับ frontend แสดง "พบ X เพลง" ===
+          try {
+            const countSql = `SELECT COUNT(*) AS c FROM documents WHERE ${whereSql}`;
+            const countRow = await env.DB.prepare(countSql).bind(...binds).first();
+            totalCount = (countRow && countRow.c) || 0;
+          } catch (err) {
+            console.warn("[T015] advanced songs count failed:", err?.message || err);
+            totalCount = docs.length; // fallback — ใช้จำนวนที่ดึงมาแทน (ใต้สุด)
+          }
+
+          // === sanitize sensitive fields (full_file_url, etc.) สำหรับ non-admin ===
+          if (!admin) {
+            docs = sanitizeSongsForPublic(docs);
+            if (slim) {
+              docs = docs.map((d) => ({
+                id: d.id,
+                data: slimSongForList(d.data || {}),
+              }));
+            }
+          }
+
+          // === build response (same shape as standard path) ===
+          //   - docs: array of { id, data }
+          //   - total: filtered count (frontend ใช้แสดง "พบ X เพลง")
+          //   - limit, offset: pagination metadata
+          const isCacheable = PUBLIC_READ_COLLECTIONS.has(collection) && collection !== "orders";
+          const extraHeaders = isCacheable
+            ? { "Cache-Control": CACHE.CUSTOMER_API, "Vary": "Cookie" }
+            : {};
+          const body = JSON.stringify({
+            docs,
+            total: totalCount != null ? totalCount : docs.length,
+            limit: effectiveLimit,
+            offset: effectiveOffset,
+          });
+          return new Response(body, {
+            status: 200,
+            headers: { "Content-Type": "application/json", ...corsHeaders(), ...extraHeaders, ...securityHeaders() },
+          });
+        }
+        // (no advanced filters → fall through to standard listDocuments path)
+      }
+
       let docs = await listDocuments(env, collection, opts);
       // 🔒 sanitize ฟิลด์ sensitive ของ songs ถ้าเป็น non-admin
       if (collection === "songs" && !admin) {

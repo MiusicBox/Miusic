@@ -311,6 +311,17 @@ async function init() {
   //   - ผูก scroll listener (passive) + click handler
   //   - แสดงปุ่มเมื่อ scroll ผ่าน 400px, ซ่อนเมื่อกลับขึ้นบน
   try { initScrollTopBtn(); } catch (err) { console.warn("[init] initScrollTopBtn failed:", err?.message || err); }
+
+  // 🆕 (T015): เริ่มต้น advanced filter panel — วาด checkbox DJ/หมวด + ผูก event listeners
+  //   - ทำงานครั้งเดียวหลัง STATE.djs + STATE.categories โหลดเสร็จ (Promise.all ด้านบน)
+  //   - ไม่กระทบระบบเดิม — ถ้า element ไม่อยู่ → ข้ามเงียบ ๆ (defensive)
+  //   - หลังจากนี้ user กด "⚙️ ตัวกรองขั้นสูง" เพื่อเปิด panel แล้วเลือก filter ได้
+  try {
+    renderFilterCheckboxes();
+    setupAdvancedFilters();
+  } catch (err) {
+    console.warn("[init] T015 advanced filter setup failed:", err?.message || err);
+  }
 }
 
 // 🆕 (T011-F6): initScrollTopBtn — ผูก logic ของปุ่ม scroll-to-top
@@ -368,7 +379,15 @@ async function loadMoreSongs() {
     //   ผลกระทบระบบเดิม: 0% — ปกติ loadMoreSongs ใช้ 1-2 วินาที → ไม่เกิน 15 วินาที
     const _abortCtrl = new AbortController();
     const _timeoutId = setTimeout(() => _abortCtrl.abort(), 15000);
-    const res = await fetch(`/api/db/songs?limit=50&offset=${offset}&slim=1`, {
+    // 🆕 (T015): ใช้ advanced filter URL ถ้า SONG_SEARCH_STATE.active
+    //   - active=true: ส่ง query string จาก buildSearchQuery() ไปด้วย → backend ใช้ advanced path
+    //   - active=false: ใช้ URL เดิม (no q/djs/...) → backend ใช้ standard listDocuments path
+    //   ผลกระทบระบบเดิม: 0% — ถ้า SONG_SEARCH_STATE.active=false → URL เหมือนเดิมทุกประการ
+    const _filterQs = (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active)
+      ? buildSearchQuery()
+      : "";
+    const _url = `/api/db/songs?${_filterQs ? _filterQs + "&" : ""}limit=50&offset=${offset}&slim=1`;
+    const res = await fetch(_url, {
       credentials: "same-origin",
       signal: _abortCtrl.signal,
     });
@@ -376,12 +395,20 @@ async function loadMoreSongs() {
     if (!res.ok) {
       console.warn(`loadMoreSongs: HTTP ${res.status}`);
       STATE.songsHasMore = false;
+      // 🆕 (T015): อัปเดต result count ถ้า active และเกิด error → แสดงข้อความ error
+      if (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active) {
+        updateResultCount(0);
+      }
       return;
     }
     const data = await res.json();
     const newDocs = Array.isArray(data?.docs) ? data.docs : [];
     if (newDocs.length === 0) {
       STATE.songsHasMore = false;
+      // 🆕 (T015): อัปเดต result count ถ้า active → แสดง "พบ 0 เพลง" หรือ total จาก server
+      if (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active) {
+        updateResultCount(typeof data.total === "number" ? data.total : 0);
+      }
       return;
     }
     // filter hidden songs เหมือนเดิม + dedupe (กัน duplicate id)
@@ -396,9 +423,19 @@ async function loadMoreSongs() {
     //   ใหม่: sortSongsByThaiName → A1, A2, A3, A10 (ถูกลำดับ)
     //   ผลกระทบ: O(n log n) ทุกครั้งที่โหลดเพิ่ม — แต่ n ≤ 5000 เพลง → ทำงานภายใน 10ms บนมือถือ
     //   หมายเหตุ: สร้าง array ใหม่ (immutable) กัน re-render ที่ไม่จำเป็น
-    STATE.songs = sortSongsByThaiName(STATE.songs);
+    //
+    // 🆕 (T015): ถ้า SONG_SEARCH_STATE.active → ข้าม client-side sort (server เรียงให้แล้วตาม sort param)
+    //   เช่น sort=price_asc → server ส่งเรียงราคาน้อย→มาก → ถ้า re-sort ฝั่ง client จะทับลำดับ server
+    //   ผลกระทบ: กรณี active → ใช้ลำดับจาก server ตรง ๆ / กรณีไม่ active → ใช้ sortSongsByThaiName เหมือนเดิม
+    if (!(typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active)) {
+      STATE.songs = sortSongsByThaiName(STATE.songs);
+    }
     if (newDocs.length < 50) {
       STATE.songsHasMore = false;  // ได้น้อยกว่า limit → หมดแล้ว
+    }
+    // 🆕 (T015): อัปเดต result count ถ้า active → แสดง total จาก server (filtered count)
+    if (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active) {
+      updateResultCount(typeof data.total === "number" ? data.total : STATE.songs.length);
     }
   } catch (err) {
     console.warn("loadMoreSongs error:", err?.message || err);
@@ -466,6 +503,382 @@ async function loadAllRemainingSongs() {
   }
 }
 
+// ============================================================
+// 🆕 (T015): Advanced song search state — ฝั่ง client
+//   เก็บค่าตัวกรองขั้นสูงที่ลูกค้าเลือกใน #advancedFilterPanel
+//   ใช้ร่วมกับ STATE.search (existing) เพื่อสร้าง query string ส่งให้ backend
+//
+//   State fields:
+//     - q:           คำค้นหา (sync จาก #searchInput เหมือนเดิม — แค่เก็บใน 2 ที่)
+//     - djs:         Set ของ DJ ids ที่เลือก (checkbox)
+//     - categories:  Set ของ category ids ที่เลือก (checkbox)
+//     - minPrice:    ราคาต่ำสุด (Number | null)
+//     - maxPrice:    ราคาสูงสุด (Number | null)
+//     - hasPromo:    boolean — เฉพาะเพลงที่มี discount_price > 0
+//     - sort:        'newest' | 'price_asc' | 'price_desc' | 'name'
+//     - active:      boolean — flag ว่ากำลังใช้ advanced filter อยู่ไหม
+//                    (ใช้สั่ง getFilteredSongs + loadMoreSongs ว่าจะ skip client-side filter ไหม)
+// ============================================================
+const SONG_SEARCH_STATE = {
+  q: "",
+  djs: new Set(),
+  categories: new Set(),
+  minPrice: null,
+  maxPrice: null,
+  hasPromo: false,
+  sort: "newest",
+  active: false,
+};
+
+// 🆕 (T015): hasActiveAdvancedFilters — ตรวจว่ามี active filter อย่างน้อย 1 ตัว
+//   (sort='newest' ถือว่า default — ไม่นับเป็น active filter)
+//   ใช้ใน loadSongsWithFilters เพื่อตัดสินใจว่าจะตั้ง SONG_SEARCH_STATE.active = true ไหม
+function hasActiveAdvancedFilters() {
+  return !!(
+    SONG_SEARCH_STATE.q ||
+    SONG_SEARCH_STATE.djs.size > 0 ||
+    SONG_SEARCH_STATE.categories.size > 0 ||
+    SONG_SEARCH_STATE.minPrice !== null ||
+    SONG_SEARCH_STATE.maxPrice !== null ||
+    SONG_SEARCH_STATE.hasPromo ||
+    SONG_SEARCH_STATE.sort !== "newest"
+  );
+}
+
+// 🆕 (T015): resetAdvancedFilterState — รีเซ็ต SONG_SEARCH_STATE + UI + (ถ้าระบุ) STATE.songs
+//   ใช้ใน:
+//     - chip-row click (reloadSongs=true, clearQ=false — อย่าเคลียร์ q เพราะ user อาจต้องการค้นหาต่อ)
+//     - DJ-row click (เหมือน chip-row)
+//     - Clear button (clearQ=true, reloadSongs=true — เคลียร์ทั้งหมด)
+//   ทำงานเฉพาะตอน SONG_SEARCH_STATE.active=true ถ้าไม่ active จะไม่ทำอะไร (กัน redundant work)
+//   ผลกระทบระบบเดิม: 0% — ถ้า active=false ตั้งแต่ต้น → return ทันที ไม่แตะอะไร
+function resetAdvancedFilterState(options = {}) {
+  const { clearQ = false, reloadSongs = false } = options;
+  // guard — ถ้าไม่ active อยู่แล้ว → ไม่ต้อง reset (STATE.songs เป็นของเดิมอยู่แล้ว)
+  if (!SONG_SEARCH_STATE.active) return;
+
+  SONG_SEARCH_STATE.djs.clear();
+  SONG_SEARCH_STATE.categories.clear();
+  SONG_SEARCH_STATE.minPrice = null;
+  SONG_SEARCH_STATE.maxPrice = null;
+  SONG_SEARCH_STATE.hasPromo = false;
+  SONG_SEARCH_STATE.sort = "newest";
+  SONG_SEARCH_STATE.active = false;
+  if (clearQ) {
+    SONG_SEARCH_STATE.q = "";
+    STATE.search = "";
+    const searchInput = document.getElementById("searchInput");
+    if (searchInput) searchInput.value = "";
+  }
+  // reset UI (checkboxes + inputs + sort)
+  document.querySelectorAll("#djFilterCheckboxes input, #categoryFilterCheckboxes input").forEach(cb => {
+    if (cb && cb.type === "checkbox") cb.checked = false;
+  });
+  const minInput = document.getElementById("minPriceInput");
+  if (minInput) minInput.value = "";
+  const maxInput = document.getElementById("maxPriceInput");
+  if (maxInput) maxInput.value = "";
+  const promoToggle = document.getElementById("hasPromoToggle");
+  if (promoToggle) promoToggle.checked = false;
+  const sortSelect = document.getElementById("sortSelect");
+  if (sortSelect) sortSelect.value = "newest";
+  try { updateActiveFiltersCount(); } catch (_) {}
+  const resultEl = document.getElementById("searchResultCount");
+  if (resultEl) resultEl.style.display = "none";
+  // reset STATE.songs (filtered results) ถ้าระบุ → ให้ standard path reload ใหม่
+  if (reloadSongs) {
+    STATE.songs = [];
+    STATE.songsPage = 0;
+    STATE.songsHasMore = true;
+  }
+}
+
+// 🆕 (T015): renderFilterCheckboxes — วาด checkbox list ของ DJ + หมวดใน #advancedFilterPanel
+//   ทำงานครั้งเดียวตอน init() (หลัง STATE.djs + STATE.categories โหลดเสร็จ)
+//   ใช้ event delegation ที่ container → bind ครั้งเดียว (setupAdvancedFilters ผูกอีกที)
+function renderFilterCheckboxes() {
+  // DJs
+  const djContainer = document.getElementById("djFilterCheckboxes");
+  if (djContainer && Array.isArray(STATE.djs)) {
+    if (STATE.djs.length === 0) {
+      djContainer.innerHTML = `<div class="filter-empty">ยังไม่มี DJ</div>`;
+    } else {
+      djContainer.innerHTML = STATE.djs.map(dj => `
+        <label class="filter-checkbox">
+          <input type="checkbox" value="${escapeHtml(dj.id)}" data-filter="dj">
+          <span>${escapeHtml(dj.dj_name || "(ไม่มีชื่อ)")}</span>
+        </label>
+      `).join("");
+    }
+  }
+  // Categories
+  const catContainer = document.getElementById("categoryFilterCheckboxes");
+  if (catContainer && Array.isArray(STATE.categories)) {
+    if (STATE.categories.length === 0) {
+      catContainer.innerHTML = `<div class="filter-empty">ยังไม่มีหมวดหมู่</div>`;
+    } else {
+      catContainer.innerHTML = STATE.categories.map(cat => `
+        <label class="filter-checkbox">
+          <input type="checkbox" value="${escapeHtml(cat.id)}" data-filter="category">
+          <span>${escapeHtml(cat.category_name || "(ไม่มีชื่อ)")}</span>
+        </label>
+      `).join("");
+    }
+  }
+}
+
+// 🆕 (T015): buildSearchQuery — สร้าง query string จาก SONG_SEARCH_STATE
+//   return: URLSearchParams string (ไม่รวม limit/offset/slim — ใส่ทีหลัง)
+//   ใช้ใน loadMoreSongs + loadSongsWithFilters
+function buildSearchQuery() {
+  const params = new URLSearchParams();
+  if (SONG_SEARCH_STATE.q) params.set("q", SONG_SEARCH_STATE.q);
+  if (SONG_SEARCH_STATE.djs.size > 0) {
+    params.set("djs", Array.from(SONG_SEARCH_STATE.djs).join(","));
+  }
+  if (SONG_SEARCH_STATE.categories.size > 0) {
+    params.set("categories", Array.from(SONG_SEARCH_STATE.categories).join(","));
+  }
+  if (SONG_SEARCH_STATE.minPrice !== null) {
+    params.set("min_price", String(SONG_SEARCH_STATE.minPrice));
+  }
+  if (SONG_SEARCH_STATE.maxPrice !== null) {
+    params.set("max_price", String(SONG_SEARCH_STATE.maxPrice));
+  }
+  if (SONG_SEARCH_STATE.hasPromo) params.set("has_promo", "true");
+  if (SONG_SEARCH_STATE.sort !== "newest") params.set("sort", SONG_SEARCH_STATE.sort);
+  return params.toString();
+}
+
+// 🆕 (T015): updateResultCount — อัปเดตข้อความ "พบ X เพลง" ใน #searchResultCount
+//   ทำงานทุกครั้งหลัง loadSongsWithFilters (success/fail)
+//   ถ้า total=0 → แสดงข้อความชี้แนะให้ลองปรับเงื่อนไข
+function updateResultCount(total) {
+  const el = document.getElementById("searchResultCount");
+  if (!el) return;
+  const safeTotal = Math.max(0, Number(total) || 0);
+  if (safeTotal > 0) {
+    el.style.display = "block";
+    el.textContent = `พบ ${safeTotal.toLocaleString("en-US")} เพลง`;
+    el.setAttribute("data-empty", "false");
+  } else {
+    el.style.display = "block";
+    el.textContent = "ไม่พบเพลงที่ตรงกับตัวกรอง — ลองปรับเงื่อนไขหรือกด \"ล้างตัวกรอง\"";
+    el.setAttribute("data-empty", "true");
+  }
+}
+
+// 🆕 (T015): updateActiveFiltersCount — อัปเดต badge จำนวน active filters
+//   ในปุ่ม "⚙️ ตัวกรองขั้นสูง" (#activeFiltersCount)
+//   นับแบบกลุ่ม: djs + categories + price + hasPromo + sort (max 5)
+function updateActiveFiltersCount() {
+  let count = 0;
+  if (SONG_SEARCH_STATE.djs.size > 0) count++;
+  if (SONG_SEARCH_STATE.categories.size > 0) count++;
+  if (SONG_SEARCH_STATE.minPrice !== null || SONG_SEARCH_STATE.maxPrice !== null) count++;
+  if (SONG_SEARCH_STATE.hasPromo) count++;
+  if (SONG_SEARCH_STATE.sort !== "newest") count++;
+  // (ไม่นับ q เพราะ searchInput เป็นตัวกรองหลักที่แยกจาก panel)
+
+  const badge = document.getElementById("activeFiltersCount");
+  if (badge) {
+    if (count > 0) {
+      badge.textContent = String(count);
+      badge.style.display = "inline-block";
+    } else {
+      badge.style.display = "none";
+    }
+  }
+}
+
+// 🆕 (T015): loadSongsWithFilters — wrapper สำหรับ reload songs ด้วย advanced filter
+//   - resetPagination=true → ล้าง STATE.songs + ตั้งค่า SONG_SEARCH_STATE.active ใหม่
+//   - resetPagination=false → ใช้สำหรับ load-more-on-scroll (เรียกจาก loadMoreSongs)
+//
+//   Flow:
+//     1. reset STATE.songsPage + songsHasMore + songs (ถ้า resetPagination)
+//     2. ตัดสินใจ SONG_SEARCH_STATE.active จาก hasActiveAdvancedFilters()
+//     3. ถ้า active → รีเซ็ต client-side filter state (currentCategory/Dj/search)
+//        เพื่อกัน conflict ระหว่าง advanced filter + chip-row/dj-row/search input
+//     4. render skeleton (ถ้า resetPagination)
+//     5. เรียก loadMoreSongs() — ตัว loadMoreSongs เองจะใช้ buildSearchQuery() ถ้า active
+//     6. re-render grid + update result count
+async function loadSongsWithFilters(resetPagination = true) {
+  if (resetPagination) {
+    STATE.songsPage = 0;
+    STATE.songsHasMore = true;
+    STATE.songs = [];
+    // ตัดสินใจ active flag จาก current filter state
+    SONG_SEARCH_STATE.active = hasActiveAdvancedFilters();
+    // ถ้า active → รีเซ็ต client-side filter state เพื่อกัน conflict
+    if (SONG_SEARCH_STATE.active) {
+      STATE.currentCategory = "all";
+      STATE.currentDj = null;
+      STATE.search = "";
+      // sync searchInput ให้แสดงค่า q (ถ้ามี) — ไม่ trigger input event (กันลูป)
+      const searchInput = document.getElementById("searchInput");
+      if (searchInput) searchInput.value = SONG_SEARCH_STATE.q || "";
+      // re-render chip-row + dj-row ให้ active state กลับเป็น default
+      try { renderCategoryChips(); } catch (e) { /* ignore — chip-row อาจยังไม่พร้อม */ }
+      try { renderDjRow(); } catch (e) { /* ignore */ }
+    }
+    renderSongSkeleton();
+  }
+  await loadMoreSongs();
+  renderSongGrid();
+}
+
+// 🆕 (T015): setupAdvancedFilters — ผูก event listeners ทั้งหมดของ advanced filter panel
+//   ทำงานครั้งเดียวตอน init() หลัง renderFilterCheckboxes()
+//   ใช้ event delegation ที่ container ของ checkbox groups (กัน re-bind เมื่อ re-render)
+function setupAdvancedFilters() {
+  // === Toggle panel ===
+  const toggleBtn = document.getElementById("advancedFilterBtn");
+  const panel = document.getElementById("advancedFilterPanel");
+  if (toggleBtn && panel) {
+    toggleBtn.addEventListener("click", () => {
+      const isExpanded = toggleBtn.getAttribute("aria-expanded") === "true";
+      toggleBtn.setAttribute("aria-expanded", String(!isExpanded));
+      panel.style.display = isExpanded ? "none" : "block";
+    });
+  }
+
+  // === DJ checkboxes (event delegation ที่ container) ===
+  const djContainer = document.getElementById("djFilterCheckboxes");
+  if (djContainer) {
+    djContainer.addEventListener("change", (e) => {
+      const t = e.target;
+      if (t && t.dataset && t.dataset.filter === "dj" && t.type === "checkbox") {
+        if (t.checked) SONG_SEARCH_STATE.djs.add(t.value);
+        else SONG_SEARCH_STATE.djs.delete(t.value);
+        updateActiveFiltersCount();
+      }
+    });
+  }
+
+  // === Category checkboxes (event delegation) ===
+  const catContainer = document.getElementById("categoryFilterCheckboxes");
+  if (catContainer) {
+    catContainer.addEventListener("change", (e) => {
+      const t = e.target;
+      if (t && t.dataset && t.dataset.filter === "category" && t.type === "checkbox") {
+        if (t.checked) SONG_SEARCH_STATE.categories.add(t.value);
+        else SONG_SEARCH_STATE.categories.delete(t.value);
+        updateActiveFiltersCount();
+      }
+    });
+  }
+
+  // === Price inputs (apply on change = blur/enter) ===
+  const minInput = document.getElementById("minPriceInput");
+  const maxInput = document.getElementById("maxPriceInput");
+  const handlePriceChange = () => {
+    const minVal = minInput && minInput.value ? parseFloat(minInput.value) : null;
+    const maxVal = maxInput && maxInput.value ? parseFloat(maxInput.value) : null;
+    SONG_SEARCH_STATE.minPrice = (minVal !== null && Number.isFinite(minVal) && minVal >= 0) ? minVal : null;
+    SONG_SEARCH_STATE.maxPrice = (maxVal !== null && Number.isFinite(maxVal) && maxVal >= 0) ? maxVal : null;
+    updateActiveFiltersCount();
+  };
+  if (minInput) minInput.addEventListener("change", handlePriceChange);
+  if (maxInput) maxInput.addEventListener("change", handlePriceChange);
+
+  // === Has promo toggle ===
+  const promoToggle = document.getElementById("hasPromoToggle");
+  if (promoToggle) {
+    promoToggle.addEventListener("change", (e) => {
+      SONG_SEARCH_STATE.hasPromo = !!e.target.checked;
+      updateActiveFiltersCount();
+    });
+  }
+
+  // === Sort select ===
+  const sortSelect = document.getElementById("sortSelect");
+  if (sortSelect) {
+    sortSelect.addEventListener("change", (e) => {
+      SONG_SEARCH_STATE.sort = e.target.value || "newest";
+      updateActiveFiltersCount();
+    });
+  }
+
+  // === Apply button ===
+  const applyBtn = document.getElementById("applyFilterBtn");
+  if (applyBtn) {
+    applyBtn.addEventListener("click", async () => {
+      // sync q จาก searchInput ก่อน (กันกรณี user พิมพ์แล้วยังไม่ได้กด Enter)
+      const searchInput = document.getElementById("searchInput");
+      if (searchInput) {
+        SONG_SEARCH_STATE.q = searchInput.value.trim();
+      }
+      updateActiveFiltersCount();
+      // ปิด panel บนมือถือหลังกด apply (เพื่อให้เห็นผลลัพธ์)
+      if (window.innerWidth < 768 && panel && toggleBtn) {
+        panel.style.display = "none";
+        toggleBtn.setAttribute("aria-expanded", "false");
+      }
+      await loadSongsWithFilters(true);
+    });
+  }
+
+  // === Clear button ===
+  const clearBtn = document.getElementById("clearFilterBtn");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", async () => {
+      // reset state
+      SONG_SEARCH_STATE.q = "";
+      SONG_SEARCH_STATE.djs.clear();
+      SONG_SEARCH_STATE.categories.clear();
+      SONG_SEARCH_STATE.minPrice = null;
+      SONG_SEARCH_STATE.maxPrice = null;
+      SONG_SEARCH_STATE.hasPromo = false;
+      SONG_SEARCH_STATE.sort = "newest";
+      SONG_SEARCH_STATE.active = false;
+      // reset UI
+      document.querySelectorAll("#djFilterCheckboxes input, #categoryFilterCheckboxes input").forEach(cb => {
+        if (cb && cb.type === "checkbox") cb.checked = false;
+      });
+      if (minInput) minInput.value = "";
+      if (maxInput) maxInput.value = "";
+      if (promoToggle) promoToggle.checked = false;
+      if (sortSelect) sortSelect.value = "newest";
+      const searchInput = document.getElementById("searchInput");
+      if (searchInput) searchInput.value = "";
+      STATE.search = "";
+      // ซ่อน result count
+      const resultEl = document.getElementById("searchResultCount");
+      if (resultEl) resultEl.style.display = "none";
+      updateActiveFiltersCount();
+      // reload songs (default — no filter)
+      await loadSongsWithFilters(true);
+    });
+  }
+
+  // === Sync searchInput ↔ SONG_SEARCH_STATE.q ===
+  //   เหตุผล: searchInput เป็นตัวกรองหลักที่ใช้ได้ทั้งใน+นอก panel
+  //   - ถ้า user พิมพ์ใน searchInput → sync q (แต่ยังไม่ trigger server search)
+  //   - ถ้า user กด Enter → trigger loadSongsWithFilters (server-side search)
+  //   - ถ้า user พิมพ์แล้วกด Apply Filter ใน panel → ใช้ q ที่ sync ไว้
+  const searchInput = document.getElementById("searchInput");
+  if (searchInput) {
+    // sync q on input (debounce 250ms เหมือนเดิม)
+    searchInput.addEventListener("input", debounce(() => {
+      SONG_SEARCH_STATE.q = searchInput.value.trim();
+    }, 250));
+    // Enter → trigger server-side search (faster than loadAllRemainingSongs)
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        SONG_SEARCH_STATE.q = searchInput.value.trim();
+        // ถ้ามี q หรือ filter อื่น active → ใช้ advanced path
+        if (hasActiveAdvancedFilters()) {
+          e.preventDefault();
+          updateActiveFiltersCount();
+          loadSongsWithFilters(true);
+        }
+        // (ถ้าไม่มี filter → ให้ behavior เดิมทำงาน — blur + ไม่ trigger server search)
+      }
+    });
+  }
+}
+
 // 🔧 (2026-09-18 v6 perf): ติดตั้ง IntersectionObserver ที่ sentinel element ท้าย grid
 //   เมื่อ user scroll ถึง sentinel → trigger loadMoreSongs() + re-render
 //   ลดการโหลดข้อมูลทั้งหมด → โหลดเฉพาะ page ที่ user สนใจ
@@ -516,6 +929,11 @@ function renderCategoryChips() {
   wrap.innerHTML = html;
   wrap.querySelectorAll(".chip").forEach(el => {
     el.addEventListener("click", () => {
+      // 🆕 (T015): ถ้าอยู่ใน advanced filter mode → reset ก่อน เพื่อกลับสู่ client-side filter
+      //   เหตุผล: STATE.songs ปัจจุบันเป็น server-filtered results → chip-row filter ฝั่ง client จะไม่ครบ
+      //   ผลกระทบ: เมื่อ user กด chip ขณะใช้ advanced filter → ระบบกลับสู่ client-side filter mode
+      //   ถ้า active=false ตั้งแต่ต้น → resetAdvancedFilterState จะ return ทันที (no-op)
+      try { resetAdvancedFilterState({ reloadSongs: true }); } catch (_) {}
       STATE.currentCategory = el.getAttribute("data-cat");
       STATE.currentDj = null;
       // 🔧 (2026-09-18 v6 Full System): เมื่อกดหมวดหมู่ ถ้ายังโหลดเพลงไม่ครบ → trigger auto-load-all
@@ -556,6 +974,10 @@ function renderDjRow() {
   wrap.querySelectorAll(".dj-item").forEach(el => {
     el.addEventListener("click", () => {
       const selectedDjId = el.getAttribute("data-dj");
+      // 🆕 (T015): ถ้าอยู่ใน advanced filter mode → reset ก่อน เพื่อกลับสู่ client-side filter
+      //   เหตุผล: STATE.songs ปัจจุบันเป็น server-filtered results → DJ-row filter ฝั่ง client จะไม่ครบ
+      //   ถ้า active=false ตั้งแต่ต้น → resetAdvancedFilterState จะ return ทันที (no-op)
+      try { resetAdvancedFilterState({ reloadSongs: true }); } catch (_) {}
       // บันทึกสถานะก่อน toggle เพื่อเช็คว่าเป็นการ "เลือกใหม่" หรือ "ยกเลิก"
       //   🎧 (2026-09-20 fix): ถ้าเป็นการยกเลิก (currentDj เดิม === selectedDjId → หลัง toggle เป็น null)
       //   ห้าม scroll ลงล่าง เพราะทำให้ UX แย่ — ผู้ใช้แค่อยากยกเลิก ไม่ได้อยากดูเพลง
@@ -643,6 +1065,12 @@ function songBelongsToCurrentCategory(song) {
 }
 
 function getFilteredSongs() {
+  // 🆕 (T015): ถ้าใช้ advanced server-side filter → STATE.songs ถูกกรองที่ server แล้ว
+  //   ส่งคืนทั้งหมดตรง ๆ ไม่ต้อง filter ซ้ำฝั่ง client (จะทับผลลัพธ์ server)
+  //   ผลกระทบระบบเดิม: 0% — กรณี SONG_SEARCH_STATE.active=false → ใช้ logic เดิมทุกประการ
+  if (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active) {
+    return STATE.songs;
+  }
   return STATE.songs.filter(s => {
     if (STATE.currentDj) {
       const dj = STATE.djs.find(d => d.id === STATE.currentDj);
