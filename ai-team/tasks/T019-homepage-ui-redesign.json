@@ -111,10 +111,10 @@
   },
 
   "commit_info": {
-    "main_commit_sha": "<to-be-filled-after-commit>",
-    "task_file_commit_sha": "<to-be-filled-after-commit>",
+    "main_commit_sha": "be15acb",
+    "task_file_commit_sha": "be15acb",
     "files_changed": ["index.html", "style.css", "app-user.js", "ai-team/tasks/T019-homepage-ui-redesign.json"],
-    "diff_stat": "+597 insertions, -3 deletions (3 ไฟล์หลัก) + task file (NEW)"
+    "diff_stat": "+733 insertions, -3 deletions (4 ไฟล์ — 3 modified + 1 NEW task file)"
   },
 
   "next_stage": {
