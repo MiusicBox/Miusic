@@ -2158,12 +2158,17 @@ button:active {
   transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none;
   box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255,255,255,.04);
-  min-width: 200px; max-width: calc(100vw - 32px);
+  min-width: 280px; max-width: 90vw;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* 🆕 (T009-F3): อนุญาตหลายบรรทัด — ข้อความยาวไม่ถูกตัดด้วย ellipsis
+     (เดิมใช้ white-space:nowrap + overflow:hidden + text-overflow:ellipsis → error ยาวถูกตัด) */
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  border-radius: 16px;
 }
 
 .toast.show {
@@ -2246,6 +2251,43 @@ button:active {
   font-weight: 500;
 }
 
+/* 🆕 (T009-F2): Empty state สวย ๆ สำหรับ list ว่าง
+   ใช้สำหรับ: ตะกร้าว่าง / ไม่มีออเดอร์ / ไม่มีโปรโมชั่น / ไม่มีรายการโปรด
+   ประกอบด้วย icon + title + desc + (optional) CTA button */
+.empty-state-cute {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-dim);
+  gap: 4px;
+}
+.empty-state-cute .empty-icon {
+  font-size: 48px;
+  line-height: 1;
+  margin-bottom: 12px;
+  opacity: 0.85;
+  filter: saturate(0.85);
+}
+.empty-state-cute .empty-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.empty-state-cute .empty-desc {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 16px;
+  max-width: 280px;
+  line-height: 1.5;
+}
+.empty-state-cute .empty-cta {
+  margin-top: 4px;
+}
+
 .spinner {
   width: 20px;
   height: 20px;
@@ -2259,6 +2301,117 @@ button:active {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* 🆕 (T009-F1): Skeleton loader — แสดงตอนกำลังโหลดข้อมูล
+   ใช้ shimmer animation เพื่อให้ feel ว่ากำลังโหลดอยู่ (ลด perceived wait time)
+   ประกอบด้วย skeleton-card (container) + skeleton-cover (รูป) + skeleton-line (text) */
+.skeleton-card {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  position: relative;
+  pointer-events: none;
+  user-select: none;
+}
+.skeleton-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 100%
+  );
+  animation: skeleton-shimmer 1.5s infinite;
+  z-index: 1;
+}
+@keyframes skeleton-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.skeleton-cover {
+  width: 100%;
+  aspect-ratio: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.skeleton-line {
+  height: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  margin-bottom: 6px;
+  position: relative;
+  z-index: 2;
+}
+.skeleton-line.short { width: 60%; }
+.skeleton-line.medium { width: 80%; }
+
+/* 🆕 (T009-F1): skeleton แบบ row — เลียนแบบ .song-card-row (flex: cover 80x80 + info column)
+   ใช้ใน #songGrid ตอนกำลังโหลดเพลง ก่อน renderSongGrid() จะแทนที่ด้วยการ์ดจริง */
+.skeleton-row {
+  display: flex;
+  gap: 14px;
+  padding: 12px;
+  background: var(--surface);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  position: relative;
+  pointer-events: none;
+  user-select: none;
+  margin-bottom: 2px;
+}
+.skeleton-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 100%
+  );
+  animation: skeleton-shimmer 1.5s infinite;
+  z-index: 1;
+}
+.skeleton-cover-row {
+  width: 80px;
+  height: 80px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  position: relative;
+  z-index: 2;
+}
+.skeleton-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  position: relative;
+  z-index: 2;
+}
+
+/* ลด motion ตาม user preference (accessibility) */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-card::before,
+  .skeleton-row::before {
+    animation: none;
+    background: rgba(255, 255, 255, 0.04);
+  }
 }
 
 /* =====================================================================

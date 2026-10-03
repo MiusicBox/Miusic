@@ -232,10 +232,14 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     }
 
     if (state.cart.length === 0) {
+      // 🆕 (T009-F2): empty state สวย ๆ พร้อม icon + CTA แทนข้อความเปล่า ๆ
+      //   ใช้ data-empty-goto-home (รับมือใน app-user.js แบบ global) เพื่อปิด cart popup + กลับ home tab
       itemsEl.innerHTML = `
-        <div class="cart-empty">
-          <p>ยังไม่มีเพลงในตะกร้า</p>
-          <button class="btn secondary" type="button" data-cart-continue>กลับไปเลือกซื้อเพลง</button>
+        <div class="empty-state-cute">
+          <div class="empty-icon">🛒</div>
+          <div class="empty-title">ตะกร้าว่างเปล่า</div>
+          <div class="empty-desc">ยังไม่มีเพลงในตะกร้า — ไปเลือกเพลงที่ชอบได้เลย!</div>
+          <button class="btn empty-cta" type="button" data-empty-goto-home>🎵 ไปเลือกเพลง</button>
         </div>`;
       if (summaryEl) summaryEl.hidden = true;
       return;

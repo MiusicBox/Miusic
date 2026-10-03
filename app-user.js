@@ -199,6 +199,10 @@ function applyStoreNameAnimation(el) {
 async function init() {
   loadCart();
   bindCartEvents();
+  // 🆕 (T009-F1): แสดง skeleton loader ทันทีก่อนโหลดข้อมูล — กันจอว่าง ๆ ตอนรอ fetch
+  //   ใส่ก่อน Promise.all (categories/djs/playlists) เพราะขั้นตอนนี้ใช้เวลาเช่นกัน
+  //   skeleton จะถูกแทนที่ด้วยการ์ดเพลงจริงเมื่อ renderSongGrid() ถูกเรียกท้าย init()
+  renderSongSkeleton(12);
   const [catSnap, djSnap, playlistSnap, settingsSnap] = await Promise.all([
     getDocs(collection(db, "categories")),
     getDocs(collection(db, "djs")),
@@ -623,6 +627,30 @@ function getFilteredSongs() {
     }
     return true;
   });
+}
+
+// 🆕 (T009-F1): Skeleton loader สำหรับ song grid — แสดงตอนกำลังโหลดข้อมูล
+//   วาด card skeleton แบบ row (เลียนแบบ .song-card-row) จำนวน count ใบ ลงใน #songGrid
+//   เมื่อ renderSongGrid() ถูกเรียก จะแทนที่ skeleton ด้วยการ์ดเพลงจริงทันที
+//   - ใช้ CSS class .skeleton-row + .skeleton-cover-row + .skeleton-info + .skeleton-line
+//   - shimmer animation ทำงานใน CSS (ดู style.css) → ไม่ต้องเขียน JS
+function renderSongSkeleton(count = 12) {
+  const grid = document.getElementById("songGrid");
+  if (!grid) return;
+  const safeCount = Math.max(1, Math.min(60, Number(count) || 12));
+  // ซ่อน empty state ตอน skeleton แสดง (กัน "ไม่พบเพลง" โผล่ค้างอยู่ใต้ skeleton)
+  const empty = document.getElementById("emptyState");
+  if (empty) empty.style.display = "none";
+  const skeletonHTML = Array.from({ length: safeCount }).map(() => `
+    <div class="skeleton-row" aria-hidden="true">
+      <div class="skeleton-cover-row"></div>
+      <div class="skeleton-info">
+        <div class="skeleton-line medium"></div>
+        <div class="skeleton-line short"></div>
+      </div>
+    </div>
+  `).join("");
+  grid.innerHTML = skeletonHTML;
 }
 
 function renderSongGrid() {
@@ -1870,6 +1898,69 @@ function scrollPageToTop() {
   }
 }
 
+// 🆕 (T009-F2): global click handler สำหรับปุ่ม "ไปเลือกเพลง" ใน empty state
+//   - ปิด cart popup / account view / my-orders view / promotions view ที่อาจเปิดอยู่
+//   - คลิกปุ่ม home tab เพื่อกลับไปหน้าแรก
+//   ลงทะเวชเป็น document-level listener เพื่อให้รองรับปุ่มที่ถูก inject ตอนหลังได้
+document.addEventListener("click", (event) => {
+  const btn = event.target.closest("[data-empty-goto-home]");
+  if (!btn) return;
+  // 1. ปิด cart popup ถ้าเปิดอยู่
+  const cartBackdrop = document.getElementById("cartBackdrop");
+  if (cartBackdrop && cartBackdrop.classList.contains("show")) {
+    cartBackdrop.classList.remove("show");
+    cartBackdrop.setAttribute("aria-hidden", "true");
+  }
+  // 2. ปิด account view / my-orders view / promotions view ถ้าเปิดอยู่ (เรียก helper ถ้ามี)
+  try {
+    if (typeof window.hideCustomerAccountView === "function") window.hideCustomerAccountView();
+    if (typeof window.hideMyOrdersView === "function") window.hideMyOrdersView();
+    if (typeof hidePromotionsView === "function") hidePromotionsView();
+  } catch (_) {}
+  // 3. คลิกปุ่ม home tab เพื่อกลับไปหน้าแรก
+  const homeBtn = document.querySelector('.bottom-nav button[data-tab="home"]');
+  if (homeBtn) homeBtn.click();
+});
+
+// 🆕 (T009-F2): upgrade favorites empty state → cute empty state
+//   เนื่องจากกฎห้ามแก้ logic ใน customer-auth.js (ซึ่งเป็นที่ที่ loadCustomerFavorites วาด
+//   empty state เดิม) → ใช้ MutationObserver ตรวจจับการเปลี่ยนแปลงของ #myAccountFavoritesList
+//   แล้วแทนที่ empty state แบบเดิม (ข้อความเปล่า ๆ) ด้วย empty-state-cute (icon + title + desc + CTA)
+//   ทำงานทุกครั้งที่ favorites list ถูก re-render — กด tab / หลัง toggleFavorite refresh / หลัง login
+function _upgradeFavoritesEmptyState() {
+  const wrap = document.getElementById("myAccountFavoritesList");
+  if (!wrap) return;
+  // ตรวจเฉพาะกรณี "empty" — มี element ลูก 1 ตัว (customer-auth.js เขียน empty state เป็น <div> อันเดียว)
+  if (wrap.children.length !== 1) return;
+  const first = wrap.firstElementChild;
+  if (!first) return;
+  // ข้ามาถ้าเป็น empty-state-cute อยู่แล้ว
+  if (first.classList && first.classList.contains("empty-state-cute")) return;
+  // ตรวจข้อความ — ต้องมีคำว่า "ยังไม่มีเพลงโปรด" (ตรงกับที่ customer-auth.js เขียน)
+  const text = (first.textContent || "").trim();
+  if (!text.includes("ยังไม่มีเพลงโปรด")) return;
+  first.outerHTML = `
+    <div class="empty-state-cute">
+      <div class="empty-icon">❤️</div>
+      <div class="empty-title">ยังไม่มีรายการโปรด</div>
+      <div class="empty-desc">กด ❤️ ในเพลงที่ชอบ — จะเก็บไว้ที่นี่</div>
+      <button class="btn empty-cta" type="button" data-empty-goto-home>🎵 ไปเลือกเพลง</button>
+    </div>`;
+}
+
+// ลงทะเวช MutationObserver ทันทีที่ element พร้อม (DOM ถูก parse หมดแล้วเพราะ module load ทีหลัง)
+(() => {
+  const wrap = document.getElementById("myAccountFavoritesList");
+  if (!wrap) return;
+  try {
+    const observer = new MutationObserver(() => _upgradeFavoritesEmptyState());
+    observer.observe(wrap, { childList: true });
+    _upgradeFavoritesEmptyState(); // initial check (ถ้า empty state โผล่ก่อน observer ติด)
+  } catch (err) {
+    console.warn("[T009-F2] favorites MutationObserver setup failed:", err?.message || err);
+  }
+})();
+
 document.querySelectorAll(".bottom-nav button").forEach(btn => {
   btn.addEventListener("click", () => {
     const tab = btn.getAttribute("data-tab");
@@ -1886,6 +1977,9 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       cleanupMyOrdersView();
       STATE.currentCategory = "all";
       STATE.currentDj = null;
+      // 🆕 (T009-F1): ถ้า songs ยังไม่โหลด (edge case — user กด tab ก่อน init เสร็จ)
+      //   → แสดง skeleton ก่อน เพื่อกันจอว่าง ๆ พอ loadMoreSongs เสร็จ → renderSongGrid จะแทนที่
+      if (!Array.isArray(STATE.songs) || STATE.songs.length === 0) renderSongSkeleton(12);
       setView("home");
       renderCategoryChips();
       renderDjRow(); // 🎧 (2026-09-20) re-render DJ row เพื่อลบ class selected (วงกลมแดง) หลังออกจากหน้า DJ
@@ -1906,6 +2000,8 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       cleanupMyOrdersView();
       STATE.currentCategory = "all";
       STATE.currentDj = null;
+      // 🆕 (T009-F1): skeleton ตอน songs ยังไม่โหลด (เหมือน branch home ด้านบน)
+      if (!Array.isArray(STATE.songs) || STATE.songs.length === 0) renderSongSkeleton(12);
       setView("category");
       renderCategoryChips();
       renderDjRow(); // 🎧 (2026-09-20) re-render DJ row เพื่อลบ class selected (วงกลมแดง) หลังออกจากหน้า DJ
@@ -1918,6 +2014,8 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       cleanupMyOrdersView();
       STATE.currentCategory = "all";
       STATE.currentDj = null;
+      // 🆕 (T009-F1): skeleton ตอน songs ยังไม่โหลด (เหมือน branch home ด้านบน)
+      if (!Array.isArray(STATE.songs) || STATE.songs.length === 0) renderSongSkeleton(12);
       setView("dj");
       renderDjRow();
       renderSongGrid();
@@ -2161,7 +2259,14 @@ async function loadCustomerAccountData() {
     const ordersGuest = [];
     const ordersAll = ordersLogin.concat(ordersGuest);
     if (ordersAll.length === 0) {
-      ordersListEl.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:20px;">ยังไม่มีออเดอร์ — ไปเลือกเพลงแล้วสั่งซื้อได้เลย 🎵</div>`;
+      // 🆕 (T009-F2): empty state สวย ๆ พร้อม icon + CTA แทนข้อความเปล่า ๆ
+      ordersListEl.innerHTML = `
+        <div class="empty-state-cute">
+          <div class="empty-icon">📦</div>
+          <div class="empty-title">ยังไม่มีออเดอร์</div>
+          <div class="empty-desc">สั่งซื้อเพลงครั้งแรก — ออเดอร์จะแสดงที่นี่</div>
+          <button class="btn empty-cta" type="button" data-empty-goto-home>🎵 ไปเลือกเพลง</button>
+        </div>`;
       return;
     }
     // เก็บ orders ทั้งหมดไว้ใน trackOrderAllOrders (ใช้โดย openTrackOrderAllDetail)
@@ -3770,11 +3875,12 @@ function renderPromotionsView() {
 
   // กรณีไม่มีโปรโมชั่น active
   if (!Array.isArray(STATE.promotions) || STATE.promotions.length === 0) {
+    // 🆕 (T009-F2): empty state สวย ๆ พร้อม icon + title + desc (ใช้คลาส empty-state-cute ร่วมกับ list อื่น)
     list.innerHTML = `
-      <div class="promo-view-empty">
-        <div class="promo-view-empty-icon">🎁</div>
-        <div class="promo-view-empty-text">ยังไม่มีโปรโมชั่นในขณะนี้</div>
-        <div class="promo-view-empty-sub">กดแท็บ "ติดต่อ" เพื่อสอบถามโปรพิเศษจากร้านได้</div>
+      <div class="empty-state-cute">
+        <div class="empty-icon">🎁</div>
+        <div class="empty-title">ยังไม่มีโปรโมชั่นในตอนนี้</div>
+        <div class="empty-desc">ติดตามโปรโมชั่นพิเศษได้ที่นี่ — เราจะแจ้งเมื่อมีข้อเสนอใหม่!</div>
       </div>`;
     return;
   }
@@ -3798,11 +3904,12 @@ function renderPromotionsView() {
   });
 
   if (visible.length === 0) {
+    // 🆕 (T009-F2): empty state สวย ๆ (กรณีกรองแล้วเหลือ 0 — โปรหมดเวลาแล้วทั้งหมด)
     list.innerHTML = `
-      <div class="promo-view-empty">
-        <div class="promo-view-empty-icon">🎁</div>
-        <div class="promo-view-empty-text">ยังไม่มีโปรโมชั่นในขณะนี้</div>
-        <div class="promo-view-empty-sub">กดแท็บ "ติดต่อ" เพื่อสอบถามโปรพิเศษจากร้านได้</div>
+      <div class="empty-state-cute">
+        <div class="empty-icon">🎁</div>
+        <div class="empty-title">ยังไม่มีโปรโมชั่นในตอนนี้</div>
+        <div class="empty-desc">ติดตามโปรโมชั่นพิเศษได้ที่นี่ — เราจะแจ้งเมื่อมีข้อเสนอใหม่!</div>
       </div>`;
     return;
   }
