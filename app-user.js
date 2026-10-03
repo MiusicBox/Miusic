@@ -292,6 +292,11 @@ async function init() {
   //   - ไม่กระทบระบบเดิม — ใช้ interval แยก ปิดได้ผ่าน stopPromoCountdown() ถ้าต้องการ
   //   - ปลอดภัยเพราะเช็ค element ทุกรอบ ถ้า element ไม่อยู่ → ข้ามไปเงียบ ๆ
   startPromoCountdown();
+
+  // 🆕 (2026-10-03 team-fix): เริ่มต้น WhatsApp FAB (ปุ่มลอยที่แทนที่ tab "ติดต่อ" เดิม)
+  //   - ปุ่มนี้อยู่ใน HTML แล้ว (#whatsappFab) — ตรงนี้แค่ผูก click handler
+  //   - ใช้ STATE.settings.whatsapp_number ที่โหลดจาก settings ด้านบน
+  try { initWhatsappFab(); } catch (err) { console.warn("[init] initWhatsappFab failed:", err?.message || err); }
 }
 
 // 🔧 (2026-09-18 v6 perf): โหลดเพลง page ถัดไป (50 songs/page)
@@ -1851,6 +1856,7 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
     //   ไม่กระทบ branch เดิม — เพียงเรียกฟังก์ชัน hidePromotionsView() ที่เช็ค element เอง (ปลอดภัย)
     hidePromotionsView();
     hideCustomerAccountView(); // 🔧 (2026-10-02 fix2): กัน overlay บัญชีของฉันค้างทับหน้าอื่น
+    hideGuestOrdersLoginBanner(); // 🆕 (2026-10-03 team-fix): ลบแบนเนอร์เชิญ login ออกเมื่อออกจาก tab ออเดอร์
     if (tab === "home") {
       hideMyOrdersView();
       cleanupMyOrdersView();
@@ -1894,15 +1900,25 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       scrollPageToTop();
     }
     else if (tab === "myorders") {
-      // ===== เพิ่มใหม่: tab "ออเดอร์ของฉัน" =====
-      // 🔧 (2026-10-02 fix2): ถ้า login แล้ว → เปิดหน้าบัญชี/ออเดอร์ของฉันจากบัญชีเลย
+      // ===== 🆕 (2026-10-03 team-fix): tab "ออเดอร์ของฉัน" — จุดเข้าเดียวที่ชัดเจน =====
+      //   - ถ้า login แล้ว → เปิด #myAccountView (โปรไฟล์ + ออเดอร์ + โปรด + ตั้งค่า)
+      //   - ถ้ายังไม่ login → เปิด #myOrdersView (ค้นหาด้วยชื่อ+เบอร์) พร้อมแบนเนอร์เชิญเข้าสู่ระบบ
+      //   - ก่อนหน้านี้ไม่มี tab นี้ใน HTML ทำให้ลูกค้าไม่รู้จะไปดูออเดอร์ที่ไหน
+      hidePromotionsView();
       let loggedInCustomer = null;
       try { loggedInCustomer = JSON.parse(localStorage.getItem("miusic_customer_session") || "null"); } catch (_) {}
       if (loggedInCustomer) {
+        // ซ่อน guest lookup view ถ้าเปิดอยู่
+        hideMyOrdersView();
+        cleanupMyOrdersView();
         showCustomerAccountView();
       } else {
+        // ซ่อน account view ถ้าเปิดอยู่
+        hideCustomerAccountView();
         showMyOrdersView();
         initMyOrdersView();
+        // 🆕 (2026-10-03 team-fix): แสดงแบนเนอร์เชิญเข้าสู่ระบบ (ลูกค้า guest จะได้รู้ว่ามีทางเลือก)
+        showGuestOrdersLoginBanner();
         scrollPageToTop();
       }
     }
@@ -1910,15 +1926,15 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       // 🎁 (2026-09-20) เพิ่มใหม่: tab "โปรโมชั่น" — หน้าพรีวิวโปรโมชั่นทั้งหมดที่ active
       //   - ไม่แตะ branch เดิม ใช้ showPromotionsView()/hidePromotionsView() แยกต่างหาก
       //   - เรียก renderPromotionsView() เพื่อวาดการ์ดโปรโมชั่น + countdown
-      //   - ซ่อน view อื่น ๆ ที่อาจเปิดอยู่ (myOrdersView)
+      //   - ซ่อน view อื่น ๆ ที่อาจเปิดอยู่ (myOrdersView, myAccountView)
       hideMyOrdersView();
       cleanupMyOrdersView();
+      hideCustomerAccountView();
       showPromotionsView();
       scrollPageToTop();
     }
-    else if (tab === "contact") {
-      window.open(buildWhatsAppLink(STATE.settings.whatsapp_number, "สวัสดีครับ/ค่ะ ต้องการสอบถามเกี่ยวกับร้านเพลง"), "_blank");
-    }
+    // 🆕 (2026-10-03 team-fix): ลบ branch "contact" ออก — ย้ายไปเป็น WhatsApp FAB แล้ว
+    //   ถ้ามีโค้ดเก่าเรียก data-tab=contact จะไม่ match ที่นี่ (ไม่พัง เพียงแค่ no-op)
   });
 });
 
@@ -1991,6 +2007,74 @@ async function showCustomerAccountView() {
 function hideCustomerAccountView() {
   const accountView = document.getElementById("myAccountView");
   if (accountView) accountView.style.display = "none";
+}
+
+// ============================================================
+// 🆕 (2026-10-03 team-fix): showGuestOrdersLoginBanner
+//   แสดงแบนเนอร์บน #myOrdersView สำหรับลูกค้าที่ยังไม่ login
+//   บอกว่า "ถ้าเข้าสู่ระบบ จะดูออเดอร์ทั้งหมดได้โดยไม่ต้องกรอกชื่อ-เบอร์"
+//   + ปุ่ม "เข้าสู่ระบบ" ที่เปิด customer auth modal
+//   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่ม element ใหม่ใน #myOrdersView ที่มีอยู่แล้ว
+// ============================================================
+function showGuestOrdersLoginBanner() {
+  const container = document.getElementById("myOrdersView");
+  if (!container) return;
+  // ถ้าแบนเนอร์มีอยู่แล้ว ไม่ต้องเพิ่มซ้ำ
+  if (document.getElementById("guestOrdersLoginBanner")) return;
+  const banner = document.createElement("div");
+  banner.id = "guestOrdersLoginBanner";
+  banner.className = "guest-orders-login-banner";
+  banner.innerHTML = `
+    <div class="guest-orders-login-banner-icon" aria-hidden="true">👤</div>
+    <div class="guest-orders-login-banner-text">
+      <strong>เข้าสู่ระบบเพื่อดูออเดอร์ทั้งหมดของคุณ</strong>
+      <span>ไม่ต้องกรอกชื่อ-เบอร์ใหม่ทุกครั้ง — login ครั้งเดียว เห็นทุกออเดอร์</span>
+    </div>
+    <button type="button" class="guest-orders-login-banner-btn" id="guestOrdersLoginBtn">เข้าสู่ระบบ</button>
+  `;
+  // แทรกแบนเนอร์ไว้ที่ต้น container (ก่อน form)
+  container.insertBefore(banner, container.firstChild);
+  const loginBtn = document.getElementById("guestOrdersLoginBtn");
+  if (loginBtn) {
+    loginBtn.addEventListener("click", () => {
+      // เปิด customer auth modal (ฟังก์ชันจาก customer-auth.js)
+      if (typeof openCustomerAuthModal === "function") {
+        openCustomerAuthModal();
+      } else {
+        // fallback: คลิกปุ่ม login ใน topbar ถ้ามี
+        const topbarLoginBtn = document.getElementById("customerLoginBtn");
+        if (topbarLoginBtn) topbarLoginBtn.click();
+      }
+    });
+  }
+}
+
+// 🆕 (2026-10-03 team-fix): hideGuestOrdersLoginBanner — ลบแบนเนอร์ออกเมื่อ login แล้วหรือเปลี่ยน tab
+function hideGuestOrdersLoginBanner() {
+  const banner = document.getElementById("guestOrdersLoginBanner");
+  if (banner) banner.remove();
+}
+
+// ============================================================
+// 🆕 (2026-10-03 team-fix): WhatsApp Floating Action Button (FAB)
+//   ย้ายจาก tab "ติดต่อ" ใน bottom-nav มาเป็นปุ่มลอยด้านขวาล่าง
+//   ทำให้ bottom-nav มีที่ว่างสำหรับ tab "ออเดอร์" ใหม่
+//   ผลกระทบระบบเดิม: 0% — เป็นปุ่มใหม่ ไม่แตะ tab "contact" เดิม (ที่ถูกลบออกจาก HTML แล้ว)
+// ============================================================
+function initWhatsappFab() {
+  const fab = document.getElementById("whatsappFab");
+  if (!fab) return;
+  fab.addEventListener("click", () => {
+    const waNumber = STATE?.settings?.whatsapp_number || "";
+    if (!waNumber) {
+      // ถ้ายังไม่ได้ตั้งค่าเบอร์ WhatsApp → เตือน
+      if (typeof showToast === "function") showToast("ยังไม่ได้ตั้งค่าเบอร์ WhatsApp ของร้าน", "error");
+      else alert("ยังไม่ได้ตั้งค่าเบอร์ WhatsApp ของร้าน");
+      return;
+    }
+    const url = buildWhatsAppLink(waNumber, "สวัสดีครับ/ค่ะ ต้องการสอบถามเกี่ยวกับร้านเพลง");
+    window.open(url, "_blank");
+  });
 }
 
 // 🆕 ดึงข้อมูลบัญชี + ออเดอร์จาก /api/customer/me + /api/customer/orders
@@ -2139,6 +2223,12 @@ window.loadCustomerAccountData = loadCustomerAccountData;
 // 🆕 (2026-10-02 fix): expose showMyOrdersView + hideMyOrdersView ให้ customer-auth.js fallback ใช้ได้
 window.showMyOrdersView = showMyOrdersView;
 window.hideMyOrdersView = hideMyOrdersView;
+// 🆕 (2026-10-03 team-fix): expose showGuestOrdersLoginBanner + hideGuestOrdersLoginBanner
+//   ให้ customer-auth.js เรียกตอน login state เปลี่ยน (ลบแบนเนอร์ออกเมื่อ login แล้ว)
+window.showGuestOrdersLoginBanner = showGuestOrdersLoginBanner;
+window.hideGuestOrdersLoginBanner = hideGuestOrdersLoginBanner;
+// 🆕 (2026-10-03 team-fix): expose initWhatsappFab (ใช้ตอน re-init ถ้าต้องการ)
+window.initWhatsappFab = initWhatsappFab;
 
 // 🆕 (2026-10-02): bind event listeners สำหรับปุ่มในรายละเอียดออเดอร์ (หน้าบัญชี)
 //   ใช้กับ orders ที่ render ผ่าน renderOneOrderCard จาก app-promotion.js
