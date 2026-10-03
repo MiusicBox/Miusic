@@ -2702,6 +2702,222 @@ function initWhatsappFab() {
   });
 }
 
+// ============================================================
+// 🆕 (T017): Customer Dashboard — สรุปการซื้อของฉัน
+//   - คำนวณทั้งหมดที่ frontend (ประหยัด D1 quota — ไม่ต้องสร้าง backend endpoint ใหม่)
+//   - ใช้ข้อมูลจาก customerOrdersPagination.allLoaded (ดึงจาก /api/customer/orders ที่มีอยู่แล้ว)
+//   - 4 ส่วน: summary cards + monthly bar chart (6 เดือน) + Top 5 songs + Top 3 DJs
+//   - ไม่กระทบระบบเดิม — ถ้า DOM elements ไม่มี (หน้าอื่น) → no-op
+// ============================================================
+
+// 🆕 (T017): lookup dj_name จาก STATE.songs โดย song_id (order items ไม่มี dj_name ตอน save)
+//   - ใช้ Map เพื่อ performance (O(1) lookup แทน O(n) find ทุกครั้ง)
+//   - cache โดยอ้างอิงจาก reference ของ STATE.songs — ถ้า array เปลี่ยน (re-load) → rebuild cache อัตโนมัติ
+let _t017_djLookupMap = null;
+let _t017_djLookupSongsRef = null;
+function _t017_getDjLookupMap() {
+  try {
+    const songs = (typeof STATE !== "undefined" && Array.isArray(STATE?.songs)) ? STATE.songs : [];
+    if (_t017_djLookupMap && _t017_djLookupSongsRef === songs) return _t017_djLookupMap;
+    _t017_djLookupMap = new Map();
+    _t017_djLookupSongsRef = songs;
+    for (const s of songs) {
+      const id = String(s?.id || s?.song_id || "");
+      const djName = String(s?.dj_name || "").trim();
+      if (id && djName) _t017_djLookupMap.set(id, djName);
+    }
+  } catch (_) {
+    _t017_djLookupMap = new Map();
+    _t017_djLookupSongsRef = null;
+  }
+  return _t017_djLookupMap;
+}
+
+// 🆕 (T017): ฟังก์ชันหลัก — render dashboard ทั้งหมด
+function renderCustomerDashboard(orders) {
+  const summaryEl = document.getElementById("dashboardSummary");
+  if (!summaryEl) return; // ไม่ได้อยู่ในหน้าบัญชี → no-op
+  const chartEl = document.getElementById("dashboardMonthlyChart");
+  const emptyChartEl = document.getElementById("dashboardMonthlyEmpty");
+  const topSongsEl = document.getElementById("dashboardTopSongs");
+  const topDjsEl = document.getElementById("dashboardTopDjs");
+
+  if (!Array.isArray(orders) || orders.length === 0) {
+    summaryEl.innerHTML = `
+      <div style="grid-column:1/-1;text-align:center;color:var(--text-dim);padding:24px 12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;">
+        <div style="font-size:32px;margin-bottom:6px;">📊</div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:2px;">ยังไม่มีข้อมูล</div>
+        <div style="font-size:11px;">สั่งซื้อเพลงครั้งแรกเพื่อดูสรุปการซื้อของคุณ</div>
+      </div>
+    `;
+    if (chartEl) chartEl.innerHTML = "";
+    if (emptyChartEl) emptyChartEl.style.display = "block";
+    if (topSongsEl) topSongsEl.innerHTML = '<div style="color:var(--text-dim);font-size:13px;text-align:center;padding:10px;">ยังไม่มีข้อมูล</div>';
+    if (topDjsEl) topDjsEl.innerHTML = '<div style="color:var(--text-dim);font-size:13px;text-align:center;padding:10px;">ยังไม่มีข้อมูล</div>';
+    return;
+  }
+
+  // 1. Summary cards
+  const totalOrders = orders.length;
+  const totalSpent = orders.reduce((sum, o) => sum + (Number(o.final_total) || Number(o.total) || 0), 0);
+  const completedOrders = orders.filter(o => o.status === "completed").length;
+  const pendingOrders = orders.filter(o => ["pending_verify", "processing"].includes(o.status)).length;
+
+  summaryEl.innerHTML = `
+    <div class="dashboard-card">
+      <div class="dashboard-card-icon">📦</div>
+      <div class="dashboard-card-value">${totalOrders}</div>
+      <div class="dashboard-card-label">ออเดอร์ทั้งหมด</div>
+    </div>
+    <div class="dashboard-card">
+      <div class="dashboard-card-icon">💰</div>
+      <div class="dashboard-card-value">${formatPrice(totalSpent)}</div>
+      <div class="dashboard-card-label">ยอดใช้จ่ายรวม</div>
+    </div>
+    <div class="dashboard-card">
+      <div class="dashboard-card-icon">✅</div>
+      <div class="dashboard-card-value">${completedOrders}</div>
+      <div class="dashboard-card-label">ออเดอร์สำเร็จ</div>
+    </div>
+    <div class="dashboard-card">
+      <div class="dashboard-card-icon">⏳</div>
+      <div class="dashboard-card-value">${pendingOrders}</div>
+      <div class="dashboard-card-label">รอดำเนินการ</div>
+    </div>
+  `;
+
+  // 2. Monthly chart (6 เดือนล่าสุด)
+  renderDashboardMonthlyChart(orders, chartEl, emptyChartEl);
+
+  // 3. Top 5 songs
+  renderDashboardTopSongs(orders, topSongsEl);
+
+  // 4. Top 3 DJs
+  renderDashboardTopDjs(orders, topDjsEl);
+}
+
+// 🆕 (T017): render bar chart — ยอดซื้อรายเดือน (6 เดือนล่าสุด)
+function renderDashboardMonthlyChart(orders, chartEl, emptyChartEl) {
+  if (!chartEl) return;
+  const now = new Date();
+  const months = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({
+      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+      label: d.toLocaleDateString("th-TH", { month: "short" }),
+      total: 0,
+      count: 0,
+    });
+  }
+  orders.forEach(o => {
+    if (!o.created_at) return;
+    const d = new Date(o.created_at);
+    if (isNaN(d.getTime())) return;
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const month = months.find(m => m.key === key);
+    if (month) {
+      month.total += Number(o.final_total) || Number(o.total) || 0;
+      month.count++;
+    }
+  });
+  const hasData = months.some(m => m.count > 0);
+  if (!hasData) {
+    chartEl.innerHTML = "";
+    if (emptyChartEl) emptyChartEl.style.display = "block";
+    return;
+  }
+  if (emptyChartEl) emptyChartEl.style.display = "none";
+  const maxTotal = Math.max(...months.map(m => m.total), 1);
+  chartEl.innerHTML = months.map(m => {
+    const heightPct = (m.total / maxTotal) * 100;
+    const safeTotal = formatPrice(m.total);
+    return `<div class="bar" style="height:${Math.max(heightPct, 2)}%;" data-value="${escapeHtml(m.label)}: ${safeTotal} · ${m.count} ออเดอร์" title="${escapeHtml(m.label)}: ${safeTotal}"></div>`;
+  }).join("") + months.map(m => `<div style="flex:1;min-width:0;text-align:center;font-size:10px;color:var(--text-dim);margin-top:4px;">${escapeHtml(m.label)}</div>`).join("");
+}
+
+// 🆕 (T017): render Top 5 เพลงที่ซื้อบ่อย — นับจาก order.items (skip playlist items)
+function renderDashboardTopSongs(orders, container) {
+  if (!container) return;
+  const songCount = new Map();
+  orders.forEach(o => {
+    (o.items || []).forEach(item => {
+      if (!item.song_id) return;
+      // skip playlist wrapper (kind=playlist ไม่มี song_id อยู่แล้ว — แต่กันไว้)
+      if (item.kind === "playlist") return;
+      const key = String(item.song_id);
+      if (!songCount.has(key)) {
+        songCount.set(key, { title: item.title || "ไม่ทราบชื่อ", count: 0, total: 0 });
+      }
+      const entry = songCount.get(key);
+      entry.count++;
+      entry.total += Number(item.price) || 0;
+    });
+  });
+  const top5 = Array.from(songCount.entries())
+    .sort((a, b) => b[1].count - a[1].count || b[1].total - a[1].total)
+    .slice(0, 5);
+  if (top5.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-dim);font-size:13px;text-align:center;padding:10px;">ยังไม่มีข้อมูล</div>';
+    return;
+  }
+  container.innerHTML = top5.map(([id, info], idx) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);">
+      <div style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${idx + 1}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(info.title)}</div>
+        <div style="font-size:11px;color:var(--text-dim);">${info.count} ครั้ง · ${formatPrice(info.total)}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
+// 🆕 (T017): render Top 3 DJ ที่ซื้อบ่อย — นับจาก order.items + lookup dj_name จาก STATE.songs
+function renderDashboardTopDjs(orders, container) {
+  if (!container) return;
+  const djMap = _t017_getDjLookupMap();
+  const djCount = new Map();
+  orders.forEach(o => {
+    (o.items || []).forEach(item => {
+      if (item.kind === "playlist") return;
+      // 1) ใช้ dj_name จาก item ถ้ามี
+      // 2) lookup จาก STATE.songs โดย song_id
+      // 3) fallback 'ไม่ทราบ DJ'
+      let djName = item.dj_name || item.dj || "";
+      if (!djName && item.song_id) {
+        djName = djMap.get(String(item.song_id)) || "";
+      }
+      if (!djName) djName = "ไม่ทราบ DJ";
+      if (!djCount.has(djName)) {
+        djCount.set(djName, { count: 0, total: 0 });
+      }
+      const entry = djCount.get(djName);
+      entry.count++;
+      entry.total += Number(item.price) || 0;
+    });
+  });
+  const top3 = Array.from(djCount.entries())
+    .filter(([name]) => name !== "ไม่ทราบ DJ" || djCount.size === 1)
+    .sort((a, b) => b[1].count - a[1].count || b[1].total - a[1].total)
+    .slice(0, 3);
+  if (top3.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-dim);font-size:13px;text-align:center;padding:10px;">ยังไม่มีข้อมูล</div>';
+    return;
+  }
+  container.innerHTML = top3.map(([djName, info], idx) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);">
+      <div style="width:24px;height:24px;border-radius:50%;background:var(--accent-2,#f59e0b);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${idx + 1}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(djName)}</div>
+        <div style="font-size:11px;color:var(--text-dim);">${info.count} เพลง · ${formatPrice(info.total)}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
+// 🆕 (T017): expose ให้เรียกจากภายนอก (เผื่อต้องการ re-render หลังจากโหลดเพลงใหม่)
+window.renderCustomerDashboard = renderCustomerDashboard;
+
 // 🆕 ดึงข้อมูลบัญชี + ออเดอร์จาก /api/customer/me + /api/customer/orders
 //   🆕 (T013-F7): refactor ส่วน "ดึงออเดอร์" ออกเป็น loadCustomerOrders(reset) — รองรับ pagination
 //     เดิม: ดึงทุกออเดอร์ทีเดียว (default 50 จาก backend) → ถ้าเกิน 50 ลูกค้ามองไม่เห็นออเดอร์เก่า ๆ
@@ -2813,6 +3029,15 @@ async function loadCustomerOrders(reset = false) {
     // เก็บ orders ทั้งหมดไว้ใน trackOrderAllOrders (ใช้โดย openTrackOrderAllDetail)
     trackOrderAllOrders = customerOrdersPagination.allLoaded;
 
+    // 🆕 (T017): render customer dashboard สำหรับ empty state ด้วย
+    //   - ต้องเรียกก่อน early return ไม่งั้น dashboard จะไม่แสดง "ยังไม่มีข้อมูล" ในกรณีไม่มีออเดอร์
+    //   - ที่ท้ายฟังก์ชัน (หลัง loadMore binding) จะเรียกอีกครั้งสำหรับ non-empty case (redundant แต่ปลอดภัย — idempotent)
+    try {
+      renderCustomerDashboard(customerOrdersPagination.allLoaded);
+    } catch (dashErr) {
+      console.warn("T017: renderCustomerDashboard error (empty path):", dashErr);
+    }
+
     // empty state
     if (customerOrdersPagination.allLoaded.length === 0) {
       ordersListEl.innerHTML = `
@@ -2918,6 +3143,16 @@ async function loadCustomerOrders(reset = false) {
     if (loadMoreBtn) {
       loadMoreBtn.addEventListener("click", () => loadMoreCustomerOrders());
     }
+
+    // 🆕 (T017): render customer dashboard หลังโหลด/โหลดเพิ่มเติม — ใช้ allLoaded (cumulative)
+    //   - ทำงานทั้งตอน first-load (reset=true) และ load-more (reset=false)
+    //   - ถ้า DOM ของ dashboard ไม่มี (หน้าอื่น) → renderCustomerDashboard จะ no-op เอง
+    //   - คำนวณที่ frontend ทั้งหมด — ประหยัด D1 quota (ไม่ต้องสร้าง endpoint ใหม่)
+    try {
+      renderCustomerDashboard(customerOrdersPagination.allLoaded);
+    } catch (dashErr) {
+      console.warn("T017: renderCustomerDashboard error:", dashErr);
+    }
   } catch (err) {
     ordersListEl.innerHTML = `<div style="color:var(--danger);text-align:center;padding:14px;">โหลดออเดอร์ไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
   } finally {
@@ -3006,14 +3241,15 @@ document.getElementById("myAccountRefreshBtn")?.addEventListener("click", () => 
 });
 
 // 🆕 (2026-10-02): tab switching สำหรับหน้าบัญชี — โปรไฟล์ / ออเดอร์ / รายการโปรด / ตั้งค่า
+// 🆕 (T017): เพิ่ม "dashboard" เป็น tab แรก (default active)
 function switchAccountTab(tab) {
-  const tabs = { profile: "accountTabProfile", orders: "accountTabOrders", favorites: "accountTabFavorites", settings: "accountTabSettings" };
-  const sections = { profile: "accountSectionProfile", orders: "accountSectionOrders", favorites: "accountSectionFavorites", settings: "accountSectionSettings" };
+  const tabs = { dashboard: "accountTabDashboard", profile: "accountTabProfile", orders: "accountTabOrders", favorites: "accountTabFavorites", settings: "accountTabSettings" };
+  const sections = { dashboard: "accountSectionDashboard", profile: "accountSectionProfile", orders: "accountSectionOrders", favorites: "accountSectionFavorites", settings: "accountSectionSettings" };
   for (const [key, tabId] of Object.entries(tabs)) {
     const tabBtn = document.getElementById(tabId);
     const section = document.getElementById(sections[key]);
     if (key === tab) {
-      if (tabBtn) { tabBtn.style.color = "var(--text)"; tabBtn.style.borderBottom = "2px solid var(--accent)"; }
+      if (tabBtn) { tabBtn.style.color = "var(--accent)"; tabBtn.style.borderBottom = "2px solid var(--accent)"; }
       if (section) section.style.display = "block";
     } else {
       if (tabBtn) { tabBtn.style.color = "var(--text-dim)"; tabBtn.style.borderBottom = "2px solid transparent"; }
@@ -3021,6 +3257,17 @@ function switchAccountTab(tab) {
     }
   }
 }
+// 🆕 (T017): tab แดชบอร์ด — ใช้ข้อมูล orders ที่โหลดแล้ว (ไม่่ต้อง fetch ใหม่ — ประหยัด D1 quota)
+//   - ถ้า allLoaded ว่าง → เรียก loadCustomerAccountData() เพื่อ trigger fetch ครั้งแรก
+//   - ถ้ามีข้อมูลอยู่แล้ว → render dashboard จาก allLoaded ทันที (no fetch)
+document.getElementById("accountTabDashboard")?.addEventListener("click", () => {
+  switchAccountTab("dashboard");
+  if (typeof customerOrdersPagination !== "undefined" && customerOrdersPagination.allLoaded.length === 0) {
+    loadCustomerAccountData();
+  } else if (typeof customerOrdersPagination !== "undefined") {
+    try { renderCustomerDashboard(customerOrdersPagination.allLoaded); } catch (_) {}
+  }
+});
 document.getElementById("accountTabProfile")?.addEventListener("click", () => switchAccountTab("profile"));
 document.getElementById("accountTabOrders")?.addEventListener("click", () => {
   switchAccountTab("orders");
