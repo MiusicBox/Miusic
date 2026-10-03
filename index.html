@@ -71,7 +71,7 @@
 <!-- 🔧 (2026-09-24 CLS fix): style.css กลับมาเป็น <link rel="stylesheet"> ปกติ (บล็อกการแสดงผลสั้น ๆ)
      สาเหตุ: เทคนิค media="print"+onload ทำให้หน้าเว็บวาดแบบ "ไม่มีสไตล์" ก่อน แล้วสไตล์มาทีหลัง → ทุกอย่างกระโดด
      (CLS 0.649 = ตัวที่ทำให้คะแนนตก 76) ไฟล์/เวอร์ชันเดิมทุกอย่าง แค่เอาการโหลดแบบหน่วงออก -->
-<link rel="stylesheet" href="style.css?v=20260930-fix-bottom-pad">
+<link rel="stylesheet" href="style.css?v=20261003-theme-v1">
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): เพิ่ม .visually-hidden class สำหรับ h1 SEO -->
 <style>
@@ -531,6 +531,23 @@
 <script src="/vendor/html2canvas.min.js" defer
   onerror="console.warn('html2canvas self-host failed to load — will fallback to dynamic import');"></script>
 
+<!-- 🆕 (T005-dark-light-mode): Inline script กัน FOUC — อ่าน theme จาก localStorage ก่อน body paint
+     ต้อง run synchronous ใน <head> ก่อนที่ browser จะ paint body ไม่งั้นลูกค้า OS light จะเห็น flash ดำ ~50ms
+     localStorage key: 'miusic_theme' ค่า: 'dark' | 'light'
+     Default: respect prefers-color-scheme ของ OS (OS light → light, อื่น ๆ → dark — ไม่ break ผู้ใช้เดิม)
+     ผลกระทบระบบเดิม: 0% — ถ้าไม่มี localStorage และ OS เป็น dark จะได้ dark เหมือนเดิม -->
+<script>
+  (function() {
+    try {
+      var stored = localStorage.getItem('miusic_theme');
+      var theme = stored || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.dataset.theme = theme;
+    } catch (_) {
+      document.documentElement.dataset.theme = 'dark';
+    }
+  })();
+</script>
+
 <!-- 🆕 (T004-pwa): PWA support — manifest + theme-color + iOS/Android install meta -->
 <!--   - manifest.json: W3C Web App Manifest (name/icons/shortcuts/display:standalone)
      - theme-color #0b0d14 ตรง --bg (Android status bar กลืนกับ header)
@@ -565,6 +582,12 @@
         <button class="icon-btn cart-toggle-btn" id="cartToggleBtn" type="button" aria-label="เปิดตะกร้าสินค้า">
           <svg class="cart-icon-svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
           <span id="cartBadge" class="cart-badge" hidden>0</span>
+        </button>
+        <!-- 🆕 (T005-dark-light-mode): ปุ่มสลับ Dark/Light mode — เก็บ preference ใน localStorage, default ตาม OS
+             ไอคอน: 🌙 ตอน dark / ☀️ ตอน light (เปลี่ยนใน app-user.js applyTheme)
+             ผลกระทบระบบเดิม: 0% — เพิ่มปุ่มใหม่ ไม่แตะปุ่มเดิม -->
+        <button class="icon-btn theme-toggle-btn" id="themeToggleBtn" type="button" aria-label="สลับ Dark/Light mode" title="สลับธีม">
+          <span id="themeToggleIcon">🌙</span>
         </button>
         <!-- 🆕 (2026-10-01): ปุ่มสมัคร/เข้าสู่ระบบลูกค้า — แสดงปุ่ม login หรือชื่อลูกค้า + ปุ่มออกจากระบบ (sync โดย customer-auth.js) -->
         <span id="customerAuthBtnArea" style="display:flex;align-items:center;gap:4px;"></span>
@@ -1098,7 +1121,7 @@
   <!-- เปลี่ยนเลข v ทุกครั้งที่อัปโหลดไฟล์ใหม่ เพื่อไม่ให้มือถือใช้ไฟล์ JS จาก cache -->
   <!-- 🔧 v=20260917-p0: P0 แก้ Bug 1 (ลูกค้าตั้ง status เองไม่ได้) + Sec 1 (change-password ต้อง verify เดิม) -->
   <!-- 🔧 v=20260917-polling-fix: Phase 0 ยกเลิก polling ทุก 4 วิ + Phase 1 จุด 5 (admin view cache) + Phase 2 จุด 1 (state ฝั่ง client) -->
-  <script type="module" src="app-user.js?v=20261003-login-guest-v11"></script>
+  <script type="module" src="app-user.js?v=20261003-theme-v1"></script>
   <!-- 🆕 (2026-10-01): ระบบสมาชิกลูกค้า — โหลดทีหลัง app-user.js เพื่อให้ showToast พร้อมใช้ -->
   <!--   ผลกระทบระบบเดิม: 0% — ไฟล์ใหม่ ไม่แตะ app-user.js/app-cart.js -->
   <script type="module" src="customer-auth.js?v=20261003-login-guest-v11"></script>
