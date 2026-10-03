@@ -5118,14 +5118,26 @@ async function handleCustomerAuth(request, env, url) {
       sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
       binds.push(limit, offset);
       const { results } = await env.DB.prepare(sql).bind(...binds).all();
-      // นับจำนวนออเดอร์ของแต่ละ customer (ดึงจาก documents)
-      const customers = [];
-      for (const row of results || []) {
-        const orderCountRow = await env.DB.prepare(
-          "SELECT COUNT(*) as cnt FROM documents WHERE collection='orders' AND json_extract(data,'$.customer_id')=?"
-        ).bind(row.id).first();
-        customers.push({ ...row, order_count: orderCountRow?.cnt || 0 });
+      // 🔧 (2026-10-01 fix C2): ใช้ GROUP BY query เดียวแทน N+1 loop
+      //   เดิม (บรรทัด 5123-5128 เดิม): วนลูป COUNT(*) ทีละ customer
+      //     → ถ้า limit=100 → 1 (list) + 100 (count) = 101 subrequests > 50 Free plan limit
+      //     → endpoint พัง 500 เมื่อลูกค้า ≥ 50 ราย
+      //   ใหม่: ดึง order_count ทุก customer ใน query เดียวด้วย GROUP BY
+      //     → ลดจาก N+1 query → 2 query (list + group-by)
+      //   ผลกระทบระบบเดิม: 0% — response shape เหมือนเดิม ({customers, total})
+      const { results: orderCountRows } = await env.DB.prepare(
+        "SELECT json_extract(data,'$.customer_id') as cid, COUNT(*) as cnt " +
+        "FROM documents WHERE collection='orders' AND json_extract(data,'$.customer_id') IS NOT NULL " +
+        "GROUP BY cid"
+      ).all();
+      const orderCountMap = new Map();
+      for (const r of orderCountRows || []) {
+        if (r.cid) orderCountMap.set(r.cid, r.cnt || 0);
       }
+      const customers = (results || []).map(row => ({
+        ...row,
+        order_count: orderCountMap.get(row.id) || 0,
+      }));
       return jsonResponse({ customers, total: customers.length });
     } catch (err) {
       if (String(err?.message || "").includes("no such table")) {
@@ -5167,6 +5179,13 @@ async function handleCustomerAuth(request, env, url) {
     try {
       // ลบ sessions ของลูกค้าก่อน
       await env.DB.prepare("DELETE FROM customer_sessions WHERE customer_id=?").bind(customerId).run();
+      // 🆕 (2026-10-03 team-24h-v2 / L4): ลบ orphan rows ของลูกค้า — กันข้อมูลค้างหลังลบ customer
+      //   ก่อนหน้านี้ลบเฉพาะ sessions + customer record → customer_favorites / song_likes / password_reset_requests ค้างเป็น orphan
+      //   ผลกระทบ: orphan rows บวม D1 storage (Free plan 5GB) + รั่ว profile ลูกค้าที่ถูกลบไปแล้ว (privacy)
+      //   วิธีแก้: DELETE 3 ตารางนี้ทั้งหมดก่อนลบ customer record (ลด FOREIGN KEY risk ถ้ามี constraint ในอนาคต)
+      await env.DB.prepare("DELETE FROM customer_favorites WHERE customer_id=?").bind(customerId).run();
+      await env.DB.prepare("DELETE FROM song_likes WHERE customer_id=?").bind(customerId).run();
+      await env.DB.prepare("DELETE FROM password_reset_requests WHERE customer_id=?").bind(customerId).run();
       // ลบลูกค้า
       await env.DB.prepare("DELETE FROM customers WHERE id=?").bind(customerId).run();
       return jsonResponse({ ok: true });
