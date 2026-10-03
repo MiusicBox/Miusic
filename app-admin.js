@@ -4,7 +4,7 @@ import { db, auth, uploadToCloudinary } from "./firebase-init.js?v=20260905-fix1
 import { uploadFullSong, deleteFromStorage } from "./storage-adapter.js?v=20260904-rawzip";
 import {
   collection, addDoc, updateDoc, deleteDoc, doc, getDocs, getDoc, setDoc, getDocsAdmin
-} from "./db-client.js?v=20260928-promo-fix-v9";
+} from "./db-client.js?v=20261003-login-guest-v10";
 import {
   signInWithEmailAndPassword, onAuthStateChanged, signOut,
   reauthenticateWithCredential, EmailAuthProvider, updatePassword,
@@ -16,7 +16,7 @@ import {
   analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS
 } from "./song-analyzer.js?v=20260908-previewrange1";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
-import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20260929-stack-promo";
+import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261003-login-guest-v10";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
 import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js";
 
