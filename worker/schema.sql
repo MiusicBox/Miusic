@@ -71,6 +71,16 @@ CREATE INDEX IF NOT EXISTS idx_documents_orders_whatsapp
   ON documents(collection, json_extract(data, '$.whatsapp'))
   WHERE collection = 'orders';
 
+-- 🆕 (2026-10-03 v10 — แยก Login / Guest): index สำหรับดึงออเดอร์ของลูกค้า Login ด้วย customer_id
+-- ใช้ใน /api/customer/orders และ /api/db/orders/_customer-list (ตอนมี customer session)
+--   WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ?
+-- ⚠️ นิพจน์ต้องเหมือน query ทุกตัวอักษร D1 ถึงจะใช้ index ได้ (ไม่มีการ query ด้วย guest_id ตรง ๆ —
+--   Guest ใช้ index whatsapp ด้านบนแล้วกรอง guest_id ฝั่ง JS)
+-- ปลอดภัยต่อระบบเดิม: เป็นแค่ index (IF NOT EXISTS) ไม่เปลี่ยนข้อมูล — รันซ้ำได้
+CREATE INDEX IF NOT EXISTS idx_documents_orders_customer_id
+  ON documents(json_extract(data, '$.customer_id'))
+  WHERE collection = 'orders';
+
 -- 🔧 แก้บั๊ก Bug #7 (2026-09-17): index สำหรับ query cover_url ใน songs และ playlists
 -- ใช้ตอน endpoint /api/db/_meta/_check-cover-used — ตรวจว่า cover_url ยังถูกใช้อยู่ไหม
 -- ทำให้ query json_extract(data, '$.cover_url') = ? ใช้ index ได้โดยตรง
