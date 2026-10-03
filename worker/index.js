@@ -5559,13 +5559,31 @@ async function handleCustomerAuth(request, env, url) {
     const songId = String(body.song_id || "").trim();
     if (!songId) return jsonResponse({ error: "กรุณาระบุ song_id" }, 400);
     try {
-      const id = crypto.randomUUID();
+      // 🆕 (T008-L10): favorites toggle — ถ้ามี → DELETE (unfavorite), ถ้าไม่มี → INSERT (favorite)
+      //   เดิม: INSERT OR IGNORE → กดซ้ำเป็น no-op (return ok เหมือนกันทุกครั้ง)
+      //     ลูกค้ากด ❤️ แล้วกด ❤️ ซ้ำ → ไม่ยกเลิก → รู้สึกว่าปุ่มไม่ทำงาน + ไม่สามารถ unfavorite ผ่านปุ่มได้
+      //   ใหม่: toggle — กด ❤️ เพิ่ม, กด ❤️ ซ้ำยกเลิก (response บอก is_favorite ให้ frontend update UI ทันที)
+      //   ผลกระทบระบบเดิม: response shape เปลี่ยนเพิ่ม field `is_favorite` (frontend ใช้เพื่อ update ปุ่ม)
+      //     ถ้า frontend เดิมไม่สนใจ is_favorite → ยังทำงานได้ (ok:true ยังอยู่)
       const now = new Date().toISOString();
-      // ใช้ INSERT OR IGNORE เพื่อกันซ้ำ (ถ้าซ้ำ → ไม่ error แต่ return ok เหมือนกัน)
+      const existing = await env.DB.prepare(
+        "SELECT id FROM customer_favorites WHERE customer_id = ? AND song_id = ?"
+      ).bind(customer.id, songId).first();
+
+      if (existing) {
+        // unfavorite — ลูกค้ากด ❤️ ซ้ำ → ยกเลิก
+        await env.DB.prepare(
+          "DELETE FROM customer_favorites WHERE customer_id = ? AND song_id = ?"
+        ).bind(customer.id, songId).run();
+        return jsonResponse({ ok: true, is_favorite: false, message: "ลบจากรายการโปรดแล้ว" });
+      }
+
+      // favorite — ลูกค้ากด ❤️ ครั้งแรก → เพิ่ม
+      const id = crypto.randomUUID();
       await env.DB.prepare(
-        "INSERT OR IGNORE INTO customer_favorites (id, customer_id, song_id, created_at) VALUES (?, ?, ?, ?)"
+        "INSERT INTO customer_favorites (id, customer_id, song_id, created_at) VALUES (?, ?, ?, ?)"
       ).bind(id, customer.id, songId, now).run();
-      return jsonResponse({ ok: true, message: "เพิ่มในรายการโปรดแล้ว" });
+      return jsonResponse({ ok: true, is_favorite: true, message: "เพิ่มในรายการโปรดแล้ว" });
     } catch (err) {
       if (String(err?.message || "").includes("no such table")) {
         return jsonResponse({ error: "ระบบยังไม่พร้อม — กรุณารัน scripts/migrate-customer-v6.sql ใน D1 Console", code: "TABLE_NOT_CREATED" }, 500);
