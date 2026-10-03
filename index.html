@@ -71,7 +71,7 @@
 <!-- 🔧 (2026-09-24 CLS fix): style.css กลับมาเป็น <link rel="stylesheet"> ปกติ (บล็อกการแสดงผลสั้น ๆ)
      สาเหตุ: เทคนิค media="print"+onload ทำให้หน้าเว็บวาดแบบ "ไม่มีสไตล์" ก่อน แล้วสไตล์มาทีหลัง → ทุกอย่างกระโดด
      (CLS 0.649 = ตัวที่ทำให้คะแนนตก 76) ไฟล์/เวอร์ชันเดิมทุกอย่าง แค่เอาการโหลดแบบหน่วงออก -->
-<link rel="stylesheet" href="style.css?v=20261005-t019-homepage-ui">
+<link rel="stylesheet" href="style.css?v=20261006-t020-song-reviews">
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): เพิ่ม .visually-hidden class สำหรับ h1 SEO -->
 <style>
@@ -879,6 +879,41 @@
         <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
         <span id="modalBuyLabel">เพิ่มเข้าตะกร้า</span>
       </button>
+
+      <!-- 🆕 (T020): Review section ใน song modal — ดาว + ความเห็น + ล่าสุด 5 รายการ -->
+      <div id="modalReviewsSection" class="modal-reviews-section">
+        <div class="modal-reviews-header">
+          <h3 class="modal-reviews-title">⭐ รีวิวเพลง</h3>
+          <div id="modalReviewSummary" class="modal-reviews-summary"></div>
+        </div>
+
+        <!-- Review form (เฉพาะ login) -->
+        <div id="modalReviewForm" class="modal-review-form" style="display:none;">
+          <div class="modal-review-form-label" id="modalReviewFormLabel">เพิ่มรีวิวของคุณ</div>
+          <div id="modalStarInput" class="modal-star-input" role="radiogroup" aria-label="คะแนนรีวิว 1-5 ดาว">
+            <button type="button" class="star-btn" data-rating="1" aria-label="1 ดาว">⭐</button>
+            <button type="button" class="star-btn" data-rating="2" aria-label="2 ดาว">⭐</button>
+            <button type="button" class="star-btn" data-rating="3" aria-label="3 ดาว">⭐</button>
+            <button type="button" class="star-btn" data-rating="4" aria-label="4 ดาว">⭐</button>
+            <button type="button" class="star-btn" data-rating="5" aria-label="5 ดาว">⭐</button>
+          </div>
+          <textarea id="modalReviewComment" class="modal-review-comment" placeholder="แสดงความเห็น (ไม่บังคับ, สูงสุด 500 ตัวอักษร)" maxlength="500"></textarea>
+          <div class="modal-review-actions">
+            <button type="button" class="btn" id="modalSubmitReviewBtn" style="flex:1;">ส่งรีวิว</button>
+            <button type="button" class="btn secondary" id="modalDeleteReviewBtn" style="display:none;">ลบรีวิว</button>
+          </div>
+          <div id="modalReviewFeedback" class="modal-review-feedback" role="status" aria-live="polite"></div>
+        </div>
+
+        <!-- Login prompt (ถ้ายังไม่ login) -->
+        <div id="modalReviewLoginPrompt" class="modal-review-login-prompt" style="display:none;">
+          <div class="modal-review-login-text">เข้าสู่ระบบเพื่อรีวิวเพลง</div>
+          <button type="button" class="btn" id="modalReviewLoginBtn">เข้าสู่ระบบ</button>
+        </div>
+
+        <!-- Reviews list (ล่าสุด 5 รายการ) -->
+        <div id="modalReviewsList" class="modal-reviews-list"></div>
+      </div>
     </div>
   </div>
 
