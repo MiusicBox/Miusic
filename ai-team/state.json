@@ -1,6 +1,6 @@
 {
-  "version": "1.2.0",
-  "last_updated": "2026-10-03T11:30:00+07:00",
+  "version": "1.3.0",
+  "last_updated": "2026-10-03T12:00:00+07:00",
   "current_session": {
     "session_id": "web-fa07595c-dcf9-4921-aa7a-8451696ed1c0",
     "started_at": "2026-10-03T10:00:00+07:00",
@@ -8,15 +8,14 @@
   },
   "tasks": {
     "active": [],
-    "pending_user_approval": [],
+    "pending_user_approval": ["T004-pwa", "T005-dark-light-mode"],
     "completed": [
       {
         "id": "T001-team-24h-v2",
         "title": "Critical fixes + UI/UX + DB improvements (Round 1-2)",
         "completed_at": "2026-10-03T11:00:00+07:00",
         "pr_number": 1,
-        "merge_sha": "02eeb60c",
-        "deploy_version": "073cf06e-f642-4ca5-8731-d800a0584755"
+        "merge_sha": "02eeb60c"
       },
       {
         "id": "T002-ai-team-system",
@@ -29,14 +28,7 @@
         "id": "T003-d1-migration",
         "title": "D1 Migration: Add 3 indexes + verify backup table",
         "completed_at": "2026-10-03T11:30:00+07:00",
-        "executed_by": "user (manual via D1 Console)",
-        "indexes_created": [
-          "idx_documents_orders_customer_id_created",
-          "idx_documents_orders_zip_status",
-          "idx_documents_orders_zip_created_at"
-        ],
-        "backup_table_found": false,
-        "notes": "ไม่ต้อง DROP backup table — ไม่มีอยู่จริง"
+        "executed_by": "user (manual via D1 Console)"
       }
     ],
     "blocked": []
@@ -46,99 +38,121 @@
     "cloudflare_token": "stored_in_env_CF_API_TOKEN (Workers edit only — ไม่มี D1 สิทธิ์)",
     "cloudflare_account_id": "01b48fd0746fb6fff50a18d02c4ceeb4",
     "cloudflare_worker_name": "miusic-store",
-    "d1_database_name": "miusic-store-db",
-    "d1_database_id": "5638f1b9-48ca-40cb-9221-ed6910bcee8c"
+    "d1_database_name": "miusic-store-db"
   },
   "github": {
     "repo": "MiusicBox/Miusic",
     "default_branch": "main",
     "team_branch_prefix": "ai-team",
-    "existing_branches": ["main"],
-    "open_prs": [],
-    "recent_merges": [
+    "existing_branches": ["main", "ai-team/T004-pwa", "ai-team/T005-dark-light-mode"],
+    "open_prs": [
       {
-        "number": 1,
-        "title": "Team 24h v2: Critical fixes + UI/UX + DB improvements",
-        "merged_at": "2026-10-03T11:00:00+07:00",
-        "sha": "02eeb60c"
+        "number": 3,
+        "title": "T004: PWA — ติดตั้งเป็นแอปมือถือ",
+        "url": "https://github.com/MiusicBox/Miusic/pull/3",
+        "branch": "ai-team/T004-pwa",
+        "status": "waiting_user_merge",
+        "created_at": "2026-10-03T12:00:00+07:00",
+        "task_id": "T004-pwa",
+        "summary": "PWA support — manifest.json + service-worker.js + icons + meta tags + SW registration + cache headers",
+        "commits": 6,
+        "files_changed": 9,
+        "lines_added": 415,
+        "security_note": "T004-SEC-01 fixed (never-cache PII endpoints + CLEAR_API_CACHE on logout)"
       },
       {
-        "number": 2,
-        "title": "AI Team System: Initial setup (workflow + state + 6 roles)",
-        "merged_at": "2026-10-03T11:00:00+07:00",
-        "sha": "599178de"
+        "number": 4,
+        "title": "T005: Dark/Light Mode Toggle",
+        "url": "https://github.com/MiusicBox/Miusic/pull/4",
+        "branch": "ai-team/T005-dark-light-mode",
+        "status": "waiting_user_merge",
+        "created_at": "2026-10-03T12:00:00+07:00",
+        "task_id": "T005-dark-light-mode",
+        "summary": "Theme toggle — CSS variables + localStorage + FOUC prevention + OS prefers-color-scheme",
+        "commits": 3,
+        "files_changed": 3,
+        "lines_added": 157
       }
     ]
   },
   "cloudflare": {
     "worker_name": "miusic-store",
     "production_url": "https://miusic-store.dj-remix.workers.dev",
-    "deploy_method": "wrangler",
     "last_deploy": {
       "timestamp": "2026-10-03T11:00:00+07:00",
-      "version_id": "073cf06e-f642-4ca5-8731-d800a0584755",
-      "size": "302.28 KiB (gzip: 52.58 KiB)"
+      "version_id": "073cf06e-f642-4ca5-8731-d800a0584755"
     },
-    "account_id": "01b48fd0746fb6fff50a18d02c4ceeb4",
-    "d1_database": {
-      "name": "miusic-store-db",
-      "id": "5638f1b9-48ca-40cb-9221-ed6910bcee8c",
-      "indexes_added": [
-        "idx_documents_orders_customer_id_created",
-        "idx_documents_orders_zip_status",
-        "idx_documents_orders_zip_created_at"
-      ]
-    }
+    "account_id": "01b48fd0746fb6fff50a18d02c4ceeb4"
   },
   "decisions_log": [
     {
       "id": "D001",
       "timestamp": "2026-10-03T10:00:00+07:00",
-      "question": "ต้องการ AI Team system ที่ทำงานผ่าน GitHub + Cloudflare",
-      "user_answer": "สร้างระบบ AI Team 5 roles + state persistence",
-      "action_taken": "สร้าง ai-team/ directory + team.json + state.json + workflow.md + manager.js"
+      "question": "ต้องการ AI Team system",
+      "action_taken": "สร้าง ai-team/ directory + workflow"
     },
     {
       "id": "D002",
       "timestamp": "2026-10-03T11:00:00+07:00",
-      "question": "ให้ AI merge ทั้ง 2 PR ให้",
+      "question": "merge PR #1 + #2",
       "user_answer": "B - merge ให้หน่อย",
-      "action_taken": "merge PR #1 + #2 + deploy ขึ้น production + ทดสอบ flow จริง"
+      "action_taken": "merge + deploy production"
     },
     {
       "id": "D003",
       "timestamp": "2026-10-03T11:15:00+07:00",
-      "question": "รัน migration D1 ยังไง",
-      "user_answer": "A — จะทำเองใน D1 Console",
-      "action_taken": "ผมให้ SQL ไป — user รันเองใน D1 Console"
+      "question": "รัน migration D1",
+      "user_answer": "A — ทำเองใน D1 Console",
+      "action_taken": "user รันเอง — 3 indexes created, no backup table"
     },
     {
       "id": "D004",
-      "timestamp": "2026-10-03T11:30:00+07:00",
-      "question": "Migration เสร็จแล้ว ต่อไปทำอะไร",
-      "user_answer": "pending — ยังไม่ได้เลือก task ถัดไป",
-      "action_taken": "รอ user เลือก task ถัดไป"
+      "timestamp": "2026-10-03T11:35:00+07:00",
+      "question": "task ถัดไปทำอะไร",
+      "user_answer": "ทำตามคำแนะนำ — F5 PWA + F6 Dark mode",
+      "action_taken": "เริ่ม T004 + T005 คู่ขนานผ่าน AI Team workflow"
+    },
+    {
+      "id": "D005",
+      "timestamp": "2026-10-03T12:00:00+07:00",
+      "question": "T004 + T005 ผ่านครบทุก stage",
+      "action_taken": "สร้าง PR #3 + PR #4 — รอ user merge"
     }
   ],
   "resume_instructions": {
-    "how_to_resume": "บอก AI: 'resume ai-team' หรือ 'ทำงานต่อ' — AI จะอ่าน state.json และทำงานต่อ",
+    "how_to_resume": "บอก AI: 'resume ai-team' — AI จะอ่าน state.json และทำงานต่อ",
     "what_user_can_say": [
       "resume ai-team — ทำงานต่อ",
-      "ai-team status — ดูสถานะปัจจุบัน",
+      "ai-team status — ดูสถานะ",
       "new task: <description> — สร้าง task ใหม่",
-      "approve merge <PR#> — อนุมัติ merge PR",
-      "cancel task <task-id> — ยกเลิก task",
-      "show task <T00X> — ดูรายละเอียด task"
+      "approve merge <PR#> — อนุมัติ merge PR (หรือ 'merge PR X ให้หน่อย')",
+      "cancel task <task-id> — ยกเลิก task"
     ]
   },
   "next_actions_pending_user": [
     {
-      "action": "เลือก task ถัดไป",
-      "options": [
-        "แก้ Medium bugs 11 ตัว (M1-M11) — security + pagination + rate limit",
-        "แก้ Low bugs 12 ตัว (L1-L13) — minor issues",
-        "ทำฟีเจอร์ใหม่ (รายงานยอดขาย, ค้นหาขั้นสูง, PWA, dark mode, รีวิว, playlist ลูกค้า)",
-        "อื่น ๆ — บอกได้เลย"
+      "action": "merge PR #3 (T004 PWA)",
+      "url": "https://github.com/MiusicBox/Miusic/pull/3",
+      "options": ["merge เองบน GitHub", "บอก AI 'merge PR 3 ให้หน่อย'"]
+    },
+    {
+      "action": "merge PR #4 (T005 Dark/Light)",
+      "url": "https://github.com/MiusicBox/Miusic/pull/4",
+      "options": ["merge เองบน GitHub", "บอก AI 'merge PR 4 ให้หน่อย'"]
+    },
+    {
+      "action": "หลัง merge ทั้งคู่ → deploy ขึ้น production",
+      "command": "AI จะ deploy ให้อัตโนมัติหลัง merge หรือบอก 'deploy ให้หน่อย'"
+    },
+    {
+      "action": "ทดสอบบนมือถือจริง",
+      "tests": [
+        "PWA: iOS Safari → Share → Add to Home Screen",
+        "PWA: Android Chrome → install prompt",
+        "PWA: Offline mode → หน้าแรก load ได้",
+        "Theme: กดปุ่ม 🌙/☀️ → สลับ theme",
+        "Theme: Refresh → theme ยังอยู่ (localStorage)",
+        "Theme: ลบ localStorage → theme ตาม OS"
       ]
     }
   ]
