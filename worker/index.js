@@ -860,8 +860,16 @@ async function handleAuth(request, env, url) {
           );
         });
         // ใช้ ctx.waitUntil ถ้ามี ctx (Cloudflare Worker context) — ถ้าไม่มี ctx ก็ยอมแพ้ (fire-and-forget)
-        if (typeof ctx !== "undefined" && ctx && typeof ctx.waitUntil === "function") {
-          ctx.waitUntil(deletePromise);
+        // 🔧 (2026-10-01 fix H1): handleAuth(request, env, url) ไม่มี ctx parameter
+        //   เดิม (บรรทัด 863): `typeof ctx !== "undefined"` เป็น false เสมอ เพราะ ctx ไม่ได้ประกาศใน scope
+        //     → ctx.waitUntil() ไม่ถูกเรียก → deletePromise fire-and-forget → Worker อาจ terminate ก่อน fetch เสร็จ
+        //     → ALLOW_BOOTSTRAP secret อาจไม่ถูกลบ → ระหว่าง D1 outage คนอื่น bootstrap main admin ใหม่ได้ (takeover)
+        //   ใหม่: ใช้ env.__ctx เหมือน writeAuditLog (บรรทัด 65) — fetch handler เก็บ ctx ลง env.__ctx ตั้งแต่บรรทัด 5568
+        //   ผลกระทบระบบเดิม: 0% — ถ้า env.__ctx ไม่มี (legacy) → fallback fire-and-forget เหมือนเดิม
+        //                     ถ้า env.__ctx มี → waitUntil ทำงาน → secret ถูกลบปกติ
+        const __ctx = env.__ctx;
+        if (__ctx && typeof __ctx.waitUntil === "function") {
+          __ctx.waitUntil(deletePromise);
         }
       } else {
         // ไม่ได้ตั้ง CLOUDFLARE_ACCOUNT_ID หรือ CLOUDFLARE_API_TOKEN → log warning ให้ operator เห็น
