@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "last_updated": "2026-10-03T09:37:29.601Z",
+  "last_updated": "2026-10-03T10:30:00+07:00",
   "current_session": {
     "session_id": "web-fa07595c-dcf9-4921-aa7a-8451696ed1c0",
     "started_at": "2026-10-03T10:00:00+07:00",
@@ -8,7 +8,7 @@
   },
   "tasks": {
     "active": [],
-    "pending_user_approval": [],
+    "pending_user_approval": ["T-pending-merge-PR1", "T-pending-merge-PR2"],
     "completed": [],
     "blocked": []
   },
@@ -23,15 +23,28 @@
     "default_branch": "main",
     "team_branch_prefix": "ai-team",
     "existing_branches": [
-      "team-24h-v2"
+      "main",
+      "team-24h-v2",
+      "ai-team/system-init"
     ],
     "open_prs": [
       {
         "number": 1,
         "title": "Team 24h v2: Critical fixes + UI/UX + DB improvements",
         "url": "https://github.com/MiusicBox/Miusic/pull/1",
+        "branch": "team-24h-v2",
         "status": "waiting_user_merge",
-        "created_at": "2026-10-03T09:30:00+07:00"
+        "created_at": "2026-10-03T09:30:00+07:00",
+        "description": "แก้ critical + high bugs จากรอบที่ 1-2 (12 bugs + 2 migration scripts)"
+      },
+      {
+        "number": 2,
+        "title": "AI Team System: Initial setup (workflow + state + 6 roles)",
+        "url": "https://github.com/MiusicBox/Miusic/pull/2",
+        "branch": "ai-team/system-init",
+        "status": "waiting_user_merge",
+        "created_at": "2026-10-03T10:30:00+07:00",
+        "description": "สร้าง AI Team system พร้อม state persistence"
       }
     ]
   },
@@ -39,7 +52,8 @@
     "worker_name": "miusic-store",
     "production_url": "https://miusic-store.dj-remix.workers.dev",
     "deploy_method": "wrangler",
-    "last_known_deploy": "2026-10-03T09:28:35Z"
+    "last_known_deploy": "2026-10-03T09:28:35Z",
+    "account_id": "01b48fd0746fb6fff50a18d02c4ceeb4"
   },
   "decisions_log": [
     {
@@ -47,7 +61,14 @@
       "timestamp": "2026-10-03T10:00:00+07:00",
       "question": "ต้องการ AI Team system ที่ทำงานผ่าน GitHub + Cloudflare",
       "user_answer": "สร้างระบบ AI Team 5 roles + state persistence",
-      "action_taken": "สร้าง ai-team/ directory + team.json + state.json"
+      "action_taken": "สร้าง ai-team/ directory + team.json + state.json + workflow.md + manager.js"
+    },
+    {
+      "id": "D002",
+      "timestamp": "2026-10-03T10:30:00+07:00",
+      "question": "PR #2 (AI Team system) สร้างเสร็จ",
+      "user_answer": "pending",
+      "action_taken": "รอ user merge PR #1 และ PR #2"
     }
   ],
   "resume_instructions": {
@@ -57,7 +78,27 @@
       "ai-team status — ดูสถานะปัจจุบัน",
       "new task: <description> — สร้าง task ใหม่",
       "approve merge <PR#> — อนุมัติ merge PR",
-      "cancel task <task-id> — ยกเลิก task"
+      "cancel task <task-id> — ยกเลิก task",
+      "show task <T00X> — ดูรายละเอียด task"
     ]
-  }
+  },
+  "next_actions_pending_user": [
+    {
+      "action": "merge PR #1",
+      "url": "https://github.com/MiusicBox/Miusic/pull/1",
+      "reason": "แก้ critical bugs ที่ทีมทำไว้ในรอบ 1-2",
+      "after_merge": "รัน migration scripts: migrate-team-v2-indexes.sql + migrate-team-v2-cleanup-backup.sql"
+    },
+    {
+      "action": "merge PR #2",
+      "url": "https://github.com/MiusicBox/Miusic/pull/2",
+      "reason": "ติดตั้ง AI Team system ลง repo",
+      "after_merge": "AI Team พร้อมรับ task ใหม่"
+    },
+    {
+      "action": "deploy ขึ้น production (optional)",
+      "command": "cd /home/z/my-project/Miusic && npx wrangler deploy",
+      "reason": "deploy changes จาก PR #1 ขึ้น Cloudflare production"
+    }
+  ]
 }
