@@ -1,6 +1,6 @@
 {
-  "version": "1.3.0",
-  "last_updated": "2026-10-03T12:00:00+07:00",
+  "version": "1.4.0",
+  "last_updated": "2026-10-03T12:30:00+07:00",
   "current_session": {
     "session_id": "web-fa07595c-dcf9-4921-aa7a-8451696ed1c0",
     "started_at": "2026-10-03T10:00:00+07:00",
@@ -8,27 +8,46 @@
   },
   "tasks": {
     "active": [],
-    "pending_user_approval": ["T004-pwa", "T005-dark-light-mode"],
+    "pending_user_approval": [],
     "completed": [
       {
         "id": "T001-team-24h-v2",
         "title": "Critical fixes + UI/UX + DB improvements (Round 1-2)",
         "completed_at": "2026-10-03T11:00:00+07:00",
-        "pr_number": 1,
-        "merge_sha": "02eeb60c"
+        "pr_number": 1
       },
       {
         "id": "T002-ai-team-system",
         "title": "AI Team System: Initial setup",
         "completed_at": "2026-10-03T11:00:00+07:00",
-        "pr_number": 2,
-        "merge_sha": "599178de"
+        "pr_number": 2
       },
       {
         "id": "T003-d1-migration",
         "title": "D1 Migration: Add 3 indexes + verify backup table",
         "completed_at": "2026-10-03T11:30:00+07:00",
         "executed_by": "user (manual via D1 Console)"
+      },
+      {
+        "id": "T004-pwa",
+        "title": "PWA — ติดตั้งเป็นแอปมือถือ",
+        "completed_at": "2026-10-03T12:15:00+07:00",
+        "pr_number": 3,
+        "merge_sha": "71263886",
+        "deploy_version": "0fa53232-a3ec-4740-ae03-a7daa8bddc1e",
+        "files_added": ["manifest.json", "service-worker.js", "icon-192.png", "icon-512.png", "icon-180.png"],
+        "files_modified": ["index.html", "app-user.js", "customer-auth.js", "_headers"],
+        "security_fix": "T004-SEC-01 — never-cache PII endpoints + CLEAR_API_CACHE on logout"
+      },
+      {
+        "id": "T005-dark-light-mode",
+        "title": "Dark/Light Mode Toggle",
+        "completed_at": "2026-10-03T12:20:00+07:00",
+        "pr_number": 4,
+        "merge_sha": "768b8291",
+        "deploy_version": "0fa53232-a3ec-4740-ae03-a7daa8bddc1e",
+        "files_modified": ["style.css", "index.html", "app-user.js"],
+        "conflict_resolution": "Merged T005 FOUC script + T004 PWA meta tags in <head> — both blocks kept (no semantic conflict)"
       }
     ],
     "blocked": []
@@ -44,80 +63,46 @@
     "repo": "MiusicBox/Miusic",
     "default_branch": "main",
     "team_branch_prefix": "ai-team",
-    "existing_branches": ["main", "ai-team/T004-pwa", "ai-team/T005-dark-light-mode"],
-    "open_prs": [
-      {
-        "number": 3,
-        "title": "T004: PWA — ติดตั้งเป็นแอปมือถือ",
-        "url": "https://github.com/MiusicBox/Miusic/pull/3",
-        "branch": "ai-team/T004-pwa",
-        "status": "waiting_user_merge",
-        "created_at": "2026-10-03T12:00:00+07:00",
-        "task_id": "T004-pwa",
-        "summary": "PWA support — manifest.json + service-worker.js + icons + meta tags + SW registration + cache headers",
-        "commits": 6,
-        "files_changed": 9,
-        "lines_added": 415,
-        "security_note": "T004-SEC-01 fixed (never-cache PII endpoints + CLEAR_API_CACHE on logout)"
-      },
-      {
-        "number": 4,
-        "title": "T005: Dark/Light Mode Toggle",
-        "url": "https://github.com/MiusicBox/Miusic/pull/4",
-        "branch": "ai-team/T005-dark-light-mode",
-        "status": "waiting_user_merge",
-        "created_at": "2026-10-03T12:00:00+07:00",
-        "task_id": "T005-dark-light-mode",
-        "summary": "Theme toggle — CSS variables + localStorage + FOUC prevention + OS prefers-color-scheme",
-        "commits": 3,
-        "files_changed": 3,
-        "lines_added": 157
-      }
+    "existing_branches": ["main"],
+    "open_prs": [],
+    "recent_merges": [
+      {"number": 3, "title": "T004: PWA", "merged_at": "2026-10-03T12:15:00+07:00", "sha": "71263886"},
+      {"number": 4, "title": "T005: Dark/Light Mode", "merged_at": "2026-10-03T12:20:00+07:00", "sha": "768b8291"}
     ]
   },
   "cloudflare": {
     "worker_name": "miusic-store",
     "production_url": "https://miusic-store.dj-remix.workers.dev",
     "last_deploy": {
-      "timestamp": "2026-10-03T11:00:00+07:00",
-      "version_id": "073cf06e-f642-4ca5-8731-d800a0584755"
+      "timestamp": "2026-10-03T12:25:00+07:00",
+      "version_id": "0fa53232-a3ec-4740-ae03-a7daa8bddc1e",
+      "size": "302.28 KiB (gzip: 52.58 KiB)"
     },
     "account_id": "01b48fd0746fb6fff50a18d02c4ceeb4"
   },
+  "production_test_results": {
+    "homepage": {"url": "https://miusic-store.dj-remix.workers.dev/", "status": 200},
+    "pwa_assets_verified": [
+      "✅ /manifest.json — JSON valid พร้อม name/short_name/icons",
+      "✅ /service-worker.js — JavaScript valid พร้อม cache version",
+      "✅ /icon-192.png — PNG image 4307 bytes",
+      "✅ <link rel=\"manifest\"> ใน HTML",
+      "✅ apple-mobile-web-app-capable meta tag",
+      "✅ theme-color meta tag (#0b0d14)"
+    ],
+    "theme_toggle_verified": [
+      "✅ inline FOUC script ใน <head>",
+      "✅ <button id=\"themeToggleBtn\"> ใน topbar",
+      "✅ localStorage key 'miusic_theme' ใน script"
+    ]
+  },
   "decisions_log": [
-    {
-      "id": "D001",
-      "timestamp": "2026-10-03T10:00:00+07:00",
-      "question": "ต้องการ AI Team system",
-      "action_taken": "สร้าง ai-team/ directory + workflow"
-    },
-    {
-      "id": "D002",
-      "timestamp": "2026-10-03T11:00:00+07:00",
-      "question": "merge PR #1 + #2",
-      "user_answer": "B - merge ให้หน่อย",
-      "action_taken": "merge + deploy production"
-    },
-    {
-      "id": "D003",
-      "timestamp": "2026-10-03T11:15:00+07:00",
-      "question": "รัน migration D1",
-      "user_answer": "A — ทำเองใน D1 Console",
-      "action_taken": "user รันเอง — 3 indexes created, no backup table"
-    },
-    {
-      "id": "D004",
-      "timestamp": "2026-10-03T11:35:00+07:00",
-      "question": "task ถัดไปทำอะไร",
-      "user_answer": "ทำตามคำแนะนำ — F5 PWA + F6 Dark mode",
-      "action_taken": "เริ่ม T004 + T005 คู่ขนานผ่าน AI Team workflow"
-    },
-    {
-      "id": "D005",
-      "timestamp": "2026-10-03T12:00:00+07:00",
-      "question": "T004 + T005 ผ่านครบทุก stage",
-      "action_taken": "สร้าง PR #3 + PR #4 — รอ user merge"
-    }
+    {"id": "D001", "timestamp": "2026-10-03T10:00:00+07:00", "action": "สร้าง AI Team system"},
+    {"id": "D002", "timestamp": "2026-10-03T11:00:00+07:00", "user_answer": "merge PR #1+#2", "action": "merge + deploy"},
+    {"id": "D003", "timestamp": "2026-10-03T11:15:00+07:00", "user_answer": "รัน migration เอง", "action": "user รัน D1 Console"},
+    {"id": "D004", "timestamp": "2026-10-03T11:35:00+07:00", "user_answer": "ทำ PWA + Dark/Light", "action": "เริ่ม T004 + T005"},
+    {"id": "D005", "timestamp": "2026-10-03T12:00:00+07:00", "action": "สร้าง PR #3 + #4"},
+    {"id": "D006", "timestamp": "2026-10-03T12:15:00+07:00", "user_answer": "merge PR 3 และ 4 ให้หน่อย", "action": "merge T004 → resolve conflict → merge T005 → deploy"}
   ],
   "resume_instructions": {
     "how_to_resume": "บอก AI: 'resume ai-team' — AI จะอ่าน state.json และทำงานต่อ",
@@ -131,28 +116,23 @@
   },
   "next_actions_pending_user": [
     {
-      "action": "merge PR #3 (T004 PWA)",
-      "url": "https://github.com/MiusicBox/Miusic/pull/3",
-      "options": ["merge เองบน GitHub", "บอก AI 'merge PR 3 ให้หน่อย'"]
-    },
-    {
-      "action": "merge PR #4 (T005 Dark/Light)",
-      "url": "https://github.com/MiusicBox/Miusic/pull/4",
-      "options": ["merge เองบน GitHub", "บอก AI 'merge PR 4 ให้หน่อย'"]
-    },
-    {
-      "action": "หลัง merge ทั้งคู่ → deploy ขึ้น production",
-      "command": "AI จะ deploy ให้อัตโนมัติหลัง merge หรือบอก 'deploy ให้หน่อย'"
-    },
-    {
-      "action": "ทดสอบบนมือถือจริง",
+      "action": "ทดสอบบนมือถือจริง (optional แต่แนะนำ)",
       "tests": [
-        "PWA: iOS Safari → Share → Add to Home Screen",
-        "PWA: Android Chrome → install prompt",
-        "PWA: Offline mode → หน้าแรก load ได้",
-        "Theme: กดปุ่ม 🌙/☀️ → สลับ theme",
-        "Theme: Refresh → theme ยังอยู่ (localStorage)",
-        "Theme: ลบ localStorage → theme ตาม OS"
+        "📱 PWA iOS: Safari → Share → Add to Home Screen → เปิดเป็นแอป",
+        "🤖 PWA Android: Chrome → ควรเห็น install prompt หรือ menu → Install app",
+        "📴 PWA Offline: ปิดเน็ต → refresh → หน้าแรก load ได้ (cached)",
+        "🌙 Theme toggle: กดปุ่ม 🌙 → สลับเป็น ☀️ (light mode)",
+        "💾 Theme persistence: refresh → theme ยังอยู่ (localStorage)",
+        "🖥️ Theme OS sync: ลบ localStorage → theme ตาม OS setting"
+      ]
+    },
+    {
+      "action": "เลือก task ถัดไป (ถ้าอยากทำต่อ)",
+      "options": [
+        "แก้ Medium bugs 11 ตัว (M1-M11) — security + pagination + rate limit",
+        "แก้ Low bugs 12 ตัว (L1-L13) — minor issues",
+        "ทำฟีเจอร์ใหม่: รายงานยอดขาย, ค้นหาขั้นสูง, แจ้งเตือน, รีวิว, playlist ลูกค้า",
+        "อื่น ๆ — บอกได้เลย"
       ]
     }
   ]
