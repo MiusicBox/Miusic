@@ -281,7 +281,7 @@ CREATE INDEX IF NOT EXISTS idx_download_tokens_expires ON download_tokens(expire
 --   ความปลอดภัย:
 --     - ตารางนี้ insert-only (ไม่มี UPDATE/DELETE ผ่าน API — กันแอดมินลบประวัติตัวเอง)
 --     - ถ้าต้องล้าง → รัน SQL โดยตรงใน D1 Console (main admin เท่านั้น)
---     - auto-cleanup: ล้าง rows ที่เกิน 90 วัน อัตโนมัติ (ผ่าน cron หรือ manual SQL)
+--     - auto-cleanup: ล้าง rows ที่เกิน 10 วัน อัตโนมัติ (cron ทุก 6 ชม. ใน worker/index.js)
 -- ===================================================
 CREATE TABLE IF NOT EXISTS audit_log (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -47,7 +47,7 @@ import {
 } from "./order-scope.js";
 // 🆕 (T010-R6): Centralized constants — แทน magic numbers (LIMIT 200, rate limit thresholds, TTL, Cache-Control)
 //   ใช้ในจุดใหม่ที่เพิ่มในรอบ T010 (M3/M9/M10/M11) — จุดเดิมยังใช้ literal อยู่ (TODO รอบถัดไป)
-import { LIMITS, RATE_LIMITS, CACHE } from "./constants.js";
+import { LIMITS, RATE_LIMITS, CACHE, TTL } from "./constants.js";
 
 // โฟลเดอร์เหล่านี้เดิมใช้ toCloudinaryDownloadUrl() เติม fl_attachment ให้บังคับดาวน์โหลด
 // (ไฟล์เพลงเต็ม/ไฟล์ ZIP ออเดอร์ — ไม่ใช่ไฟล์ที่เปิดเล่น/แสดงผลตรงๆ บนเว็บ)
@@ -8365,17 +8365,19 @@ export default {
 
       // 🔧 (2026-09-22 fix Bug #2 UI v3): ลบ audit_log เก่าเกิน 10 วัน อัตโนมัติ
       //   - รันทุก 6 ชม. (เหมือน ZIP cleanup)
-      //   - ลบ rows ที่ created_at < (now - 10 วัน)
+      //   - ลบ rows ที่ created_at < (now - AUDIT_LOG_DAYS)
       //   - กันตาราง audit_log ใหญ่เกิน → กิน D1 storage + reads
       //   - ผู้ใช้ระบุให้เก็บแค่ 10 วัน (ตอนแรกเก็บ 90 วัน — เกินไปสำหรับร้านเล็ก)
+      //   🆕 (T048): ใช้ TTL.AUDIT_LOG_DAYS จาก constants.js แทน hardcoded 10
+      //     → single source of truth ถ้าจะปรับ retention ในอนาคต แก้ที่เดียว
       try {
-        const auditCutoff = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+        const auditCutoff = new Date(Date.now() - TTL.AUDIT_LOG_DAYS * 24 * 60 * 60 * 1000).toISOString();
         const auditResult = await env.DB.prepare(
           "DELETE FROM audit_log WHERE created_at < ?"
         ).bind(auditCutoff).run();
         const deletedCount = auditResult?.meta?.changes || 0;
         if (deletedCount > 0) {
-          console.log(`[cleanup] Deleted ${deletedCount} old audit_log rows (older than 10 days)`);
+          console.log(`[cleanup] Deleted ${deletedCount} old audit_log rows (older than ${TTL.AUDIT_LOG_DAYS} days)`);
         }
       } catch (auditErr) {
         // ถ้าตาราง audit_log ไม่มี → log แล้วข้ามไป (ไม่ block cron)
