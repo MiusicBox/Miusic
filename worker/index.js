@@ -7131,26 +7131,54 @@ export default {
             console.warn(`cache-purge: failed to purge ${pathname}${search || ""}:`, err?.message || err);
           }
         };
-        // 1) Purge ทุก URL variant ของ /api/db/{coll}
-        //    - ไม่มี query string
-        //    - ?slim=1
-        //    - ลูกค้าอาจใช้ ?limit=N&offset=M (paginated) — Cache API ไม่รองรับ wildcard
-        //      จึง purge แค่ variants ที่พบบ่อย (slim และ default)
-        //    ในอนาคตถ้ามี wildcard purge → ใช้ Cloudflare Enterprise Cache Reserve
-        await purgeOne(`/api/db/${coll}`, "");
-        await purgeOne(`/api/db/${coll}`, "slim=1");
+        // 🆕 (T051-M8): ขยาย purge URL variants ครบทุกแบบที่ frontend ใช้จริง
+        //   เดิม: purge แค่ 2 URL (default + ?slim=1) → paginated URLs ยังเก่า
+        //   ใหม่: purge ทุก variants ที่ frontend ใช้จริง (สำรวจจาก db-client.js + app-user.js + orders.js)
+        //     - default (no query)
+        //     - ?slim=1
+        //     - ?limit=50&offset=0&slim=1 (app-user.js lazy load)
+        //     - ?limit=200&offset=0&slim=1 (orders.js admin)
+        //     - ?limit=200 (orders.js admin)
+        //     - ?limit=500 (orders.js playlists admin)
+        //     - ?limit=100 (รองรับ future use)
+        //   note: Cache API ไม่รองรับ wildcard → purge แบบ enumerate (trade-off D1 reads 0)
+        const variants = [
+          "",
+          "slim=1",
+          "limit=50&offset=0&slim=1",
+          "limit=100&offset=0&slim=1",
+          "limit=200&offset=0&slim=1",
+          "limit=200",
+          "limit=500",
+          "limit=500&offset=0",
+        ];
+        for (const search of variants) {
+          await purgeOne(`/api/db/${coll}`, search);
+        }
         // 🔧 (2026-09-27 fix HIGH #8): Purge sitemap.xml (เพราะ sitemap list songs/playlists)
         //    ถ้าแอดมินเพิ่ม/ลบเพลง → sitemap เก่าค้าง 24 ชม. → Google ไม่เห็นเพลงใหม่
-        //    ทุก collection ใน PURGEABLE มีผลต่อ sitemap (songs, playlists, categories, djs, etc.)
-        //    จึง purge sitemap ทุกครั้ง
         await purgeOne("/sitemap.xml", "");
-        // 🔧 (2026-09-27 fix HIGH #8): Purge หน้า static ของ songs/playlists (แต่ละ ID)
-        //    ถ้าแอดมินแก้เพลง → /song/:id ค้าง cache 1 ชม. → Google อ่านข้อมูลเก่า
-        //    ปัญหา: เราไม่รู้ว่าแอดมินแก้ ID ไหน → purge แค่ collection-level (ไม่ได้ purge แต่ละ ID)
-        //    วิธีแก้ partial: ส่ง note บอกแอดมินว่า "หากแก้เพลงที่มีอยู่ → รอ 1 ชม. หรือกด deploy ใหม่"
-        //    (full purge ทุก /song/:id ต้อง list IDs ก่อน = ใช้ D1 reads เยอะ)
-        // สำหรับ songs/playlists → ไม่ purge แต่ละ /song/:id / /playlist/:id (กิน D1 reads)
-        // แต่บอกใน note ว่า customer page อาจค้าง 1 ชม.
+        // 🆕 (T051-M8): Purge หน้า static ของ songs/playlists แต่ละ ID (cap 100 IDs กัน D1 reads เยอะ)
+        //   เดิม: ไม่ purge /song/:id หรือ /playlist/:id เลย → หน้า SEO ค้าง 1 ชม.
+        //   ใหม่: list IDs จาก D1 (cap 100) → purge แต่ละ /song/:id หรือ /playlist/:id
+        //   trade-off: D1 reads +1 ต่อครั้ง (cap 100 rows) — คุ้มเพราะแอดมินแก้นาน ๆ ครั้ง
+        //   ผลกระทบระบบเดิม: 0% — เป็น background fetch ไม่ block response
+        if (coll === "songs" || coll === "playlists") {
+          try {
+            const idRows = await env.DB.prepare(
+              `SELECT id FROM documents WHERE collection = ? ORDER BY updated_at DESC LIMIT 100`
+            ).bind(coll).all();
+            if (idRows?.results?.length > 0) {
+              const staticPathPrefix = coll === "songs" ? "/song/" : "/playlist/";
+              for (const row of idRows.results) {
+                await purgeOne(`${staticPathPrefix}${row.id}`, "");
+              }
+            }
+          } catch (idErr) {
+            console.warn(`cache-purge: failed to list ${coll} IDs:`, idErr?.message || idErr);
+            // ไม่ mark partialFailure เพราะ collection-level purge สำเร็จแล้ว
+          }
+        }
       } catch (cacheErr) {
         // ถ้า Cache API ไม่รองรับ → log + บอกแอดมิน
         console.warn("cache-purge: Cache API delete failed:", cacheErr?.message);
