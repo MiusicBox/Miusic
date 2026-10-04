@@ -701,16 +701,11 @@
     <div class="category-grid" id="categoryGrid"></div>
   </div>
 
-  <!-- ส่วน Playlist แบบ Dropdown -->
-  <div class="playlist-wrapper">
-    <button class="playlist-header-btn" id="playlistToggleBtn">
-      <span class="playlist-header-title">เพลย์ลิสต์</span>
-      <svg class="dropdown-icon" id="dropdownIcon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7l5 5l5 -5"/><path d="M7 13l5 5l5 -5"/></svg>
-    </button>
-    <div id="playlistsContainer" class="playlist-content-box"></div>
-  </div>
+  <!-- 🆕 (T031): ลบ section "เพลย์ลิสต์" dropdown ออกจากหน้าแรกแล้ว
+       — ย้ายไปแสดงเป็น full page ในแท็บ "เพลงคัดสรร" แทน
+       (ดู #playlistsView ด้านล่าง) -->
 
-  <!-- 🆕 (T019): ปรับ section title "เพลงทั้งหมด" ให้ใช้สไตล์ใหม่ (มี icon + ขีดเส้นใต้)
+  <!-- 🆕 (2026-09-26 redesign): ปรับ section title "เพลงทั้งหมด" ให้ใช้สไตล์ใหม่ (มี icon + ขีดเส้นใต้)
        หมายเหตุ: id="gridTitle" ย้ายไปที่ .section-title-row (wrapper) เพื่อให้ setView()
        ซ่อน/แสดงทั้งแถวรวมถึงขีดเส้นใต้ (เดิม id อยู่ที่ .section-title ตรง ๆ ซ่อนแค่ตัวหนังสือ) -->
   <div class="section-title-row" id="gridTitle">
@@ -775,14 +770,25 @@
     <div id="promoViewList" class="promo-view-list"></div>
   </div>
 
+  <!-- 🆕 (T031): Playlists View — full page สำหรับแท็บ "เพลงคัดสรร"
+       - ย้ายจาก dropdown section ในหน้าแรก มาเป็น full page view
+       - หัวข้อเปลี่ยนจาก "เพลย์ลิสต์" → "เพลงคัดสรร" (สะกดถูกตามหลักภาษาไทย)
+       - ไม่มี dropdown arrow icon (เพราะเป็น full page ไม่ใช่ collapsible) -->
+  <div id="playlistsView" class="container" style="display:none;padding:14px 16px 100px;">
+    <div class="section-title-row">
+      <h2 class="section-title">🎵 เพลงคัดสรร</h2>
+    </div>
+    <div id="playlistsContainer" class="playlist-content-box" style="display:block !important;"></div>
+  </div>
+
   <div class="bottom-nav">
     <button class="active" data-tab="home" type="button" aria-label="หน้าแรก" title="หน้าแรก">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a1 1 0 01-1 1H4a1 1 0 01-1-1z"/></svg>
       หน้า
     </button>
-    <button data-tab="playlist" type="button" aria-label="เพลย์ลิสต์" title="เพลย์ลิสต์">
+    <button data-tab="playlist" type="button" aria-label="เพลงคัดสรร" title="เพลงคัดสรร">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>
-      เพลง
+      เพลงคัดสรร
     </button>
     <button data-tab="category" type="button" aria-label="หมวดหมู่" title="หมวดหมู่">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
