@@ -5644,11 +5644,18 @@ function renderPromotionsView() {
     }
   }).join("");
 
-  // ผูกปุ่ม CTA — กดแล้วสลับไปแท็บ "หน้าแรก" เพื่อให้ลูกค้าเลือกเพลง
+  // ผูกปุ่ม CTA — กดแล้วสลับไปแท็บที่เกี่ยวข้อง
+  //   🆕 (T062): ถ้าเป็นโปรโมชันเพลย์ลิสต์ (CTA "เลือกเพลย์ลิสต์เพื่อรับส่วนลด") → ไปแท็บ "Playlist"
+  //              ถ้าเป็นโปรโมชันเพลง (CTA "เพิ่มเพลงลงตะกร้าเพื่อรับส่วนลด") → ไปแท็บ "หน้าแรก" (เดิม)
+  //   ปัญหาเดิม: กดปุ่ม "เลือกเพลย์ลิสต์..." → ไปหน้าแรก → ลูกค้าสับสน (ไม่เจอเพลย์ลิสต์)
+  //   ผลกระทบระบบเดิม: 0% — เปลี่ยนเฉพาะ click handler ของ CTA ปุ่ม
   list.querySelectorAll("[data-promo-cta]").forEach(btn => {
     btn.addEventListener("click", () => {
-      const homeBtn = document.querySelector('.bottom-nav button[data-tab="home"]');
-      if (homeBtn) homeBtn.click();
+      const ctaText = (btn.textContent || "").trim();
+      const isPlaylistCta = ctaText.includes("เพลย์ลิสต์") || ctaText.includes("เลือกเพลย์ลิสต์");
+      const targetTab = isPlaylistCta ? "playlist" : "home";
+      const tabBtn = document.querySelector(`.bottom-nav button[data-tab="${targetTab}"]`);
+      if (tabBtn) tabBtn.click();
     });
   });
 }
