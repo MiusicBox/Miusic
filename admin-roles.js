@@ -57,17 +57,27 @@ function isMainAdmin() { return window.__currentAdminRole === "main"; }
 //   ปัญหา: ในระบบใหม่ (Worker + D1) login สำเร็จ = มี row ใน admin_users → snap.exists() จะ true เสมอ
 //   แต่ถ้า D1 มีปัญหาชั่วคราว → getDocs อาจคืน empty → ทำให้ auto-promote ทำงาน → privilege escalation
 //   แก้: ลบ auto-bootstrap path ออก → bootstrap ทำที่ Worker /api/auth/bootstrap เท่านั้น
+//
+// 🆕 (T043): แก้บั๊ก — ดึง role จาก /api/auth/me แทน getDoc(collection("admins"))
+//   ปัญหา: เดิมใช้ doc(db, "admins", user.uid) → ดึงจาก documents collection "admins"
+//          แต่ระบบใหม่เก็บ admin ในตาราง admin_users (ไม่ใช่ documents) → snap.exists() = false เสมอ
+//          → resolveCurrentAdminRole return null → แอดมินหลักเข้าไม่ได้
+//   วิธีแก้: ดึงจาก /api/auth/me (ที่อ่านจาก admin_users ผ่าน session cookie) → ได้ role ที่ถูกต้อง
 export async function resolveCurrentAdminRole(user) {
   if (!user) return null;
-  const ref = doc(db, "admins", user.uid);
-  const snap = await getDoc(ref);
-  if (snap.exists()) {
-    const role = snap.data().role === "main" ? "main" : "sub";
-    return { role };
+  // 🆕 (T043): ดึง role จาก /api/auth/me แทน getDoc ตรง ๆ
+  try {
+    const res = await fetch("/api/auth/me", { credentials: "same-origin" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data && data.uid && data.role) {
+      return { role: data.role === "main" ? "main" : "sub" };
+    }
+    return null;
+  } catch (err) {
+    console.warn("[T043] resolveCurrentAdminRole: /api/auth/me fetch failed:", err?.message || err);
+    return null;
   }
-  // ไม่พบ role ของบัญชีนี้ → ไม่อนุญาต (null)
-  // bootstrap admin คนแรกทำที่หน้า login → ปุ่ม "ตั้งค่าแอดมินคนแรก" → Worker /api/auth/bootstrap
-  return null;
 }
 
 // ---------------- Manage Admins view ----------------
