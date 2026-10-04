@@ -48,6 +48,27 @@ function invalidateAdminCache(collection) {
       }
     } catch (_) {}
   }
+  // 🆕 (T051-M8): trigger server-side cache-purge (CDN edge cache) ด้วย
+  //   เดิม: invalidateAdminCache ล้างแค่ client-side in-memory cache → CDN edge cache ยังเก่า 5 นาที
+  //   ใหม่: fire-and-forget POST /api/cache-purge → worker ล้าง CDN cache จริง
+  //   ผลกระทบระบบเดิม: 0% — fire-and-forget ไม่ block UI; ถ้า fail แค่ log warning
+  //   note: purge ทุก collection ที่ถูก invalidate (รวมกรณี undefined = ล้างทั้งหมด)
+  try {
+    const collectionsToPurge = collection
+      ? [collection]
+      : ["songs", "categories", "djs", "playlists"];
+    for (const coll of collectionsToPurge) {
+      // fire-and-forget — ไม่ await ไม่ block UI
+      fetch("/api/cache-purge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ collection: coll }),
+      }).catch((err) => {
+        console.warn(`[cache-purge] failed for ${coll}:`, err?.message || err);
+      });
+    }
+  } catch (_) {}
 }
 // Helper: ตรวจว่า cache ของ collection นี้ยัง fresh หรือไม่ (อายุ < 60 วิ)
 function isAdminCacheFresh(collection) {
