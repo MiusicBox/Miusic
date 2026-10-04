@@ -1207,3 +1207,111 @@ if (document.readyState === "loading") {
 // 🆕 (T057): expose สำหรับเรียกจากภายนอก
 window.openAccountSettingsModal = openAccountSettingsModal;
 window.initCookieConsentBanner = initCookieConsentBanner;
+
+// ============================================================
+// 🆕 (T058-PDPA-Phase2): Recover Account UI + Customer Login Flow
+//   - เมื่อ customer login บัญชีที่ถูก soft delete → แสดง modal ยืนยันกู้คืน
+//   - ปุ่ม "กู้คืนบัญชี" ที่หน้า login → เปิดหน้า recover โดยตรง
+//   ผลกระทบระบบเดิม: 0% — UI ใหม่ ไม่แตะ login/register เดิม
+// ============================================================
+
+// ตรวจ customerLogin ที่มีอยู่ → ถ้า error เป็น "บัญชีถูกลบ" → เปิด modal recover
+const _originalCustomerLogin = customerLogin;
+window.customerLogin = async function() {
+  const login = document.getElementById("customerAuthLogin")?.value?.trim() || "";
+  const password = document.getElementById("customerAuthPassword")?.value || "";
+  const errEl = document.getElementById("customerAuthError");
+  if (errEl) errEl.textContent = "";
+  if (!login || !password) {
+    if (errEl) errEl.textContent = "กรุณากรอกอีเมล/เบอร์ WhatsApp และรหัสผ่าน";
+    return;
+  }
+  try {
+    const fingerprint = await getAnonymousFingerprint().catch(() => "");
+    const res = await fetch("/api/customer/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ login, password, fingerprint }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.ok && data?.customer) {
+      // login สำเร็จปกติ
+      currentCustomer = data.customer;
+      saveCustomerToStorage(data.customer);
+      syncCustomerAuthUI();
+      closeCustomerAuthModal();
+      if (typeof showToast === "function") showToast("✅ เข้าสู่ระบบสำเร็จ", "success");
+      else alert("✅ เข้าสู่ระบบสำเร็จ");
+      return;
+    }
+    if (res.status === 401) {
+      // 🆕 (T058): ลอง recover — อาจเป็นบัญชีที่ถูก soft delete
+      const recovered = await tryRecoverAccount(login, password);
+      if (recovered) return;
+      if (errEl) errEl.textContent = data?.error || "อีเมล/เบอร์ WhatsApp หรือรหัสผ่านไม่ถูกต้อง";
+      return;
+    }
+    if (errEl) errEl.textContent = data?.error || "เข้าสู่ระบบไม่สำเร็จ";
+  } catch (err) {
+    if (errEl) errEl.textContent = err?.message || "เข้าสู่ระบบไม่สำเร็จ";
+  }
+};
+
+// 🆕 (T058): ลอง recover account — เรียก /api/customer/recover
+async function tryRecoverAccount(login, password) {
+  try {
+    // step 1: ตรวจว่าบัญชีถูกลบไหม (ส่ง recover: false ก่อน)
+    const checkRes = await fetch("/api/customer/recover", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ login, password, recover: false }),
+    });
+    const checkData = await checkRes.json().catch(() => ({}));
+    if (!checkRes.ok) return false; // ไม่ใช่บัญชีที่ถูกลบ → ล้มเหลวปกติ
+
+    if (checkData.code !== "customer/recover-confirm-required") return false;
+
+    // บัญชีถูกลบ + ยังอยู่ใน 30 วัน grace → แสดง modal ยืนยัน
+    const confirmed = confirm(
+      `⚠️ บัญชีนี้ถูกลบเมื่อ ${new Date(checkData.deleted_at).toLocaleDateString("th-TH")}\n\n` +
+      `ชื่อ: ${checkData.customer?.display_name || "-"}\n` +
+      `อีเมล: ${checkData.customer?.email || "-"}\n\n` +
+      `เหลือเวลากู้คืนอีก ${checkData.days_remaining} วัน\n` +
+      `หลังจากนั้นบัญชีจะถูกลบถาวร\n\n` +
+      `ต้องการกู้คืนบัญชีนี้ไหม?`
+    );
+    if (!confirmed) return true; // ไม่กู้คืน → ไม่ throw error แค่ return (ไม่ show error)
+
+    // step 2: ยืนยัน recover
+    const recoverRes = await fetch("/api/customer/recover", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ login, password, recover: true }),
+    });
+    const recoverData = await recoverRes.json().catch(() => ({}));
+    if (recoverRes.ok && recoverData?.ok && recoverData?.customer) {
+      currentCustomer = recoverData.customer;
+      saveCustomerToStorage(recoverData.customer);
+      syncCustomerAuthUI();
+      closeCustomerAuthModal();
+      if (typeof showToast === "function") showToast("✅ " + (recoverData.message || "กู้คืนบัญชีเรียบร้อย"), "success");
+      else alert("✅ " + (recoverData.message || "กู้คืนบัญชีเรียบร้อย"));
+      return true;
+    }
+    if (recoverData?.code === "customer/grace-expired") {
+      alert("❌ บัญชีนี้หมดระยะเวลากู้คืนแล้ว (เกิน 30 วัน) — กรุณาติดต่อแอดมิน");
+      return true;
+    }
+    alert("❌ " + (recoverData?.error || "กู้คืนไม่สำเร็จ"));
+    return true;
+  } catch (err) {
+    console.warn("[recover] failed:", err?.message || err);
+    return false;
+  }
+}
+
+// 🆕 (T058): expose สำหรับเรียกจากภายนอก
+window.tryRecoverAccount = tryRecoverAccount;

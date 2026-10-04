@@ -26,7 +26,8 @@
 //   ใหม่: 'miusic-pwa-v1.0.2-T048' → install event จะ activate SW ใหม่ + ล้าง cache เก่า
 // 🆕 (T057): อัปเดต CACHE_VERSION หลัง T057 (PDPA + cookie consent + privacy.html)
 //   → ลูกค้าเก่าจะได้เห็น cookie banner + modal ตั้งค่าบัญชี
-const CACHE_VERSION = 'miusic-pwa-v1.0.3-T057';
+// 🆕 (T058): อัปเดต CACHE_VERSION หลัง T058 (PDPA Phase 2 — admin dashboard + recover account)
+const CACHE_VERSION = 'miusic-pwa-v1.0.4-T058';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const FONT_CACHE    = `${CACHE_VERSION}-fonts`;

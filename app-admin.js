@@ -6444,3 +6444,140 @@ function renderMonthlySummary(dailyData) {
   }).join("") || `<div class="reports-empty">ยังไม่มีข้อมูล</div>`;
 }
 
+
+// ============================================================
+// 🆕 (T058-PDPA-Phase2): Admin UI — คำขอลบบัญชี (PDPA Section 33)
+//   - แสดง customers ที่ถูก soft delete + วันที่เหลือก่อน hard delete
+//   - ปุ่ม "กู้คืน" → POST /api/admin/customers/:id/restore
+//   - ปุ่ม "ลบถาวร" (main admin only) → POST /api/admin/customers/:id/hard-delete
+//   ผลกระทบระบบเดิม: 0% — UI ใหม่ ไม่แตะ loadCustomers เดิม
+// ============================================================
+
+async function loadDeletedCustomers() {
+  let wrap = document.getElementById("deletedCustomersList");
+  if (!wrap) {
+    // สร้าง section ใหม่ถ้ายังไม่มี — ใต้ customerList ใน view-customers
+    const customerList = document.getElementById("customerList");
+    if (!customerList) return;
+    const section = document.createElement("div");
+    section.id = "deletedCustomersSection";
+    section.style.cssText = "margin-top: 24px; padding-top: 20px; border-top: 1px dashed var(--border, rgba(255,255,255,0.1));";
+    section.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <h3 style="margin:0;font-size:15px;color:var(--accent,#8b5cf6);">🗑️ คำขอลบบัญชี (PDPA Section 33)</h3>
+        <button type="button" id="deletedCustomersRefreshBtn" class="icon-btn" title="รีเฟรช" style="font-size:14px;">🔄</button>
+      </div>
+      <div id="deletedCustomersList" style="display:flex;flex-direction:column;gap:8px;"></div>
+    `;
+    customerList.parentElement.insertBefore(section, customerList.nextSibling);
+    wrap = document.getElementById("deletedCustomersList");
+    document.getElementById("deletedCustomersRefreshBtn")?.addEventListener("click", loadDeletedCustomers);
+  }
+  wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">⏳ กำลังโหลด...</div>';
+  try {
+    const res = await fetch("/api/admin/customers/deleted/list?limit=50", { credentials: "same-origin" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      if (err?.code === "MIGRATION_REQUIRED") {
+        wrap.innerHTML = `<div style="font-size:12px;color:var(--danger);padding:14px;background:rgba(239,68,68,0.08);border-radius:8px;">⚠️ ${escapeHtml(err.error)}</div>`;
+      } else {
+        wrap.innerHTML = `<div style="font-size:12px;color:var(--danger);padding:14px;">${escapeHtml(err?.error || "โหลดไม่สำเร็จ")}</div>`;
+      }
+      return;
+    }
+    const data = await res.json();
+    const customers = data?.customers || [];
+    if (customers.length === 0) {
+      wrap.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-dim);font-size:13px;">✓ ไม่มีคำขอลบบัญชี</div>';
+      return;
+    }
+    wrap.innerHTML = customers.map(c => {
+      const initials = (c.display_name || c.email || c.whatsapp || "?").charAt(0).toUpperCase();
+      const deletedDate = c.deleted_at ? new Date(c.deleted_at).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" }) : "-";
+      const hardDeleteDate = c.hard_delete_at ? new Date(c.hard_delete_at).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" }) : "-";
+      const daysColor = c.is_overdue ? "var(--danger,#ef4444)" : (c.days_remaining <= 3 ? "#F5B400" : "var(--text-dim,#94a3b8)");
+      const daysLabel = c.is_overdue ? "⚠️ หมดเวลาแล้ว" : `เหลือ ${c.days_remaining} วัน`;
+      return `
+        <div class="list-row" data-deleted-customer-id="${escapeHtml(c.id)}" style="cursor:default;background:rgba(239,68,68,0.04);border:1px solid rgba(239,68,68,0.15);">
+          <div style="width:36px;height:36px;border-radius:50%;background:rgba(239,68,68,0.2);color:var(--danger,#ef4444);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;">${escapeHtml(initials)}</div>
+          <div class="info">
+            <div class="n1">${escapeHtml(c.display_name || "ไม่มีชื่อ")}</div>
+            <div class="n2" style="font-size:11px;">
+              ${escapeHtml(c.email || "")}${c.whatsapp ? (c.email ? " · " : "") + "📱 " + escapeHtml(c.whatsapp) : ""}
+            </div>
+            <div class="n2" style="font-size:11px;color:${daysColor};">
+              🗓 ลบเมื่อ ${escapeHtml(deletedDate)} · ลบถาวร ${escapeHtml(hardDeleteDate)} · ${escapeHtml(daysLabel)}
+            </div>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="icon-btn" data-restore-customer="${escapeHtml(c.id)}" title="กู้คืนบัญชี" style="color:var(--success,#10b981);font-size:14px;">↩️</button>
+            ${currentAdminRole === "main" ? `<button type="button" class="icon-btn danger" data-hard-delete-customer="${escapeHtml(c.id)}" title="ลบถาวรทันที" style="font-size:14px;">⚠️🗑</button>` : ""}
+          </div>
+        </div>`;
+    }).join("");
+
+    // restore
+    wrap.querySelectorAll("[data-restore-customer]").forEach(btn => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute("data-restore-customer");
+        if (!confirm("ต้องการกู้คืนบัญชีนี้ไหม? (ลูกค้าจะ login ได้อีกครั้ง)")) return;
+        try {
+          const restoreRes = await fetch(`/api/admin/customers/${encodeURIComponent(id)}/restore`, {
+            method: "POST",
+            credentials: "same-origin",
+          });
+          const restoreData = await restoreRes.json().catch(() => ({}));
+          if (restoreRes.ok && restoreData?.ok) {
+            showToast("✅ " + (restoreData.message || "กู้คืนสำเร็จ"), "success");
+            loadDeletedCustomers();
+            loadCustomers(document.getElementById("customerSearch")?.value?.trim() || "");
+          } else {
+            showToast(restoreData?.error || "กู้คืนไม่สำเร็จ", "error");
+          }
+        } catch (err) {
+          showToast("กู้คืนไม่สำเร็จ: " + (err.message || String(err)), "error");
+        }
+      });
+    });
+    // hard-delete (main admin only)
+    wrap.querySelectorAll("[data-hard-delete-customer]").forEach(btn => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute("data-hard-delete-customer");
+        if (!confirm("⚠️ คุณกำลังจะลบถาวรบัญชีนี้\n\n• ข้อมูลทั้งหมดจะถูกลบจากระบบ\n• ไม่สามารถกู้คืนได้\n\nต้องดำเนินการต่อไหม?")) return;
+        if (!confirm("⚠️ ยืนยันอีกครั้ง — การกระทำนี้ไม่สามารถย้อนกลับได้\n\nกด OK เพื่อลบถาวร")) return;
+        try {
+          const delRes = await fetch(`/api/admin/customers/${encodeURIComponent(id)}/hard-delete`, {
+            method: "POST",
+            credentials: "same-origin",
+          });
+          const delData = await delRes.json().catch(() => ({}));
+          if (delRes.ok && delData?.ok) {
+            showToast("✅ " + (delData.message || "ลบถาวรสำเร็จ"), "success");
+            loadDeletedCustomers();
+          } else {
+            showToast(delData?.error || "ลบไม่สำเร็จ", "error");
+          }
+        } catch (err) {
+          showToast("ลบไม่สำเร็จ: " + (err.message || String(err)), "error");
+        }
+      });
+    });
+  } catch (err) {
+    wrap.innerHTML = `<div style="font-size:12px;color:var(--danger);padding:14px;">โหลดไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
+  }
+}
+
+// 🆕 (T058): เรียก loadDeletedCustomers หลัง loadCustomers เสมอ
+const _originalLoadCustomers = loadCustomers;
+window.loadCustomers = async function(search = "") {
+  await _originalLoadCustomers.call(this, search);
+  // หลังโหลดลูกค้าปกติ → โหลดคำขาลบบัญชีด้วย
+  try { await loadDeletedCustomers(); } catch (err) {
+    console.warn("[loadDeletedCustomers] failed:", err?.message || err);
+  }
+};
+
+// 🆕 (T058): expose สำหรับเรียกจากภายนอก
+window.loadDeletedCustomers = loadDeletedCustomers;
