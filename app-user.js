@@ -2254,28 +2254,37 @@ function renderReviewSummary(summary) {
   const summaryEl = document.getElementById("modalReviewSummary");
   if (!summaryEl) return;
   if (!summary || summary.count === 0) {
-    summaryEl.textContent = "ยังไม่มีรีวิว";
+    summaryEl.innerHTML = '<span class="review-summary-empty">ยังไม่มีรีวิว</span>';
     return;
   }
-  // ⭐ 4.5 · 12 รีวิว
-  const stars = "⭐".repeat(Math.round(summary.avg_rating || 0));
-  summaryEl.innerHTML = `<span class="review-summary-stars">${escapeHtml(stars)}</span> <strong>${escapeHtml(String(summary.avg_rating))}</strong> · ${escapeHtml(String(summary.count))} รีวิว`;
+  // 🆕 (T021): แสดง SVG stars + ตัวเลขเฉลี่ย + จำนวนรีวิว
+  const avg = Math.round(summary.avg_rating || 0);
+  const starSvg = (filled) => `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="${filled ? 'star-filled' : 'star-empty'}"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>`;
+  const starsHtml = Array.from({length: 5}, (_, i) => starSvg(i < avg)).join("");
+  summaryEl.innerHTML = `
+    <span class="review-summary-stars">${starsHtml}</span>
+    <span class="review-summary-avg">${escapeHtml(String(summary.avg_rating))}</span>
+    <span class="review-summary-count">${escapeHtml(String(summary.count))} รีวิว</span>
+  `;
 }
 
 function renderReviewsList(reviews) {
   const listEl = document.getElementById("modalReviewsList");
   if (!listEl) return;
   if (!reviews || reviews.length === 0) {
-    listEl.innerHTML = '<div class="modal-reviews-empty">ยังไม่มีรีวิว — เป็นคนแรกที่รีวิวเพลงนี้!</div>';
+    listEl.innerHTML = '<div class="modal-reviews-empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" style="opacity:0.4;margin-bottom:8px;"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg><div>ยังไม่มีรีวิว</div><div style="font-size:11px;margin-top:4px;">เป็นคนแรกที่รีวิวเพลงนี้!</div></div>';
     return;
   }
   listEl.innerHTML = reviews.map(r => {
     const initial = escapeHtml(String(r.author_initial || "?"));
     const name = escapeHtml(r.author_name || "ลูกค้า");
-    const dateStr = r.created_at ? new Date(r.created_at).toLocaleDateString("th-TH") : "";
-    const stars = "⭐".repeat(Number(r.rating) || 0);
+    const dateStr = r.created_at ? new Date(r.created_at).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "";
+    const rating = Number(r.rating) || 0;
     const comment = r.comment ? escapeHtml(r.comment) : "";
-    const mineBadge = r.is_mine ? '<span class="review-mine-badge">รีวิวของคุณ</span>' : "";
+    const mineBadge = r.is_mine ? '<span class="review-mine-badge">ของคุณ</span>' : "";
+    // 🆕 (T021): SVG stars แทน emoji
+    const starSvg = (filled) => `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" class="${filled ? 'star-filled' : 'star-empty'}"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>`;
+    const starsHtml = Array.from({length: 5}, (_, i) => starSvg(i < rating)).join("");
     return `
       <div class="review-item${r.is_mine ? " review-item-mine" : ""}">
         <div class="review-item-head">
@@ -2284,7 +2293,7 @@ function renderReviewsList(reviews) {
             <div class="review-author">${name}${mineBadge}</div>
             <div class="review-date">${escapeHtml(dateStr)}</div>
           </div>
-          <div class="review-stars" aria-label="${r.rating} ดาว">${escapeHtml(stars)}</div>
+          <div class="review-stars" aria-label="${rating} ดาว">${starsHtml}</div>
         </div>
         ${comment ? `<div class="review-comment">${comment}</div>` : ""}
       </div>
@@ -2328,9 +2337,15 @@ function updateStarButtonsUI() {
   document.querySelectorAll("#modalStarInput .star-btn").forEach(b => {
     const r = parseInt(b.dataset.rating, 10);
     b.classList.toggle("active", r <= currentReviewRating);
-    b.textContent = r <= currentReviewRating ? "⭐" : "☆";
     b.setAttribute("aria-checked", r === currentReviewRating ? "true" : "false");
   });
+  // 🆕 (T021): อัปเดต label ข้างดาว
+  const labelEl = document.getElementById("modalStarLabel");
+  if (labelEl) {
+    const labels = ["เลือกคะแนน", "แย่", "พอใช้", "ดี", "ดีมาก", "ยอดเยี่ยม"];
+    labelEl.textContent = labels[currentReviewRating] || labels[0];
+    labelEl.style.color = currentReviewRating > 0 ? "var(--accent)" : "var(--text-dim)";
+  }
 }
 
 function setReviewFeedback(msg, type) {
@@ -2348,19 +2363,41 @@ function setupReviewHandlers() {
       updateStarButtonsUI();
       setReviewFeedback("", "");
     });
-    // Hover preview (desktop) — แสดงดาวที่กำลัง hover แบบสด ๆ
+    // 🆕 (T021): Hover preview ใช้ CSS class แทน emoji
     btn.addEventListener("mouseenter", () => {
       const hoverRating = parseInt(btn.dataset.rating, 10);
       document.querySelectorAll("#modalStarInput .star-btn").forEach(b => {
         const r = parseInt(b.dataset.rating, 10);
-        b.textContent = r <= hoverRating ? "⭐" : "☆";
+        b.classList.toggle("hover-active", r <= hoverRating);
       });
+      // อัปเดต label ชั่วคราว
+      const labelEl = document.getElementById("modalStarLabel");
+      if (labelEl) {
+        const labels = ["เลือกคะนน", "แย่", "พอใช้", "ดี", "ดีมาก", "ยอดเยี่ยม"];
+        labelEl.textContent = labels[hoverRating] || labels[0];
+      }
     });
   });
   // reset hover preview เมื่อออกจากกลุ่มดาว
   const starInputEl = document.getElementById("modalStarInput");
   if (starInputEl) {
-    starInputEl.addEventListener("mouseleave", updateStarButtonsUI);
+    starInputEl.addEventListener("mouseleave", () => {
+      document.querySelectorAll("#modalStarInput .star-btn").forEach(b => b.classList.remove("hover-active"));
+      updateStarButtonsUI();
+    });
+  }
+
+  // 🆕 (T021): Char count สำหรับ textarea
+  const commentEl = document.getElementById("modalReviewComment");
+  if (commentEl) {
+    commentEl.addEventListener("input", () => {
+      const countEl = document.getElementById("modalReviewCharCount");
+      if (countEl) {
+        const len = commentEl.value.length;
+        countEl.textContent = len;
+        countEl.style.color = len > 450 ? "var(--danger)" : "var(--text-dim)";
+      }
+    });
   }
 
   // 2. Submit — ส่งรีวิว (สร้างใหม่ หรือ แก้ไข ผ่าน upsert)
