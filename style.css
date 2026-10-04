@@ -587,16 +587,37 @@ button:active {
   background: var(--surface-2);
 }
 
-/* 🆕 (T036): ลดขนาด cover ในเพลย์ลิสต์จาก 58px → 48px — กระทัดรัดขึ้น */
+/* 🆕 (T038): รวมขนาดรายการเพลงในเพลย์ลิสต์ = รายการเพลงทั้งหมด
+   ปัญหา: playlist-song-row มีขนาดเล็กกว่า song-card-row (cover 48px vs 80px, padding 7px vs 10px)
+   วิธีแก้: บังคับให้ playlist-song-row ใช้ขนาดเดียวกับ song-card-row ทุกอย่าง */
+
+/* === ขนาดรายการเพลง — ใช้ค่าเดียวกันทั้ง song-card-row + playlist-song-row === */
+.playlist-song-row {
+  padding: 10px 12px !important;
+  gap: 12px !important;
+}
+
 .playlist-cover {
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
-  background: var(--surface-2);
-  position: relative;
-  overflow: hidden;
-  flex-shrink: 0;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  width: 80px !important;
+  height: 80px !important;
+  border-radius: 12px !important;
+  background: var(--surface-2) !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(139, 92, 246, 0.1) !important;
+}
+
+.playlist-item-name {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  padding-right: 80px !important;
+}
+
+.playlist-item-sub {
+  font-size: 12px !important;
+  padding-right: 80px !important;
+}
+
+.playlist-item-price {
+  font-size: 15px !important;
 }
 
 .playlist-cover img {
@@ -8171,26 +8192,26 @@ html.admin-page body {
     font-size: 12px;
   }
 
-  /* Playlist song rows (รายการเพลงในเพลย์ลิสต์) */
+  /* 🆕 (T038): Playlist song rows = เท่ากับ song-card-row บนจอเล็ก */
   .playlist-song-row {
-    padding: 5px 8px;
-    gap: 8px;
+    padding: 6px 8px !important;
+    gap: 8px !important;
   }
   .playlist-cover {
-    width: 40px;
-    height: 40px;
-    border-radius: 6px;
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 6px !important;
   }
   .playlist-item-name {
-    font-size: 12px;
-    padding-right: 55px;
+    font-size: 12px !important;
+    padding-right: 55px !important;
   }
   .playlist-item-sub {
-    font-size: 10px;
-    padding-right: 55px;
+    font-size: 10px !important;
+    padding-right: 55px !important;
   }
   .playlist-item-price {
-    font-size: 11px;
+    font-size: 11px !important;
   }
 
   /* Category showcase */
