@@ -802,67 +802,76 @@
     <!--   - ตาราง Top Songs + Top DJs (จาก /api/admin/reports/*)        -->
     <!-- ============================================================ -->
     <div id="view-reports" class="view" style="display:none;">
-      <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
+      <!-- 🆕 (T041): Reports header — กระชับขึ้น -->
+      <div class="container" style="padding:14px 16px 4px;display:flex;gap:8px;align-items:center;">
         <button class="icon-btn back-btn" type="button">←</button>
-        <div style="flex:1;font-weight:800;">📊 รายงานยอดขาย</div>
-        <button class="btn secondary" id="rptToggleChartBtn" type="button" title="สลับประเภทกราฟ">
-          📊
-        </button>
-        <button class="btn" id="rptExportCsvBtn" type="button" style="margin-left: auto;">
-          📥 Export CSV
-        </button>
-        <button class="icon-btn" id="reportsRefreshBtn" type="button" title="โหลดใหม่">🔄</button>
+        <div style="flex:1;font-weight:800;font-size:16px;">📊 รายงานยอดขาย</div>
+        <button class="btn secondary" id="rptToggleChartBtn" type="button" title="สลับประเภทกราฟ" style="padding:6px 10px;font-size:13px;">📊</button>
+        <button class="btn" id="rptExportCsvBtn" type="button" style="padding:6px 12px;font-size:12px;font-weight:600;">📥 CSV</button>
+        <button class="icon-btn" id="reportsRefreshBtn" type="button" title="โหลดใหม่" style="padding:6px 8px;font-size:14px;">🔄</button>
       </div>
-      <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">
-        สรุปยอดขายจากออเดอร์ที่สำเร็จ (completed / processing / verified) — อ่านอย่างเดียว ไม่กระทบระบบชำระเงิน
+      <p style="color:var(--text-dim);font-size:11px;padding:0 16px;margin:4px 0 0;line-height:1.4;">
+        สรุปยอดขายจากออเดอร์สำเร็จ — อ่านอย่างเดียว ไม่กระทบระบบชำระเงิน
       </p>
 
-      <!-- ===== Period selector ===== -->
-      <div style="padding:0 16px;margin:14px 0 10px;display:flex;gap:8px;flex-wrap:wrap;">
-        <button type="button" class="btn secondary reports-period-btn" data-period="daily" id="reportsPeriodDaily" style="padding:8px 14px;font-size:13px;font-weight:600;">📅 30 วันล่าสุด</button>
-        <button type="button" class="btn secondary reports-period-btn" data-period="weekly" id="reportsPeriodWeekly" style="padding:8px 14px;font-size:13px;font-weight:600;">📅 90 วันล่าสุด</button>
-        <button type="button" class="btn secondary reports-period-btn" data-period="monthly" id="reportsPeriodMonthly" style="padding:8px 14px;font-size:13px;font-weight:600;">📅 1 ปีล่าสุด</button>
+      <!-- 🆕 (T041): Period selector — รวมในกล่องเดียวกัน -->
+      <div style="padding:0 16px;margin:12px 0;">
+        <div style="display:inline-flex;gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface);">
+          <button type="button" class="reports-period-btn" data-period="daily" id="reportsPeriodDaily" style="padding:7px 14px;font-size:12px;font-weight:600;border:none;background:var(--accent);color:#fff;cursor:pointer;">30 วัน</button>
+          <button type="button" class="reports-period-btn" data-period="weekly" id="reportsPeriodWeekly" style="padding:7px 14px;font-size:12px;font-weight:600;border:none;background:transparent;color:var(--text-dim);cursor:pointer;border-left:1px solid var(--border);">90 วัน</button>
+          <button type="button" class="reports-period-btn" data-period="monthly" id="reportsPeriodMonthly" style="padding:7px 14px;font-size:12px;font-weight:600;border:none;background:transparent;color:var(--text-dim);cursor:pointer;border-left:1px solid var(--border);">1 ปี</button>
+        </div>
       </div>
 
-      <!-- ===== Summary cards ===== -->
-      <div class="stat-grid" style="padding:0 16px;margin-bottom:14px;">
-        <div class="stat-card"><div class="num" id="rptTotalOrders">0</div><div class="label">📦 ออเดอร์สำเร็จ</div></div>
-        <div class="stat-card"><div class="num" id="rptTotalRevenue" style="color:var(--success,#29cc71);">0</div><div class="label">💰 ยอดขายรวม (LAK)</div></div>
-        <div class="stat-card" style="grid-column:span 2;"><div class="num" id="rptAvgOrder" style="color:var(--accent-2,#ec4899);">0</div><div class="label">🧮 ยอดเฉลี่ยต่อออเดอร์ (LAK)</div></div>
+      <!-- 🆕 (T041): Summary cards — 3 การ์ดเท่ากัน -->
+      <div style="padding:0 16px;margin-bottom:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 10px;text-align:center;">
+          <div style="font-size:20px;font-weight:800;color:var(--text);" id="rptTotalOrders">0</div>
+          <div style="font-size:10px;color:var(--text-dim);margin-top:2px;">📦 ออเดอร์</div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 10px;text-align:center;">
+          <div style="font-size:20px;font-weight:800;color:#29cc71;" id="rptTotalRevenue">0</div>
+          <div style="font-size:10px;color:var(--text-dim);margin-top:2px;">💰 ยอดขาย (LAK)</div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 10px;text-align:center;">
+          <div style="font-size:20px;font-weight:800;color:#ec4899;" id="rptAvgOrder">0</div>
+          <div style="font-size:10px;color:var(--text-dim);margin-top:2px;">🧮 เฉลี่ย (LAK)</div>
+        </div>
       </div>
 
       <!-- ===== Bar chart — ยอดขายรายวัน ===== -->
-      <div class="section-title" style="padding:0 16px;margin-top:6px;">📈 ยอดขายรายวัน</div>
-      <div id="rptBarChartWrap" style="padding:0 16px;margin-bottom:18px;">
-        <div class="bar-chart" id="rptBarChart" aria-label="กราฟยอดขายรายวัน" role="img">
-          <div class="bar-chart-empty">ยังไม่มีข้อมูล</div>
+      <div style="padding:0 16px;margin-bottom:14px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px;">📈 ยอดขายรายวัน</div>
+        <div id="rptBarChartWrap" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;">
+          <div class="bar-chart" id="rptBarChart" aria-label="กราฟยอดขายรายวัน" role="img" style="height:120px;">
+            <div class="bar-chart-empty">ยังไม่มีข้อมูล</div>
+          </div>
+          <div id="rptBarChartHint" style="font-size:10px;color:var(--text-dim);margin-top:4px;text-align:center;">เลื่อนเมาส์เหนือแท่งเพื่อดูยอด</div>
         </div>
-        <div id="rptBarChartHint" style="font-size:11px;color:var(--text-dim);margin-top:6px;text-align:center;">เลื่อนเมาส์เหนือแท่งเพื่อดูยอด</div>
       </div>
 
-      <!-- ===== Top songs + Top DJs (2 คอลัมน์บน desktop, stack บนมือถือ) ===== -->
-      <div style="padding:0 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-bottom:24px;">
-
+      <!-- ===== Top songs + Top DJs ===== -->
+      <div style="padding:0 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:14px;">
         <div>
-          <div class="section-title" style="margin-top:0;">🎵 เพลงขายดี (Top 10)</div>
-          <div id="rptTopSongs" class="reports-table-wrap">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px;">🎵 เพลงขายดี (Top 10)</div>
+          <div id="rptTopSongs" class="reports-table-wrap" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px;">
             <div class="reports-empty">ยังไม่มีข้อมูล</div>
           </div>
         </div>
-
         <div>
-          <div class="section-title" style="margin-top:0;">🎧 DJ ขายดี (Top 10)</div>
-          <div id="rptTopDjs" class="reports-table-wrap">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px;">🎧 DJ ขายดี (Top 10)</div>
+          <div id="rptTopDjs" class="reports-table-wrap" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px;">
             <div class="reports-empty">ยังไม่มีข้อมูล</div>
           </div>
         </div>
-
       </div>
 
       <!-- ===== Monthly summary (T040) ===== -->
-      <div class="reports-card" id="rptMonthlySummaryCard" style="margin-top: 12px;">
-        <div class="reports-card-title">📅 สรุปรายเดือน</div>
-        <div id="rptMonthlySummary"></div>
+      <div style="padding:0 16px;margin-bottom:20px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px;">📅 สรุปรายเดือน</div>
+        <div id="rptMonthlySummary" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px;">
+          <div class="reports-empty">ยังไม่มีข้อมูล</div>
+        </div>
       </div>
     </div>
     <!-- ===================== /REPORTS VIEW ===================== -->
