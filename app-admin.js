@@ -10,13 +10,13 @@ import {
   reauthenticateWithCredential, EmailAuthProvider, updatePassword,
   checkHasAdmin, bootstrapFirstAdmin
 } from "./auth-client.js";
-import { initOrdersView } from "./orders.js?v=20260922-batch10";
+import { initOrdersView } from "./orders.js?v=20261006-T049";
 import { resolveCurrentAdminRole, initAdminsView } from "./admin-roles.js?v=20261004-T044";
 import {
   analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS
 } from "./song-analyzer.js?v=20260908-previewrange1";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
-import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261003-login-guest-v11";
+import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261006-T049";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
 import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js";
 
