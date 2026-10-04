@@ -8392,3 +8392,51 @@ html.admin-page body {
     font-size: 10px !important;
   }
 }
+
+/* ==========================================================================
+   🔧 (2026-10-04) แถวเพลงในเพลย์ลิสต์ = ขนาดเท่าแถวเพลงหลัก + แก้ปุ่ม "ซื้อทั้งเพลย์ลิสต์" โดนตัด
+   ปัญหา 1: บนมือถือ แถวเพลงในเพลย์ลิสต์ (padding/รูปปก/ชื่อเพลง/ราคา) ใหญ่กว่าแถวเพลงหลัก
+            เพราะกฎของ .playlist-song-row.song-card-row มี specificity สูงกว่า .song-card-row เลยทับค่าของจอเล็ก
+   วิธีแก้ 1: ใส่ค่าเดียวกับเพลงหลักของแต่ละช่วงจอ (≤480px และ ≤390px) ให้แถวในเพลย์ลิสต์
+   ปัญหา 2: ปุ่ม "ซื้อทั้งเพลย์ลิสต์" ถูกดันไปขวาด้วย margin-right ติดลบเกินไป (-64px / -60px)
+            ขอบปุ่มเลยทะลุกรอบการ์ดและโดน overflow:hidden ตัดทิ้ง
+   วิธีแก้ 2: ปรับเป็น -36px ให้ขอบขวาปุ่มตรงกับขอบขวาปุ่ม "เพิ่มลงตะกร้า" ของเพลงในเพลย์ลิสต์พอดี
+   ไม่แตะ HTML/JS — ย้อนกลับ: ลบบล็อกนี้ทั้งหมด
+   ========================================================================== */
+.playlist-block .playlist-folder-btn .playlist-folder-bottom {
+  margin-right: -36px !important;
+}
+
+@media (max-width: 480px) {
+  /* มือถือ: padding แถวเพลงเหลือ 8px → ขยับปุ่มซื้อเพิ่มอีก 2px ให้ขอบขวาตรงกับปุ่ม "เพิ่ม" ของเพลง */
+  .playlist-block .playlist-folder-btn .playlist-folder-bottom {
+    margin-right: -38px !important;
+  }
+  .playlist-block .playlist-song-row.song-card-row {
+    padding: 8px !important;
+  }
+  .playlist-block .playlist-song-row.song-card-row .playlist-cover img {
+    border-radius: 8px;
+  }
+  .playlist-block .playlist-song-row.song-card-row .playlist-item-name {
+    font-size: 13px !important;
+  }
+  .playlist-block .playlist-song-row.song-card-row .song-price {
+    font-size: 12px !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .playlist-block .playlist-song-row.song-card-row {
+    padding: 6px 8px !important;
+    gap: 8px !important;
+  }
+  .playlist-block .playlist-song-row.song-card-row .playlist-cover {
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 6px !important;
+  }
+  .playlist-block .playlist-song-row.song-card-row .playlist-item-name {
+    font-size: 12px !important;
+  }
+}
