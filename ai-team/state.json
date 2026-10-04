@@ -1,23 +1,105 @@
 {
-  "version": "1.10.0",
-  "last_updated": "2026-10-03T21:30:00+07:00",
+  "version": "1.11.0",
+  "last_updated": "2026-10-05T21:35:00+07:00",
   "current_session": {
     "session_id": "web-fa07595c-dcf9-4921-aa7a-8451696ed1c0",
     "started_at": "2026-10-03T10:00:00+07:00",
     "user_timezone": "Asia/Vientiane"
   },
   "tasks": {
-    "active": [],
+    "active": [
+      {
+        "id": "T064-category-tab",
+        "title": "แท็บหมวดหมู่ (แท็บที่ 3 เมนูล่าง) แสดงการ์ดหมวดหมู่ครบทุกหมวด",
+        "branch": "ai-team/T064-category-tab",
+        "commit_sha": "956a643",
+        "pushed_at": "2026-10-05T21:30:00+07:00",
+        "pr_url": "https://github.com/MiusicBox/Miusic/pull/64",
+        "pr_number": 64,
+        "stage": "awaiting-owner-merge (ขั้น 12/13)",
+        "files_changed": [
+          "index.html",
+          "app-user.js"
+        ],
+        "summary": "index.html: ข้อความแท็บ หมวด→หมวดหมู่ / app-user.js: setView() แสดง #categoryShowcase เมื่อ view=category+currentCategory=all + tab handler เรียก renderCategoryGrid() — QA matrix ผ่าน 8/8, หน้าอื่นไม่กระทบ 0%"
+      }
+    ],
     "pending_user_approval": [
-      {"id": "T011-validation-ux-light", "title": "Validation + UX เบา ๆ (L2,L3,L6,L8,L11 + F4,F5,F6)", "branch": "ai-team/T011-validation-ux-light", "commit_sha": "326e3c6", "pushed_at": "2026-10-03T19:30:00+07:00", "pr_url": "https://github.com/MiusicBox/Miusic/pull/new/ai-team/T011-validation-ux-light", "stage": "implementation_complete — พร้อมส่ง Stage 4 (Testing)"},
-      {"id": "T012-sales-report-search", "title": "ฟีเจอร์ใหม่ — รายงานยอดขาย + ค้นหาขั้นสูง", "branch": "ai-team/T012-sales-report-search", "pushed_at": "2026-10-03T20:30:00+07:00", "pr_url": "https://github.com/MiusicBox/Miusic/pull/new/ai-team/T012-sales-report-search", "stage": "implementation_complete — พร้อมส่ง Stage 4 (Testing)"},
-      {"id": "T013-refactor-ux-extra", "title": "Refactor + UX เสริม 5 ตัว (R3, Q10, P4, F7, F8)", "branch": "ai-team/T013-refactor-ux-extra", "pushed_at": "2026-10-03T21:30:00+07:00", "pr_url": "https://github.com/MiusicBox/Miusic/pull/new/ai-team/T013-refactor-ux-extra", "stage": "implementation_complete — พร้อมส่ง Stage 4 (Testing)"}
+      {
+        "id": "T011-validation-ux-light",
+        "title": "Validation + UX เบา ๆ (L2,L3,L6,L8,L11 + F4,F5,F6)",
+        "branch": "ai-team/T011-validation-ux-light",
+        "commit_sha": "326e3c6",
+        "pushed_at": "2026-10-03T19:30:00+07:00",
+        "pr_url": "https://github.com/MiusicBox/Miusic/pull/new/ai-team/T011-validation-ux-light",
+        "stage": "implementation_complete — พร้อมส่ง Stage 4 (Testing)"
+      },
+      {
+        "id": "T012-sales-report-search",
+        "title": "ฟีเจอร์ใหม่ — รายงานยอดขาย + ค้นหาขั้นสูง",
+        "branch": "ai-team/T012-sales-report-search",
+        "pushed_at": "2026-10-03T20:30:00+07:00",
+        "pr_url": "https://github.com/MiusicBox/Miusic/pull/new/ai-team/T012-sales-report-search",
+        "stage": "implementation_complete — พร้อมส่ง Stage 4 (Testing)"
+      },
+      {
+        "id": "T013-refactor-ux-extra",
+        "title": "Refactor + UX เสริม 5 ตัว (R3, Q10, P4, F7, F8)",
+        "branch": "ai-team/T013-refactor-ux-extra",
+        "pushed_at": "2026-10-03T21:30:00+07:00",
+        "pr_url": "https://github.com/MiusicBox/Miusic/pull/new/ai-team/T013-refactor-ux-extra",
+        "stage": "implementation_complete — พร้อมส่ง Stage 4 (Testing)"
+      }
     ],
     "completed": [
-      {"id": "T001-T007", "completed_at": "2026-10-03T13:30:00+07:00", "note": "ดูรายละเอียดใน state.json ก่อนหน้า"},
-      {"id": "T008-urgent-bugs", "title": "แก้ Bug ด่วน 5 ตัว (M6, M2, L7, L9, L10)", "pr_number": 7, "completed_at": "2026-10-03T14:00:00+07:00", "merge_sha": "e0de042e", "deploy_version": "49686104-cca1-41d6-b822-2102370cc965", "bugs_fixed": ["M6 whatsapp normalize", "M2 safeError", "L7 amount_claimed NaN", "L9 R2 cleanup", "L10 favorites toggle"]},
-      {"id": "T009-ux-improvements", "title": "UX เร็ว 3 ตัว (F3 Toast, F2 Empty states, F1 Skeleton)", "pr_number": 8, "completed_at": "2026-10-03T14:30:00+07:00", "merge_sha": "f9b5eb55", "deploy_version": "04fd2f61-13ac-42aa-bea3-e560a9aa2ec8", "features_added": ["F3 toast multi-line", "F2 empty states (cart/orders/promo/favorites)", "F1 skeleton loaders"]},
-      {"id": "T010-security-hardening", "title": "Security hardening 8 ตัว (M1, M3, M5, M9, M10, M11, R5, R6)", "pr_number": 9, "completed_at": "2026-10-03T17:30:00+07:00", "merge_sha": "a6ad962", "features_added": ["security headers", "rate limits", "audit log mask", "cache poisoning fix", "pagination", "constants extraction"]}
+      {
+        "id": "T001-T007",
+        "completed_at": "2026-10-03T13:30:00+07:00",
+        "note": "ดูรายละเอียดใน state.json ก่อนหน้า"
+      },
+      {
+        "id": "T008-urgent-bugs",
+        "title": "แก้ Bug ด่วน 5 ตัว (M6, M2, L7, L9, L10)",
+        "pr_number": 7,
+        "completed_at": "2026-10-03T14:00:00+07:00",
+        "merge_sha": "e0de042e",
+        "deploy_version": "49686104-cca1-41d6-b822-2102370cc965",
+        "bugs_fixed": [
+          "M6 whatsapp normalize",
+          "M2 safeError",
+          "L7 amount_claimed NaN",
+          "L9 R2 cleanup",
+          "L10 favorites toggle"
+        ]
+      },
+      {
+        "id": "T009-ux-improvements",
+        "title": "UX เร็ว 3 ตัว (F3 Toast, F2 Empty states, F1 Skeleton)",
+        "pr_number": 8,
+        "completed_at": "2026-10-03T14:30:00+07:00",
+        "merge_sha": "f9b5eb55",
+        "deploy_version": "04fd2f61-13ac-42aa-bea3-e560a9aa2ec8",
+        "features_added": [
+          "F3 toast multi-line",
+          "F2 empty states (cart/orders/promo/favorites)",
+          "F1 skeleton loaders"
+        ]
+      },
+      {
+        "id": "T010-security-hardening",
+        "title": "Security hardening 8 ตัว (M1, M3, M5, M9, M10, M11, R5, R6)",
+        "pr_number": 9,
+        "completed_at": "2026-10-03T17:30:00+07:00",
+        "merge_sha": "a6ad962",
+        "features_added": [
+          "security headers",
+          "rate limits",
+          "audit log mask",
+          "cache poisoning fix",
+          "pagination",
+          "constants extraction"
+        ]
+      }
     ],
     "blocked": []
   },
@@ -31,12 +113,26 @@
   "github": {
     "repo": "MiusicBox/Miusic",
     "default_branch": "main",
-    "existing_branches": ["main"],
+    "existing_branches": [
+      "main"
+    ],
     "open_prs": [],
     "recent_merges": [
-      {"number": 7, "title": "T008: Bug ด่วน 5 ตัว", "merged_at": "2026-10-03T14:00:00+07:00"},
-      {"number": 8, "title": "T009: UX 3 ตัว", "merged_at": "2026-10-03T14:30:00+07:00"},
-      {"number": 9, "title": "T010: Security hardening 8 ตัว", "merged_at": "2026-10-03T17:30:00+07:00"}
+      {
+        "number": 7,
+        "title": "T008: Bug ด่วน 5 ตัว",
+        "merged_at": "2026-10-03T14:00:00+07:00"
+      },
+      {
+        "number": 8,
+        "title": "T009: UX 3 ตัว",
+        "merged_at": "2026-10-03T14:30:00+07:00"
+      },
+      {
+        "number": 9,
+        "title": "T010: Security hardening 8 ตัว",
+        "merged_at": "2026-10-03T17:30:00+07:00"
+      }
     ]
   },
   "cloudflare": {
@@ -92,35 +188,98 @@
     "iron_rules_3": "active"
   },
   "decisions_log": [
-    {"id": "D001-D007", "note": "ดูใน state.json ก่อนหน้า"},
-    {"id": "D008", "action": "T007 fix tab scroll bug"},
-    {"id": "D009", "timestamp": "2026-10-03T13:45:00+07:00", "user_answer": "ประชุมทีม", "action": "TEAM-MEETING-001 — 4 roles รายชายงาน bug + UX + tech debt + security"},
-    {"id": "D010", "timestamp": "2026-10-03T13:50:00+07:00", "user_answer": "เลือก A — เริ่มจาก bug ด่วน + UX เร็ว", "action": "T008 + T009 ครบ"},
-    {"id": "D011", "timestamp": "2026-10-03T17:30:00+07:00", "action": "T010 merge — security hardening 8 ตัวเสร็จ"},
-    {"id": "T011-D1", "timestamp": "2026-10-03T18:30:00+07:00", "action": "L4 skip — ตรวจพบว่าแก้แล้วใน T008 (DELETE customer_favorites + song_likes + password_reset_requests ก่อน DELETE customer)"},
-    {"id": "T011-D2", "timestamp": "2026-10-03T18:30:00+07:00", "action": "L13 skip — ตรวจพบว่าแก้แล้วใน T010-M11 (parsePagination + LIMIT ? OFFSET ?)"},
-    {"id": "T011-D3", "timestamp": "2026-10-03T18:45:00+07:00", "action": "L11 ใช้ LIMITS.MAX_PAGE (=200) แทน DEFAULT_PAGE (=50) เพื่อไม่ให้เป็น regression"},
-    {"id": "T012-D1", "timestamp": "2026-10-03T20:00:00+07:00", "action": "T012 — รายงานยอดขายใช้ status IN ('completed','processing','verified') เพราะ verified คือแอดมินยืนยันสลิปแล้ว (ยังไม่ completed แต่ถือว่าขายสำเร็จ)"},
-    {"id": "T012-D2", "timestamp": "2026-10-03T20:00:00+07:00", "action": "T012 — top-songs ใช้ json_each บน items array กรองเฉพาะ song_id IS NOT NULL (ข้าม playlist items เพราะ playlist ไม่มี song_id ตรง ๆ)"},
-    {"id": "T012-D3", "timestamp": "2026-10-03T20:00:00+07:00", "action": "T012 — top-djs ใช้ 2 D1 queries (aggregate + batch IN clause lookup) ไม่ใช่ N+1; re-aggregate dj_name ฝั่ง JS bounded โดย SONG_LOOKUP_LIMIT=200"},
-    {"id": "T012-D4", "timestamp": "2026-10-03T20:00:00+07:00", "action": "T012 — _admin-search ขยายด้วย optional body fields (date_from/date_to/status/min_amount/max_amount) ส่งเป็น top-level fields — back-compatible (client เดิมที่ส่งแค่ {q} ยังทำงาน)"},
-    {"id": "T012-D5", "timestamp": "2026-10-03T20:00:00+07:00", "action": "T012 — bar chart ใช้ CSS-only (ไม่ใช้ Chart.js) ประหยัด bundle + กัน dependency ใหม่"},
-    {"id": "T013-D1", "timestamp": "2026-10-03T21:15:00+07:00", "action": "T013-R3 — สร้าง shared-utils.js แต่ยังไม่ migrate helpers เดิม (migrate ทีละไฟล์ + test รอบละไฟล์เพื่อความปลอดภัย — กัน break เหมือน T012 pattern)"},
-    {"id": "T013-D2", "timestamp": "2026-10-03T21:15:00+07:00", "action": "T013-Q10 — dynamic import self-host /vendor/html2canvas.min.js แทน script tag (lazy-load ~195KB) + CDN esm.sh fallback; admin.html ยังคง script tag ไว้เพราะ admin ใช้บ่อย"},
-    {"id": "T013-D3", "timestamp": "2026-10-03T21:20:00+07:00", "action": "T013-P4 — event delegation ที่ #ordHistoryList (parent) ครั้งเดียว แทน re-attach ~350 listeners ทุก renderHistory() call; เพิ่ม aria-label + type=\"button\" บน icon-btn (satisfy F8.3 accessibility test)"},
-    {"id": "T013-D4", "timestamp": "2026-10-03T21:25:00+07:00", "action": "T013-F7 — ใช้ pagination state (customerOrdersPagination) + สะสม allLoaded + re-sort + dedup; backend รองรับ ?limit=&offset= ตั้งแต่ T010-M11 แล้ว → ไม่ต้องแก้ worker/index.js"},
-    {"id": "T013-D5", "timestamp": "2026-10-03T21:30:00+07:00", "action": "T013-F8 — drag-drop + .slip-upload-zone + .slip-preview + .slip-remove-btn; รักษา URL.createObjectURL + revoke pattern เดิมไว้ (กัน memory leak)"}
+    {
+      "id": "D001-D007",
+      "note": "ดูใน state.json ก่อนหน้า"
+    },
+    {
+      "id": "D008",
+      "action": "T007 fix tab scroll bug"
+    },
+    {
+      "id": "D009",
+      "timestamp": "2026-10-03T13:45:00+07:00",
+      "user_answer": "ประชุมทีม",
+      "action": "TEAM-MEETING-001 — 4 roles รายชายงาน bug + UX + tech debt + security"
+    },
+    {
+      "id": "D010",
+      "timestamp": "2026-10-03T13:50:00+07:00",
+      "user_answer": "เลือก A — เริ่มจาก bug ด่วน + UX เร็ว",
+      "action": "T008 + T009 ครบ"
+    },
+    {
+      "id": "D011",
+      "timestamp": "2026-10-03T17:30:00+07:00",
+      "action": "T010 merge — security hardening 8 ตัวเสร็จ"
+    },
+    {
+      "id": "T011-D1",
+      "timestamp": "2026-10-03T18:30:00+07:00",
+      "action": "L4 skip — ตรวจพบว่าแก้แล้วใน T008 (DELETE customer_favorites + song_likes + password_reset_requests ก่อน DELETE customer)"
+    },
+    {
+      "id": "T011-D2",
+      "timestamp": "2026-10-03T18:30:00+07:00",
+      "action": "L13 skip — ตรวจพบว่าแก้แล้วใน T010-M11 (parsePagination + LIMIT ? OFFSET ?)"
+    },
+    {
+      "id": "T011-D3",
+      "timestamp": "2026-10-03T18:45:00+07:00",
+      "action": "L11 ใช้ LIMITS.MAX_PAGE (=200) แทน DEFAULT_PAGE (=50) เพื่อไม่ให้เป็น regression"
+    },
+    {
+      "id": "T012-D1",
+      "timestamp": "2026-10-03T20:00:00+07:00",
+      "action": "T012 — รายงานยอดขายใช้ status IN ('completed','processing','verified') เพราะ verified คือแอดมินยืนยันสลิปแล้ว (ยังไม่ completed แต่ถือว่าขายสำเร็จ)"
+    },
+    {
+      "id": "T012-D2",
+      "timestamp": "2026-10-03T20:00:00+07:00",
+      "action": "T012 — top-songs ใช้ json_each บน items array กรองเฉพาะ song_id IS NOT NULL (ข้าม playlist items เพราะ playlist ไม่มี song_id ตรง ๆ)"
+    },
+    {
+      "id": "T012-D3",
+      "timestamp": "2026-10-03T20:00:00+07:00",
+      "action": "T012 — top-djs ใช้ 2 D1 queries (aggregate + batch IN clause lookup) ไม่ใช่ N+1; re-aggregate dj_name ฝั่ง JS bounded โดย SONG_LOOKUP_LIMIT=200"
+    },
+    {
+      "id": "T012-D4",
+      "timestamp": "2026-10-03T20:00:00+07:00",
+      "action": "T012 — _admin-search ขยายด้วย optional body fields (date_from/date_to/status/min_amount/max_amount) ส่งเป็น top-level fields — back-compatible (client เดิมที่ส่งแค่ {q} ยังทำงาน)"
+    },
+    {
+      "id": "T012-D5",
+      "timestamp": "2026-10-03T20:00:00+07:00",
+      "action": "T012 — bar chart ใช้ CSS-only (ไม่ใช้ Chart.js) ประหยัด bundle + กัน dependency ใหม่"
+    },
+    {
+      "id": "T013-D1",
+      "timestamp": "2026-10-03T21:15:00+07:00",
+      "action": "T013-R3 — สร้าง shared-utils.js แต่ยังไม่ migrate helpers เดิม (migrate ทีละไฟล์ + test รอบละไฟล์เพื่อความปลอดภัย — กัน break เหมือน T012 pattern)"
+    },
+    {
+      "id": "T013-D2",
+      "timestamp": "2026-10-03T21:15:00+07:00",
+      "action": "T013-Q10 — dynamic import self-host /vendor/html2canvas.min.js แทน script tag (lazy-load ~195KB) + CDN esm.sh fallback; admin.html ยังคง script tag ไว้เพราะ admin ใช้บ่อย"
+    },
+    {
+      "id": "T013-D3",
+      "timestamp": "2026-10-03T21:20:00+07:00",
+      "action": "T013-P4 — event delegation ที่ #ordHistoryList (parent) ครั้งเดียว แทน re-attach ~350 listeners ทุก renderHistory() call; เพิ่ม aria-label + type=\"button\" บน icon-btn (satisfy F8.3 accessibility test)"
+    },
+    {
+      "id": "T013-D4",
+      "timestamp": "2026-10-03T21:25:00+07:00",
+      "action": "T013-F7 — ใช้ pagination state (customerOrdersPagination) + สะสม allLoaded + re-sort + dedup; backend รองรับ ?limit=&offset= ตั้งแต่ T010-M11 แล้ว → ไม่ต้องแก้ worker/index.js"
+    },
+    {
+      "id": "T013-D5",
+      "timestamp": "2026-10-03T21:30:00+07:00",
+      "action": "T013-F8 — drag-drop + .slip-upload-zone + .slip-preview + .slip-remove-btn; รักษา URL.createObjectURL + revoke pattern เดิมไว้ (กัน memory leak)"
+    }
   ],
-  "resume_instructions": {
-    "how_to_resume": "บอก AI: 'resume ai-team'",
-    "what_user_can_say": [
-      "resume ai-team — ทำงานต่อ",
-      "ai-team status — ดูสถานะ",
-      "new task: <description>",
-      "approve merge <PR#>",
-      "cancel task <task-id>"
-    ]
-  },
+  "resume_instructions": "T064 (PR #64) รอ owner merge — T063 (PR #63) ก็ยังรอ owner merge อยู่ด้วย / งานถัดไปที่เสนอไว้: T065 แก้ 83 TODO/FIXME (เริ่มจากด้านความปลอดภัย) → T066 ย้าย shared-utils 7 ไฟล์ (ทีละไฟล์)",
   "next_actions_pending_user": [
     {
       "action": "Review T013 + สร้าง PR",
@@ -143,5 +302,3 @@
     }
   ]
 }
-
-
