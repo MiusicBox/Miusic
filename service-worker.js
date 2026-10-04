@@ -24,7 +24,9 @@
 // 🆕 (T049-A): อัปเดต CACHE_VERSION หลัง T044-T048 → ลูกค้าเก่าจะได้ cache ใหม่
 //   เดิม: 'miusic-pwa-v1.0.1' (ก่อน T044) → ลูกค้าเก่ายังใช้ JS/CSS เก่า → ไม่เห็นการแก้ T044-T048
 //   ใหม่: 'miusic-pwa-v1.0.2-T048' → install event จะ activate SW ใหม่ + ล้าง cache เก่า
-const CACHE_VERSION = 'miusic-pwa-v1.0.2-T048';
+// 🆕 (T057): อัปเดต CACHE_VERSION หลัง T057 (PDPA + cookie consent + privacy.html)
+//   → ลูกค้าเก่าจะได้เห็น cookie banner + modal ตั้งค่าบัญชี
+const CACHE_VERSION = 'miusic-pwa-v1.0.3-T057';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const FONT_CACHE    = `${CACHE_VERSION}-fonts`;
@@ -83,6 +85,8 @@ const PRECACHE_URLS = [
   // 🆕 (T049-B): เพิ่มไฟล์ใหม่จาก T013 + T045 — ไม่ precache จะทำให้ offline mode ไม่ทำงาน
   '/shared-utils.js',          // T013-R3: shared helpers
   '/phone-input.js',           // T045: country selector dropdown
+  // 🆕 (T057): เพิ่ม privacy.html สำหรับ PDPA — ลูกค้าดู offline ได้
+  '/privacy.html',             // T057: Privacy Policy page
   '/vendor/html2canvas.min.js',
   '/default-song-cover.svg',
   '/default-playlist-cover.svg',

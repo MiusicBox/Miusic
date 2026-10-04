@@ -208,16 +208,19 @@ export async function deleteCustomerSession(env, token) {
 // 🆕 ดึง customer จาก session (เหมือน getSessionAdmin ของแอดมิน)
 //   คืน customer row (id, email, whatsapp, display_name, created_at) หรือ null ถ้าไม่ได้ login/หมดอายุ
 //   มี sliding session renewal เหมือนแอดมิน (ถ้าเหลือ < 1 วัน → ต่ออายุ 7 วัน)
+// 🆕 (T057-PDPA): รองรับ soft delete — ถ้า customer.deleted_at != NULL → ถือว่าไม่ login
+//   ป้องกันลูกค้าที่ลบบัญชีเอง (สิทธิ์ลบ PDPA Section 33) login กลับเข้าระบบระหว่าง 30 วัน grace
 export async function getCustomerSession(request, env) {
   const token = getCookie(request, "customer_session_token");
   if (!token) return null;
   const now = new Date();
   const nowIso = now.toISOString();
+  // 🆕 (T057): เพิ่ม c.deleted_at IS NULL → ถ้า customer ถูก soft delete → ไม่ login ได้
   const customer = await env.DB.prepare(
     "SELECT c.id, c.email, c.whatsapp, c.display_name, c.created_at, s.expires_at " +
     "FROM customer_sessions s " +
     "JOIN customers c ON s.customer_id = c.id " +
-    "WHERE s.token = ? AND s.expires_at > ?"
+    "WHERE s.token = ? AND s.expires_at > ? AND c.deleted_at IS NULL"
   ).bind(token, nowIso).first();
   if (!customer) return null;
 
