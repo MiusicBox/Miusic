@@ -11,7 +11,7 @@ import {
   checkHasAdmin, bootstrapFirstAdmin
 } from "./auth-client.js";
 import { initOrdersView } from "./orders.js?v=20260922-batch10";
-import { resolveCurrentAdminRole, initAdminsView } from "./admin-roles.js?v=20261004-T043";
+import { resolveCurrentAdminRole, initAdminsView } from "./admin-roles.js?v=20261004-T044";
 import {
   analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS
 } from "./song-analyzer.js?v=20260908-previewrange1";
@@ -437,7 +437,7 @@ document.getElementById("changePasswordSaveBtn").addEventListener("click", async
   btn.disabled = false; btn.textContent = "บันทึกรหัสผ่านใหม่";
 });
 
-function showLogin() { document.getElementById("loginScreen").style.display = "flex"; document.getElementById("adminShell").style.display = "none"; }
+function showLogin() { currentAdminRole = null; window.__currentAdminRole = null; try { syncAdminButtonVisibility(); } catch (_) {} document.getElementById("loginScreen").style.display = "flex"; document.getElementById("adminShell").style.display = "none"; }
 async function showAdmin() {
   // ตรวจสอบสิทธิ์แอดมินของบัญชีนี้ก่อนปล่อยเข้าใช้งาน (บูตสแตรปแอดมินหลักคนแรกอัตโนมัติถ้ายังไม่เคยตั้งค่าระบบแอดมินเลย)
   let roleInfo;
@@ -464,7 +464,10 @@ async function showAdmin() {
 
   document.getElementById("loginScreen").style.display = "none";
   document.getElementById("adminShell").style.display = "block";
-  document.getElementById("qaManageAdmins").style.display = currentAdminRole === "main" ? "" : "none";
+  // 🔧 (2026-10-04 fix): แสดง/ซ่อนทั้งปุ่มเดิม (qaManageAdmins) และปุ่มใหม่ใน Card "ระบบ" (qaManageAdminsNew)
+  //   ปัญหาเดิม: ตรงนี้ตั้ง display ให้แค่ปุ่มเดิมที่ซ่อนอยู่ ส่วน syncAdminButtonVisibility() ถูกเรียกครั้งเดียวตอนโหลดสคริปต์
+  //             (ตอนนั้น currentAdminRole ยังเป็น null) → ปุ่ม "👤 แอดมิน" ในหน้า Dashboard ถูกซ่อนตลอดแม้เป็นแอดมินหลัก
+  syncAdminButtonVisibility();
   const s = await withTimeout(
     getDoc(doc(db, "settings", "main")),
     15000,
