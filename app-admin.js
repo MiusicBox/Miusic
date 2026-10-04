@@ -6097,14 +6097,15 @@ async function loadReports(period) {
     // แสดง loading state
     setReportsLoading(true);
 
-    const [summaryRes, topSongsRes, topDjsRes] = await Promise.all([
+    const [summaryRes, topSongsRes, topDjsRes, topPlaylistsRes] = await Promise.all([
       fetch(`/api/admin/reports/sales-summary?period=${encodeURIComponent(period || "daily")}`, { credentials: "same-origin" }),
       fetch(`/api/admin/reports/top-songs?limit=10`, { credentials: "same-origin" }),
       fetch(`/api/admin/reports/top-djs?limit=10`, { credentials: "same-origin" }),
+      fetch(`/api/admin/reports/top-playlists?limit=10`, { credentials: "same-origin" }),
     ]);
 
     // ถ้า endpoint ใดส่ง 401 → ส่งไป login ใหม่
-    if (summaryRes.status === 401 || topSongsRes.status === 401 || topDjsRes.status === 401) {
+    if (summaryRes.status === 401 || topSongsRes.status === 401 || topDjsRes.status === 401 || topPlaylistsRes.status === 401) {
       if (typeof showLogin === "function") showLogin();
       return;
     }
@@ -6112,6 +6113,7 @@ async function loadReports(period) {
     const summaryData = summaryRes.ok ? await summaryRes.json().catch(() => null) : null;
     const topSongsData = topSongsRes.ok ? await topSongsRes.json().catch(() => null) : null;
     const topDjsData = topDjsRes.ok ? await topDjsRes.json().catch(() => null) : null;
+    const topPlaylistsData = topPlaylistsRes.ok ? await topPlaylistsRes.json().catch(() => null) : null;
 
     // render summary + bar chart
     if (summaryData?.ok) {
@@ -6132,6 +6134,13 @@ async function loadReports(period) {
       renderTopDjsTable(topDjsData.top_djs || []);
     } else {
       renderReportsError("rptTopDjs", topDjsData?.error || "โหลด DJ ขายดีไม่สำเร็จ");
+    }
+
+    // 🆕 (T042): render top playlists
+    if (topPlaylistsData?.ok) {
+      renderTopPlaylistsTable(topPlaylistsData.top_playlists || []);
+    } else {
+      renderReportsError("rptTopPlaylists", topPlaylistsData?.error || "โหลด Playlist ขายดีไม่สำเร็จ");
     }
   } catch (err) {
     console.error("[T012] loadReports error:", err);
@@ -6254,6 +6263,30 @@ function renderTopDjsTable(djs) {
         <div class="reports-info">
           <div class="reports-name">🎧 ${escapeHtml(d.dj_name || "(ไม่ระบุ DJ)")}</div>
           <div class="reports-sub">${Number(d.sales_count || 0).toLocaleString("en-US")} ครั้ง · ${Number(d.song_count || 0).toLocaleString("en-US")} เพลง · ${formatPrice(d.revenue)}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+  wrap.innerHTML = rows;
+}
+
+// 🆕 (T042): Render top playlists table
+function renderTopPlaylistsTable(playlists) {
+  const wrap = document.getElementById("rptTopPlaylists");
+  if (!wrap) return;
+  if (!Array.isArray(playlists) || playlists.length === 0) {
+    wrap.innerHTML = `<div class="reports-empty">ยังไม่มี Playlist ที่ขายในช่วงนี้</div>`;
+    return;
+  }
+  const rows = playlists.map((p, i) => {
+    const rank = i + 1;
+    const rankBadge = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `${rank}`;
+    return `
+      <div class="reports-row">
+        <div class="reports-rank">${rankBadge}</div>
+        <div class="reports-info">
+          <div class="reports-name">📦 ${escapeHtml(p.playlist_name || "(ไม่มีชื่อ)")}</div>
+          <div class="reports-sub">${Number(p.sales_count || 0).toLocaleString("en-US")} ครั้ง · ${formatPrice(p.revenue)}</div>
         </div>
       </div>
     `;

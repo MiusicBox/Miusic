@@ -6775,6 +6775,49 @@ async function handleCustomerAuth(request, env, url) {
     }
   }
 
+  // 🆕 (T042): GET /api/admin/reports/top-playlists?limit=10
+  //   response: { ok, top_playlists: [{ playlist_id, playlist_name, sales_count, revenue }] }
+  //   - ใช้ SQL aggregate บน json_each เพื่อนับยอดขายต่อ playlist (เหมือน top-songs แต่ group by playlist_id)
+  if (url.pathname === "/api/admin/reports/top-playlists" && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ไม่ได้รับอนุญาต" }, 401);
+
+    try {
+      const limit = Math.min(parseInt(url.searchParams.get("limit") || "10", 10), 50);
+
+      // aggregate ยอดขายต่อ playlist_id จาก order items
+      //   items ที่เป็น playlist จะมี playlist_id + playlist_name
+      const { results } = await env.DB.prepare(
+        `SELECT 
+           json_each.value->>'$.playlist_id' as playlist_id,
+           json_each.value->>'$.playlist_name' as playlist_name,
+           COUNT(*) as sales_count,
+           SUM(CAST(json_each.value->>'$.price' AS REAL)) as revenue
+         FROM documents, json_each(json_extract(data, '$.items'))
+         WHERE collection = 'orders'
+           AND json_extract(data, '$.status') IN ('completed', 'processing', 'verified')
+           AND json_each.value->>'$.playlist_id' IS NOT NULL
+           AND json_each.value->>'$.playlist_id' != ''
+         GROUP BY playlist_id
+         ORDER BY sales_count DESC
+         LIMIT ?`
+      ).bind(limit).all();
+
+      return jsonResponse({
+        ok: true,
+        top_playlists: (results || []).map(r => ({
+          playlist_id: r.playlist_id,
+          playlist_name: r.playlist_name || "(ไม่มีชื่อ)",
+          sales_count: r.sales_count,
+          revenue: Math.round(Number(r.revenue || 0) * 100) / 100,
+        })),
+      });
+    } catch (err) {
+      return jsonResponse({ error: safeError("โหลดรายงาน Playlist ขายดีไม่สำเร็จ", err) }, 500);
+    }
+  }
+
   // 🆕 (T040): GET /api/admin/reports/export-csv?period=daily|weekly|monthly
   //   Export ยอดขายเป็น CSV — admin ดาวน์โหลดได้
   //   response: text/csv (attachment)
