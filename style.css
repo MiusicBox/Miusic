@@ -8458,3 +8458,163 @@ html.admin-page body {
     font-size: 13px !important;
   }
 }
+
+/* ============================================================
+   🆕 (T045): PhoneInput — Country Selector Dropdown 🇱🇦/🇹🇭
+   ============================================================
+   - ปุ่ม flag วางซ้อนด้านซ้ายใน input (absolute position)
+   - input padding-left ขยับให้ไม่ทับปุ่ม
+   - Click → dropdown 2 ตัวเลือก 🇱🇦 ลาว / 🇹🇭 ไทย
+   - Mobile-friendly: dropdown กว้าง 180px ตัวอักษร 14px+
+   ============================================================ */
+
+.phone-input-wrapper {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.phone-input-wrapper > input {
+  padding-left: 78px !important;
+}
+
+/* flag button — วางซ้อนด้านซ้ายใน input */
+.phone-input-flag-btn {
+  position: absolute;
+  left: 1px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 6px 10px;
+  height: calc(100% - 2px);
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border, rgba(255,255,255,0.08));
+  color: var(--text, #fff);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  z-index: 2;
+  transition: background 0.15s ease;
+  border-radius: 6px 0 0 6px;
+  outline: none;
+}
+
+.phone-input-flag-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.phone-input-flag-btn:focus-visible {
+  background: rgba(37, 211, 102, 0.12);
+  box-shadow: 0 0 0 2px rgba(37, 211, 102, 0.4);
+}
+
+.phone-input-flag-btn .phone-input-flag {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.phone-input-flag-btn .phone-input-dial {
+  font-weight: 600;
+  color: var(--text-dim, rgba(255,255,255,0.7));
+  font-size: 12px;
+}
+
+/* dropdown — วางใต้ flag button */
+.phone-input-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 200px;
+  background: var(--bg-card, #1f1f2e);
+  border: 1px solid var(--border, rgba(255,255,255,0.12));
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  z-index: 1000;
+  overflow: hidden;
+  padding: 4px;
+  animation: phoneInputDropdownIn 0.15s ease;
+}
+
+@keyframes phoneInputDropdownIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.phone-input-dropdown[hidden] {
+  display: none;
+}
+
+.phone-input-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text, #fff);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 6px;
+  transition: background 0.1s ease;
+}
+
+.phone-input-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.phone-input-dropdown-item.selected {
+  background: rgba(37, 211, 102, 0.15);
+  color: #25D366;
+}
+
+.phone-input-dropdown-item .phone-input-flag {
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.phone-input-dropdown-item .phone-input-label {
+  flex: 1;
+  font-weight: 600;
+}
+
+.phone-input-dropdown-item .phone-input-dial {
+  font-size: 13px;
+  color: var(--text-dim, rgba(255,255,255,0.6));
+  font-weight: 500;
+}
+
+/* Light mode (ถ้าเว็บมี light theme) */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .phone-input-dropdown {
+    background: #fff;
+    border-color: rgba(0, 0, 0, 0.1);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  }
+}
+
+/* Mobile: dropdown ขยายเต็ม width ถ้า input แคบ */
+@media (max-width: 480px) {
+  .phone-input-dropdown {
+    min-width: 180px;
+  }
+  .phone-input-flag-btn {
+    padding: 6px 6px 6px 8px;
+    font-size: 12px;
+  }
+  .phone-input-flag-btn .phone-input-flag {
+    font-size: 14px;
+  }
+  .phone-input-flag-btn .phone-input-dial {
+    font-size: 11px;
+  }
+  .phone-input-wrapper > input {
+    padding-left: 68px !important;
+  }
+}

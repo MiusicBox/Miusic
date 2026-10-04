@@ -1650,6 +1650,17 @@ function renderMyOrdersForm() {
     </div>
   `;
 
+  // 🆕 (T045): Mount PhoneInput country selector บน input เบอร์ WhatsApp ใน my-orders view
+  //   - ต้อง mount หลัง innerHTML render เสร็จ (input ต้อง exist ใน DOM)
+  //   - ใช้ setTimeout 0 เพื่อให้แน่ใจว่า DOM update เสร็จ
+  setTimeout(() => {
+    try {
+      if (window.PhoneInput && window.PhoneInput.mountAll) {
+        window.PhoneInput.mountAll('input[id="myOrdersReceiptPhone"], input[id="myOrdersWhatsapp"]');
+      }
+    } catch (err) { console.warn("[my-orders] PhoneInput mount failed:", err?.message || err); }
+  }, 0);
+
   // 🆕 (T014): ผูกปุ่ม "ค้นหาด้วยเลขใบเสร็จ" — ใช้ queryCustomerOrder (db-client.js)
   //    reuse logic เดียวกับ handleTrackOrderSubmit เดิมใน app-user.js (ก่อน T014 ลบ)
   //    success → window.showReceipt (expose จาก app-cart.js/initCart ใน app-user.js)

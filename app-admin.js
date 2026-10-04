@@ -5263,6 +5263,17 @@ document.addEventListener("DOMContentLoaded", () => {
   if (backdrop) backdrop.addEventListener("click", (e) => {
     if (e.target === backdrop) closeWhatsAppNotifyModal();
   });
+
+  // 🆕 (T045): PhoneInput country selector — mount บน input เบอร์ WhatsApp ฝั่ง admin
+  //   - mount หลัง DOM ready + หลัง script phone-input.js โหลดเสร็จ (defer)
+  //   - รอ 1 วินาทีเพื่อให้แน่ใจว่า phone-input.js โหลดเสร็จ (defer อาจยังไม่เสร็จในบางกรณี)
+  setTimeout(() => {
+    try {
+      if (window.PhoneInput && window.PhoneInput.mountAll) {
+        window.PhoneInput.mountAll('input[id="ordCustomerWhatsapp"], input[id="setWhatsapp"], input[id="eOrderCustomerWhatsapp"]');
+      }
+    } catch (err) { console.warn("[admin] PhoneInput mount failed:", err?.message || err); }
+  }, 100);
 });
 
 // bind refresh button
