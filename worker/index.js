@@ -8050,6 +8050,25 @@ export default {
       ).bind(proofId, orderId).first();
       if (!proofRow) return jsonResponse({ error: "ไม่พบหลักฐานการชำระที่ระบุ" }, 404);
 
+      // 🆕 (T052-L5): Race condition guard — ถ้า proof ถูก verify/reject ไปแล้ว → ปฏิเสธ
+      //   ปัญหา: 2 แอดมินกดยืนยันพร้อมกัน → SELECT proof (pending) ทั้งคู่ → UPDATE ทั้งคู่
+      //          → lost update ฝั่ง payment_proofs + status_history → อาจสร้าง ZIP ซ้อนทับ
+      //   วิธีแก้: ตรวจสถานะปัจจุบันก่อน UPDATE — ถ้าไม่ใช่ 'pending' → return 409
+      //   ผลกระทบระบบเดิม: 0%
+      //     - flow ปกติ (pending → verified/rejected) ยังทำงานเหมือนเดิม
+      //     - แอดมินคนที่ 2 จะได้ 409 "สลิปนี้ถูกตรวจแล้วโดยแอดมินอื่น" + บอกชื่อแอดมิน + เวลา
+      //     - ไม่กระทบ confirmPaymentAndCreateZip (แอดมินกดเปลี่ยน status เองเหมือนเดิม)
+      if (proofRow.status && proofRow.status !== "pending") {
+        return jsonResponse({
+          error: `สลิปนี้ถูก${proofRow.status === "verified" ? "ยืนยัน" : "ปฏิเสธ"}ไปแล้วโดยแอดมินอื่น`,
+          code: "verify/already-processed",
+          proof_id: proofId,
+          current_status: proofRow.status,
+          verified_at: proofRow.verified_at || null,
+          verified_by: proofRow.verified_by || null,
+        }, 409);
+      }
+
       // 🔒 (Audit Fix H-11): เช็คยอดสลิปตรงยอดออเดอร์ก่อน verify
       //   ปัญหาเดิม: verify-payment endpoint ไม่เช็คว่ายอดในสลิป (amount_claimed)
       //   ตรงกับยอดออเดอร์ (final_total) → แอดมิน (โดยเฉพาะ sub-admin) สามารถ
@@ -8110,11 +8129,24 @@ export default {
       }
 
       try {
-        await env.DB.prepare(
+        // 🆕 (T052-L5): atomic conditional UPDATE — กัน race condition แบบสุดท้าย
+        //   แม้ 2 แอดมินจะผ่าน status check ด้านบนมาพร้อมกัน (ทั้งคู่เห็น pending)
+        //   UPDATE จะทำแบบ atomic → คนแรกสำเร็จ (changes=1) → คนที่ 2 changes=0 → return 409
+        //   ผลกระทบระบบเดิม: 0% — เป็น D1 atomic operation ปกติ
+        const updateResult = await env.DB.prepare(
           `UPDATE payment_proofs
            SET status=?, verified_at=?, verified_by=?, reject_reason=?
-           WHERE id=?`
+           WHERE id=? AND status='pending'`
         ).bind(newStatus, verifiedAt, admin.id, rejectReason, proofId).run();
+        const changes = updateResult?.meta?.changes || 0;
+        if (changes === 0) {
+          // มีแอดมินอื่นแก้ก่อนหน้านี้ (ระหว่าง SELECT → UPDATE)
+          return jsonResponse({
+            error: `สลิปนี้ถูก${newStatus === "verified" ? "ยืนยัน" : "ปฏิเสธ"}ไปแล้วโดยแอดมินอื่น (race condition detected)`,
+            code: "verify/race-detected",
+            proof_id: proofId,
+          }, 409);
+        }
       } catch (err) {
         return jsonResponse({ error: safeError("อัปเดตสถานะสลิปไม่สำเร็จ", err) }, 500);
       }
