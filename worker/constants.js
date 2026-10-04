@@ -84,5 +84,5 @@ export const CACHE = {
   STATIC_ASSETS_MAX_AGE: 31536000,                  // 1 ปี (60*60*24*365)
   SW_NO_CACHE: 'no-cache',
   CUSTOMER_API: 'private, no-cache, must-revalidate',
-  PUBLIC_API: 'public, max-age=300',                 // 🆕 (T028): edge cache 5 นาที สำหรับ public data
+  PUBLIC_API: 'public, max-age=300, s-maxage=300',  // 🆕 (T028/T033): edge cache 5 นาที + s-maxage สำหรับ CDN
 };

@@ -2225,7 +2225,7 @@ export function cleanupMyOrdersView() {
 //   - D1 quota: 30 วิ = 2880 ครั้ง/วัน สูงสุด (24*60*60/30)
 //   - เรียกจาก app-user.js (tab "myorders" handler) — start หลังเข้า tab, stop เมื่อออก
 // ============================================================
-const ORDERS_POLL_INTERVAL_MS = 30 * 1000; // 30 วินาที — กฎเหล็ก: ห้ามน้อยกว่านี้
+const ORDERS_POLL_INTERVAL_MS = 5 * 60 * 1000; // 🆕 (T033): เปลี่ยนจาก 30 วิ → 5 นาที — ลด invocations 90%
 
 function startOrdersPolling() {
   // กัน double-start — ถ้า polling ทำงานอยู่แล้ว ไม่ต้องตั้ง interval ซ้ำ
