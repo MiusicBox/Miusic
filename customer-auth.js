@@ -343,6 +343,8 @@ async function customerLogin() {
     }
     if (data?.ok && data?.customer) {
       currentCustomer = data.customer;
+      // 🆕 (T059): clear IndexedDB cache ก่อน set new customer — กัน PII รั่วจาก customer ก่อนหน้า
+      try { if (window.IDB) await window.IDB.clearAll(); } catch (_) {}
       saveCustomerToStorage(data.customer); // 🆕 บันทึกลง localStorage
       syncCustomerAuthUI();
       closeCustomerAuthModal();
@@ -370,6 +372,11 @@ async function customerLogout() {
     if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
       navigator.serviceWorker.controller.postMessage("CLEAR_API_CACHE");
     }
+  } catch (_) {}
+  // 🆕 (T059): ล้าง IndexedDB cache หลัง logout — กัน PII รั่วข้าม customer (shared device)
+  //   สำคัญมาก: ถ้าไม่ clear → user A logout → user B login → B อาจเห็น orders ของ A ใน IndexedDB
+  try {
+    if (window.IDB) await window.IDB.clearAll();
   } catch (_) {}
   syncCustomerAuthUI();
   if (typeof showToast === "function") showToast("ออกจากระบบแล้ว", "info");
