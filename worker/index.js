@@ -6408,22 +6408,40 @@ async function handleCustomerAuth(request, env, url) {
       // 🆕 (T053-M4): แก้ comment ให้ตรงความจริง — fingerprint ตอนนี้ใช้ localStorage + IP hash จริง
       //   เดิม comment: "frontend สร้างจาก localStorage + IP hash" แต่จริง ๆ ใช้แค่ localStorage → โกหก
       //   ตอนนี้: customer-auth.js fetchIpHash() + getAnonymousFingerprint() ใช้ IP hash จริง → comment ตรง
-      const existing = await env.DB.prepare(
-        "SELECT id FROM song_likes WHERE customer_id = ? AND song_id = ?"
-      ).bind(likerId, songId).first();
-      if (existing) {
-        await env.DB.prepare("DELETE FROM song_likes WHERE id = ?").bind(existing.id).run();
-        // นับ like ใหม่
-        const countRow = await env.DB.prepare("SELECT COUNT(*) as cnt FROM song_likes WHERE song_id = ?").bind(songId).first();
-        return jsonResponse({ ok: true, action: "unliked", like_count: countRow?.cnt || 0, is_liked: false });
-      } else {
-        const id = crypto.randomUUID();
-        await env.DB.prepare(
-          "INSERT INTO song_likes (id, customer_id, song_id, created_at) VALUES (?, ?, ?, ?)"
-        ).bind(id, likerId, songId, now).run();
+      // 🆕 (T055-L5): แก้ race condition ด้วย atomic single statement
+      //   เดิม: SELECT existing → INSERT/DELETE (2 คำสั่งแยกกัน)
+      //         → ถ้า 2 requests like เพลงเดียวกันพร้อมกัน → ทั้งคู่เห็น "not exists" → ทั้งคู่ INSERT
+      //         → UNIQUE constraint violation → 500 error (UX bad)
+      //   ใหม่: ใช้ INSERT ... ON CONFLICT DO NOTHING (atomic) + เช็ค meta.changes
+      //         → ถ้ามีแล้ว → changes=0 → ตอบ "unliked" (idempotent, ไม่ error)
+      //         → ถ้ายังไม่มี → changes=1 → ตอบ "liked"
+      //   สำหรับ unlike: DELETE ... WHERE customer_id=? AND song_id=? + เช็ค changes
+      //         → ถ้าไม่มีอยู่แล้ว → changes=0 → ตอบ "unliked" (idempotent)
+      //   ผลกระทบระบบเดิม: 0% — flow เดิม (toggle like + count) เหมือนเดิม แค่เปลี่ยนเป็น atomic
+      //   อ้างอิง: schema.sql มี UNIQUE(customer_id, song_id) อยู่แล้ว → ON CONFLICT ทำงานได้
+
+      // ลอง INSERT ก่อน (atomic) — ถ้าสำเร็จ = like ใหม่, ถ้า conflict = มีแล้ว → unlike
+      const insertId = crypto.randomUUID();
+      const insertResult = await env.DB.prepare(
+        "INSERT INTO song_likes (id, customer_id, song_id, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(customer_id, song_id) DO NOTHING"
+      ).bind(insertId, likerId, songId, now).run();
+      const insertChanges = insertResult?.meta?.changes || 0;
+
+      if (insertChanges === 1) {
+        // INSERT สำเร็จ = like ใหม่
         const countRow = await env.DB.prepare("SELECT COUNT(*) as cnt FROM song_likes WHERE song_id = ?").bind(songId).first();
         return jsonResponse({ ok: true, action: "liked", like_count: countRow?.cnt || 0, is_liked: true });
       }
+
+      // INSERT conflict = มี like อยู่แล้ว → ลบ (unlike) แบบ atomic
+      const deleteResult = await env.DB.prepare(
+        "DELETE FROM song_likes WHERE customer_id = ? AND song_id = ?"
+      ).bind(likerId, songId).run();
+      const deleteChanges = deleteResult?.meta?.changes || 0;
+
+      // นับ like ใหม่หลัง unlike (ถ้า deleteChanges=0 = ไม่มีอยู่แล้ว ก็ตอบ unliked เหมือนกัน — idempotent)
+      const countRow = await env.DB.prepare("SELECT COUNT(*) as cnt FROM song_likes WHERE song_id = ?").bind(songId).first();
+      return jsonResponse({ ok: true, action: "unliked", like_count: countRow?.cnt || 0, is_liked: false });
     } catch (err) {
       if (String(err?.message || "").includes("no such table")) {
         return jsonResponse({ error: "ระบบยังไม่พร้อม — กรุณารัน scripts/migrate-customer-v7.sql ใน D1 Console", code: "TABLE_NOT_CREATED" }, 500);
