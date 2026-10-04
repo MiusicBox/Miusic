@@ -805,6 +805,12 @@
       <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
         <button class="icon-btn back-btn" type="button">←</button>
         <div style="flex:1;font-weight:800;">📊 รายงานยอดขาย</div>
+        <button class="btn secondary" id="rptToggleChartBtn" type="button" title="สลับประเภทกราฟ">
+          📊
+        </button>
+        <button class="btn" id="rptExportCsvBtn" type="button" style="margin-left: auto;">
+          📥 Export CSV
+        </button>
         <button class="icon-btn" id="reportsRefreshBtn" type="button" title="โหลดใหม่">🔄</button>
       </div>
       <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">
@@ -851,6 +857,12 @@
           </div>
         </div>
 
+      </div>
+
+      <!-- ===== Monthly summary (T040) ===== -->
+      <div class="reports-card" id="rptMonthlySummaryCard" style="margin-top: 12px;">
+        <div class="reports-card-title">📅 สรุปรายเดือน</div>
+        <div id="rptMonthlySummary"></div>
       </div>
     </div>
     <!-- ===================== /REPORTS VIEW ===================== -->
