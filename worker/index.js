@@ -6846,6 +6846,53 @@ export default {
       return new Response(null, { headers: { ...corsHeaders(), ...securityHeaders() } });
     }
 
+    // 🆕 (T029): Block bots from /api/* endpoints — ลด Worker invocations จาก bot crawl
+    //   Bots (Googlebot, Bingbot, etc.) ไม่ควรเรียก API endpoints — เรามี static pages สำหรับ SEO แล้ว
+    //   ถ้า bot ยิง /api/* → คืน 403 ทันที (ไม่ query D1 = ไม่เปลือง invocation)
+    if (url.pathname.startsWith("/api/") && request.method === "GET") {
+      const userAgent = (request.headers.get("User-Agent") || "").toLowerCase();
+      const isBot = /googlebot|bingbot|slurp|duckduckbot|baiduspider|yandexbot|facebookexternalhit|twitterbot|linkedinbot|telegrambot|whatsapp|applebot|petalbot|semrushbot|ahrefsbot|mj12bot|dotbot|bytespider|crawl|spider|bot/i.test(userAgent);
+      if (isBot) {
+        return new Response(JSON.stringify({ error: "Bot access not allowed on API endpoints" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=86400" },
+        });
+      }
+    }
+
+    // 🆕 (T029): Cache API — เช็ค cache ก่อนไป D1 สำหรับ public read-only GET requests
+    //   ปัญหา: run_worker_first: ["/api/*"] → ทุก /api/* request = Worker invocation เสมอ
+    //   วิธีแก้: ใช้ caches.default (Cloudflare Cache API) ภายใน Worker เอง
+    //   - ถ้า cache hit → คืน cached response ทันที (ไม่ query D1)
+    //   - ถ้า cache miss → ไป D1 → เก็บใน cache 5 นาที
+    //   ใช้กับ: GET /api/db/songs, /api/db/categories, /api/db/djs, /api/db/playlists (public read)
+    //   ไม่ใช้กับ: orders, auth, customer, admin, POST/PUT/DELETE
+    if (request.method === "GET" && url.pathname.startsWith("/api/db/")) {
+      const pathParts = url.pathname.split("/");
+      const collection = pathParts[3] || "";
+      const isPublicRead = PUBLIC_READ_COLLECTIONS.has(collection) && collection !== "orders";
+      // ไม่ cache ถ้ามี admin session (admin เห็นข้อมูลครบกว่า guest)
+      const hasAdminCookie = request.headers.get("Cookie") && request.headers.get("Cookie").includes("session_token");
+      if (isPublicRead && !hasAdminCookie) {
+        const cacheKey = new Request(url.toString(), { method: "GET" });
+        const cache = caches.default;
+        const cachedResponse = await cache.match(cacheKey);
+        if (cachedResponse) {
+          // cache hit → คืนทันที ไม่ query D1
+          return cachedResponse;
+        }
+        // cache miss → ทำงานปกติ + เก็บใน cache หลัง response
+        // (เก็บไว้ใน ctx.waitUntil เพื่อไม่บล็อก response)
+        const response = await handleDb(request, env, url);
+        if (response.ok) {
+          const responseToCache = response.clone();
+          responseToCache.headers.set("Cache-Control", "public, max-age=300");
+          ctx.waitUntil(cache.put(cacheKey, responseToCache));
+        }
+        return response;
+      }
+    }
+
     if (url.pathname === "/api/upload" && request.method === "POST") {
       return handleUpload(request, env);
     }
