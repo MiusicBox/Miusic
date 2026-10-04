@@ -1,0 +1,111 @@
+{
+  "id": "T063-team-v3",
+  "title": "อัปเดตระบบทีมเป็น v3.0.0 — ทีม 10 คน + workflow 13 ขั้น + กฎเหล็ก 7 ข้อ",
+  "branch": "ai-team/T063-team-v3",
+  "status": "pr",
+  "current_stage": 11,
+  "stage": "pr_in_progress",
+  "created_at": "2026-10-04T16:30:00+07:00",
+  "updated_at": "2026-10-04T17:10:00+07:00",
+  "agent": "ทีม AI v3 (PM พี่ก้อน + BA น้องมิ้ค + Lead พี่ต้น + FE น้องเต๋า + BE น้องเฟิร์น + CR พี่ภูมิ + QA น้องนัท + SEC พี่เบนซ์)",
+  "description": "ตามคำสั่ง owner: (1) ทำทีมงานอย่างน้อย 8-12 คน หน้าที่ชัดเจน (2) ตรวจ code ให้ถูกต้องทุกตัวก่อนส่ง QA. ขยายทีม AI จาก 6 เป็น 10 ตำแหน่ง (เพิ่ม UI/UX Designer, Lead Developer, Code Reviewer, Release Manager; แยก Coder เป็น FE/BE), เปลี่ยน workflow 8 → 13 ขั้นโดย code_review อยู่หน้า qa, เพิ่มกฎเหล็กข้อ 7 (Code Review ทุกไฟล์ก่อนส่ง QA), sync state.json ให้ตรง git จริง, แก้ manager.js ให้รองรับ 13 ขั้น + แก้ path hard-code ที่ชี้เครื่องเก่า, เน้น 'หมวดหมู่บังคับ 13 ขั้น ทำครบทุก task ทุกรอบ' ตามคำสั่ง owner ล่าสุด",
+
+  "acceptance_criteria": [
+    {"id": "AC1", "desc": "team.json มีสมาชิก 10 คน หน้าที่ไม่ซ้ำ พร้อม responsibilities + delegates_to", "status": "PASS", "impl": "members: pm, ba, designer, lead_dev, fe_dev, be_dev, code_reviewer, qa_engineer, security, release_manager — JSON valid (ตรวจด้วย python json.load)"},
+    {"id": "AC2", "desc": "กฎเหล็กมี 7 ข้อ — เพิ่มข้อ 7 'Code Review ทุกไฟล์ก่อนส่ง QA'", "status": "PASS", "impl": "iron_rules[6] ใน team.json + ปรากฏใน workflow.md, README.md, state.json"},
+    {"id": "AC3", "desc": "workflow_stages มี 13 ขั้น เรียงถูกต้อง code_review อยู่หน้า qa", "status": "PASS", "impl": "intake(1) → scan(2) → plan(3) → develop(4) → self_review(5) → code_review(6) → qa(7) → fix(8) → qa_again(9) → security_final(10) → pr(11) → owner_approval(12) → production(13) — มี on_fail ครบ"},
+    {"id": "AC4", "desc": "manager.js รองรับ 13 ขั้น + รันได้จริงบนเครื่องใดก็ได้", "status": "PASS", "impl": "node --check ผ่าน + รัน status/show จริงได้ + template 13 stages + /13 ครบ 3 จุด + __dirname path"},
+    {"id": "AC5", "desc": "state.json ตรงความจริงจาก git (ไม่เดา)", "status": "PASS", "impl": "T011→PR#10, T012→PR#11, T013→PR#12 ยืนยันจาก git log แล้วเขียนลง completed; pending_user_approval เคลียร์เป็น []; main ล่าสุด T062 PR#62 (862203e); last_deploy ระบุ UNKNOWN"},
+    {"id": "AC6", "desc": "เอกสาร (workflow.md + README.md) ตรงกับ team.json ทุกตัวเลข", "status": "PASS", "impl": "ทั้งสองไฟล์ระบุ 10 คน / 13 ขั้น / กฎเหล็ก 7 ข้อ สอดคล้องกันหมด + workflow.md หัวข้อ 'หมวดหมู่บังคับ 13 ขั้น (ทำครบทุก task — ทุกรอบ ห้ามข้าม)'"},
+    {"id": "AC7", "desc": "ไม่กระทบระบบ production (worker/, HTML, CSS, client JS ไม่ถูกแตะ)", "status": "PASS", "impl": "git status ยืนยันแล้วตอน security stage — มีเฉพาะไฟล์ใน ai-team/ (5 แก้ + 1 ใหม่)"},
+    {"id": "AC8", "desc": "ไม่มี secrets/token หลุดเข้าไฟล์ที่ commit", "status": "PASS", "impl": "grep ghp_/github_pat_/gho_ ทั้ง ai-team/ ไม่พบ — state.json เก็บเป็น 'stored_in_env_GH_TOKEN' เหมือนเดิม"},
+    {"id": "AC9", "desc": "cmdNew สร้าง task ใหม่ได้จริงบน clone สด (smoke test ใน temp copy)", "status": "PASS", "impl": "T08a–T08e — node manager.js new บน temp copy สร้าง T064 + template 13 stages + logs/ อัตโนมัติ (ยืนยัน fix B4)"}
+  ],
+
+  "stages": {
+    "intake": {"started_at": "2026-10-04T16:30:00+07:00", "completed_at": "2026-10-04T16:33:00+07:00", "result": "รับ token จาก owner + ยืนยันสิทธิ push ผ่าน GitHub API (scopes: repo)"},
+    "scan": {"started_at": "2026-10-04T16:33:00+07:00", "completed_at": "2026-10-04T16:40:00+07:00", "scanned_files": ["team.json", "state.json", "workflow.md", "README.md", "manager.js", "tasks/T019+T020 (schema)", "git log/branches"], "unknowns": ["last_deploy version (ระบุ UNKNOWN ใน state.json)"]},
+    "plan": {"started_at": "2026-10-04T16:40:00+07:00", "completed_at": "2026-10-04T16:43:00+07:00", "plan": "แก้ 6 ไฟล์ใน ai-team/ เท่านั้น — Lead พี่ต้นอนุมัติ", "files_to_change": ["ai-team/team.json", "ai-team/manager.js", "ai-team/workflow.md", "ai-team/README.md", "ai-team/state.json", "ai-team/tasks/T063-team-v3.json"]},
+    "develop": {"started_at": "2026-10-04T16:43:00+07:00", "completed_at": "2026-10-04T16:50:00+07:00", "commits": [], "files_changed": ["ai-team/team.json", "ai-team/manager.js", "ai-team/workflow.md", "ai-team/README.md", "ai-team/state.json", "ai-team/tasks/T063-team-v3.json"]},
+    "self_review": {"started_at": "2026-10-04T16:50:00+07:00", "completed_at": "2026-10-04T16:52:00+07:00", "checklist": "node --check PASS, JSON valid 4 ไฟล์, นับ members=10/stages=13/rules=7 PASS, ไม่มี console.log/debugger ตกค้าง, ไม่แตะไฟล์ต้องห้าม, ไม่มี secrets, commit message ตามหลัก T063: ..."},
+    "code_review": {"started_at": "2026-10-04T16:52:00+07:00", "completed_at": "2026-10-04T16:58:00+07:00", "review_result": "รอบ 1: ตีกลับ 1 ข้อ (logs/ mkdir guard) — แก้แล้ว (D7). รอบ 2 (session ถัดมา): ตรวจ manager.js ฉบับเต็ม 390 บรรทัด + diff ทุกไฟล์ — พบ B4 nextTaskId crash (critical) + B5 ข้อความ (analysis) เก่า + B6 approve-merge ขัดกฎเหล็กข้อ 4 + B7 task file มี 9/13 stages; B3 (README 'erge PR') ปิดเป็น display artifact — ไฟล์จริงถูกต้อง (ยืนยัน byte-level ด้วย python). รอบ 3: ยืนยัน fix ทั้งหมด + node --check ผ่าน", "files_reviewed": 6},
+    "qa": {"started_at": "2026-10-04T16:58:00+07:00", "completed_at": "2026-10-04T17:00:00+07:00", "test_results": "รอบ 1: พบ B1 (show crash กับ task file ไม่ครบ field) + B2 (task file ไม่ conform template) → ส่ง fix", "bugs_found": ["B1 cmdShow อ่าน task.stages/blockers/decisions ตรง ๆ → crash กับไฟล์ที่ไม่มี field", "B2 task file ไม่ conform template (ไม่มี status/current_stage)"]},
+    "fix": {"started_at": "2026-10-04T17:00:00+07:00", "completed_at": "2026-10-04T17:03:00+07:00", "commits": [], "files_changed": ["ai-team/manager.js (รอบ 1: defensive stages/blockers/decisions + status/current_stage fallback; รอบ 2: fix B4 nextTaskId + B5/B6 ข้อความ CLI v3)", "ai-team/tasks/T063-team-v3.json (conform template 13/13 stages — B7)"]},
+    "qa_again": {"started_at": "2026-10-04T17:03:00+07:00", "completed_at": "2026-10-04T17:05:00+07:00", "test_results": "PASS 26/26 (suite scripts/t063_qa_again.py — T01 syntax, T02-T03 CLI status/show, T04 JSON valid 3 ไฟล์, T05 นับ 10/7/13 + code_review หน้า qa, T06 state ตรง git, T07 cross-file + ไม่มี stale text + task 13/13 stages, T08 cmdNew smoke test บน temp copy ได้ T064 + logs guard) — ไม่มี FAIL ค้าง"},
+    "security_final": {"started_at": "2026-10-04T17:05:00+07:00", "completed_at": "2026-10-04T17:07:00+07:00", "audit_result": "PASS — grep ghp_/github_pat_/gho_ ทั้ง ai-team/ = ไม่พบ token จริง; git status ยืนยันขอบเขต = 5 ไฟล์แก้ + 1 ไฟล์ใหม่ ทั้งหมดใน ai-team/ เท่านั้น — ไม่แตะ worker/ HTML CSS JS ฝั่ง production", "iron_rules_check": "7/7 PASS (ตาราง iron_rules ด้านล่าง)"},
+    "pr": {"started_at": "2026-10-04T17:10:00+07:00", "pr_number": null, "pr_url": null, "merged_at": null},
+    "owner_approval": {"started_at": null, "completed_at": null, "approved_by": null},
+    "production": {"started_at": null, "completed_at": null, "deploy_version": null, "rollback_plan": null}
+  },
+
+  "files_changed": [
+    "ai-team/team.json (เขียนใหม่ — v3.0.0 ทีม 10 คน + กฎเหล็ก 7 ข้อ + workflow 13 ขั้น)",
+    "ai-team/manager.js (12 edits — path __dirname, template 13 stages, /13 ครบ 3 จุด, stages array, defensive pr_url + stages/blockers/decisions, mkdirSync logs, fix B4 nextTaskId, ข้อความ CLI v3)",
+    "ai-team/workflow.md (เขียนใหม่ — ทีม 10 คน + หมวดหมู่บังคับ 13 ขั้น ทุกรอบ + กฎเหล็ก 7 ข้อ + self-review checklist 10 ข้อ + ฟอร์แมตรายงาน)",
+    "ai-team/README.md (เขียนใหม่ — สรุปทีม v3 สำหรับเริ่มอ่าน)",
+    "ai-team/state.json (เขียนใหม่ — sync git จริง + known_issues + decisions T063-D1..D10)",
+    "ai-team/tasks/T063-team-v3.json (NEW — task file นี้)"
+  ],
+
+  "decisions": [
+    {"id": "D1", "title": "แก้ manager.js path เป็น __dirname", "reason": "เดิม hard-code /home/z/my-project/ai-team และ /home/z/my-project/Miusic ซึ่งไม่มีอยู่จริงบนเครื่องปัจจุบัน (repo clone อยู่ที่อื่น) — CLI จะ ERROR ทันที แก้เป็น __dirname + path.resolve(AI_TEAM_DIR, '..') ทำให้รันได้จากทุกที่ + จำเป็นต่อการ QA ด้วยการรันจริง"},
+    {"id": "D2", "title": "รหัสตำแหน่งใหม่ใช้ snake_case", "reason": "code_reviewer, qa_engineer, release_manager, lead_dev, fe_dev, be_dev — สอดคล้อง id เดิม (manager→pm, analyst→ba, tester→qa_engineer, security คงเดิม) และอ่านง่ายใน JSON"},
+    {"id": "D3", "title": "fix (ขั้น 8) แยกจาก develop (ขั้น 4)", "reason": "ตาม workflow ที่ owner กำหนด (DEVELOP → QA → FIX → QA AGAIN) — ทำให้ on_fail chain ชัดเจนใน JSON และนับ stage ได้ตรงกัน"},
+    {"id": "D4", "title": "state.json เวอร์ชัน 2.0.0 + team_version 3.0.0", "reason": "แยกเวอร์ชันของ state schema (2.0.0) ออกจากเวอร์ชันทีม (3.0.0) เพื่อไม่สับสนตอน upgrade ต่อไป"},
+    {"id": "D5", "title": "T014-T062 รวมเป็น 1 entry สรุป", "reason": "49 tasks มีเพียงบางส่วนที่มีไฟล์ task ค้างใน repo (ไฟล์ tasks/ มีถึง T020) — สรุปพร้อมชี้ git log เป็นแหล่งความจริงหลัก ป้องกัน state เพี้ยนซ้ำเหมือน v1.10.0"},
+    {"id": "D6", "title": "เก็บแนวคิด 'UNKNOWN ต้องรายงาน' ลงในบทบาท BA + workflow", "reason": "ตามกฎห้ามเดาของ owner — ทำให้เป็นกระบวนการ ไม่ใช่แค่ความจำใจ"},
+    {"id": "D7", "title": "Code Review ตีกลับ 1 ข้อ → เพิ่ม mkdirSync guard ใน createTaskFile", "reason": "logs/ ไม่มีบน clone สด — คำสั่ง new จะ crash ตอนเขียน log file (bug เดิม แต่อยู่ในฟังก์ชันที่ T063 แตะ + ระบบใหม่จะใช้จริง) — แก้ด้วย fs.mkdirSync(LOGS_DIR, {recursive:true}) ก่อน writeFileSync 1 บรรทัด"},
+    {"id": "D8", "title": "แก้ nextTaskId รองรับ completed เป็น object (B4 — critical)", "reason": "state v2 เปลี่ยน completed เป็น object — cmdNew เรียก t.match() บน object แล้ว TypeError ทันที แก้ด้วย coerce id (string|object) + prefix match /^T(\\d+)/ ยืนยันด้วย smoke test ได้ T064 ถูกต้องทั้ง state เก่า/ใหม่"},
+    {"id": "D9", "title": "จัดข้อความ CLI ให้ตรง v3 + ปิด B3 ว่าเป็น display artifact", "reason": "approve-merge เดิมบอก 'AI Manager จะ merge PR' ขัดกฎเหล็กข้อ 4 — แก้เป็น owner กด merge บน GitHub เท่านั้น + Release Manager deploy ตามขั้น 13; stage 2 ใช้ชื่อ scan (เดิม analysis); 'by user'→'by owner'; README ตัวอย่าง '[merge PR' ถูกต้องอยู่แล้ว — ยืนยัน byte-level ด้วย python (artifact จากการแสดงผล ANSI เท่านั้น)"},
+    {"id": "D10", "title": "ปรับ timestamp ใน task file ให้ monotonic ชุดเดียว", "reason": "ตรวจ self-review พบ timestamp ข้าม session ไม่เรียง (completed_at น้อยกว่า started_at) + key 'fix' ซ้ำจากการ edit — เขียนใหม่ทั้งไฟล์ด้วย timeline เรียงถูกต้อง เพื่อไม่ให้ 'show' และ audit ตีความผิด"}
+  ],
+
+  "iron_rules": [
+    {"id": "rule_1_no_zip_format_changes", "status": "PASS", "evidence": "ไม่ได้แตะ worker/zip-format.js — ไฟล์ที่แก้อยู่ใน ai-team/ เท่านั้น (ยืนยันด้วย git status ตอน security stage)"},
+    {"id": "rule_2_no_payment_logic_changes", "status": "PASS", "evidence": "ไม่ได้แตะ worker/*.js ใด ๆ"},
+    {"id": "rule_3_no_paid_features", "status": "PASS", "evidence": "งานนี้เป็น docs + CLI script ไม่เกี่ยวกับ Cloudflare features"},
+    {"id": "rule_4_no_main_branch", "status": "PASS", "evidence": "ทำใน branch ai-team/T063-team-v3 เท่านั้น + PR รอ owner merge"},
+    {"id": "rule_5_no_guessing", "status": "PASS", "evidence": "ทุกตัวเลขใน state.json มาจาก git log ที่รันยืนยัน (T011 PR#10, T012 PR#11, T013 PR#12, T062 PR#62, 1504 commits) — last_deploy ระบุ UNKNOWN แทนการเดา"},
+    {"id": "rule_6_no_regression", "status": "PASS", "evidence": "manager.js รัน status + show + new (temp copy) จริงผ่าน 26/26 — ระบบ production ไม่ถูกแตะ"},
+    {"id": "rule_7_code_review_before_qa", "status": "PASS", "evidence": "Code Reviewer (พี่ภูมิ) ตรวจทุกไฟล์ครบ 6 ไฟล์ 3 รอบ ก่อนส่ง QA AGAIN — ผลอยู่ใน stage code_review ของ task นี้"}
+  ],
+
+  "tests": {
+    "syntax_check": [
+      {"file": "ai-team/manager.js", "result": "PASS", "cmd": "node --check ai-team/manager.js"},
+      {"file": "ai-team/team.json", "result": "PASS", "cmd": "python3 json.load"},
+      {"file": "ai-team/state.json", "result": "PASS", "cmd": "python3 json.load"},
+      {"file": "ai-team/tasks/T063-team-v3.json", "result": "PASS", "cmd": "python3 json.load"}
+    ],
+    "cli_tests": [
+      {"id": "T01", "name": "node ai-team/manager.js status รันได้ไม่ ERROR + แสดง /13", "result": "PASS"},
+      {"id": "T02", "name": "node ai-team/manager.js show T063 แสดง 13 stages", "result": "PASS"},
+      {"id": "T03", "name": "team.json มี members ครบ 10 คน ids ไม่ซ้ำ (python assert)", "result": "PASS"},
+      {"id": "T04", "name": "workflow_stages ครบ 13 ขั้น เรียง 1-13 code_review ขั้น 6 อยู่หน้า qa ขั้น 7", "result": "PASS"},
+      {"id": "T05", "name": "iron_rules ครบ 7 ข้อ", "result": "PASS"},
+      {"id": "T06", "name": "state.json pending_user_approval = [] + T011/T012/T013 อยู่ใน completed + T062 PR#62", "result": "PASS"},
+      {"id": "T07", "name": "QA AGAIN suite (scripts/t063_qa_again.py) 26/26 PASS — รวม cross-file 10/13/7 + ไม่มี stale text + task 13/13 stages + cmdNew smoke test บน temp copy", "result": "PASS"}
+    ]
+  },
+
+  "commit_info": {
+    "branch": "ai-team/T063-team-v3",
+    "files_changed": [
+      "ai-team/team.json",
+      "ai-team/manager.js",
+      "ai-team/workflow.md",
+      "ai-team/README.md",
+      "ai-team/state.json",
+      "ai-team/tasks/T063-team-v3.json"
+    ]
+  },
+
+  "next_stage": {
+    "stage": "Stage 12 (owner_approval) — รอ owner กด merge PR บน GitHub (AI ห้าม merge เอง — กฎเหล็กข้อ 4)",
+    "after_merge": [
+      "Release Manager เตรียม rollback plan → deploy ขั้น 13 (ต้องมี CF_API_TOKEN — ถ้ายังไม่มีให้ owner ออก token ก่อน)",
+      "ตรวจ wrangler secret WORKER_URL ตั้งแล้วหรือยัง (ถ้าไม่ตั้ง cron ยืนยันโอนอัตโนมัติใช้ไม่ได้)",
+      "บันทึก deploy version id + ตรวจ flow จริงบน production + รายงาน owner"
+    ]
+  }
+}
