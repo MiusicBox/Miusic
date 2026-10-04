@@ -880,35 +880,64 @@
         <span id="modalBuyLabel">เพิ่มเข้าตะกร้า</span>
       </button>
 
-      <!-- 🆕 (T020): Review section ใน song modal — ดาว + ความเห็น + ล่าสุด 5 รายการ -->
+      <!-- 🆕 (T020/T021): Review section ใน song modal — redesigned with SVG stars + better UI -->
       <div id="modalReviewsSection" class="modal-reviews-section">
         <div class="modal-reviews-header">
-          <h3 class="modal-reviews-title">⭐ รีวิวเพลง</h3>
+          <h3 class="modal-reviews-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="color: #fbbf24;"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+            รีวิวเพลง
+          </h3>
           <div id="modalReviewSummary" class="modal-reviews-summary"></div>
         </div>
 
         <!-- Review form (เฉพาะ login) -->
         <div id="modalReviewForm" class="modal-review-form" style="display:none;">
           <div class="modal-review-form-label" id="modalReviewFormLabel">เพิ่มรีวิวของคุณ</div>
+
+          <!-- SVG stars แบบ interactive -->
           <div id="modalStarInput" class="modal-star-input" role="radiogroup" aria-label="คะแนนรีวิว 1-5 ดาว">
-            <button type="button" class="star-btn" data-rating="1" aria-label="1 ดาว">⭐</button>
-            <button type="button" class="star-btn" data-rating="2" aria-label="2 ดาว">⭐</button>
-            <button type="button" class="star-btn" data-rating="3" aria-label="3 ดาว">⭐</button>
-            <button type="button" class="star-btn" data-rating="4" aria-label="4 ดาว">⭐</button>
-            <button type="button" class="star-btn" data-rating="5" aria-label="5 ดาว">⭐</button>
+            <button type="button" class="star-btn" data-rating="1" aria-label="1 ดาว">
+              <svg class="star-svg" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+            </button>
+            <button type="button" class="star-btn" data-rating="2" aria-label="2 ดาว">
+              <svg class="star-svg" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+            </button>
+            <button type="button" class="star-btn" data-rating="3" aria-label="3 ดาว">
+              <svg class="star-svg" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+            </button>
+            <button type="button" class="star-btn" data-rating="4" aria-label="4 ดาว">
+              <svg class="star-svg" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+            </button>
+            <button type="button" class="star-btn" data-rating="5" aria-label="5 ดาว">
+              <svg class="star-svg" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+            </button>
+            <span class="star-label" id="modalStarLabel">เลือกคะแนน</span>
           </div>
+
           <textarea id="modalReviewComment" class="modal-review-comment" placeholder="แสดงความเห็น (ไม่บังคับ, สูงสุด 500 ตัวอักษร)" maxlength="500"></textarea>
+          <div class="modal-review-char-count"><span id="modalReviewCharCount">0</span>/500</div>
+
           <div class="modal-review-actions">
-            <button type="button" class="btn" id="modalSubmitReviewBtn" style="flex:1;">ส่งรีวิว</button>
-            <button type="button" class="btn secondary" id="modalDeleteReviewBtn" style="display:none;">ลบรีวิว</button>
+            <button type="button" class="btn btn-review-submit" id="modalSubmitReviewBtn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+              <span>ส่งรีวิว</span>
+            </button>
+            <button type="button" class="btn btn-review-delete" id="modalDeleteReviewBtn" style="display:none;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+              <span>ลบรีวิว</span>
+            </button>
           </div>
           <div id="modalReviewFeedback" class="modal-review-feedback" role="status" aria-live="polite"></div>
         </div>
 
         <!-- Login prompt (ถ้ายังไม่ login) -->
         <div id="modalReviewLoginPrompt" class="modal-review-login-prompt" style="display:none;">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" style="color: var(--text-dim); margin-bottom: 8px;"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
           <div class="modal-review-login-text">เข้าสู่ระบบเพื่อรีวิวเพลง</div>
-          <button type="button" class="btn" id="modalReviewLoginBtn">เข้าสู่ระบบ</button>
+          <button type="button" class="btn btn-review-login" id="modalReviewLoginBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+            <span>เข้าสู่ระบบ</span>
+          </button>
         </div>
 
         <!-- Reviews list (ล่าสุด 5 รายการ) -->
