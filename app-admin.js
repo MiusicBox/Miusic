@@ -6162,9 +6162,16 @@ function renderReportsSummary(summary, dailyData) {
 
   // bar chart รายวัน — dailyData = [{date, order_count, revenue}]
   renderReportsBarChart(dailyData);
+
+  // 🆕 (T040): สรุปยอดรายเดือน
+  renderMonthlySummary(dailyData);
 }
 
 function renderReportsBarChart(dailyData) {
+  // 🆕 (T040): cache data + ถ้าเป็น line chart mode ให้เรียก line renderer แทน
+  reportsViewState._lastDailyData = dailyData;
+  if (typeof _chartType !== "undefined" && _chartType === "line") { renderReportsLineChart(dailyData); return; }
+
   const chart = document.getElementById("rptBarChart");
   if (!chart) return;
 
@@ -6259,3 +6266,92 @@ function renderReportsError(elementId, message) {
   if (!el) return;
   el.innerHTML = `<div class="reports-empty" style="color:var(--danger);">${escapeHtml(message || "เกิดข้อผิดพลาด")}</div>`;
 }
+
+// ============================================================
+// 🆕 (T040): Advanced Sales Report — Export CSV + Line Chart + Monthly Summary
+// ============================================================
+
+// Export CSV
+document.getElementById("rptExportCsvBtn")?.addEventListener("click", () => {
+  const period = reportsViewState.period || "daily";
+  // ดาวน์โหลด CSV ผ่าน browser (ไม่ต้อง fetch + parse)
+  window.open(`/api/admin/reports/export-csv?period=${encodeURIComponent(period)}`, "_blank");
+});
+
+// Toggle chart type (bar ↔ line)
+let _chartType = "bar";
+document.getElementById("rptToggleChartBtn")?.addEventListener("click", () => {
+  _chartType = _chartType === "bar" ? "line" : "bar";
+  const btn = document.getElementById("rptToggleChartBtn");
+  if (btn) btn.textContent = _chartType === "bar" ? "📈" : "📊";
+  // re-render chart with current data
+  if (reportsViewState._lastDailyData) {
+    renderReportsBarChart(reportsViewState._lastDailyData);
+  }
+});
+
+// 🆕 (T040): Render line chart (CSS-only)
+function renderReportsLineChart(dailyData) {
+  const chart = document.getElementById("rptBarChart");
+  if (!chart) return;
+  if (!Array.isArray(dailyData) || dailyData.length === 0) {
+    chart.innerHTML = `<div class="bar-chart-empty">ยังไม่มีข้อมูลยอดขายในช่วงนี้</div>`;
+    return;
+  }
+  const sortedAsc = [...dailyData].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const maxRevenue = sortedAsc.reduce((m, r) => Math.max(m, Number(r.revenue) || 0), 1);
+
+  // สร้าง SVG line chart
+  const width = 100;
+  const height = 100;
+  const points = sortedAsc.map((r, i) => {
+    const x = sortedAsc.length > 1 ? (i / (sortedAsc.length - 1)) * width : 0;
+    const y = height - ((Number(r.revenue) || 0) / maxRevenue) * height;
+    return `${x},${y}`;
+  }).join(" ");
+
+  chart.innerHTML = `
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:100%;">
+      <polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="1" vector-effect="non-scaling-stroke" />
+      <polyline points="0,100 ${points} 100,100" fill="url(#chartGradient)" opacity="0.3" />
+      <defs>
+        <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.4" />
+          <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
+        </linearGradient>
+      </defs>
+    </svg>
+  `;
+}
+
+// 🆕 (T040): Render monthly summary
+function renderMonthlySummary(dailyData) {
+  const el = document.getElementById("rptMonthlySummary");
+  if (!el) return;
+  if (!Array.isArray(dailyData) || dailyData.length === 0) {
+    el.innerHTML = `<div class="reports-empty">ยังไม่มีข้อมูล</div>`;
+    return;
+  }
+  // Group by month
+  const months = {};
+  for (const r of dailyData) {
+    const month = String(r.date || "").slice(0, 7); // YYYY-MM
+    if (!months[month]) months[month] = { orders: 0, revenue: 0 };
+    months[month].orders += Number(r.order_count) || 0;
+    months[month].revenue += Number(r.revenue) || 0;
+  }
+  const monthList = Object.entries(months).sort((a, b) => b[0].localeCompare(a[0]));
+  el.innerHTML = monthList.map(([month, data]) => {
+    const monthLabel = new Date(month + "-01").toLocaleDateString("th-TH", { year: "numeric", month: "long" });
+    return `
+      <div class="reports-row">
+        <div class="reports-rank">📅</div>
+        <div class="reports-info">
+          <div class="reports-name">${monthLabel}</div>
+          <div class="reports-sub">${data.orders} ออเดอร์ · ${data.revenue.toLocaleString("en-US")} LAK</div>
+        </div>
+      </div>
+    `;
+  }).join("") || `<div class="reports-empty">ยังไม่มีข้อมูล</div>`;
+}
+

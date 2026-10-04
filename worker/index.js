@@ -6775,6 +6775,81 @@ async function handleCustomerAuth(request, env, url) {
     }
   }
 
+  // 🆕 (T040): GET /api/admin/reports/export-csv?period=daily|weekly|monthly
+  //   Export ยอดขายเป็น CSV — admin ดาวน์โหลดได้
+  //   response: text/csv (attachment)
+  if (url.pathname === "/api/admin/reports/export-csv" && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ไม่ได้รับอนุญาต" }, 401);
+
+    try {
+      const period = String(url.searchParams.get("period") || "daily").trim();
+      const days = period === "weekly" ? 90 : period === "monthly" ? 365 : 30;
+      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      // ดึงยอดขายรายวัน
+      const { results } = await env.DB.prepare(
+        `SELECT
+           DATE(json_extract(data, '$.created_at')) as date,
+           COUNT(*) as order_count,
+           SUM(CAST(json_extract(data, '$.final_total') AS REAL)) as revenue
+         FROM documents
+         WHERE collection = 'orders'
+           AND json_extract(data, '$.status') IN ('completed', 'processing', 'verified')
+           AND json_extract(data, '$.created_at') >= ?
+         GROUP BY DATE(json_extract(data, '$.created_at'))
+         ORDER BY date ASC
+         LIMIT 365`
+      ).bind(startDate).all();
+
+      // ดึง top songs
+      const { results: topSongs } = await env.DB.prepare(
+        `SELECT 
+           json_each.value->>'$.song_id' as song_id,
+           json_each.value->>'$.title' as title,
+           COUNT(*) as sales_count,
+           SUM(CAST(json_each.value->>'$.price' AS REAL)) as revenue
+         FROM documents, json_each(json_extract(data, '$.items'))
+         WHERE collection = 'orders' 
+           AND json_extract(data, '$.status') IN ('completed', 'processing', 'verified')
+         GROUP BY song_id
+         ORDER BY sales_count DESC
+         LIMIT 50`
+      ).all();
+
+      // สร้าง CSV
+      let csv = "";
+      // Section 1: ยอดขายรายวัน
+      csv += "รายงานยอดขาย\n";
+      csv += `ช่วงเวลา,${period}\n`;
+      csv += `สร้างเมื่อ,${new Date().toISOString()}\n\n`;
+      csv += "วันที่,จำนวนออเดอร์,ยอดรายได้ (LAK)\n";
+      for (const r of (results || [])) {
+        csv += `${r.date},${r.order_count},${Math.round(Number(r.revenue) || 0)}\n`;
+      }
+      csv += "\n";
+      // Section 2: Top songs
+      csv += "เพลงขายดี\n";
+      csv += "อันดับ,ชื่อเพลง,จำนวนครั้ง,ยอดรายได้ (LAK)\n";
+      (topSongs || []).forEach((s, i) => {
+        const title = String(s.title || "").replace(/"/g, '""');
+        csv += `${i + 1},"${title}",${s.sales_count},${Math.round(Number(s.revenue) || 0)}\n`;
+      });
+
+      // ส่งกลับเป็น CSV
+      return new Response(csv, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="sales-report-${period}-${Date.now()}.csv"`,
+        },
+      });
+    } catch (err) {
+      return jsonResponse({ error: safeError("export CSV ไม่สำเร็จ", err) }, 500);
+    }
+  }
+
   return jsonResponse({ error: "ไม่พบ endpoint นี้" }, 404);
 }
 
