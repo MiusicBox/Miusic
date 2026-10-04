@@ -1405,6 +1405,17 @@ function renderSongGrid() {
   const grid = document.getElementById("songGrid");
   const empty = document.getElementById("emptyState");
   if (!grid) return;
+
+  // 🆕 (T035b): ล้าง observer เก่า + sentinel เก่าก่อนทุกครั้ง — กันเพลงเก่าปน
+  //   ปัญหา: IntersectionObserver เก่ายิง renderNextBatch หลัง grid.innerHTML=""
+  //   → เพิ่มเพลงเก่ากลับเข้ามา → ปนกับ empty state
+  if (STATE._songGridObserver) {
+    STATE._songGridObserver.disconnect();
+    STATE._songGridObserver = null;
+  }
+  const oldSentinel = document.getElementById("songGridSentinel");
+  if (oldSentinel) oldSentinel.remove();
+
   if (list.length === 0) {
     grid.innerHTML = "";
     if (empty) {
