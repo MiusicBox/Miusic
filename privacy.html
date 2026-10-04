@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>นโยบายความเป็นส่วนตัว — Music Store</title>
+  <meta name="robots" content="index, follow">
+  <link rel="stylesheet" href="style.css?v=20261007-T057">
+  <style>
+    .privacy-container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 80px 20px 120px;
+      color: var(--text, #f8fafc);
+      line-height: 1.7;
+      font-size: 15px;
+    }
+    .privacy-container h1 {
+      font-size: 28px;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .privacy-container h2 {
+      font-size: 20px;
+      margin-top: 32px;
+      margin-bottom: 12px;
+      color: var(--text, #f8fafc);
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border, rgba(255,255,255,0.1));
+    }
+    .privacy-container h3 {
+      font-size: 16px;
+      margin-top: 20px;
+      margin-bottom: 8px;
+      color: var(--accent, #8b5cf6);
+    }
+    .privacy-container p {
+      margin-bottom: 12px;
+      color: var(--text-dim, #94a3b8);
+    }
+    .privacy-container ul {
+      margin-bottom: 16px;
+      padding-left: 24px;
+      color: var(--text-dim, #94a3b8);
+    }
+    .privacy-container li {
+      margin-bottom: 6px;
+    }
+    .privacy-container strong {
+      color: var(--text, #f8fafc);
+    }
+    .privacy-meta {
+      background: var(--surface, #131722);
+      border: 1px solid var(--border, rgba(255,255,255,0.08));
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      font-size: 13px;
+    }
+    .privacy-meta strong {
+      color: var(--accent, #8b5cf6);
+    }
+    .privacy-back {
+      display: inline-block;
+      margin-top: 32px;
+      padding: 10px 20px;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+      color: white;
+      text-decoration: none;
+      border-radius: 9999px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .privacy-back:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+  </style>
+</head>
+<body>
+  <div class="privacy-container">
+    <h1>📜 นโยบายความเป็นส่วนตัว (Privacy Policy)</h1>
+    <div class="privacy-meta">
+      <p style="margin:0;">
+        <strong>เวอร์ชัน:</strong> v1.0-20261007<br>
+        <strong>วันที่มีผล:</strong> 7 ตุลาคม 2569<br>
+        <strong>เจ้าของข้อมูล:</strong> Music Store (เว็บขายเพลง DJ Remix)
+      </p>
+    </div>
+
+    <p>นโยบายความเป็นส่วนตัวนี้อธิบายวิธีที่เราเก็บ ใช้ และปกป้องข้อมูลส่วนบุคคลของท่าน ตามพระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562 (PDPA)</p>
+
+    <h2>1. ข้อมูลที่เราเก็บ</h2>
+    <p>เราเก็บข้อมูลดังต่อไปนี้เพื่อให้บริการสั่งซื้อเพลง:</p>
+    <h3>ข้อมูลที่ท่านให้โดยตรง</h3>
+    <ul>
+      <li><strong>ชื่อลูกค้า</strong> — ใช้แสดงในใบเสร็จและการสื่อสาร</li>
+      <li><strong>เบอร์ WhatsApp</strong> — ใช้ติดต่อเรื่องออเดอร์ + ส่งลิงก์ดาวน์โหลด</li>
+      <li><strong>อีเมล</strong> — ใช้สำหรับ login (ถ้าลูกค้าเลือก)</li>
+      <li><strong>รหัสผ่าน</strong> — เก็บแบบ hash (PBKDF2) ไม่สามารถอ่านกลับเป็นข้อความเดิมได้</li>
+      <li><strong>สลิปการโอนเงิน</strong> — ใช้ตรวจสอบการชำระเงิน (ลบหลัง 90 วัน)</li>
+    </ul>
+    <h3>ข้อมูลที่เก็บอัตโนมัติ</h3>
+    <ul>
+      <li><strong>IP address</strong> — เก็บแบบ hash (SHA-256) เพื่อความปลอดภัย ไม่สามารถ reverse กลับเป็น IP ได้</li>
+      <li><strong>ประวัติการสั่งซื้อ</strong> — รายการเพลงที่ซื้อ ยอดรวม สถานะออเดอร์</li>
+      <li><strong>รายการโปรด + ไลค์</strong> — เพลงที่ลูกค้ากด ❤️</li>
+      <li><strong>ข้อมูลการยินยอม (consent)</strong> — บันทึกการยอมรับนโยบายฯ</li>
+    </ul>
+
+    <h2>2. วัตถุประสงค์การใช้ข้อมูล</h2>
+    <p>เราใช้ข้อมูลของท่านเพื่อ:</p>
+    <ul>
+      <li>ส่งมอบเพลงที่สั่งซื้อ + ลิงก์ดาวน์โหลด</li>
+      <li>ติดต่อเรื่องออเดอร์ผ่าน WhatsApp</li>
+      <li>ตรวจสอบการชำระเงิน (สลิป)</li>
+      <li>ปกป้องการทุจรต (fraud prevention) + กัน spam</li>
+      <li>ปฏิบัติตามกฎหมาย (เช่น เก็บ audit log ตามกฎหมายไทย)</li>
+    </ul>
+    <p><strong>เราจะไม่</strong> ขายข้อมูลของท่านให้บุคคลที่สาม</p>
+
+    <h2>3. ระยะเวลาการเก็บข้อมูล</h2>
+    <ul>
+      <li><strong>ออเดอร์ + ใบเสร็จ:</strong> เก็บตลอดอายุการให้บริการ</li>
+      <li><strong>สลิปการโอนเงิน:</strong> ลบหลัง 90 วัน</li>
+      <li><strong>Audit log:</strong> เก็บ 10 วัน (ลบอัตโนมัติ)</li>
+      <li><strong>Session:</strong> 30 วัน (ต่ออายุอัตโนมัติถ้า login บ่อย)</li>
+      <li><strong>บัญชีลูกค้า:</strong> เก็บจนกว่าลูกค้าจะขอลบ</li>
+    </ul>
+
+    <h2>4. สิทธิ์ของท่านตาม PDPA (มาตรา 30-37)</h2>
+    <p>ท่านมีสิทธิ์ดังต่อไปนี้ สามารถใช้ได้ผ่านหน้า "ตั้งค่าบัญชี":</p>
+    <ul>
+      <li><strong>สิทธิ์ได้รับแจ้ง</strong> — ท่านได้รับแจ้งผ่านนโยบายนี้</li>
+      <li><strong>สิทธิ์เข้าถึง</strong> — ดาวน์โหลดข้อมูลทั้งหมดของท่านเป็น JSON</li>
+      <li><strong>สิทธิ์แก้ไข</strong> — แก้ชื่อที่แสดง + เบอร์ WhatsApp</li>
+      <li><strong>สิทธิ์ลบ</strong> — ลบบัญชี (soft delete + 30 วัน grace ก่อน hard delete)</li>
+      <li><strong>สิทธิ์คัดค้าน</strong> — opt-out การรับข่าวสาร marketing</li>
+      <li><strong>สิทธิ์เคลื่อนย้าย</strong> — export ข้อมูลเป็น JSON (เหมือนสิทธิ์เข้าถึง)</li>
+    </ul>
+
+    <h2>5. ความปลอดภัย</h2>
+    <p>เราปกป้องข้อมูลของท่านด้วยมาตรการ:</p>
+    <ul>
+      <li>รหัสผ่านเก็บแบบ PBKDF2 hash (100,000 iterations)</li>
+      <li>Session cookie แบบ HttpOnly + Secure</li>
+      <li>Rate limiting กัน brute-force (5 ครั้ง/15 นาที)</li>
+      <li>IP hash แทน IP จริง (กัน reverse)</li>
+      <li>HTTPS ทุกการเชื่อมต่อ</li>
+      <li>Audit log บันทึกทุกการแก้ไขข้อมูล</li>
+    </ul>
+
+    <h2>6. การใช้ Cookie</h2>
+    <p>เราใช้ cookie เฉพาะที่จำเป็น:</p>
+    <ul>
+      <li><strong>Session cookie</strong> — จดจำการ login (30 วัน)</li>
+      <li><strong>Cookie consent</strong> — จดจำว่าท่านยอมรับ cookie แล้ว (1 ปี)</li>
+    </ul>
+    <p>เรา<strong>ไม่ใช้</strong> third-party tracking cookie (เช่น Google Analytics, Facebook Pixel)</p>
+
+    <h2>7. การแก้ไขนโยบาย</h2>
+    <p>เราอาจแก้ไขนโยบายนี้ในอนาคต หากมีการเปลี่ยนแปลงสำคัญ เราจะแจ้งให้ท่านทราบผ่านทางเว็บไซต์</p>
+
+    <h2>8. ติดต่อเรา</h2>
+    <p>หากท่านมีคำถามเกี่ยวกับนโยบายนี้ หรือต้องการใช้สิทธิ์ PDPA ท่านสามารถ:</p>
+    <ul>
+      <li>ติดต่อผ่าน WhatsApp (ปุ่มลอยด้านล่างซ้ายของหน้าเว็บ)</li>
+      <li>ใช้หน้า "ตั้งค่าบัญชี" ในระบบ (login ก่อน)</li>
+    </ul>
+
+    <a href="/" class="privacy-back">← กลับหน้าแรก</a>
+  </div>
+</body>
+</html>

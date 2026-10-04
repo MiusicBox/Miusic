@@ -871,3 +871,339 @@ document.addEventListener("DOMContentLoaded", () => {
   // ซ่อน meter ตอนเริ่มต้น
   updateComplexityMeter("");
 });
+
+// ============================================================
+// 🆕 (T057-PDPA): Account Settings Modal + Cookie Consent Banner
+//   - modal "ตั้งค่าบัญชี" สำหรับใช้สิทธิ์ PDPA 6 ข้อ
+//   - cookie consent banner แสดงตอนเข้าเว็บครั้งแรก
+//   ผลกระทบระบบเดิม: 0% — UI ใหม่ ไม่แตะ login/register/favorites เดิม
+// ============================================================
+
+// ---------- Cookie Consent Banner ----------
+function initCookieConsentBanner() {
+  const STORAGE_KEY = "miusic_cookie_consent_v1";
+  let consented = null;
+  try { consented = localStorage.getItem(STORAGE_KEY); } catch (_) {}
+  if (consented) return; // ยินยอมแล้ว → ไม่ต้องแสดงอีก
+
+  // สร้าง banner element
+  const banner = document.createElement("div");
+  banner.id = "cookieConsentBanner";
+  banner.style.cssText = `
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--surface, #131722);
+    border-top: 1px solid var(--accent, #8b5cf6);
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+    z-index: 9999;
+    display: flex; align-items: center; gap: 12px;
+    flex-wrap: wrap;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
+    font-size: 13px;
+  `;
+  banner.innerHTML = `
+    <div style="flex:1;min-width:240px;color:var(--text,#f8fafc);">
+      🍪 เว็บไซต์เราใช้ cookie เพื่อจดจำการเข้าสู่ระบบของคุณ
+      โดยใช้ตาม <a href="/privacy.html" target="_blank" style="color:var(--accent,#8b5cf6);text-decoration:underline;">นโยบายความเป็นส่วนตัว</a>
+    </div>
+    <button type="button" id="cookieConsentAccept" style="
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+      color: white; border: none; padding: 8px 18px; border-radius: 9999px;
+      font-weight: 600; font-size: 13px; cursor: pointer;
+    ">ยอมรับ</button>
+  `;
+  document.body.appendChild(banner);
+
+  document.getElementById("cookieConsentAccept")?.addEventListener("click", () => {
+    try { localStorage.setItem(STORAGE_KEY, new Date().toISOString()); } catch (_) {}
+    banner.remove();
+    // ส่ง consent record ไป server (ถ้า login แล้ว)
+    if (currentCustomer) {
+      fetch("/api/customer/consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ consent_type: "cookie", action: "accept" }),
+      }).catch(() => {});
+    }
+  });
+}
+
+// ---------- Account Settings Modal ----------
+function openAccountSettingsModal() {
+  // ลบ modal เดิมถ้ามี
+  const existing = document.getElementById("accountSettingsBackdrop");
+  if (existing) existing.remove();
+
+  const backdrop = document.createElement("div");
+  backdrop.id = "accountSettingsBackdrop";
+  backdrop.className = "modal-backdrop";
+  backdrop.style.cssText = "display:flex;align-items:center;justify-content:center;z-index:200;";
+  backdrop.innerHTML = `
+    <div class="modal" style="max-width:480px;max-height:90vh;overflow-y:auto;">
+      <div class="modal-header">
+        <h3>⚙️ ตั้งค่าบัญชี</h3>
+        <button class="modal-close" id="accountSettingsClose" type="button" aria-label="ปิด">✕</button>
+      </div>
+      <div style="padding:16px;">
+
+        <!-- Section: ข้อมูลบัญชี -->
+        <div style="margin-bottom:20px;">
+          <h4 style="margin:0 0 8px;font-size:14px;color:var(--accent,#8b5cf6);">ข้อมูลบัญชี</h4>
+          <div style="background:var(--surface,#131722);border-radius:8px;padding:12px;font-size:13px;">
+            <div style="margin-bottom:6px;">
+              <strong style="color:var(--text-dim,#94a3b8);">ชื่อที่แสดง:</strong>
+              <span id="accountSettingsDisplayName">${escapeHtmlCustomer(currentCustomer?.display_name || "-")}</span>
+            </div>
+            <div style="margin-bottom:6px;">
+              <strong style="color:var(--text-dim,#94a3b8);">อีเมล:</strong>
+              <span>${escapeHtmlCustomer(currentCustomer?.email || "-")}</span>
+            </div>
+            <div>
+              <strong style="color:var(--text-dim,#94a3b8);">WhatsApp:</strong>
+              <span>${escapeHtmlCustomer(currentCustomer?.whatsapp || "-")}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: แก้ไขข้อมูล (สิทธิ์แก้ไข) -->
+        <div style="margin-bottom:20px;">
+          <h4 style="margin:0 0 8px;font-size:14px;color:var(--accent,#8b5cf6);">✏️ แก้ไขข้อมูล (สิทธิ์ PDPA มาตรา 35)</h4>
+          <div class="field" style="margin-bottom:8px;">
+            <label style="font-size:12px;color:var(--text-dim,#94a3b8);">ชื่อที่แสดง</label>
+            <input id="accountSettingsEditName" type="text" placeholder="ชื่อใหม่"
+              value="${escapeHtmlCustomer(currentCustomer?.display_name || "")}"
+              style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border,rgba(255,255,255,0.1));background:var(--surface,#131722);color:var(--text,#f8fafc);font-size:13px;">
+          </div>
+          <div class="field" style="margin-bottom:8px;">
+            <label style="font-size:12px;color:var(--text-dim,#94a3b8);">เบอร์ WhatsApp</label>
+            <input id="accountSettingsEditWhatsapp" type="tel" placeholder="เบอร์ใหม่"
+              value="${escapeHtmlCustomer(currentCustomer?.whatsapp || "")}"
+              style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border,rgba(255,255,255,0.1));background:var(--surface,#131722);color:var(--text,#f8fafc);font-size:13px;">
+          </div>
+          <button type="button" id="accountSettingsSaveBtn" style="
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+            color: white; border: none; padding: 8px 16px; border-radius: 9999px;
+            font-weight: 600; font-size: 13px; cursor: pointer; width: 100%;
+          ">บันทึกการแก้ไข</button>
+          <div id="accountSettingsEditFeedback" style="font-size:12px;margin-top:6px;display:none;"></div>
+        </div>
+
+        <!-- Section: สิทธิ์ PDPA -->
+        <div style="margin-bottom:20px;">
+          <h4 style="margin:0 0 8px;font-size:14px;color:var(--accent,#8b5cf6);">📋 สิทธิ์ของคุณตาม PDPA</h4>
+
+          <button type="button" id="accountSettingsExportBtn" style="
+            display:flex;align-items:center;gap:8px;width:100%;
+            background: var(--surface,#131722); color: var(--text,#f8fafc);
+            border: 1px solid var(--border,rgba(255,255,255,0.1));
+            padding: 10px 12px; border-radius: 8px;
+            font-size: 13px; cursor: pointer; margin-bottom: 8px;
+          ">
+            <span>⬇️</span>
+            <div style="flex:1;text-align:left;">
+              <div style="font-weight:600;">Export ข้อมูลของฉัน</div>
+              <div style="font-size:11px;color:var(--text-dim,#94a3b8);">ดาวน์โหลด JSON (สิทธิ์เข้าถึง + เคลื่อนย้าย)</div>
+            </div>
+          </button>
+
+          <button type="button" id="accountSettingsConsentBtn" style="
+            display:flex;align-items:center;gap:8px;width:100%;
+            background: var(--surface,#131722); color: var(--text,#f8fafc);
+            border: 1px solid var(--border,rgba(255,255,255,0.1));
+            padding: 10px 12px; border-radius: 8px;
+            font-size: 13px; cursor: pointer; margin-bottom: 8px;
+          ">
+            <span>✋</span>
+            <div style="flex:1;text-align:left;">
+              <div style="font-weight:600;">จัดการการยินยอม</div>
+              <div style="font-size:11px;color:var(--text-dim,#94a3b8);">opt-out การรับข่าวสาร marketing</div>
+            </div>
+          </button>
+
+          <button type="button" id="accountSettingsDeleteBtn" style="
+            display:flex;align-items:center;gap:8px;width:100%;
+            background: rgba(239, 68, 68, 0.08); color: var(--danger, #ef4444);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            padding: 10px 12px; border-radius: 8px;
+            font-size: 13px; cursor: pointer;
+          ">
+            <span>🗑️</span>
+            <div style="flex:1;text-align:left;">
+              <div style="font-weight:600;">ลบบัญชี</div>
+              <div style="font-size:11px;opacity:0.8;">soft delete + 30 วัน grace (สิทธิ์ลบ PDPA)</div>
+            </div>
+          </button>
+          <div id="accountSettingsDeleteFeedback" style="font-size:12px;margin-top:6px;display:none;"></div>
+        </div>
+
+        <!-- Privacy Policy link -->
+        <div style="text-align:center;font-size:12px;color:var(--text-dim,#94a3b8);">
+          📜 <a href="/privacy.html" target="_blank" style="color:var(--accent,#8b5cf6);text-decoration:underline;">นโยบายความเป็นส่วนตัว</a>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+
+  // ปิด modal
+  document.getElementById("accountSettingsClose")?.addEventListener("click", () => backdrop.remove());
+  backdrop.addEventListener("click", (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  });
+
+  // บันทึกการแก้ไข
+  document.getElementById("accountSettingsSaveBtn")?.addEventListener("click", async () => {
+    const displayName = document.getElementById("accountSettingsEditName")?.value?.trim() || "";
+    const whatsapp = document.getElementById("accountSettingsEditWhatsapp")?.value?.trim() || "";
+    const feedback = document.getElementById("accountSettingsEditFeedback");
+    const btn = document.getElementById("accountSettingsSaveBtn");
+    if (feedback) { feedback.style.display = "block"; feedback.textContent = "กำลังบันทึก..."; feedback.style.color = "var(--text-dim,#94a3b8)"; }
+    if (btn) { btn.disabled = true; btn.textContent = "กำลังบันทึก..."; }
+    try {
+      const res = await fetch("/api/customer/me", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ display_name: displayName, whatsapp }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        currentCustomer = data.customer;
+        saveCustomerToStorage(data.customer);
+        syncCustomerAuthUI();
+        if (feedback) { feedback.textContent = "✅ บันทึกสำเร็จ"; feedback.style.color = "var(--success,#10b981)"; }
+        // อัปเดตค่าใน modal
+        document.getElementById("accountSettingsDisplayName").textContent = data.customer.display_name || "-";
+        setTimeout(() => { if (feedback) feedback.style.display = "none"; }, 3000);
+      } else {
+        if (feedback) { feedback.textContent = "❌ " + (data?.error || "บันทึกไม่สำเร็จ"); feedback.style.color = "var(--danger,#ef4444)"; }
+      }
+    } catch (err) {
+      if (feedback) { feedback.textContent = "❌ " + (err?.message || err); feedback.style.color = "var(--danger,#ef4444)"; }
+    }
+    if (btn) { btn.disabled = false; btn.textContent = "บันทึกการแก้ไข"; }
+  });
+
+  // Export ข้อมูล
+  document.getElementById("accountSettingsExportBtn")?.addEventListener("click", async () => {
+    try {
+      const res = await fetch("/api/customer/me/export", { credentials: "same-origin" });
+      if (!res.ok) throw new Error("export ไม่สำเร็จ");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `my-data-${(currentCustomer?.id || "export").slice(0, 8)}-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      alert("✅ ดาวน์โหลดข้อมูลของคุณแล้ว (ไฟล์ JSON)");
+    } catch (err) {
+      alert("❌ export ไม่สำเร็จ: " + (err?.message || err));
+    }
+  });
+
+  // จัดการ consent (marketing opt-out)
+  document.getElementById("accountSettingsConsentBtn")?.addEventListener("click", async () => {
+    // ดึงสถานะปัจจุบัน
+    let currentOptOut = false;
+    try {
+      const res = await fetch("/api/customer/consent", { credentials: "same-origin" });
+      const data = await res.json().catch(() => ({}));
+      currentOptOut = !!data?.marketing_opt_out;
+    } catch (_) {}
+    const action = currentOptOut ? "accept" : "reject";
+    const msg = currentOptOut
+      ? "คุณเลือกปฏิเสธการรับข่าวสารอยู่แล้ว\n\nต้องการยินยอมรับข่าวสารอีกครั้งไหม?"
+      : "คุณกำลังจะปฏิเสธการรับข่าวสาร marketing\n\n(คุณจะไม่ได้รับข้อความโปรโมชั่น แต่ยังได้รับการแจ้งเรื่องออเดอร์)\n\nยืนยัน?";
+    if (!confirm(msg)) return;
+    try {
+      const res = await fetch("/api/customer/consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ consent_type: "marketing", action }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        alert("✅ " + (data.message || "บันทึกแล้ว"));
+      } else {
+        alert("❌ " + (data?.error || "บันทึกไม่สำเร็จ"));
+      }
+    } catch (err) {
+      alert("❌ " + (err?.message || err));
+    }
+  });
+
+  // ลบบัญชี
+  document.getElementById("accountSettingsDeleteBtn")?.addEventListener("click", async () => {
+    const feedback = document.getElementById("accountSettingsDeleteFeedback");
+    const confirmed1 = confirm("⚠️ คุณกำลังจะลบบัญชี\n\n• บัญชีจะถูกปิดทันที (login ไม่ได้)\n• ข้อมูลจะถูกลบถาวรหลัง 30 วัน\n• ระหว่าง 30 วัน สามารถติดต่อแอดมินขอกู้คืนได้\n\nต้องการดำเนินการต่อไหม?");
+    if (!confirmed1) return;
+    const password = prompt("กรุณาใส่รหัสผ่านเพื่อยืนยันการลบบัญชี:");
+    if (!password) return;
+    try {
+      const res = await fetch("/api/customer/me", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        alert("✅ " + (data.message || "ลบบัญชีเรียบร้อย"));
+        backdrop.remove();
+        currentCustomer = null;
+        saveCustomerToStorage(null);
+        syncCustomerAuthUI();
+        setTimeout(() => location.reload(), 1500);
+      } else {
+        if (feedback) { feedback.style.display = "block"; feedback.textContent = "❌ " + (data?.error || "ลบไม่สำเร็จ"); feedback.style.color = "var(--danger,#ef4444)"; }
+        else alert("❌ " + (data?.error || "ลบไม่สำเร็จ"));
+      }
+    } catch (err) {
+      if (feedback) { feedback.style.display = "block"; feedback.textContent = "❌ " + (err?.message || err); feedback.style.color = "var(--danger,#ef4444)"; }
+      else alert("❌ " + (err?.message || err));
+    }
+  });
+}
+
+// 🆕 (T057): เพิ่มปุ่ม "ตั้งค่าบัญชี" ใน syncCustomerAuthUI (เข้าถึงผ่านปุ่ม👤 → เปลี่ยนเป็น modal ตั้งค่า)
+//   แทนที่จะเปิดหน้า myOrdersView ให้เปิด modal ตั้งค่าบัญชีที่มี PDPA options
+const _originalSyncCustomerAuthUI = syncCustomerAuthUI;
+window.syncCustomerAuthUI = function() {
+  _originalSyncCustomerAuthUI();
+  // เพิ่มปุ่ม "ตั้งค่าบัญชี" ใต้ปุ่ม👤 (ถ้า login แล้ว)
+  if (currentCustomer) {
+    const btnArea = document.getElementById("customerAuthBtnArea");
+    if (btnArea && !document.getElementById("accountSettingsBtn")) {
+      const settingsBtn = document.createElement("button");
+      settingsBtn.id = "accountSettingsBtn";
+      settingsBtn.type = "button";
+      settingsBtn.title = "ตั้งค่าบัญชี + PDPA";
+      settingsBtn.setAttribute("aria-label", "ตั้งค่าบัญชี");
+      settingsBtn.style.cssText = `
+        background: transparent; border: 1px solid var(--border,rgba(255,255,255,0.1));
+        color: var(--text-dim,#94a3b8); padding: 6px 8px; border-radius: 6px;
+        cursor: pointer; font-size: 14px;
+      `;
+      settingsBtn.textContent = "⚙️";
+      settingsBtn.addEventListener("click", () => openAccountSettingsModal());
+      btnArea.appendChild(settingsBtn);
+    }
+  }
+};
+
+// 🆕 (T057): init cookie consent banner + account settings ตอน page load
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(initCookieConsentBanner, 1000);
+  });
+} else {
+  setTimeout(initCookieConsentBanner, 1000);
+}
+
+// 🆕 (T057): expose สำหรับเรียกจากภายนอก
+window.openAccountSettingsModal = openAccountSettingsModal;
+window.initCookieConsentBanner = initCookieConsentBanner;

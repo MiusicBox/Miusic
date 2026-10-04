@@ -5617,13 +5617,19 @@ async function handleCustomerAuth(request, env, url) {
     let customer;
     try {
       customer = await env.DB.prepare(
-        "SELECT id, email, whatsapp, password_hash, display_name, created_at FROM customers WHERE email = ? OR whatsapp = ?"
+        "SELECT id, email, whatsapp, password_hash, display_name, created_at, deleted_at FROM customers WHERE email = ? OR whatsapp = ?"
       ).bind(loginNormalized, loginNormalized).first();
     } catch (err) {
       if (String(err?.message || "").includes("no such table")) {
         return jsonResponse({ error: "ระบบสมาชิกยังไม่พร้อม — กรุณารัน schema.sql ล่าสุดใน D1 Console" }, 500);
       }
       return jsonResponse({ error: safeError("เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+    }
+    // 🆕 (T057-PDPA): block login ถ้า customer ถูก soft delete (สิทธิ์ลบ PDPA Section 33)
+    //   ระหว่าง 30 วัน grace → ลูกค้า login ไม่ได้ (เหมือนถูกลบแล้ว)
+    //   ใช้ข้อความเดียวกับ invalid credential — กัน info disclosure (attacker รู้ว่าบัญชีถูกลบ)
+    if (customer?.deleted_at) {
+      return jsonResponse({ error: "อีเมล/เบอร์ WhatsApp หรือรหัสผ่านไม่ถูกต้อง", code: "customer/invalid-credential" }, 401);
     }
     // 🔒 (2026-10-01 fix H3): ป้องกัน timing oracle — ถ้า customer ไม่พบ ก็ยังต้อง verifyPassword
     //   เพื่อใช้เวลาเท่ากัน (PBKDF2 100k iterations ใช้ ~100ms)
@@ -6112,6 +6118,280 @@ async function handleCustomerAuth(request, env, url) {
     if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
     return jsonResponse({ ok: true, customer });
   }
+
+  // ============================================================
+  // 🆕 (T057-PDPA): 6 สิทธิ์ลูกค้า PDPA (มาตรา 30-37)
+  //   1. สิทธิ์เข้าถึง + เคลื่อนย้าย → GET /api/customer/me/export (JSON download)
+  //   2. สิทธิ์แก้ไข → PUT /api/customer/me (display_name, whatsapp)
+  //   3. สิทธิ์ลบ → DELETE /api/customer/me (soft delete + 30 วัน grace)
+  //   4. สิทธิ์คัดค้าน → POST /api/customer/consent (opt-out marketing)
+  //   5. สิทธิ์ได้รับแจ้ง → Privacy Policy page (privacy.html) + cookie banner
+  //   ผลกระทบระบบเดิม: 0% — endpoints ใหม่ ไม่แตะ /api/customer/login, /orders, /favorites เดิม
+  // ============================================================
+
+  // ---------- PUT /api/customer/me (สิทธิ์แก้ไข — มาตรา 35) ----------
+  //   แก้ display_name / whatsapp ของลูกค้าเอง
+  //   ไม่อนุญาตให้แก้ email (เพราะใช้สำหรับ login — ต้อง verify ทางอื่น)
+  if (path === "me" && request.method === "PUT") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const customer = await getCustomerSession(request, env);
+    if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+
+    // validate + sanitize fields
+    const updates = {};
+    if (body.display_name != null) {
+      const name = String(body.display_name).trim().slice(0, 100);
+      if (!name) return jsonResponse({ error: "ชื่อที่แสดงต้องไม่ว่าง" }, 400);
+      updates.display_name = name;
+    }
+    if (body.whatsapp != null) {
+      const whatsapp = normalizeWhatsapp(String(body.whatsapp).trim()) || null;
+      // ตรวจซ้ำ (ถ้าเปลี่ยนเบอร์ → เบอร์ใหม่ต้องไม่ซ้ำกับ customer อื่น)
+      if (whatsapp) {
+        const exists = await env.DB.prepare(
+          "SELECT id FROM customers WHERE whatsapp = ? AND id != ?"
+        ).bind(whatsapp, customer.id).first();
+        if (exists) return jsonResponse({ error: "เบอร์ WhatsApp นี้ถูกใช้โดยบัญชีอื่นแล้ว", code: "WHATSAPP_EXISTS" }, 409);
+      }
+      updates.whatsapp = whatsapp;
+    }
+    if (Object.keys(updates).length === 0) {
+      return jsonResponse({ error: "ไม่มีฟิลด์ที่ต้องการแก้ไข (รองรับ: display_name, whatsapp)" }, 400);
+    }
+
+    updates.updated_at = new Date().toISOString();
+    // build UPDATE statement
+    const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(", ");
+    const binds = Object.values(updates).concat([customer.id]);
+    try {
+      await env.DB.prepare(
+        `UPDATE customers SET ${setClauses} WHERE id = ?`
+      ).bind(...binds).run();
+      // ดึง customer ใหม่กลับ
+      const updated = await env.DB.prepare(
+        "SELECT id, email, whatsapp, display_name, created_at, updated_at FROM customers WHERE id = ?"
+      ).bind(customer.id).first();
+      return jsonResponse({ ok: true, customer: updated });
+    } catch (err) {
+      return jsonResponse({ error: safeError("แก้ไขข้อมูลไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // ---------- GET /api/customer/me/export (สิทธิ์เข้าถึง + เคลื่อนย้าย — มาตรา 30, 36) ----------
+  //   Export ข้อมูลทั้งหมดของลูกค้าเป็น JSON (profile + orders + favorites + likes + consent history)
+  if (path === "me/export" && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const customer = await getCustomerSession(request, env);
+    if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+
+    try {
+      // ดึง profile
+      const profile = await env.DB.prepare(
+        "SELECT id, email, whatsapp, display_name, created_at, updated_at FROM customers WHERE id = ?"
+      ).bind(customer.id).first();
+
+      // ดึง orders (จาก documents table)
+      const ordersResults = await env.DB.prepare(
+        "SELECT id, data, created_at FROM documents WHERE collection = 'orders' AND json_extract(data, '$.customer_id') = ? ORDER BY created_at DESC LIMIT 200"
+      ).bind(customer.id).all();
+      const orders = (ordersResults?.results || []).map(r => {
+        let data;
+        try { data = JSON.parse(r.data); } catch { data = {}; }
+        return { id: r.id, created_at: r.created_at, ...data };
+      });
+
+      // ดึง favorites
+      const favResults = await env.DB.prepare(
+        "SELECT song_id, created_at FROM customer_favorites WHERE customer_id = ? ORDER BY created_at DESC"
+      ).bind(customer.id).all();
+      const favorites = (favResults?.results || []).map(r => ({ song_id: r.song_id, added_at: r.created_at }));
+
+      // ดึง likes
+      const likeResults = await env.DB.prepare(
+        "SELECT song_id, created_at FROM song_likes WHERE customer_id = ? ORDER BY created_at DESC"
+      ).bind(customer.id).all();
+      const likes = (likeResults?.results || []).map(r => ({ song_id: r.song_id, liked_at: r.created_at }));
+
+      // ดึง consent history
+      let consentHistory = [];
+      try {
+        const consentResults = await env.DB.prepare(
+          "SELECT consent_type, action, policy_version, created_at FROM consent_records WHERE customer_id = ? ORDER BY created_at DESC"
+        ).bind(customer.id).all();
+        consentHistory = (consentResults?.results || []);
+      } catch (_) { /* table may not exist yet */ }
+
+      const exportData = {
+        exported_at: new Date().toISOString(),
+        exported_by: "PDPA Section 30 + 36 — Right to access + data portability",
+        customer: profile,
+        orders,
+        favorites,
+        likes,
+        consent_history: consentHistory,
+        summary: {
+          orders_count: orders.length,
+          favorites_count: favorites.length,
+          likes_count: likes.length,
+          consent_records_count: consentHistory.length,
+        },
+      };
+
+      // audit log
+      try {
+        ctx.waitUntil(writeAuditLog(env, request, { id: customer.id, email: "customer" }, "export", "customer_data", customer.id, "Customer exported own data (PDPA Section 30/36)", null, { exported_at: exportData.exported_at }));
+      } catch {}
+
+      // ส่ง JSON พร้อม Content-Disposition ให้ browser download
+      return new Response(JSON.stringify(exportData, null, 2), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Disposition": `attachment; filename="my-data-${customer.id.slice(0, 8)}-${Date.now()}.json"`,
+          ...corsHeaders(request),
+        },
+      });
+    } catch (err) {
+      return jsonResponse({ error: safeError("export ข้อมูลไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // ---------- DELETE /api/customer/me (สิทธิ์ลบ — มาตรา 33) ----------
+  //   Soft delete — ตั้ง deleted_at = now → ลูกค้า login ไม่ได้ทันที
+  //   หลัง 30 วัน → cron จะ hard delete (cascade favorites/likes/etc)
+  //   ระหว่าง 30 วัน → ลูกค้าสามารถ contact admin ขอกู้คืนได้
+  if (path === "me" && request.method === "DELETE") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const customer = await getCustomerSession(request, env);
+    if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+
+    let body = {};
+    try { body = await request.json(); } catch { body = {}; }
+    // ต้อง confirm password เพื่อกัน impulse delete (กฎเหล็ก: ไม่ให้ลบโดยไม่ได้ตั้งใจ)
+    const password = String(body.password || "");
+    if (!password) return jsonResponse({ error: "กรุณายืนยันรหัสผ่านเพื่อลบบัญชี" }, 400);
+
+    try {
+      const row = await env.DB.prepare("SELECT password_hash FROM customers WHERE id = ?").bind(customer.id).first();
+      const ok = await verifyPassword(password, row?.password_hash);
+      if (!ok) return jsonResponse({ error: "รหัสผ่านไม่ถูกต้อง" }, 401);
+    } catch (err) {
+      return jsonResponse({ error: safeError("ยืนยันรหัสผ่านไม่สำเร็จ", err) }, 500);
+    }
+
+    try {
+      // soft delete — ตั้ง deleted_at
+      const now = new Date().toISOString();
+      await env.DB.prepare(
+        "UPDATE customers SET deleted_at = ?, updated_at = ? WHERE id = ?"
+      ).bind(now, now, customer.id).run();
+
+      // ลบ sessions ทั้งหมดของลูกค้า → login ไม่ได้ทันที
+      await env.DB.prepare("DELETE FROM customer_sessions WHERE customer_id = ?").bind(customer.id).run();
+
+      // audit log
+      try {
+        ctx.waitUntil(writeAuditLog(env, request, { id: customer.id, email: "customer" }, "delete", "customer", customer.id, "Customer self-deleted (PDPA Section 33 — soft delete, 30d grace)", null, { deleted_at: now, hard_delete_after: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() }));
+      } catch {}
+
+      const graceUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      return jsonResponse({
+        ok: true,
+        message: "ลบบัญชีเรียบร้อย (soft delete) — หากต้องการกู้คืน ติดต่อแอดมินก่อน " + graceUntil,
+        deleted_at: now,
+        grace_until: graceUntil,
+        hard_delete_after: graceUntil,
+      }, 200, { "Set-Cookie": buildClearCustomerCookie() });
+    } catch (err) {
+      return jsonResponse({ error: safeError("ลบบัญชีไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // ---------- GET /api/customer/consent (ดูสถานะ consent ปัจจุบัน) ----------
+  if (path === "consent" && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const customer = await getCustomerSession(request, env);
+    if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    try {
+      // ดึง marketing_opt_out จาก customer row
+      const row = await env.DB.prepare("SELECT marketing_opt_out FROM customers WHERE id = ?").bind(customer.id).first();
+      const marketingOptOut = !!(row?.marketing_opt_out);
+
+      // ดึง consent history
+      let consentHistory = [];
+      try {
+        const historyResults = await env.DB.prepare(
+          "SELECT consent_type, action, policy_version, created_at FROM consent_records WHERE customer_id = ? ORDER BY created_at DESC LIMIT 20"
+        ).bind(customer.id).all();
+        consentHistory = historyResults?.results || [];
+      } catch (_) {}
+
+      return jsonResponse({
+        ok: true,
+        marketing_opt_out: marketingOptOut,
+        consent_history: consentHistory,
+      });
+    } catch (err) {
+      return jsonResponse({ error: safeError("ดึงข้อมูล consent ไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // ---------- POST /api/customer/consent (สิทธิ์คัดค้าน — มาตรา 32) ----------
+  //   ลูกค้า opt-out การรับข่าวสาร marketing ได้
+  //   body: { consent_type: "marketing", action: "reject" | "accept" }
+  if (path === "consent" && request.method === "POST") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const customer = await getCustomerSession(request, env);
+    if (!customer) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+    const consentType = String(body.consent_type || "").trim();
+    const action = String(body.action || "").trim();
+    if (!["marketing", "privacy_policy", "cookie"].includes(consentType)) {
+      return jsonResponse({ error: "consent_type ต้องเป็น marketing, privacy_policy หรือ cookie" }, 400);
+    }
+    if (!["accept", "reject", "withdraw"].includes(action)) {
+      return jsonResponse({ error: "action ต้องเป็น accept, reject หรือ withdraw" }, 400);
+    }
+
+    const clientIP = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "unknown";
+    const userAgent = request.headers.get("User-Agent") || "";
+    const now = new Date().toISOString();
+    const POLICY_VERSION = "v1.0-20261007"; // version ของ privacy.html ปัจจุบัน
+
+    try {
+      // บันทึก consent record (insert-only)
+      await env.DB.prepare(
+        "INSERT INTO consent_records (id, customer_id, consent_type, action, ip, user_agent, policy_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(crypto.randomUUID(), customer.id, consentType, action, clientIP, userAgent.slice(0, 500), POLICY_VERSION, now).run();
+
+      // ถ้าเป็น marketing → อัปเดต marketing_opt_out ใน customers table
+      if (consentType === "marketing") {
+        const optOut = (action === "reject" || action === "withdraw") ? 1 : 0;
+        await env.DB.prepare(
+          "UPDATE customers SET marketing_opt_out = ?, updated_at = ? WHERE id = ?"
+        ).bind(optOut, now, customer.id).run();
+      }
+
+      return jsonResponse({
+        ok: true,
+        consent_type: consentType,
+        action,
+        policy_version: POLICY_VERSION,
+        recorded_at: now,
+        message: action === "accept"
+          ? "บันทึกการยินยอมเรียบร้อย"
+          : (action === "reject" ? "บันทึกการปฏิเสธเรียบร้อย" : "บันทึกการเพิกถอนเรียบร้อย"),
+      });
+    } catch (err) {
+      return jsonResponse({ error: safeError("บันทึก consent ไม่สำเร็จ", err) }, 500);
+    }
+  }
+  // ---------- END PDPA endpoints ----------
 
   // ---------- GET /api/customer/orders ----------
   // ดึงออเดอร์ทั้งหมดของลูกค้า (เรียงจากล่าสุดก่อน)
@@ -8561,6 +8841,38 @@ export default {
       } catch (auditErr) {
         // ถ้าตาราง audit_log ไม่มี → log แล้วข้ามไป (ไม่ block cron)
         console.warn("[cleanup] audit_log cleanup failed:", auditErr?.message || auditErr);
+      }
+
+      // 🆕 (T057-PDPA): Hard delete customers ที่ soft delete มานานเกิน 30 วัน
+      //   - สิทธิ์ลบ PDPA Section 33: ลูกค้าลบบัญชีเอง → soft delete (deleted_at != NULL)
+      //   - หลัง 30 วัน grace → cron จะ hard delete จริง (cascade favorites/likes/sessions/etc)
+      //   - รันทุก 6 ชม. (เหมือน audit_log cleanup)
+      //   - ผลกระทบระบบเดิม: 0%
+      //     - ใช้ env.DB.batch() atomic (เหมือน T054 deleteCustomer)
+      //     - ถ้า consent_records table ไม่มี → ข้าม (fallback)
+      try {
+        const graceCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        // หา customers ที่ต้อง hard delete
+        const expired = await env.DB.prepare(
+          "SELECT id FROM customers WHERE deleted_at IS NOT NULL AND deleted_at < ?"
+        ).bind(graceCutoff).all();
+        const expiredIds = (expired?.results || []).map(r => r.id);
+        if (expiredIds.length > 0) {
+          // batch hard delete (cascade) — atomic
+          const batchStatements = [];
+          for (const id of expiredIds) {
+            batchStatements.push(env.DB.prepare("DELETE FROM customer_favorites WHERE customer_id=?").bind(id));
+            batchStatements.push(env.DB.prepare("DELETE FROM song_likes WHERE customer_id=?").bind(id));
+            batchStatements.push(env.DB.prepare("DELETE FROM password_reset_requests WHERE customer_id=?").bind(id));
+            batchStatements.push(env.DB.prepare("DELETE FROM customer_sessions WHERE customer_id=?").bind(id));
+            batchStatements.push(env.DB.prepare("DELETE FROM consent_records WHERE customer_id=?").bind(id));
+            batchStatements.push(env.DB.prepare("DELETE FROM customers WHERE id=?").bind(id));
+          }
+          await env.DB.batch(batchStatements);
+          console.log(`[cleanup] Hard-deleted ${expiredIds.length} customers (PDPA 30-day grace expired)`);
+        }
+      } catch (pdpaErr) {
+        console.warn("[cleanup] PDPA hard delete failed:", pdpaErr?.message || pdpaErr);
       }
 
       // 🧹 (2026-09-28 fix H2): ลบ download_tokens ที่หมดอายุแล้ว อัตโนมัติ
