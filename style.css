@@ -3295,33 +3295,34 @@ button:active {
   text-overflow: ellipsis;
 }
 
-/* แถวล่าง — ราคา + ปุ่มตะกร้า */
+/* 🆕 (T039): แถวล่าง — ราคา + ปุ่ม ให้กระชับขึ้น ไม่ทับกัน */
 .song-card-row .song-footer {
   position: static !important;
   display: flex !important;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 6px;
   margin-top: 4px;
   padding: 0 !important;
   background: transparent !important;
+  flex-wrap: nowrap !important;
 }
 
-/* บล็อกราคา */
+/* บล็อกราคา — กระชับ */
 .song-card-row .song-price-block {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
-  flex: 1;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
   min-width: 0;
 }
 
-/* 🎨 (2026-09-21): ราคาเพลงเปลี่ยนจากเขียว → ม่วงอ่อน ตามสไตล์ 1.6 Mesh Gradient */
+/* 🆕 (T039): ราคาเพลง ลดจาก 17px → 14px — กระชับขึ้น */
 .song-card-row .song-price {
-  font-size: 17px !important;
-  font-weight: 900 !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
   color: #c4b5fd !important;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.3px;
   white-space: nowrap;
   text-shadow: 0 0 10px rgba(196, 181, 253, 0.4);
 }
@@ -3335,35 +3336,36 @@ button:active {
   font-weight: 500;
 }
 
-/* ราคาหลังหัวส่วนลด — สีทอง */
+/* 🆕 (T039): ราคาหลังหัวส่วนลด ลดจาก 17px → 14px */
 .song-card-row .price-discounted {
-  font-size: 17px !important;
-  font-weight: 900 !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
   color: #fbbf24 !important;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.3px;
   white-space: nowrap;
   text-shadow: 0 0 12px rgba(251, 191, 36, 0.4);
 }
 
-/* 🎨 (2026-09-21): ปุ่ม cart เปลี่ยนจากเขียว → ม่วง/ฟ้า gradient ตามสไตล์ 1.6 */
+/* 🆕 (T039): ปุ่ม cart กระทัดรัดขึ้น — ลด padding + font-size */
 .song-card-row .cart-add-btn-row {
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(59, 130, 246, 0.15)) !important;
   border: 1px solid rgba(139, 92, 246, 0.4) !important;
   color: #c4b5fd !important;
-  font-size: 11.5px !important;
+  font-size: 10px !important;
   font-weight: 700;
-  padding: 8px 14px !important;
-  border-radius: 10px !important;
+  padding: 5px 10px !important;
+  border-radius: 8px !important;
   display: inline-flex !important;
   align-items: center;
-  gap: 5px !important;
+  gap: 4px !important;
   white-space: nowrap;
-  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.2);
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
   margin: 0 !important;
   transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
 .song-card-row .cart-add-btn-row:hover {
@@ -5193,13 +5195,14 @@ html.admin-page body {
      เพื่อให้ใช้ได้ทุกที่ (รวมหน้าบัญชี tab โปรด ที่ไม่มี .song-actions-row parent)
    🆕 (2026-10-02 v7 fix): แยกสีชัดเจน — ❤️ ปกติ = ชมพูอ่อน, ❤️ is-favorite = แดงเข้มมาก (ต่างจาก ⭐ ทอง)
    ============================================================ */
+/* 🆕 (T039): ลดขนาดปุ่ม favorite จาก 40px → 32px */
 .btn-icon-mini {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.25);
   cursor: pointer;
   position: relative;
@@ -5272,21 +5275,21 @@ html.admin-page body {
   transform: translateY(1px) scale(0.99);
   box-shadow: 0 2px 6px rgba(22, 163, 74, 0.30), inset 0 2px 6px rgba(0, 0, 0, 0.25);
 }
-/* SVG ข้างในปุ่ม — ใช้ได้ทุกที่ (ไม่ต้อง .song-actions-row parent) */
+/* 🆕 (T039): SVG ในปุ่ม favorite ลดจาก 20px → 14px */
 .btn-icon-mini svg {
-  width: 20px;
-  height: 20px;
+  width: 14px;
+  height: 14px;
   display: block;
 }
-/* บนมือถือ — ปุ่มเล็กลง 36×36, SVG 18px */
+/* บนมือถือ — ปุ่มเล็กลง 28×28, SVG 12px */
 @media (max-width: 640px) {
   .btn-icon-mini {
-    width: 36px;
-    height: 36px;
+    width: 28px;
+    height: 28px;
   }
   .btn-icon-mini svg {
-    width: 18px;
-    height: 18px;
+    width: 12px;
+    height: 12px;
   }
 }
 
@@ -5296,15 +5299,18 @@ html.admin-page body {
    สี: ปกติ = ชมพูอ่อนโปร่ง, is-liked = แดงเข้ม saturated + glow
    แยกจากปุ่ม 📌 รายการโปรด (favorites) ที่ใช้ .btn-icon-mini
    ============================================================ */
+/* 🆕 (T039): ลดขนาดปุ่มในแถวเพลง — ไม่ทับกัน
+   ปัญหา: like (44px) + favorite (40px) + cart ใหญ่เกิน → ทับราคา
+   วิธีแก้: ลดทั้งหมดเหลือ 32px + ลด gap */
 .btn-like-tiktok {
   display: inline-flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 1px;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   border: 1px solid rgba(244, 63, 94, 0.4);
   cursor: pointer;
   position: relative;
@@ -5317,8 +5323,8 @@ html.admin-page body {
   box-shadow: 0 2px 6px rgba(244, 63, 94, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
 .btn-like-tiktok svg {
-  width: 20px;
-  height: 20px;
+  width: 14px;
+  height: 14px;
   display: block;
   transition: transform 0.2s ease;
 }
@@ -5373,18 +5379,18 @@ html.admin-page body {
   border: 1px solid rgba(255, 255, 255, 0.35) !important;
   box-shadow: 0 4px 14px rgba(124, 58, 237, 0.65), 0 0 0 2px rgba(167, 139, 250, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
 }
-/* บนมือถือ — ปุ่ม ❤️ ถูกใจเล็กลง 40×40 */
+/* 🆕 (T039): บนมือถือ — ปุ่ม ❤️ ถูกใจเล็กลง 28×28 */
 @media (max-width: 640px) {
   .btn-like-tiktok {
-    width: 40px;
-    height: 40px;
+    width: 28px;
+    height: 28px;
   }
   .btn-like-tiktok svg {
-    width: 18px;
-    height: 18px;
+    width: 12px;
+    height: 12px;
   }
   .btn-like-tiktok .like-count {
-    font-size: 10px;
+    font-size: 9px;
   }
 }
 
