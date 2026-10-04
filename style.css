@@ -448,13 +448,13 @@ button:active {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   background: transparent;
   border: none;
-  padding: 10px 12px;
+  padding: 8px 10px;
   text-align: left;
   cursor: pointer;
-  position: relative; /* เพิ่มใหม่ (2026-09-10): ให้ .playlist-folder-price ยึดมุมขวาล่างของแถวนี้ */
+  position: relative;
 }
 
 .playlist-folder-btn:hover {
@@ -462,9 +462,9 @@ button:active {
 }
 
 .playlist-folder-cover {
-  width: 54px;
-  height: 54px;
-  border-radius: 10px;
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
   background: var(--surface-2);
   overflow: hidden;
   flex-shrink: 0;
@@ -486,7 +486,7 @@ button:active {
 }
 
 .playlist-folder-name {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 800;
   color: var(--text);
   white-space: nowrap;
@@ -496,15 +496,14 @@ button:active {
 }
 
 .playlist-folder-count {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-dim);
   margin-top: 2px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* เพิ่มใหม่ (2026-09-10): เผื่อพื้นที่ด้านขวาให้ badge ราคาที่ย้ายไปมุมขวาล่างแล้ว ไม่ทับตัวหนังสือ */
-  padding-right: 110px;
+  padding-right: 90px;
   box-sizing: border-box;
 }
 
@@ -512,16 +511,15 @@ button:active {
    ให้พอดีไม่ใหญ่เกินไป และเพิ่ม padding-right ให้ชื่อเพลย์ลิสต์ไม่ถูกบัง */
 .playlist-folder-price {
   flex-shrink: 0;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 800;
-  /* 🔧 (2026-09-19): ราคาเพลย์ลิสต์ = ชมพู */
   color: #ec4899;
   white-space: nowrap;
   background: transparent;
   padding: 0;
   border: none;
   cursor: pointer;
-  margin-left: 8px;
+  margin-left: 6px;
   letter-spacing: -0.2px;
 }
 
@@ -574,10 +572,9 @@ button:active {
   display: flex;
   flex-direction: row;
   align-items: center;
-  padding: 10px 12px;
-  gap: 12px;
+  padding: 7px 10px;
+  gap: 10px;
   box-shadow: none;
-  /* 🔧 (2026-09-19 perf Chrome): transition เฉพาะ property ที่จำเป็น (เดิม all) */
   transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
   position: relative;
 }
@@ -590,11 +587,10 @@ button:active {
   background: var(--surface-2);
 }
 
-/* 🔧 ปรับใหม่ (2026-09-12 รอบ 3): ขยาย cover ของเพลงในเพลย์ลิสต์จาก 50px → 58px
-   ให้สมดุลกับแถวที่ใหญ่ขึ้นและตัวหนังสือที่ขยายขึ้น */
+/* 🆕 (T036): ลดขนาด cover ในเพลย์ลิสต์จาก 58px → 48px — กระทัดรัดขึ้น */
 .playlist-cover {
-  width: 58px;
-  height: 58px;
+  width: 48px;
+  height: 48px;
   border-radius: 8px;
   background: var(--surface-2);
   position: relative;
@@ -662,11 +658,9 @@ button:active {
   padding: 0;
 }
 
-/* 🔧 ปรับใหม่ (2026-09-12 รอบ 5): ชื่อเพลงในเพลย์ลิสต์ยืดออก + ตัดเป็น 2 แถว
-   - ลด padding-right จาก 105px → 80px ให้ชื่อยืดยาวขึ้น
-   - เปลี่ยนจาก nowrap (1 แถว) เป็น -webkit-line-clamp: 2 (2 แถว + ตัดด้วย ...) */
+/* 🆕 (T036): ลดขนาดชื่อเพลงในเพลย์ลิสต์ 15px → 13px + padding-right 70px */
 .playlist-item-name {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
   line-height: 1.3;
   display: -webkit-box;
@@ -676,14 +670,14 @@ button:active {
   text-overflow: ellipsis;
   color: var(--text);
   width: 100%;
-  padding-right: 80px;
+  padding-right: 70px;
   box-sizing: border-box;
   word-break: break-word;
 }
 
-/* 🔧 ปรับใหม่ (2026-09-12 รอบ 5): ตัวหนังสือรองของเพลงในเพลย์ลิสต์ยืดออก + padding-right 80px */
+/* 🆕 (T036): ลดขนาดตัวหนังสือรอง 12.5px → 11px + padding-right 70px */
 .playlist-item-sub {
-  font-size: 12.5px;
+  font-size: 11px;
   color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
@@ -691,20 +685,17 @@ button:active {
   margin-top: 2px;
   font-weight: 500;
   width: 100%;
-  padding-right: 80px;
+  padding-right: 70px;
   box-sizing: border-box;
 }
 
-/* 🔧 ปรับใหม่ (2026-09-12 รอบ 4): ลดขนาดราคารายการเพลงในเพลย์ลิสต์จาก 17px → 14px + น้ำหนักจาก 900 → 800
-   + เอาพื้นหลังออก (background: transparent) + ลด padding ตามที่ขอ
-   + ขยาย padding-right ของชื่อเพลงเพื่อป้ายราคาไม่บังชื่อ */
+/* 🆕 (T036): ลดขนาดราคา 16px → 13px — กระทัดรัดขึ้น */
 .playlist-item-price {
   position: absolute;
   right: 0px;
   bottom: 0px;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 800;
-  /* 🔧 (2026-09-19): ราคาเพลงในเพลย์ลิสต์ = เขียวอ่อน */
   color: #4ade80;
   white-space: nowrap;
   background: transparent;
@@ -8048,5 +8039,285 @@ html.admin-page body {
     width: 32px;
     height: 32px;
     font-size: 12px;
+  }
+}
+
+/* ============================================================
+   🆕 (T036): iPhone 6.1" (390px) + หน้าจอเล็กทั่วไป (≤390px)
+   - ปรับขนาดตัวอักษร + spacing ให้พอดีไม่ทับกัน
+   - ใช้งานง่ายบนมือถือหน้าจอเล็ก
+   ============================================================ */
+@media (max-width: 390px) {
+  /* === หน้า User === */
+  body {
+    font-size: 13px;
+  }
+  .container {
+    padding: 0 10px;
+  }
+
+  /* Topbar */
+  .topbar {
+    padding: 8px 10px;
+  }
+  .topbar .logo span {
+    font-size: 16px;
+  }
+  .search-box {
+    padding: 8px 10px;
+    border-radius: 10px;
+  }
+  .search-box input {
+    font-size: 15px;
+  }
+
+  /* Bottom nav */
+  .bottom-nav button {
+    font-size: 9px;
+    padding: 6px 2px;
+    gap: 2px;
+  }
+  .bottom-nav button svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Song grid (หน้าแรก) */
+  .song-grid {
+    gap: 4px !important;
+    padding: 0 6px !important;
+  }
+  .song-card-row {
+    padding: 6px 8px !important;
+    gap: 8px !important;
+  }
+  .song-card-row .song-cover {
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 6px !important;
+  }
+  .song-card-row .song-name {
+    font-size: 12px !important;
+  }
+  .song-card-row .song-meta-row {
+    font-size: 10px !important;
+  }
+  .song-card-row .song-price-block {
+    font-size: 11px !important;
+  }
+
+  /* Playlist folder (หัวเพลย์ลิสต์) */
+  .playlist-folder-btn {
+    padding: 6px 8px;
+    gap: 8px;
+  }
+  .playlist-folder-cover {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+  }
+  .playlist-folder-name {
+    font-size: 13px;
+  }
+  .playlist-folder-count {
+    font-size: 10px;
+    padding-right: 70px;
+  }
+  .playlist-folder-price {
+    font-size: 12px;
+  }
+
+  /* Playlist song rows (รายการเพลงในเพลย์ลิสต์) */
+  .playlist-song-row {
+    padding: 5px 8px;
+    gap: 8px;
+  }
+  .playlist-cover {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+  }
+  .playlist-item-name {
+    font-size: 12px;
+    padding-right: 55px;
+  }
+  .playlist-item-sub {
+    font-size: 10px;
+    padding-right: 55px;
+  }
+  .playlist-item-price {
+    font-size: 11px;
+  }
+
+  /* Category showcase */
+  .category-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 6px !important;
+  }
+  .category-card {
+    padding: 10px 8px !important;
+    border-radius: 12px !important;
+  }
+  .category-card .cat-icon {
+    width: 40px !important;
+    height: 40px !important;
+    font-size: 20px !important;
+    margin-bottom: 6px !important;
+  }
+  .category-card .cat-name {
+    font-size: 12px !important;
+  }
+  .category-card .cat-count {
+    font-size: 9px !important;
+    padding: 2px 6px !important;
+  }
+
+  /* DJ row */
+  .dj-card img,
+  .dj-avatar {
+    width: 52px !important;
+    height: 52px !important;
+  }
+  .dj-card .dj-name,
+  .dj-item .dj-name {
+    font-size: 10px !important;
+    max-width: 60px !important;
+  }
+
+  /* Hero banner */
+  .hero-banner-content {
+    padding: 16px 12px !important;
+  }
+  .hero-title {
+    font-size: 18px !important;
+  }
+  .hero-subtitle {
+    font-size: 12px !important;
+  }
+
+  /* Song modal */
+  #songModalBackdrop .modal {
+    max-height: 95vh !important;
+    padding: 14px 12px !important;
+  }
+  #songModalBackdrop #modalHead {
+    gap: 10px !important;
+  }
+  #songModalBackdrop #modalCoverWrap {
+    width: 60px !important;
+    height: 60px !important;
+  }
+  #songModalBackdrop #modalName {
+    font-size: 15px !important;
+  }
+  #songModalBackdrop #modalPrice {
+    font-size: 14px !important;
+  }
+
+  /* Player bar */
+  .player-bar {
+    padding: 5px 8px !important;
+  }
+  .player-bar .player-meta .t1 {
+    font-size: 11px !important;
+    max-width: 140px !important;
+  }
+  .player-bar .player-meta .t2 {
+    font-size: 9px !important;
+  }
+
+  /* WhatsApp FAB */
+  #whatsappFab {
+    width: 44px !important;
+    height: 44px !important;
+    right: 10px !important;
+  }
+  #whatsappFab svg {
+    width: 22px !important;
+    height: 22px !important;
+  }
+
+  /* Scroll-to-top button */
+  #scrollTopBtn {
+    width: 40px !important;
+    height: 40px !important;
+    font-size: 18px !important;
+    left: 10px !important;
+  }
+
+  /* Advanced filter panel */
+  .advanced-filter-panel {
+    padding: 10px !important;
+  }
+  .filter-checkbox {
+    font-size: 11px !important;
+    padding: 4px 8px !important;
+  }
+  .price-range-inputs input {
+    width: 60px !important;
+    font-size: 14px !important;
+  }
+
+  /* Review section */
+  #songModalBackdrop .star-svg {
+    width: 28px !important;
+    height: 28px !important;
+  }
+  #songModalBackdrop .star-label {
+    font-size: 10px !important;
+    min-width: 40px !important;
+  }
+
+  /* === หน้า Admin === */
+  .admin-page .container {
+    padding: 0 8px;
+  }
+  .admin-page .topbar {
+    padding: 6px 8px;
+  }
+  .admin-page .topbar .logo span {
+    font-size: 14px;
+  }
+
+  /* Admin orders table */
+  .admin-page .order-card,
+  .admin-page .orders-list-item {
+    padding: 8px !important;
+    font-size: 12px !important;
+  }
+
+  /* Admin nav */
+  .admin-page .nav-item {
+    font-size: 10px !important;
+    padding: 6px 4px !important;
+  }
+
+  /* Admin forms */
+  .admin-page .field input,
+  .admin-page .field select,
+  .admin-page .field textarea {
+    font-size: 15px !important;
+    padding: 8px 10px !important;
+  }
+
+  /* Admin song card */
+  .admin-page .song-card {
+    padding: 6px 8px !important;
+    gap: 8px !important;
+  }
+  .admin-page .song-card img {
+    width: 40px !important;
+    height: 40px !important;
+  }
+
+  /* Admin dashboard cards */
+  .admin-page .dashboard-card {
+    padding: 8px !important;
+  }
+  .admin-page .dashboard-card-value {
+    font-size: 14px !important;
+  }
+  .admin-page .dashboard-card-label {
+    font-size: 10px !important;
   }
 }
