@@ -27,7 +27,8 @@
 // 🆕 (T057): อัปเดต CACHE_VERSION หลัง T057 (PDPA + cookie consent + privacy.html)
 //   → ลูกค้าเก่าจะได้เห็น cookie banner + modal ตั้งค่าบัญชี
 // 🆕 (T058): อัปเดต CACHE_VERSION หลัง T058 (PDPA Phase 2 — admin dashboard + recover account)
-const CACHE_VERSION = 'miusic-pwa-v1.0.4-T058';
+// 🆕 (T059): อัปเดต CACHE_VERSION หลัง T059 (PWA offline mode — IndexedDB)
+const CACHE_VERSION = 'miusic-pwa-v1.0.5-T059';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const FONT_CACHE    = `${CACHE_VERSION}-fonts`;
@@ -88,6 +89,8 @@ const PRECACHE_URLS = [
   '/phone-input.js',           // T045: country selector dropdown
   // 🆕 (T057): เพิ่ม privacy.html สำหรับ PDPA — ลูกค้าดู offline ได้
   '/privacy.html',             // T057: Privacy Policy page
+  // 🆕 (T059): เพิ่ม idb-store.js สำหรับ PWA offline mode
+  '/idb-store.js',             // T059: IndexedDB wrapper
   '/vendor/html2canvas.min.js',
   '/default-song-cover.svg',
   '/default-playlist-cover.svg',

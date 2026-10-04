@@ -3658,6 +3658,29 @@ async function loadCustomerOrders(reset = false) {
     const res = await fetch(url, { credentials: "same-origin" });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      // 🆕 (T059): PWA offline fallback — ถ้า fetch fail และมี cache → อ่านจาก IndexedDB
+      if (window.IDB && customerOrdersPagination.offset === 0) {
+        try {
+          const isForMe = await window.IDB.isCacheForCustomer(STATE?.customer?.id || null);
+          if (isForMe) {
+            const cachedOrders = await window.IDB.getCachedOrders();
+            if (cachedOrders.length > 0) {
+              customerOrdersPagination.allLoaded = cachedOrders;
+              trackOrderAllOrders = cachedOrders;
+              const cachedAt = await window.IDB.getCachedAt();
+              const cachedAtStr = cachedAt ? new Date(cachedAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "-";
+              ordersListEl.innerHTML = `
+                <div style="background:rgba(245,180,0,0.1);border:1px solid rgba(245,180,0,0.3);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#F5B400;">
+                  📴 คุณกำลังออฟไลน์ — แสดงออเดอร์ล่าสุด ณ ${escapeHtml(cachedAtStr)} (${cachedOrders.length} รายการ)
+                </div>`;
+              renderCustomerOrdersList(cachedOrders);
+              return;
+            }
+          }
+        } catch (idbErr) {
+          console.warn("[T059] offline fallback failed:", idbErr?.message || idbErr);
+        }
+      }
       ordersListEl.innerHTML = `<div style="color:var(--danger);text-align:center;padding:14px;">โหลดออเดอร์ไม่สำเร็จ: ${escapeHtml(err?.error || res.statusText)}</div>`;
       return;
     }
@@ -3684,6 +3707,27 @@ async function loadCustomerOrders(reset = false) {
     }
     // เก็บ orders ทั้งหมดไว้ใน trackOrderAllOrders (ใช้โดย openTrackOrderAllDetail)
     trackOrderAllOrders = customerOrdersPagination.allLoaded;
+
+    // 🆕 (T059): cache orders ลง IndexedDB เพื่อ PWA offline mode
+    //   - cache เฉพาะ page แรก (offset === 0) เพื่อกัน D1 writes เยอะ
+    //   - ใช้ allLoaded (cumulative) เพื่อให้ cache มีข้อมูลครบ
+    //   - ถ้า IDB ไม่รองรับ → ข้าม (no-op)
+    if (window.IDB && customerOrdersPagination.offset === 0 && customerOrdersPagination.allLoaded.length > 0) {
+      try {
+        const customerId = STATE?.customer?.id || null;
+        if (customerId) {
+          // ตรวจก่อนว่า cache เป็นของ customer คนนี้ไหม — ถ้าไม่ใช่ → clear ก่อน cache ใหม่
+          const isForMe = await window.IDB.isCacheForCustomer(customerId);
+          if (!isForMe) {
+            await window.IDB.clearAll();
+          }
+          await window.IDB.cacheOrders(customerOrdersPagination.allLoaded, customerId);
+          await window.IDB.setCurrentCustomerId(customerId);
+        }
+      } catch (idbErr) {
+        console.warn("[T059] cacheOrders failed:", idbErr?.message || idbErr);
+      }
+    }
 
     // 🆕 (T017): render customer dashboard สำหรับ empty state ด้วย
     //   - ต้องเรียกก่อน early return ไม่งั้น dashboard จะไม่แสดง "ยังไม่มีข้อมูล" ในกรณีไม่มีออเดอร์
