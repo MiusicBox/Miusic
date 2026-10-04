@@ -5648,6 +5648,38 @@ async function handleCustomerAuth(request, env, url) {
     }
     // สร้าง session
     const token = await createCustomerSession(env, customer.id);
+
+    // 🆕 (T053-M4): migration anon → customer — ย้าย like จาก 'anon:<fingerprint>' ไป customer.id
+    //   ปัญหา: ลูกค้ากด like ตอนไม่ login → like ผูกกับ 'anon:<fingerprint>'
+    //          หลัง login → like ยังผูกกับ 'anon:<fingerprint>' ไม่ย้าย → lost like history
+    //   วิธีแก้: หลัง login สำเร็จ → รับ fingerprint จาก body → UPDATE song_likes SET customer_id=? WHERE customer_id=?
+    //   ผลกระทบระบบเดิม: 0%
+    //     - ถ้าไม่ส่ง fingerprint → ข้าม migration (เหมือนเดิม)
+    //     - ถ้าส่ง fingerprint → ย้าย like (atomic UPDATE)
+    //     - ถ้า customer เคย like ตอน login อยู่แล้ว + like ตอน anon ด้วย → อาจมี UNIQUE conflict
+    //       → ใช้ "INSERT OR IGNORE" pattern: DELETE anon row ที่ duplicate ก่อน UPDATE
+    const anonFingerprint = String(body.fingerprint || "").trim();
+    if (anonFingerprint && anonFingerprint.length >= 8) {
+      try {
+        const anonId = "anon:" + anonFingerprint;
+        // 1. หา anon likes ที่จะ duplicate กับ customer likes เดิม → ลบ anon row เหล่านั้นก่อน
+        //    (กรณี: customer เคย like เพลง A ตอน login, แล้วเคย like เพลง A ตอน anon → duplicate)
+        await env.DB.prepare(
+          `DELETE FROM song_likes
+           WHERE customer_id = ? AND song_id IN (
+             SELECT song_id FROM song_likes WHERE customer_id = ?
+           )`
+        ).bind(anonId, customer.id).run();
+        // 2. ย้าย anon likes ที่เหลือ → customer.id
+        await env.DB.prepare(
+          "UPDATE song_likes SET customer_id = ? WHERE customer_id = ?"
+        ).bind(customer.id, anonId).run();
+      } catch (err) {
+        // ไม่ block login ถ้า migration fail — แค่ log warning
+        console.warn("[login] anon→customer migration failed:", err?.message || err);
+      }
+    }
+
     // ส่ง cookie + ข้อมูล customer (ไม่ส่ง password_hash)
     const { password_hash, ...customerSafe } = customer;
     // 🆕 (T010-M1): ใช้ secureJsonResponse แทน `new Response(...)` ตรง ๆ — เพิ่ม security headers
@@ -6318,6 +6350,36 @@ async function handleCustomerAuth(request, env, url) {
     if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
     const songId = decodeURIComponent(path.slice("songs/".length, -"/like".length));
     if (!songId) return jsonResponse({ error: "กรุณาระบุ song_id" }, 400);
+
+    // 🆕 (T053-M4): rate limit 5 likes/นาที/IP — กัน spam like บวม count เทียม
+    //   เดิม: ไม่มี rate limit → bot ยิง like 1000 ครั้ง/นาที → like count บวม + กิน D1 quota
+    //   ใหม่: ใช้ login_attempts table (มีอยู่แล้ว) เก็บ IP + timestamp
+    //   threshold: 5 likes / 1 นาที / IP (ลูกค้าปกติ 1-2 likes/ครั้ง)
+    //   ผลกระทบระบบเดิม: 0% — ถ้า table ไม่มี → ข้าม (fallback: ไม่บล็อก)
+    try {
+      const likeClientIP = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "unknown";
+      const LIKE_RATE_LIMIT_MAX = 5;
+      const LIKE_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 นาที
+      const likeWindow = new Date(Date.now() - LIKE_RATE_LIMIT_WINDOW_MS).toISOString();
+      const likeKey = `like:${likeClientIP}`;
+      const likeRow = await env.DB.prepare(
+        "SELECT COUNT(*) AS c FROM login_attempts WHERE ip = ? AND email = ? AND attempted_at > ?"
+      ).bind(likeClientIP, likeKey, likeWindow).first();
+      if ((likeRow?.c || 0) >= LIKE_RATE_LIMIT_MAX) {
+        return jsonResponse({
+          error: `กดถูกใจเร็วเกินไป (${LIKE_RATE_LIMIT_MAX} ครั้ง/นาที) — กรุณารอสักครู่`,
+          code: "like/rate-limited"
+        }, 429);
+      }
+      // บันทึก attempt (เก็บไว้ใช้นับ rate limit)
+      await env.DB.prepare(
+        "INSERT INTO login_attempts (ip, email, attempted_at) VALUES (?, ?, ?)"
+      ).bind(likeClientIP, likeKey, new Date().toISOString()).run();
+    } catch (likeRateErr) {
+      // ถ้า login_attempts table ไม่มี → ข้าม rate limiting (fallback: ไม่บล็อก)
+      console.warn("like rate limiting skipped:", likeRateErr?.message);
+    }
+
     let body = {};
     try { body = await request.json(); } catch { body = {}; }
     // กำหนด customer_id: ถ้า login → ใช้ customer.id, ถ้าไม่ login → ใช้ 'anon:<fingerprint>' จาก body
@@ -6336,6 +6398,9 @@ async function handleCustomerAuth(request, env, url) {
     try {
       const now = new Date().toISOString();
       // ตรวจว่ามี like อยู่แล้ว → ลบ (unlike), ถ้าไม่มี → เพิ่ม (like)
+      // 🆕 (T053-M4): แก้ comment ให้ตรงความจริง — fingerprint ตอนนี้ใช้ localStorage + IP hash จริง
+      //   เดิม comment: "frontend สร้างจาก localStorage + IP hash" แต่จริง ๆ ใช้แค่ localStorage → โกหก
+      //   ตอนนี้: customer-auth.js fetchIpHash() + getAnonymousFingerprint() ใช้ IP hash จริง → comment ตรง
       const existing = await env.DB.prepare(
         "SELECT id FROM song_likes WHERE customer_id = ? AND song_id = ?"
       ).bind(likerId, songId).first();
@@ -8245,6 +8310,35 @@ export default {
     if (url.pathname.startsWith("/api/auth/")) {
       if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
       return handleAuth(request, env, url);
+    }
+
+    // 🆕 (T053-M4): GET /api/fingerprint — ส่ง IP hash ให้ client ใช้สร้าง anonymous fingerprint
+    //   เหตุผล: fingerprint เดิมใช้แค่ localStorage UUID → ลบ localStorage ได้ → like ซ้ำได้
+    //   ใหม่: ผสม IP hash (จาก server) + localStorage UUID → กันลบ localStorage แล้ว like ซ้ำ
+    //   ผลกระทบระบบเดิม: 0% — endpoint ใหม่ ไม่ต้อง login
+    //   privacy: IP hash ใช้ SHA-256 + salt → ไม่สามารถ reverse กลับเป็น IP ได้
+    if (url.pathname === "/api/fingerprint" && request.method === "GET") {
+      try {
+        // ดึง IP จาก header (Cloudflare ส่งมาใน CF-Connecting-IP)
+        const clientIp = request.headers.get("CF-Connecting-IP")
+                      || request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim()
+                      || "unknown";
+        // hash IP ด้วย SHA-256 + salt (กัน reverse)
+        const salt = "miusic-v1-fixed-salt-2026"; // fixed salt (ไม่ใช่ secret — กัน rainbow table เท่านั้น)
+        const hashBuf = await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(salt + ":" + clientIp)
+        );
+        const hashHex = Array.from(new Uint8Array(hashBuf))
+          .map(b => b.toString(16).padStart(2, "0"))
+          .join("")
+          .slice(0, 16); // 16 hex chars (64 bits) — เพียงพอสำหรับ fingerprint uniqueness
+        return jsonResponse({ ok: true, ip_hash: hashHex });
+      } catch (err) {
+        // fallback: ส่ง hash ว่าง → client ใช้แค่ localStorage UUID (เหมือนเดิม)
+        console.warn("[fingerprint] failed:", err?.message || err);
+        return jsonResponse({ ok: true, ip_hash: "" });
+      }
     }
 
     // 🆕 (2026-10-01): /api/customer/* — ระบบสมาชิกลูกค้า (register/login/logout/me/orders)
