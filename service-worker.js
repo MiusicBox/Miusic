@@ -19,7 +19,7 @@
  *   - POST/PUT/DELETE are NEVER intercepted (payment + order mutations safe)
  * ===================================================================== */
 
-const CACHE_VERSION = 'miusic-pwa-v1.0.0';
+const CACHE_VERSION = 'miusic-pwa-v1.0.1';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const FONT_CACHE    = `${CACHE_VERSION}-fonts`;
