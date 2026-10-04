@@ -8440,3 +8440,21 @@ html.admin-page body {
     font-size: 12px !important;
   }
 }
+
+/* ==========================================================================
+   🔧 (2026-10-04) ราคาเดิมที่ขีดฆ่า (price-original) ใหญ่ขึ้น อ่านง่ายแบบเว็บร้านค้าทั่วไป
+   ใช้กับ 3 จุดเท่ากัน: เพลงเดี่ยว (หน้าแรก) / แถวเพลงในเพลย์ลิสต์ / หัวเพลย์ลิสต์
+   ขนาดเดิม 11-12px → 14px (มือถือ ≤480px = 13px) ยังเล็กกว่าราคาหลังลด (15px) เล็กน้อยเพื่อให้ราคาจริงเด่นกว่า
+   ไม่แตะหน้าตะกร้า/แอดมิน — ย้อนกลับ: ลบบล็อกนี้
+   ========================================================================== */
+.song-card-row .price-stack .price-original,
+.playlist-block .playlist-folder-btn .playlist-folder-price-block .price-original {
+  font-size: 14px !important;
+  line-height: 1.2 !important;
+}
+@media (max-width: 480px) {
+  .song-card-row .price-stack .price-original,
+  .playlist-block .playlist-folder-btn .playlist-folder-price-block .price-original {
+    font-size: 13px !important;
+  }
+}
