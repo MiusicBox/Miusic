@@ -31,7 +31,9 @@
     "repo": "MiusicBox/Miusic",
     "default_branch": "main",
     "total_commits_main": 1504,
-    "open_prs": [],
+    "open_prs": [
+      {"number": 63, "title": "T063: อัปเดตระบบทีมเป็น v3.0.0 — ทีม 10 คน + หมวดหมู่บังคับ 13 ขั้น + กฎเหล็ก 7 ข้อ", "url": "https://github.com/MiusicBox/Miusic/pull/63", "status": "awaiting_owner_merge", "created_at": "2026-10-04T17:15:00+07:00"}
+    ],
     "recent_merges": [
       {"number": 60, "title": "T060: เอา cookie consent banner ออก"},
       {"number": 61, "title": "T061: ลบ cookie consent banner ออกจากโค้ด"},
@@ -121,7 +123,7 @@
   "next_actions_pending_user": [
     {
       "action": "Review T063 + merge PR",
-      "detail": "T063 อัปเดตระบบทีมเป็น v3.0.0 (10 คน + 13 ขั้น + กฎเหล็ก 7 ข้อ) — รอ owner approve merge PR บน GitHub"
+      "detail": "T063 อัปเดตระบบทีมเป็น v3.0.0 (10 คน + หมวดหมู่บังคับ 13 ขั้น + กฎเหล็ก 7 ข้อ) — รอ owner กด merge PR #63: https://github.com/MiusicBox/Miusic/pull/63"
     },
     {
       "action": "เลือกงานถัดไปหลัง T063 merge",
