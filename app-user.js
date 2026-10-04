@@ -1844,16 +1844,11 @@ function renderPlaylists() {
 }
 
 function togglePlaylistsVisibility() {
-  const wrapper = document.querySelector(".playlist-wrapper");
-  if (!wrapper) return;
-  // แสดงเพลย์ลิสต์เฉพาะหน้าแรกที่เลือก "ทั้งหมด" หรือแท็บเพลย์ลิสต์
-  // 🔧 เพิ่ม (2026-09-14): ถ้าเลือก DJ อยู่ ให้ซ่อนเพลย์ลิสต์ทั้งหมด (รวมหัวข้อ "เพลย์ลิสต์")
-  // - เนื่องจากเพลงของ DJ จะแสดงอยู่ในรายการเพลงหลักอยู่แล้ว ไม่ต้องแสดงเพลย์ลิสต์ซ้ำ
-  wrapper.style.display =
-    (STATE.currentView === "playlist" ||
-    (STATE.currentView === "home" && STATE.currentCategory === "all")) && !STATE.currentDj
-      ? ""
-      : "none";
+  // 🆕 (T031): ลบ playlist-wrapper ออกจากหน้าแรกแล้ว — ย้ายไป #playlistsView
+  //   ตอนนี้ playlists แสดงใน #playlistsView (full page) แทน dropdown section
+  //   ฟังก์ชันนี้ยังเก็บไว้เพื่อ backward compat (caller เดิมยังเรียกอยู่) — แต่ไม่ทำอะไร
+  //   การแสดง/ซ่อน #playlistsView จัดการใน setView() แทน
+  return;
 }
 
 function setView(view) {
@@ -1886,6 +1881,12 @@ function setView(view) {
   if (heroBanner) heroBanner.style.display = (view === "home") ? "" : "none";
   const categoryShowcase = document.getElementById("categoryShowcase");
   if (categoryShowcase) categoryShowcase.style.display = showDj ? "" : "none";
+
+  // 🆕 (T031): แสดง #playlistsView เฉพาะตอน view="playlist"
+  //   - ย้ายจาก dropdown section ในหน้าแรก มาเป็น full page view
+  //   - ซ่อนตอนอยู่หน้าอื่น ๆ (home/category/dj/promotions/myorders)
+  const playlistsView = document.getElementById("playlistsView");
+  if (playlistsView) playlistsView.style.display = (view === "playlist") ? "block" : "none";
 
   // แท็บเพลย์ลิสต์และ DJ ซ่อนรายการเพลงทั้งหมด ส่วนหมวดหมู่ยังดูเพลงที่กรองได้
   // หมายเหตุ (แก้บั๊ก 2026-09-13): เอา "#emptyState" ออกจาก loop นี้ เพราะเดิมมันไป
