@@ -8042,6 +8042,50 @@ html.admin-page body {
   }
 }
 
+/* 🆕 (T037): ราคา 2 แถว — ขีดข้าบน, หลังลดล่าง
+   ใช้ทั้งเพลงเดี่ยว + เพลย์ลิสต์ — เหมือนกันทุกที่ */
+.price-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  line-height: 1.2;
+}
+.price-stack .price-original {
+  font-size: 11px !important;
+  color: var(--text-dim) !important;
+  text-decoration: line-through;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.price-stack .price-discounted {
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  color: #fbbf24 !important;
+  white-space: nowrap;
+  text-shadow: 0 0 10px rgba(251, 191, 36, 0.4);
+}
+
+/* 🆕 (T037): ปุ่ม like + favorite อยู่ในกลุ่มเดียวกัน — compact */
+.song-actions-row {
+  display: flex !important;
+  align-items: center;
+  gap: 4px !important;
+  flex-wrap: nowrap !important;
+}
+.song-actions-row .btn-like-tiktok,
+.song-actions-row .btn-icon-mini {
+  flex-shrink: 0;
+}
+
+/* 🆕 (T037): ในเพลย์ลิสต์ — ราคา 2 แถวเหมือนเพลงเดี่ยว */
+.playlist-item-price.price-stack .price-original {
+  font-size: 10px !important;
+}
+.playlist-item-price.price-stack .price-discounted {
+  font-size: 13px !important;
+}
+
 /* ============================================================
    🆕 (T036): iPhone 6.1" (390px) + หน้าจอเล็กทั่วไป (≤390px)
    - ปรับขนาดตัวอักษร + spacing ให้พอดีไม่ทับกัน
