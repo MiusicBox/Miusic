@@ -1148,71 +1148,73 @@ function renderCategoryGrid() {
   //   - click: เลือกหมวด + scroll ไป songGrid
   //   - keydown (Enter/Space): เทียบเท่า click (accessibility)
   grid.querySelectorAll(".category-card").forEach(card => {
-    const handleSelect = () => {
+    const handleSelect = async () => {
       const catId = card.getAttribute("data-category-id");
       if (!catId) return;
 
-      // 🆕 (T023): เปลี่ยน view เป็น "category" ก่อน — เพื่อซ่อน hero banner + category showcase
-      //   ปัญหาเดิม: setView(STATE.currentView) ถ้า currentView="home" → ยังแสดง category grid ด้านบน → บังเพลง
-      //   วิธีแก้: บังคับ view="category" เสมอเมื่อกดหมวด (ยกเว้น "all" → กลับ home)
+      // 🆕 (T023/T035): เปลี่ยน view เป็น "category" ก่อน — เพื่อซ่อน hero banner + category showcase
       const targetView = catId === "all" ? "home" : "category";
       STATE.currentView = targetView;
 
-      // 🆕 (T015): ถ้าอยู่ใน advanced filter mode → reset ก่อน เพื่อกลับสู่ client-side filter
-      //   เหตุผล: STATE.songs ปัจจุบันเป็น server-filtered results → category-grid filter ฝั่ง client จะไม่ครบ
-      //   ถ้า active=false ตั้งแต่ต้น → resetAdvancedFilterState จะ return ทันที (no-op)
+      // 🆕 (T035): ถ้า advanced filter active → reset + reload songs ใหม่ทั้งหมด
+      //   ปัญหาเดิม: resetAdvancedFilterState ล้าง STATE.songs แต่ไม่ได้โหลดใหม่ → ใช้ timeout 800ms → บางครั้งยังว่าง
+      //   วิธีแก้: ใช้ loadSongsWithFilters(true) ซึ่งรอจนโหลดเสร็จจริง ๆ แล้วค่อย render
       const wasAdvancedActive = (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active);
-      try { resetAdvancedFilterState({ reloadSongs: true }); } catch (_) {}
-
+      
       STATE.currentCategory = catId;
       STATE.currentDj = null;
 
-      // 🆕 (T023): ถ้า resetAdvancedFilterState โหลดเพลงใหม่ (async) → อย่า renderSongGrid ทันที
-      //   ปัญหาเดิม: renderSongGrid() ทำงานทันทีก่อน loadMoreSongs เสร็จ → แสดงเพลงเก่าที่ไม่เกี่ยวข้อง
-      //   วิธีแก้: ถ้า wasAdvancedActive → รอ loadMoreSongs เสร็จก่อนค่อย render (ใช้ .then)
-      //   ถ้าไม่ active → ใช้ logic เดิม (loadAllRemainingSongs ถ้ายังโหลดไม่ครบ)
       if (wasAdvancedActive) {
-        // advanced filter → กำลัง reload STATE.songs → รอเสร็จก่อน
+        // reset advanced filter + reload ALL songs (ไม่ใช่ filtered results)
         setView(targetView);
         renderCategoryChips();
-        // รอ STATE.songs โหลดเสร็จ (loadMoreSongs ใน resetAdvancedFilterState)
-        // ใช้ setTimeout เพราะ resetAdvancedFilterState ไม่ return promise
-        setTimeout(() => {
-          renderSongGrid();
-          renderPlaylists();
-          togglePlaylistsVisibility();
-          const songGrid = document.getElementById("songGrid");
-          if (songGrid) songGrid.scrollIntoView({ behavior: "smooth", block: "start" });
-        }, 800);
+        renderSongSkeleton(); // แสดง skeleton ทันทีกัน user เห็น "ไม่พบเพลง"
+        try {
+          // resetAdvancedFilterState ล้าง state แต่ไม่ reload — เราต้อง reload เอง
+          resetAdvancedFilterState({ reloadSongs: false });
+          // โหลด songs ใหม่ทั้งหมด (ไม่มี filter)
+          STATE.songs = [];
+          STATE.songsPage = 0;
+          STATE.songsHasMore = true;
+          await loadSongsWithFilters(true);
+        } catch (err) {
+          console.warn('[T035] reload after advanced filter reset failed:', err);
+        }
+        renderCategoryGrid(); // re-render เพื่ออัปเดต song count
+        renderSongGrid();
+        renderPlaylists();
+        togglePlaylistsVisibility();
+        const songGrid = document.getElementById("songGrid");
+        if (songGrid) songGrid.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
 
       // 🔧 (2026-09-18 v6 Full System): เมื่อกดหมวดหมู่ ถ้ายังโหลดเพลงไม่ครบ → trigger auto-load-all
-      //   กันกรณีที่เพลงของหมวดนี้อยู่ใน page หลัง → filter ไม่เจอ
       if (STATE.songsHasMore && !STATE.songsLoadingAllRemaining) {
         showToast("กำลังโหลดเพลงทั้งหมดเพื่อกรอง...", "progress");
         setView(targetView);
         renderCategoryChips();
-        // 🆕 (T023): แสดง skeleton ทันทีก่อน — กัน user เห็นเพลงเก่า
         renderSongSkeleton();
-        loadAllRemainingSongs().then(() => {
-          renderCategoryGrid(); // re-render เพื่ออัปเดต song count
-          renderSongGrid();
-          renderPlaylists();
-          togglePlaylistsVisibility();
-          const songGrid = document.getElementById("songGrid");
-          if (songGrid) songGrid.scrollIntoView({ behavior: "smooth", block: "start" });
-        });
+        try {
+          await loadAllRemainingSongs();
+        } catch (err) {
+          console.warn('[T035] loadAllRemainingSongs failed:', err);
+        }
+        renderCategoryGrid();
+        renderSongGrid();
+        renderPlaylists();
+        togglePlaylistsVisibility();
+        const songGrid = document.getElementById("songGrid");
+        if (songGrid) songGrid.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
 
-      // 🆕 (T023): กรณีปกติ — โหลดครบแล้ว + ไม่มี advanced filter
+      // 🆕 (T035): กรณีปกติ — โหลดครบแล้ว + ไม่มี advanced filter
       setView(targetView);
       renderCategoryChips();
       renderSongGrid();
       renderPlaylists();
       togglePlaylistsVisibility();
-      // scroll ไปที่ songGrid (เริ่มฟังเพลง)
       const songGrid = document.getElementById("songGrid");
       if (songGrid) songGrid.scrollIntoView({ behavior: "smooth", block: "start" });
     };
