@@ -3228,6 +3228,12 @@ function showMyOrdersView() {
   const djSection = document.getElementById("djSection");
   if (categoryChips) categoryChips.style.display = "none";
   if (djSection) djSection.style.display = "none";
+  // 🆕 (T046): ซ่อน category showcase + hero banner ในหน้า "ออเดอร์ของฉัน" (เหมือน showPromotionsView)
+  //   ผลกระทบระบบเดิม: 0% — เมื่อกลับหน้าแรก setView("home") จะ restore display ให้เอง
+  const categoryShowcase = document.getElementById("categoryShowcase");
+  if (categoryShowcase) categoryShowcase.style.display = "none";
+  const heroBanner = document.getElementById("heroBanner");
+  if (heroBanner) heroBanner.style.display = "none";
   // ซ่อน playlists container
   const playlistsContainer = document.getElementById("playlistsContainer");
   if (playlistsContainer) playlistsContainer.classList.add("is-closed");
@@ -5641,6 +5647,15 @@ function showPromotionsView() {
   const djSection = document.getElementById("djSection");
   if (categoryChips) categoryChips.style.display = "none";
   if (djSection) djSection.style.display = "none";
+  // 🆕 (T046): ซ่อน category showcase + hero banner ในหน้าโปรโมชัน
+  //   ปัญหา: เดิม showPromotionsView() ซ่อนแค่ #categoryChips + #djSection + .playlist-wrapper
+  //   → แต่ #categoryShowcase (หมวดหมู่แนะนำ grid) + #heroBanner ยังโผล่อยู่บนหน้าโปรโมชัน
+  //   ผลกระทบระบบเดิม: 0% — เมื่อกลับหน้าแรก setView("home") จะ restore display ให้เอง
+  //   sync กับ setView() ที่จัดการ #categoryShowcase + #heroBanner เช่นกัน
+  const categoryShowcase = document.getElementById("categoryShowcase");
+  if (categoryShowcase) categoryShowcase.style.display = "none";
+  const heroBanner = document.getElementById("heroBanner");
+  if (heroBanner) heroBanner.style.display = "none";
   // 🔧 (2026-09-20 fix): ซ่อน .playlist-wrapper ทั้งกล่อง (ไม่ใช่แค่ยุบ #playlistsContainer)
   //   เพื่อให้ปุ่มหัวข้อ "เพลย์ลิสต์" หายไปจากหน้าโปรโมชั่นด้วย
   //   เมื่อกลับหน้าแรก → setView("home") → togglePlaylistsVisibility() จะแสดงกลับมาเอง
