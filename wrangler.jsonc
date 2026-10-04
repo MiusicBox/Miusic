@@ -27,18 +27,14 @@
     //   ใช้สำหรับ: cron trigger fetch self-invoke (Worker invocation ใหม่ มี CPU time 30s ของตัวเอง)
     //   ถ้าไม่ตั้ง → cron ไม่สามารถ trigger queue ได้ → admin ต้องกด "ยืนยันโอนแล้ว" เอง
   },
-  // 🔒 (2026-09-21 auto-cleanup ZIP): Cron Trigger — รันทุก 6 ชม.
+  // 🔒 (2026-09-21 auto-cleanup ZIP): Cron Trigger — 🆕 (T030) เปลี่ยนเป็น 24 ชม.
   //   ค้นหา ZIP ที่สร้างเกิน 24 ชม. → ลบออกจาก R2 + update order zip_status='expired'
   //   กัน URL ถาวรรั่ว → ถ้ารั่ว ใช้ได้แค่ 24 ชม. แล้วหาย
   //   ดู handler ที่ worker/index.js → async scheduled(event, env, ctx)
+  //   🆕 (T030): เปลี่ยนจาก 6 ชม. → 24 ชม. — ลด cron invocations จาก 4/วัน → 1/วัน
   "triggers": {
-    // 🔒 (2026-09-21 auto-cleanup ZIP): รันทุก 6 ชม.
-    //   ลบ ZIP เก่า > 24 ชม. + cleanup audit_log + download_tokens + stuck ZIP jobs
-    //   ดู handler ที่ worker/index.js → async scheduled(event, env, ctx)
-    //   🔄 (2026-09-28 rollback): ลบ cron "* * * * *" ออก — Sequential Queue rollback แล้ว
-    //                              admin กดสร้าง ZIP เองเหมือนเดิม (ไม่ใช้ cron trigger)
     "crons": [
-      "0 */6 * * *"
+      "0 0 * * *"
     ]
   },
   // 📊 (2026-09-28 enable logs): เปิด observability logs สำหรับ Worker
