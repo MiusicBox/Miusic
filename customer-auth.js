@@ -325,11 +325,16 @@ async function customerLogin() {
   if (errEl) errEl.textContent = "";
   if (!login || !password) { if (errEl) errEl.textContent = "กรุณากรอกอีเมล/เบอร์ WhatsApp และรหัสผ่าน"; return; }
   try {
+    // 🆕 (T053-M4): ส่ง fingerprint ตอน login → server จะได้ migration anon→customer ได้
+    //   เดิม: ส่งแค่ { login, password } → server ไม่รู้ว่าลูกค้าเคย like ตอน anon อยู่ → like หาย
+    //   ใหม่: ส่ง fingerprint ที่ลูกค้าใช้ตอน anon → server ย้าย like จาก 'anon:<fp>' ไป customer.id
+    //   ถ้ายังไม่เคย like ตอน anon → fingerprint ว่าง → server ข้าม migration (ปลอดภัย)
+    const fingerprint = await getAnonymousFingerprint().catch(() => "");
     const res = await fetch("/api/customer/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
-      body: JSON.stringify({ login, password }),
+      body: JSON.stringify({ login, password, fingerprint }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -571,16 +576,54 @@ async function checkFavoriteStatus(songId) {
 //   ผลกระทบระบบเดิม: 0% — ฟังก์ชันใหม่ (แทนที่ระบบรีวิวเดิม)
 // ============================================================
 
-// 🆕 สร้าง fingerprint สำหรับ anonymous like (เก็บใน localStorage ถ้ามี)
-//   ถ้าลูกค้า login → ใช้ customer.id แทน fingerprint
-//   ถ้าไม่ login → ใช้ fingerprint จาก localStorage (สร้างครั้งแรก + reuse)
-function getAnonymousFingerprint() {
+// 🆕 (T053-M4): สร้าง fingerprint สำหรับ anonymous like แบบ stable ข้ามเครื่อง
+//   เดิม: ใช้แค่ localStorage UUID → ลบ localStorage ได้ → like ซ้ำได้ (บวมเทียม)
+//   ใหม่: ผสม IP hash (จาก server /api/fingerprint) + localStorage UUID
+//     - ถ้าลบ localStorage → ยังมี IP hash อยู่ → like ซ้ำไม่ได้ (กันบวมเทียม)
+//     - ถ้าเปลี่ยนเครื่อง/IP → IP hash เปลี่ยน → fingerprint เปลี่ยน → like ใหม่ (acceptable)
+//   cache IP hash ใน sessionStorage (รอเฉพาะ tab ปัจจุบัน — กัน D1 reads เยอะ)
+//   ผลกระทบระบบเดิม: 0% — ถ้า /api/fingerprint fail → fallback ใช้แค่ localStorage UUID (เหมือนเดิม)
+let _cachedIpHash = null;
+async function fetchIpHash() {
+  if (_cachedIpHash !== null) return _cachedIpHash; // cache hit (อาจเป็น "" ถ้า fail)
+  try {
+    const res = await fetch("/api/fingerprint", { credentials: "same-origin" });
+    const data = await res.json().catch(() => ({}));
+    _cachedIpHash = data?.ip_hash || "";
+  } catch (_) {
+    _cachedIpHash = ""; // fallback: ไม่มี IP hash → ใช้แค่ localStorage UUID
+  }
+  return _cachedIpHash;
+}
+
+async function getAnonymousFingerprint() {
   const key = "miusic_anon_fingerprint";
   let fp = localStorage.getItem(key);
   if (!fp) {
-    // สร้าง fingerprint แบบง่าย: random UUID + timestamp (ไม่ซับซ้อนเท่า IP hash แต่พอใช้)
+    // สร้าง UUID สำหรับเครื่องนี้ (localStorage)
     fp = crypto.randomUUID() + "-" + Date.now();
     localStorage.setItem(key, fp);
+  }
+  // 🆕 (T053-M4): ผสม IP hash เข้าไป → กันลบ localStorage แล้ว like ซ้ำ
+  const ipHash = await fetchIpHash();
+  if (ipHash) {
+    return fp + "-" + ipHash;
+  }
+  // fallback: ใช้แค่ localStorage UUID (เหมือนเดิม)
+  return fp;
+}
+
+// 🆕 (T053-M4): sync version — สำหรับกรณีที่ไม่สามารถ await ได้ (เช่น loadLikeStatus เดิม)
+//   ใช้ cached IP hash (ถ้ามี) หรือ fallback แค่ localStorage UUID
+function getAnonymousFingerprintSync() {
+  const key = "miusic_anon_fingerprint";
+  let fp = localStorage.getItem(key);
+  if (!fp) {
+    fp = crypto.randomUUID() + "-" + Date.now();
+    localStorage.setItem(key, fp);
+  }
+  if (_cachedIpHash) {
+    return fp + "-" + _cachedIpHash;
   }
   return fp;
 }
@@ -593,7 +636,8 @@ async function toggleLike(songId) {
   }
   console.log("[like] toggleLike start, songId:", songId);
   // ถ้า login → ใช้ customer.id, ถ้าไม่ login → ใช้ fingerprint (anonymous like)
-  const fingerprint = isCustomerLoggedIn() ? null : getAnonymousFingerprint();
+  // 🆕 (T053-M4): await getAnonymousFingerprint() ตอนนี้เป็น async (ดึง IP hash)
+  const fingerprint = isCustomerLoggedIn() ? null : await getAnonymousFingerprint();
   console.log("[like] fingerprint:", fingerprint ? "anon (anonym)" : "logged-in customer");
   try {
     const res = await fetch(`/api/songs/${encodeURIComponent(songId)}/like`, {
@@ -633,7 +677,11 @@ async function toggleLike(songId) {
 // 🆕 โหลดจำนวน like + สถานะของลูกค้า → แสดงในปุ่ม ❤️ ของเพลง
 async function loadLikeStatus(songId) {
   if (!songId) return { like_count: 0, is_liked: false };
-  const fingerprint = isCustomerLoggedIn() ? null : getAnonymousFingerprint();
+  // 🆕 (T053-M4): await getAnonymousFingerprint() ตอนนี้เป็น async
+  //   แต่ loadLikeStatus อาจถูกเรียกบ่อย → ใช้ sync version + cached IP hash กัน D1 reads เยอะ
+  //   ถ้า _cachedIpHash ยังเป็น null (ยังไม่ได้ fetch) → ใช้แค่ localStorage UUID (เหมือนเดิม)
+  //   หลัง toggleLike ครั้งแรก → _cachedIpHash ถูก cache → loadLikeStatus จะใช้ IP hash
+  const fingerprint = isCustomerLoggedIn() ? null : getAnonymousFingerprintSync();
   const query = fingerprint ? `?fingerprint=${encodeURIComponent(fingerprint)}` : "";
   try {
     const res = await fetch(`/api/songs/${encodeURIComponent(songId)}/likes${query}`, { credentials: "same-origin" });
