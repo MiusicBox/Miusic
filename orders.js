@@ -236,6 +236,46 @@ function buildWhatsAppLink(number, text) {
   const clean = String(number || "").replace(/[^0-9]/g, "");
   return "https://wa.me/" + clean + (text ? "?text=" + encodeURIComponent(text) : "");
 }
+
+// 🆕 (T044-C): formatPhoneForDisplay — แปลงเบอร์ normalized (85620XXXXXXXX / 668XXXXXXXXX)
+//   ให้เป็นรูปแบบที่อ่านง่าย: "+856 20 1234 5678" หรือ "+66 81 234 5678"
+//   ใช้ใน receipt + order list + customer info (แสดงให้แอดมิน/ลูกค้าเห็น)
+//   ถ้าเบอร์ไม่ตรงรูปแบบลาว/ไทย → คืน raw (best effort)
+//   TODO (T013-R3): migrate to shared-utils.js — ตอนนี้ใช้ inline เหมือน helpers อื่น ๆ
+function formatPhoneForDisplay(phone) {
+  if (!phone) return "";
+  let s = String(phone).replace(/[^0-9]/g, "");
+  if (!s) return "";
+  // ลาว: 85620XXXXXXXX → "+856 20 1234 5678"
+  if (s.startsWith("856")) {
+    const rest = s.slice(3);
+    // rest = 20XXXXXXXX (10 หลัก) → แยก 20 / XXXX / XXXX
+    if (rest.startsWith("20") && rest.length === 10) {
+      return `+856 20 ${rest.slice(2, 6)} ${rest.slice(6)}`;
+    }
+    if (rest.length >= 6 && rest.length <= 9) {
+      const mid = rest.slice(0, Math.ceil(rest.length / 2));
+      const end = rest.slice(Math.ceil(rest.length / 2));
+      return `+856 ${mid} ${end}`;
+    }
+    return `+856 ${rest}`;
+  }
+  // ไทย: 668XXXXXXXX → "+66 81 234 5678"
+  if (s.startsWith("66")) {
+    const rest = s.slice(2);
+    if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9") || rest.startsWith("6"))) {
+      return `+66 ${rest.slice(0, 2)} ${rest.slice(2, 5)} ${rest.slice(5)}`;
+    }
+    if (rest.length >= 6 && rest.length <= 9) {
+      const mid = rest.slice(0, Math.ceil(rest.length / 2));
+      const end = rest.slice(Math.ceil(rest.length / 2));
+      return `+66 ${mid} ${end}`;
+    }
+    return `+66 ${rest}`;
+  }
+  // fallback — เบอร์ไม่มี country code → คืน raw
+  return s;
+}
 function debounce(fn, wait) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), wait); }; }
 // แอดมินย่อยทำได้ทุกอย่างในหน้าออเดอร์ตามปกติ ยกเว้นลบประวัติออเดอร์ (สงวนไว้ให้แอดมินหลักเท่านั้น)
 // role ถูกตั้งค่าไว้ที่ window.__currentAdminRole โดย app-admin.js ตอนล็อกอินสำเร็จ
@@ -2190,7 +2230,7 @@ function renderHistory() {
           ${typeBadge}
           ${paymentVerifiedBadge}
           <div class="n1">${escapeHtml(o.customer_name)} · ${formatLAK((o.final_total != null) ? Number(o.final_total) : Number(o.total))}</div>
-          <div class="n2">${dateStr} · ${escapeHtml(o.whatsapp)}</div>
+          <div class="n2">${dateStr} · ${escapeHtml(formatPhoneForDisplay(o.whatsapp))}</div>
           <div class="n2">${songNames}</div>
           ${discountInfo}
           ${auditInfo}
@@ -2262,7 +2302,7 @@ function buildReceiptCopyText(order, receiptNumber, total, playlistName) {
     `สถานะ: ${getReceiptStatusLabel(order.status)}`,
     "",
     `ลูกค้า: ${order.customer_name || "-"}`,
-    `WhatsApp: ${order.whatsapp || "-"}`,
+    `WhatsApp: ${formatPhoneForDisplay(order.whatsapp) || "-"}`,
     "",
     "รายการสั่งซื้อ:",
     ...(itemLines.length ? itemLines : ["ไม่มีรายการสินค้า"]),
@@ -2530,7 +2570,7 @@ async function openReceipt(orderId) {
       </div>
       <div class="receipt-customer">
         <div><span>ลูกค้า</span><strong>${escapeHtml(order.customer_name)}</strong></div>
-        <div><span>WhatsApp</span><strong>${escapeHtml(order.whatsapp)}</strong></div>
+        <div><span>WhatsApp</span><strong>${escapeHtml(formatPhoneForDisplay(order.whatsapp))}</strong></div>
       </div>
       <div class="receipt-items">
         ${itemRows || '<div class="receipt-empty">ไม่มีรายการสินค้า</div>'}

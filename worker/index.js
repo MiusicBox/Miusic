@@ -458,9 +458,25 @@ function escapeLikePattern(str) {
 // 📸 (added STEP 6+) — สร้าง wa.me deep link สำหรับแอดมินส่งข้อความแจ้งลูกค้าหลัง verify/reject slip
 //   notification only — ไม่ใช่ระบบหลัก (R2+D1 คือ source of truth)
 //   ถ้า WhatsApp เปิดไม่ได้ slip ยังอยู่ในระบบ
+// 🆕 (T044-B): รองรับเบอร์ไทย+ลาว — fallback prepend country code ถ้า DB เก็บเบอร์เก่าไม่มี 856/66
+//   เดิม: ใช้ raw customerWhatsapp ตรงๆ → ถ้า DB เก็บ "20XXXXXXXX" (ลาวเก่า) → wa.me ตีความเป็นอียิปต์ (+20) → ลูกค้าไม่ได้รับการแจ้งเตือน
+//   ใหม่: เช็ค country code 856/66 → ถ้าไม่มี → สันนิษฐานลาว (เดิม) หรือ detect จากรูปแบบ
+//   sync กับ fallback logic ฝั่ง client (orders.js line 2567)
 function buildAdminNotifyWhatsAppUrl(customerWhatsapp, newStatus, receiptNumber, customerName, orderTotal, rejectReason) {
-  const num = String(customerWhatsapp || "").replace(/[^0-9]/g, "");
+  let num = String(customerWhatsapp || "").replace(/[^0-9]/g, "");
   if (!num) return null;
+  // 🆕 (T044-B): fallback — ถ้าไม่มี country code นำหน้า → สันนิษฐานลาว (sync กับฝั่ง client)
+  //   ถ้าเบอร์ขึ้นต้นด้วย 020 → ลาว → prepend 856 + strip 0 ต้น
+  //   ถ้าเบอร์ขึ้นต้นด้วย 08/09 → ไทย → prepend 66 + strip 0 ต้น
+  //   ถ้าเบอร์ขึ้นต้นด้วย 20 (10 หลัก) → ลาว → prepend 856
+  //   ถ้าไม่ตรงเงื่อนไขข้างบน → สันนิษฐานลาว → prepend 856 (เดิม)
+  if (!num.startsWith("856") && !num.startsWith("66")) {
+    if (num.startsWith("020")) num = "856" + num.slice(1);
+    else if ((num.startsWith("08") || num.startsWith("09")) && num.length === 10) num = "66" + num.slice(1);
+    else if (num.startsWith("20") && num.length === 10) num = "856" + num;
+    else if (num.startsWith("0") && num.length === 10) num = "66" + num.slice(1);
+    else num = "856" + num;
+  }
   const amt = orderTotal != null ? Number(orderTotal).toLocaleString("th-TH") + " ₭" : "—";
   const rcpt = receiptNumber || "—";
   let text;

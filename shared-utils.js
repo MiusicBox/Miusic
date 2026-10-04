@@ -87,6 +87,49 @@ export function formatDateTime(iso, options) {
   } catch (_) { return String(iso); }
 }
 
+// 🆕 (T044-C): formatPhoneForDisplay — แปลงเบอร์ normalized (85620XXXXXXXX / 668XXXXXXXXX)
+//   ให้เป็นรูปแบบที่อ่านง่าย: "+856 20 1234 5678" หรือ "+66 81 234 5678"
+//   ใช้ใน receipt, order list, WhatsApp FAB, customer info ฯลฯ
+//   ถ้าเบอร์ไม่ตรงรูปแบบลาว/ไทย → คืน raw + เครื่องหมาย + นำหน้า (best effort)
+export function formatPhoneForDisplay(phone) {
+  if (!phone) return "";
+  let s = String(phone).replace(/[^0-9]/g, "");
+  if (!s) return "";
+  // ลาว: 856 + 20 + 4 + 4 = 13 หลัก → "+856 20 1234 5678"
+  //       856 + 2X + ... = 10-12 หลัก
+  if (s.startsWith("856")) {
+    const rest = s.slice(3);
+    // รูปแบบทั่วไป: 20XXXXXXXX (10 หลักหลัง 856)
+    if (rest.startsWith("20") && rest.length === 10) {
+      return `+856 20 ${rest.slice(2, 6)} ${rest.slice(6)}`;
+    }
+    // รูปแบบอื่น ๆ ของลาว (เบอร์เครื่องบ้าน ฯลฯ) — แยกหลัก 3-4-4
+    if (rest.length >= 6 && rest.length <= 9) {
+      const mid = rest.slice(0, Math.ceil(rest.length / 2));
+      const end = rest.slice(Math.ceil(rest.length / 2));
+      return `+856 ${mid} ${end}`;
+    }
+    return `+856 ${rest}`;
+  }
+  // ไทย: 66 + 8/9 + 8 หลัก = 11 หลัก → "+66 81 234 5678"
+  if (s.startsWith("66")) {
+    const rest = s.slice(2);
+    // มือถือไทย: 8XXXXXXXX หรือ 9XXXXXXXX (9 หลักหลัง 66)
+    if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9") || rest.startsWith("6"))) {
+      return `+66 ${rest.slice(0, 2)} ${rest.slice(2, 5)} ${rest.slice(5)}`;
+    }
+    // รูปแบบอื่น ๆ ของไทย (เบอร์เครื่องบ้าน ฯลฯ)
+    if (rest.length >= 6 && rest.length <= 9) {
+      const mid = rest.slice(0, Math.ceil(rest.length / 2));
+      const end = rest.slice(Math.ceil(rest.length / 2));
+      return `+66 ${mid} ${end}`;
+    }
+    return `+66 ${rest}`;
+  }
+  // fallback — เบอร์ไม่มี country code → คืน raw
+  return s;
+}
+
 // 🆕 (T013-R3): expose ใน window.SharedUtils สำหรับหน้าที่ยังไม่ใช้ ES modules
 //   (ใช้ได้ทันทีผ่าน <script type="module" src="/shared-utils.js"></script>)
 if (typeof window !== "undefined") {
@@ -99,5 +142,6 @@ if (typeof window !== "undefined") {
     normalizeName,
     buildWhatsAppLink,
     formatDateTime,
+    formatPhoneForDisplay,
   };
 }

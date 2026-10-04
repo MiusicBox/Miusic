@@ -993,8 +993,8 @@
         <input id="checkoutCustomerName" autocomplete="name" placeholder="ชื่อลูกค้า">
       </div>
       <div class="field">
-        <label for="checkoutCustomerWhatsapp">เบอร์ WhatsApp *</label>
-        <input id="checkoutCustomerWhatsapp" autocomplete="tel" placeholder="20XXXXXXXX">
+        <label for="checkoutCustomerWhatsapp">เบอร์ WhatsApp * <span style="font-weight:400;color:var(--text-dim);font-size:11px;">(ลาว +856 20XXXXXXXX / ไทย +66 8XXXXXXXX)</span></label>
+        <input id="checkoutCustomerWhatsapp" autocomplete="tel" placeholder="ลาว: 020 1234 5678 · ไทย: 081 234 5678">
       </div>
       <div id="checkoutSummary" class="cart-summary"></div>
       <button class="btn" id="submitCartOrderBtn" type="button">ยืนยันสั่งซื้อ</button>
@@ -1031,8 +1031,8 @@
           <input id="trackOrderName" autocomplete="name" placeholder="ชื่อที่ใช้ตอนสั่งซื้อ">
         </div>
         <div class="field">
-          <label for="trackOrderPhone">เบอร์โทร/WhatsApp *</label>
-          <input id="trackOrderPhone" autocomplete="tel" placeholder="20XXXXXXXX">
+          <label for="trackOrderPhone">เบอร์โทร/WhatsApp * <span style="font-weight:400;color:var(--text-dim);font-size:11px;">(ลาว/ไทย)</span></label>
+          <input id="trackOrderPhone" autocomplete="tel" placeholder="ลาว: 020 1234 5678 · ไทย: 081 234 5678">
         </div>
         <button class="btn" id="trackOrderSubmitBtn" type="button">ค้นหาออเดอร์</button>
         <div id="trackOrderFeedback" class="cart-feedback" aria-live="polite" role="status"></div>
@@ -1047,8 +1047,8 @@
           <input id="trackOrderAllName" autocomplete="name" placeholder="ชื่อที่ใช้ตอนสั่งซื้อ">
         </div>
         <div class="field">
-          <label for="trackOrderAllPhone">เบอร์โทร/WhatsApp *</label>
-          <input id="trackOrderAllPhone" autocomplete="tel" placeholder="20XXXXXXXX">
+          <label for="trackOrderAllPhone">เบอร์โทร/WhatsApp * <span style="font-weight:400;color:var(--text-dim);font-size:11px;">(ลาว/ไทย)</span></label>
+          <input id="trackOrderAllPhone" autocomplete="tel" placeholder="ลาว: 020 1234 5678 · ไทย: 081 234 5678">
         </div>
         <button class="btn" id="trackOrderAllSubmitBtn" type="button">ดูออเดอร์ทั้งหมด</button>
         <div id="trackOrderAllFeedback" class="cart-feedback" aria-live="polite" role="status"></div>
@@ -1328,8 +1328,8 @@
             <input id="customerAuthDisplayName" type="text" placeholder="ชื่อเล่น หรือชื่อจริง" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
           </div>
           <div class="field" style="margin-bottom:10px;">
-            <label style="font-size:12px;color:var(--text-dim);">เบอร์ WhatsApp (ถ้า login ด้วย email ใส่เบอร์เพิ่มเพื่อรับการแจ้งเตือน)</label>
-            <input id="customerAuthWhatsapp" type="text" placeholder="02012345678 (ไม่บังคับ)" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
+            <label style="font-size:12px;color:var(--text-dim);">เบอร์ WhatsApp (ถ้า login ด้วย email ใส่เบอร์เพิ่มเพื่อรับการแจ้งเตือน — รองรับลาว/ไทย)</label>
+            <input id="customerAuthWhatsapp" type="text" placeholder="ลาว: 02012345678 · ไทย: 0812345678 (ไม่บังคับ)" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
           </div>
           <div class="field" style="margin-bottom:14px;">
             <label style="font-size:12px;color:var(--text-dim);">รหัสผ่าน</label>
