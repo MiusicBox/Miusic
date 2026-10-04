@@ -5941,7 +5941,7 @@ async function handleCustomerAuth(request, env, url) {
     const customerId = decodeURIComponent(url.pathname.slice("/api/admin/customers/".length));
     try {
       const customer = await env.DB.prepare(
-        "SELECT id, email, whatsapp, display_name, created_at, updated_at FROM customers WHERE id=?"
+        "SELECT id, email, whatsapp, display_name, created_at, updated_at, deleted_at FROM customers WHERE id=?"
       ).bind(customerId).first();
       if (!customer) return jsonResponse({ error: "ไม่พบลูกค้า" }, 404);
       // ดึงออเดอร์ของลูกค้า
@@ -5954,6 +5954,138 @@ async function handleCustomerAuth(request, env, url) {
       return jsonResponse({ customer, orders });
     } catch (err) {
       return jsonResponse({ error: safeError("โหลดรายละเอียดลูกค้าไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // ============================================================
+  // 🆕 (T058-PDPA-Phase2): Admin endpoints สำหรับจัดการคำขอลบบัญชี
+  //   - GET  /api/admin/customers/deleted/list — list soft-deleted customers
+  //   - POST /api/admin/customers/:id/restore — กู้คืนบัญชี (ตั้ง deleted_at = NULL)
+  //   - POST /api/admin/customers/:id/hard-delete — ลบถาวรทันที (skip 30d grace)
+  //   ผลกระทบระบบเดิม: 0% — endpoints ใหม่ ไม่แตะ /api/admin/customers เดิม
+  // ============================================================
+
+  // GET /api/admin/customers/deleted/list — list soft-deleted customers (PDPA Section 33 admin view)
+  if (url.pathname === "/api/admin/customers/deleted/list" && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    try {
+      const limit = Math.min(100, Number(url.searchParams.get("limit") || 50));
+      const offset = Math.max(0, Number(url.searchParams.get("offset") || 0));
+      // ดึง customers ที่ deleted_at != NULL (soft-deleted) + เรียงตาม deleted_at DESC
+      const { results } = await env.DB.prepare(
+        "SELECT id, email, whatsapp, display_name, created_at, updated_at, deleted_at " +
+        "FROM customers WHERE deleted_at IS NOT NULL " +
+        "ORDER BY deleted_at DESC LIMIT ? OFFSET ?"
+      ).bind(limit, offset).all();
+      const customers = (results || []).map(row => {
+        // คำนวณวันที่เหลือก่อน hard delete (30 วันจาก deleted_at)
+        const deletedAt = new Date(row.deleted_at);
+        const hardDeleteAt = new Date(deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+        const now = Date.now();
+        const msRemaining = hardDeleteAt.getTime() - now;
+        const daysRemaining = Math.max(0, Math.ceil(msRemaining / (24 * 60 * 60 * 1000)));
+        return {
+          ...row,
+          hard_delete_at: hardDeleteAt.toISOString(),
+          days_remaining: daysRemaining,
+          is_overdue: daysRemaining === 0,
+        };
+      });
+      return jsonResponse({ customers, total: customers.length });
+    } catch (err) {
+      // ถ้า column deleted_at ไม่มี → ตารางยังไม่ได้ migrate
+      if (String(err?.message || "").includes("no such column")) {
+        return jsonResponse({
+          error: "ตาราง customers ยังไม่ได้ migrate — กรุณารัน scripts/migrate-pdpa-v1.sql ใน D1 Console",
+          code: "MIGRATION_REQUIRED",
+        }, 500);
+      }
+      return jsonResponse({ error: safeError("โหลดรายการคำขอลบบัญชีไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // POST /api/admin/customers/:id/restore — กู้คืนบัญชีลูกค้าที่ถูก soft delete
+  //   ใช้เมื่อลูกค้าติดต่อขอกู้คืนระหว่าง 30 วัน grace
+  if (url.pathname.endsWith("/restore") && url.pathname.startsWith("/api/admin/customers/") && request.method === "POST") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    const customerId = decodeURIComponent(url.pathname.slice("/api/admin/customers/".length, -"/restore".length));
+    try {
+      // ตรวจก่อนว่า customer มีอยู่จริง + ถูก soft delete
+      const existing = await env.DB.prepare(
+        "SELECT id, deleted_at FROM customers WHERE id=?"
+      ).bind(customerId).first();
+      if (!existing) return jsonResponse({ error: "ไม่พบลูกค้า" }, 404);
+      if (!existing.deleted_at) return jsonResponse({ error: "ลูกค้ารายนี้ยังไม่ถูกลบ (deleted_at IS NULL)" }, 400);
+
+      // กู้คืน — ตั้ง deleted_at = NULL
+      const now = new Date().toISOString();
+      await env.DB.prepare(
+        "UPDATE customers SET deleted_at = NULL, updated_at = ? WHERE id = ?"
+      ).bind(now, customerId).run();
+
+      // audit log
+      try {
+        ctx.waitUntil(writeAuditLog(env, request, admin, "restore", "customer", customerId, `Restored customer ${customerId.slice(0, 8)} (PDPA Section 33 — admin restore)`, { deleted_at: existing.deleted_at, restored_at: now }, null));
+      } catch {}
+
+      return jsonResponse({
+        ok: true,
+        message: "กู้คืนบัญชีเรียบร้อย — ลูกค้าสามารถ login ได้อีกครั้ง",
+        customer_id: customerId,
+        restored_at: now,
+      });
+    } catch (err) {
+      return jsonResponse({ error: safeError("กู้คืนบัญชีไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // POST /api/admin/customers/:id/hard-delete — ลบถาวรทันที (skip 30d grace)
+  //   ใช้เมื่อลูกค้าต้องการลบจริง ๆ หรือ admin ตัดสินใจลบเอง
+  //   ใช้ batch atomic (เหมือน T054 deleteCustomer)
+  if (url.pathname.endsWith("/hard-delete") && url.pathname.startsWith("/api/admin/customers/") && request.method === "POST") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    // จำกัดเฉพาะ main admin (กฎเหล็ก: ลบถาวรต้องเป็น main admin)
+    if (admin.role !== "main") {
+      return jsonResponse({ error: "ต้องเป็นแอดมินหลักเท่านั้นในการลบถาวร", code: "MAIN_ADMIN_REQUIRED" }, 403);
+    }
+    const customerId = decodeURIComponent(url.pathname.slice("/api/admin/customers/".length, -"/hard-delete".length));
+    try {
+      // ตรวจก่อนว่า customer มีอยู่จริง
+      const existing = await env.DB.prepare("SELECT id, email, display_name, deleted_at FROM customers WHERE id=?").bind(customerId).first();
+      if (!existing) return jsonResponse({ error: "ไม่พบลูกค้า" }, 404);
+
+      // บันทึก snapshot ก่อนลบ (สำหรับ audit log)
+      const snapshot = { id: existing.id, email: existing.email, display_name: existing.display_name, deleted_at: existing.deleted_at };
+
+      // batch hard delete (atomic) — cascade favorites/likes/sessions/etc
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM customer_favorites WHERE customer_id=?").bind(customerId),
+        env.DB.prepare("DELETE FROM song_likes WHERE customer_id=?").bind(customerId),
+        env.DB.prepare("DELETE FROM password_reset_requests WHERE customer_id=?").bind(customerId),
+        env.DB.prepare("DELETE FROM customer_sessions WHERE customer_id=?").bind(customerId),
+        env.DB.prepare("DELETE FROM consent_records WHERE customer_id=?").bind(customerId),
+        env.DB.prepare("DELETE FROM customers WHERE id=?").bind(customerId),
+      ]);
+
+      // audit log
+      try {
+        ctx.waitUntil(writeAuditLog(env, request, admin, "hard_delete", "customer", customerId, `Hard-deleted customer ${customerId.slice(0, 8)} (admin force-delete, skipped 30d grace)`, snapshot, null));
+      } catch {}
+
+      return jsonResponse({
+        ok: true,
+        message: "ลบถาวรเรียบร้อย — ข้อมูลทั้งหมดถูกลบจากระบบ",
+        customer_id: customerId,
+        deleted_snapshot: snapshot,
+      });
+    } catch (err) {
+      return jsonResponse({ error: safeError("ลบถาวรไม่สำเร็จ", err) }, 500);
     }
   }
 
@@ -6336,6 +6468,104 @@ async function handleCustomerAuth(request, env, url) {
       });
     } catch (err) {
       return jsonResponse({ error: safeError("ดึงข้อมูล consent ไม่สำเร็จ", err) }, 500);
+    }
+  }
+
+  // ---------- POST /api/customer/recover (กู้คืนบัญชีที่ถูก soft delete) ----------
+  //   ลูกค้าที่ลบบัญชีเอง (สิทธิ์ลบ PDPA Section 33) + ยังอยู่ใน 30 วัน grace
+  //   → สามารถกู้คืนบัญชีเองได้โดย login + ระบุ recover: true
+  //   flow:
+  //     1. ตรวจ login + password (เหมือน login ปกติ แต่ยอมรับ customer ที่ deleted_at != NULL)
+  //     2. ถ้า body.recover === true → ตั้ง deleted_at = NULL + สร้าง session ใหม่
+  //     3. ถ้าไม่ใช่ → แจ้ง "บัญชีถูกลบ ต้องการกู้คืนไหม?" (frontend แสดง modal ยืนยัน)
+  //   ผลกระทบระบบเดิม: 0% — endpoint ใหม่ ไม่แตะ /api/customer/login เดิม
+  if (path === "recover" && request.method === "POST") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+    const login = String(body.login || "").trim();
+    const password = String(body.password || "");
+    const confirmRecover = body.recover === true;
+    if (!login || !password) return jsonResponse({ error: "กรุณากรอกอีเมล/เบอร์ WhatsApp และรหัสผ่าน" }, 400);
+
+    const loginNormalized = login.includes("@") ? login.toLowerCase() : normalizeWhatsapp(login);
+    let customer;
+    try {
+      customer = await env.DB.prepare(
+        "SELECT id, email, whatsapp, password_hash, display_name, created_at, deleted_at FROM customers WHERE email = ? OR whatsapp = ?"
+      ).bind(loginNormalized, loginNormalized).first();
+    } catch (err) {
+      return jsonResponse({ error: safeError("กู้คืนบัญชีไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
+    }
+
+    if (!customer) {
+      return jsonResponse({ error: "อีเมล/เบอร์ WhatsApp หรือรหัสผ่านไม่ถูกต้อง", code: "customer/invalid-credential" }, 401);
+    }
+
+    // ตรวจรหัสผ่าน
+    let passwordOk = false;
+    try {
+      passwordOk = await verifyPassword(password, customer.password_hash);
+    } catch (_) {}
+    if (!passwordOk) {
+      return jsonResponse({ error: "อีเมล/เบอร์ WhatsApp หรือรหัสผ่านไม่ถูกต้อง", code: "customer/invalid-credential" }, 401);
+    }
+
+    // ตรวจสถานะ deleted_at
+    if (!customer.deleted_at) {
+      return jsonResponse({ error: "บัญชีนี้ยังไม่ถูกลบ — กรุณาเข้าสู่ระบบปกติ", code: "customer/not-deleted" }, 400);
+    }
+
+    // ตรวจว่ายังอยู่ใน 30 วัน grace หรือไม่
+    const deletedAt = new Date(customer.deleted_at);
+    const hardDeleteAt = new Date(deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const now = Date.now();
+    if (now >= hardDeleteAt.getTime()) {
+      // เกิน 30 วันแล้ว — ไม่สามารถกู้คืนเองได้ ต้องติดต่อแอดมิน (แต่จริงๆ cron น่าจะลบไปแล้ว)
+      return jsonResponse({
+        error: "บัญชีนี้หมดระยะเวลากู้คืนแล้ว (เกิน 30 วัน) — กรุณาติดต่อแอดมิน",
+        code: "customer/grace-expired",
+        deleted_at: customer.deleted_at,
+        hard_delete_at: hardDeleteAt.toISOString(),
+      }, 410);
+    }
+
+    // ถ้ายังไม่ยืนยัน recover → แจ้ง frontend ให้แสดง modal ยืนยัน
+    if (!confirmRecover) {
+      return jsonResponse({
+        ok: false,
+        code: "customer/recover-confirm-required",
+        message: "บัญชีนี้ถูกลบ — ต้องการกู้คืนไหม?",
+        customer: { id: customer.id, display_name: customer.display_name, email: customer.email },
+        deleted_at: customer.deleted_at,
+        hard_delete_at: hardDeleteAt.toISOString(),
+        days_remaining: Math.max(0, Math.ceil((hardDeleteAt.getTime() - now) / (24 * 60 * 60 * 1000))),
+      }, 200);
+    }
+
+    // ยืนยันแล้ว → กู้คืน + สร้าง session
+    try {
+      const nowIso = new Date().toISOString();
+      await env.DB.prepare(
+        "UPDATE customers SET deleted_at = NULL, updated_at = ? WHERE id = ?"
+      ).bind(nowIso, customer.id).run();
+
+      // สร้าง session ใหม่
+      const token = await createCustomerSession(env, customer.id);
+
+      // audit log
+      try {
+        ctx.waitUntil(writeAuditLog(env, request, { id: customer.id, email: "customer" }, "recover", "customer", customer.id, "Customer self-recovered account (PDPA Section 33 — within 30d grace)", { deleted_at: customer.deleted_at, recovered_at: nowIso }, null));
+      } catch {}
+
+      const { password_hash, deleted_at, ...customerSafe } = customer;
+      return secureJsonResponse({
+        ok: true,
+        message: "กู้คืนบัญชีเรียบร้อย — ยินดีต้อนรับกลับ!",
+        customer: { ...customerSafe, deleted_at: null, updated_at: nowIso },
+      }, 200, { "Set-Cookie": buildCustomerSessionCookie(token) });
+    } catch (err) {
+      return jsonResponse({ error: safeError("กู้คืนบัญชีไม่สำเร็จ", err) }, 500);
     }
   }
 
