@@ -1,7 +1,7 @@
 /* =====================================================================
  * Miusic Service Worker — PWA (T004-pwa)
  * ---------------------------------------------------------------------
- * Cache version: miusic-pwa-v1.0.0
+ * Cache version: miusic-pwa-v1.0.2-T048
  *
  * Strategies:
  *   - Static assets (CSS/JS/PNG/SVG/HTML, non-/api/*): cache-first → network
@@ -13,13 +13,18 @@
  *     orders/payment-proofs/audit-log) are NEVER cached (PII leak prevention
  *     on shared devices); logout also broadcasts CLEAR_API_CACHE to SW.
  *
+ *   - 🆕 (T049): cache-bust หลัง T044-T048 — อัปเดต version + เพิ่มไฟล์ใหม่ใน precache
+ *
  * Iron rules honored:
  *   - worker/* is NEVER cached (server-side code, not for client)
  *   - /api/* responses are NEVER cache-first (prevents PII leak / stale order)
  *   - POST/PUT/DELETE are NEVER intercepted (payment + order mutations safe)
  * ===================================================================== */
 
-const CACHE_VERSION = 'miusic-pwa-v1.0.1';
+// 🆕 (T049-A): อัปเดต CACHE_VERSION หลัง T044-T048 → ลูกค้าเก่าจะได้ cache ใหม่
+//   เดิม: 'miusic-pwa-v1.0.1' (ก่อน T044) → ลูกค้าเก่ายังใช้ JS/CSS เก่า → ไม่เห็นการแก้ T044-T048
+//   ใหม่: 'miusic-pwa-v1.0.2-T048' → install event จะ activate SW ใหม่ + ล้าง cache เก่า
+const CACHE_VERSION = 'miusic-pwa-v1.0.2-T048';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const FONT_CACHE    = `${CACHE_VERSION}-fonts`;
@@ -75,6 +80,9 @@ const PRECACHE_URLS = [
   '/song-analyzer.js',
   '/thai-sort.js',
   '/admin-roles.js',
+  // 🆕 (T049-B): เพิ่มไฟล์ใหม่จาก T013 + T045 — ไม่ precache จะทำให้ offline mode ไม่ทำงาน
+  '/shared-utils.js',          // T013-R3: shared helpers
+  '/phone-input.js',           // T045: country selector dropdown
   '/vendor/html2canvas.min.js',
   '/default-song-cover.svg',
   '/default-playlist-cover.svg',
