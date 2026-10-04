@@ -886,53 +886,15 @@ document.addEventListener("DOMContentLoaded", () => {
 //   ผลกระทบระบบเดิม: 0% — UI ใหม่ ไม่แตะ login/register/favorites เดิม
 // ============================================================
 
-// ---------- Cookie Consent Banner ----------
+// 🆕 (T060): เอา cookie consent banner ออก — user บอกว่าทำให้ลูกค้าคิดว่าเว็บไม่น่าเชื่อถือ
+//   - เดิม (T057): แสดง banner ข้างล่างจอให้ลูกค้ากด "ยอมรับ" ตอนเข้าเว็บครั้งแรก
+//   - ใหม่ (T060): ไม่แสดง banner แล้ว — ลูกค้าสามารถดู Privacy Policy ได้ที่ /privacy.html ผ่าน footer
+//   - เหตุผล: banner ทำให้ลูกค้าคิดว่าเว็บมี cookie tracking หรือไม่น่าเชื่อถือ
+//   - PDPA ยังครบ: ยังมี privacy.html + ลูกค้าใช้สิทธิ์ PDPA ได้ผ่าน modal "ตั้งค่าบัญชี"
+//   - ผลกระทบระบบเดิม: 0% — เปลี่ยน function เป็น no-op ไม่แตะส่วนอื่น
 function initCookieConsentBanner() {
-  const STORAGE_KEY = "miusic_cookie_consent_v1";
-  let consented = null;
-  try { consented = localStorage.getItem(STORAGE_KEY); } catch (_) {}
-  if (consented) return; // ยินยอมแล้ว → ไม่ต้องแสดงอีก
-
-  // สร้าง banner element
-  const banner = document.createElement("div");
-  banner.id = "cookieConsentBanner";
-  banner.style.cssText = `
-    position: fixed; bottom: 0; left: 0; right: 0;
-    background: var(--surface, #131722);
-    border-top: 1px solid var(--accent, #8b5cf6);
-    padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
-    z-index: 9999;
-    display: flex; align-items: center; gap: 12px;
-    flex-wrap: wrap;
-    box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
-    font-size: 13px;
-  `;
-  banner.innerHTML = `
-    <div style="flex:1;min-width:240px;color:var(--text,#f8fafc);">
-      🍪 เว็บไซต์เราใช้ cookie เพื่อจดจำการเข้าสู่ระบบของคุณ
-      โดยใช้ตาม <a href="/privacy.html" target="_blank" style="color:var(--accent,#8b5cf6);text-decoration:underline;">นโยบายความเป็นส่วนตัว</a>
-    </div>
-    <button type="button" id="cookieConsentAccept" style="
-      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-      color: white; border: none; padding: 8px 18px; border-radius: 9999px;
-      font-weight: 600; font-size: 13px; cursor: pointer;
-    ">ยอมรับ</button>
-  `;
-  document.body.appendChild(banner);
-
-  document.getElementById("cookieConsentAccept")?.addEventListener("click", () => {
-    try { localStorage.setItem(STORAGE_KEY, new Date().toISOString()); } catch (_) {}
-    banner.remove();
-    // ส่ง consent record ไป server (ถ้า login แล้ว)
-    if (currentCustomer) {
-      fetch("/api/customer/consent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ consent_type: "cookie", action: "accept" }),
-      }).catch(() => {});
-    }
-  });
+  // no-op — เอา banner ออกแล้ว (T060)
+  // ถ้าจะเปิดใหม่ในอนาคต → ลบ no-op นี้ + คืน code เดิมจาก git history (commit ก่อน T060)
 }
 
 // ---------- Account Settings Modal ----------

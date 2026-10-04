@@ -28,7 +28,8 @@
 //   → ลูกค้าเก่าจะได้เห็น cookie banner + modal ตั้งค่าบัญชี
 // 🆕 (T058): อัปเดต CACHE_VERSION หลัง T058 (PDPA Phase 2 — admin dashboard + recover account)
 // 🆕 (T059): อัปเดต CACHE_VERSION หลัง T059 (PWA offline mode — IndexedDB)
-const CACHE_VERSION = 'miusic-pwa-v1.0.5-T059';
+// 🆕 (T060): อัปเดต CACHE_VERSION หลัง T060 (เอา cookie consent banner ออก)
+const CACHE_VERSION = 'miusic-pwa-v1.0.6-T060';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const FONT_CACHE    = `${CACHE_VERSION}-fonts`;
