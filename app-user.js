@@ -1924,7 +1924,14 @@ function setView(view) {
   const heroBanner = document.getElementById("heroBanner");
   if (heroBanner) heroBanner.style.display = (view === "home") ? "" : "none";
   const categoryShowcase = document.getElementById("categoryShowcase");
-  if (categoryShowcase) categoryShowcase.style.display = showDj ? "" : "none";
+  // 🔧 (T064): แสดงการ์ดหมวดหมู่ (#categoryShowcase) เพิ่มในแท็บ "หมวดหมู่" ด้วย
+  //   - เดิม: แสดงเฉพาะเมื่อ showDj (หน้าแรก category=all / หน้า DJ) → แท็บ "หมวด" ไม่เห็นการ์ดหมวดเลย
+  //   - ใหม่: เข้าแท็บหมวดหมู่ (view=category และยังไม่เลือกหมวด currentCategory=all) → แสดงการ์ดหมวดทั้งหมด
+  //   - กดการ์ดเลือกหมวดแล้ว (currentCategory != all) → ยังซ่อนเหมือนเดิม (T023: โฟกัสเพลงของหมวดนั้น)
+  //   - ไม่กระทบหน้าอื่น — เงื่อนไขเดิม showDj ยังอยู่ครบ เพียงเพิ่ม OR เฉพาะ view=category
+  const showCategoryShowcase =
+    showDj || (view === "category" && STATE.currentCategory === "all");
+  if (categoryShowcase) categoryShowcase.style.display = showCategoryShowcase ? "" : "none";
 
   // 🆕 (T031): แสดง #playlistsView เฉพาะตอน view="playlist"
   //   - ย้ายจาก dropdown section ในหน้าแรก มาเป็น full page view
@@ -3113,6 +3120,7 @@ document.querySelectorAll(".bottom-nav button").forEach(btn => {
       // 🆕 (T009-F1): skeleton ตอน songs ยังไม่โหลด (เหมือน branch home ด้านบน)
       if (!Array.isArray(STATE.songs) || STATE.songs.length === 0) renderSongSkeleton(12);
       setView("category");
+      renderCategoryGrid(); // 🔧 (T064): วาดการ์ดหมวดหมู่ทุกครั้งที่เข้าแท็บ — อัปเดตจำนวนเพลงล่าสุด (setView แสดง showcase ให้แล้ว)
       renderCategoryChips();
       renderDjRow(); // 🎧 (2026-09-20) re-render DJ row เพื่อลบ class selected (วงกลมแดง) หลังออกจากหน้า DJ
       renderSongGrid();
