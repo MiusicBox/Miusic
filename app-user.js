@@ -369,6 +369,19 @@ async function init() {
   //   - ใช้ STATE.settings.whatsapp_number ที่โหลดจาก settings ด้านบน
   try { initWhatsappFab(); } catch (err) { console.warn("[init] initWhatsappFab failed:", err?.message || err); }
 
+  // 🆕 (T045): PhoneInput country selector — mount บนทุก input ที่เกี่ยวกับเบอร์โทร/WhatsApp
+  //   - auto-detect จาก prefix ของเบอร์ที่พิมพ์ (020 → ลาว, 08/09/06 → ไทย)
+  //   - จดจำการเลือกใน localStorage (music_store_phone_country)
+  //   - mount หลัง DOM ready + หลัง customer-auth.js render เสร็จ (ใช้ setTimeout 0)
+  try {
+    setTimeout(() => {
+      if (window.PhoneInput && window.PhoneInput.mountAll) {
+        // mount บน input ที่อยู่ใน HTML ตอนโหลดหน้า
+        window.PhoneInput.mountAll('input[id="checkoutCustomerWhatsapp"], input[id="trackOrderPhone"], input[id="trackOrderAllPhone"], input[id="customerAuthWhatsapp"]');
+      }
+    }, 0);
+  } catch (err) { console.warn("[init] PhoneInput mount failed:", err?.message || err); }
+
   // 🆕 (T011-F6): เริ่มต้น scroll-to-top button — ปุ่มลอยเลื่อนขึ้นบน
   //   - ผูก scroll listener (passive) + click handler
   //   - แสดงปุ่มเมื่อ scroll ผ่าน 400px, ซ่อนเมื่อกลับขึ้นบน
