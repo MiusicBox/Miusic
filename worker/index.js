@@ -5964,11 +5964,18 @@ async function handleCustomerAuth(request, env, url) {
       //   ก่อนหน้านี้ลบเฉพาะ sessions + customer record → customer_favorites / song_likes / password_reset_requests ค้างเป็น orphan
       //   ผลกระทบ: orphan rows บวม D1 storage (Free plan 5GB) + รั่ว profile ลูกค้าที่ถูกลบไปแล้ว (privacy)
       //   วิธีแก้: DELETE 3 ตารางนี้ทั้งหมดก่อนลบ customer record (ลด FOREIGN KEY risk ถ้ามี constraint ในอนาคต)
-      await env.DB.prepare("DELETE FROM customer_favorites WHERE customer_id=?").bind(customerId).run();
-      await env.DB.prepare("DELETE FROM song_likes WHERE customer_id=?").bind(customerId).run();
-      await env.DB.prepare("DELETE FROM password_reset_requests WHERE customer_id=?").bind(customerId).run();
-      // ลบลูกค้า
-      await env.DB.prepare("DELETE FROM customers WHERE id=?").bind(customerId).run();
+      // 🆕 (T054-L5): แปลง 4 sequential DELETEs → env.DB.batch() (atomic transaction)
+      //   ปัญหา: ถ้า step 2 ล้มหลัง step 1 สำเร็จ → orphan rows (favorites หาย แต่ likes ค้าง)
+      //          + ถ้ามี customer activity ระหว่าง delete → like row ตกหล่น
+      //   วิธีแก้: ใช้ env.DB.batch() ทำ 4 DELETEs เป็น atomic → ทุกอย่างสำเร็จพร้อมกัน หรือ ล้มพร้อมกัน
+      //   ผลกระทบระบบเดิม: 0% — flow เดิม (ลบ customer → ลบ 4 tables) เหมือนเดิม แค่เปลี่ยนเป็น atomic
+      //   อ้างอิง: https://developers.cloudflare.com/d1/worker-api/d1-database/#batch
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM customer_favorites WHERE customer_id=?").bind(customerId),
+        env.DB.prepare("DELETE FROM song_likes WHERE customer_id=?").bind(customerId),
+        env.DB.prepare("DELETE FROM password_reset_requests WHERE customer_id=?").bind(customerId),
+        env.DB.prepare("DELETE FROM customers WHERE id=?").bind(customerId),
+      ]);
       return jsonResponse({ ok: true });
     } catch (err) {
       return jsonResponse({ error: safeError("ลบลูกค้าไม่สำเร็จ", err) }, 500);
