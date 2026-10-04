@@ -2408,27 +2408,68 @@ async function handleDb(request, env, url) {
             binds.push(`%${escapedQ}%`, `%${escapedQ}%`);
           }
 
-          // DJ filter (multiple) — json_extract dj_id IN (?,?,?)
-          //   รองรับทั้ง dj_id และ dj_name field (เผื่อข้อมูลเก่าที่เก็บเป็นชื่อ)
+          // DJ filter (multiple) — match ทั้ง dj_id, dj_name และ dj (เก่า)
+          //   🆕 (T025): รองรับข้อมูลเก่าที่ dj_id ว่าง + dj_name อาจมี prefix "DJ:" หรือชื่อตรงตัว
+          //   ปัญหาเดิม: filter ใช้ dj_id IN (...) เท่านั้น → เพลงเก่า dj_id ว่าง → ไม่ match → 0 ผลลัพธ์
+          //   วิธีแก้: ดึง dj_name จาก STATE.djs ใน DB ก่อน → match ทั้ง id + name
           if (djIds.length > 0) {
-            const placeholders = djIds.map(() => "?").join(",");
-            whereClauses.push(
-              `(json_extract(data, '$.dj_id') IN (${placeholders}) ` +
-              `OR json_extract(data, '$.dj_name') IN (${placeholders}))`
-            );
-            binds.push(...djIds, ...djIds);
+            // 🆕 (T025): ดึง dj_name ของแต่ละ dj_id จาก documents collection=djs
+            //   เพื่อ match กับเพลงที่เก็บ dj_name แทน dj_id
+            const djNames = [];
+            try {
+              const djPlaceholders = djIds.map(() => "?").join(",");
+              const djRows = await env.DB.prepare(
+                `SELECT json_extract(data, '$.dj_name') AS name FROM documents
+                 WHERE collection = 'djs' AND id IN (${djPlaceholders})`
+              ).bind(...djIds).all();
+              for (const r of (djRows.results || [])) {
+                if (r.name) djNames.push(r.name);
+              }
+            } catch (err) {
+              console.warn('[T025] failed to lookup DJ names:', err?.message || err);
+            }
+
+            const allDjValues = [...djIds, ...djNames];
+            if (allDjValues.length > 0) {
+              const placeholders = allDjValues.map(() => "?").join(",");
+              whereClauses.push(
+                `(json_extract(data, '$.dj_id') IN (${placeholders}) ` +
+                `OR json_extract(data, '$.dj_name') IN (${placeholders}))`
+              );
+              binds.push(...allDjValues, ...allDjValues);
+            }
           }
 
-          // Category filter (multiple) — json_extract category_id IN (?,?,?)
-          //   รองรับทั้ง category_id (single) และ categoryIds (array stored as JSON)
-          //   รองรับข้อมูลเก่าที่เก็บ category_name แทน id
+          // Category filter (multiple) — match ทั้ง category_id, categoryIds, category_name
+          //   🆕 (T025): รองรับข้อมูลเก่าที่ category_id ว่าง + ใช้ category_name แทน
+          //   ปัญหาเดิม: filter ใช้ category_id IN (...) เท่านั้น → เพลงเก่า category_id ว่าง → 0 ผลลัพธ์
+          //   วิธีแก้: ดึง category_name จาก documents collection=categories → match ทั้ง id + name
           if (catIds.length > 0) {
-            const placeholders = catIds.map(() => "?").join(",");
-            whereClauses.push(
-              `(json_extract(data, '$.category_id') IN (${placeholders}) ` +
-              `OR json_extract(data, '$.categoryIds') IN (${placeholders}))`
-            );
-            binds.push(...catIds, ...catIds);
+            // 🆕 (T025): ดึง category_name ของแต่ละ cat_id จาก documents collection=categories
+            const catNames = [];
+            try {
+              const catPlaceholders = catIds.map(() => "?").join(",");
+              const catRows = await env.DB.prepare(
+                `SELECT json_extract(data, '$.category_name') AS name FROM documents
+                 WHERE collection = 'categories' AND id IN (${catPlaceholders})`
+              ).bind(...catIds).all();
+              for (const r of (catRows.results || [])) {
+                if (r.name) catNames.push(r.name);
+              }
+            } catch (err) {
+              console.warn('[T025] failed to lookup category names:', err?.message || err);
+            }
+
+            const allCatValues = [...catIds, ...catNames];
+            if (allCatValues.length > 0) {
+              const placeholders = allCatValues.map(() => "?").join(",");
+              whereClauses.push(
+                `(json_extract(data, '$.category_id') IN (${placeholders}) ` +
+                `OR json_extract(data, '$.categoryIds') IN (${placeholders}) ` +
+                `OR json_extract(data, '$.category_name') IN (${placeholders}))`
+              );
+              binds.push(...allCatValues, ...allCatValues, ...allCatValues);
+            }
           }
 
           // Price range
@@ -2441,12 +2482,37 @@ async function handleDb(request, env, url) {
             binds.push(maxPrice);
           }
 
-          // Has promo — ต้องมี discount_price และมากกว่า 0
+          // Has promo — เพลงที่มี discount active ในตาราง documents collection=discounts
+          //   🆕 (T025): ปัญหาเดิมใช้ discount_price field ใน song → แต่ข้อมูลจริงเก็บแยกใน discounts collection
+          //   วิธีแก้: ดึง song_ids ที่มี discount active → filter song.id IN (...)
           if (hasPromoParam) {
-            whereClauses.push(
-              "json_extract(data, '$.discount_price') IS NOT NULL " +
-              "AND CAST(json_extract(data, '$.discount_price') AS REAL) > 0"
-            );
+            try {
+              const discountRows = await env.DB.prepare(
+                `SELECT id FROM documents
+                 WHERE collection = 'discounts'
+                   AND json_extract(data, '$.status') = 'active'
+                   AND json_extract(data, '$.target_type') = 'song'`
+              ).all();
+              const promoSongIds = (discountRows.results || [])
+                .map(r => r.id)
+                .filter(Boolean);
+
+              if (promoSongIds.length > 0) {
+                const placeholders = promoSongIds.map(() => "?").join(",");
+                whereClauses.push(`id IN (${placeholders})`);
+                binds.push(...promoSongIds);
+              } else {
+                // ไม่มี discount active เลย → คืน 0 ผลลัพธ์
+                whereClauses.push("1=0");
+              }
+            } catch (err) {
+              console.warn('[T025] failed to lookup promo songs:', err?.message || err);
+              // fallback: ใช้ discount_price field (เผื่อข้อมูลใหม่)
+              whereClauses.push(
+                "json_extract(data, '$.discount_price') IS NOT NULL " +
+                "AND CAST(json_extract(data, '$.discount_price') AS REAL) > 0"
+              );
+            }
           }
 
           // === build ORDER BY clause (default: newest) ===
