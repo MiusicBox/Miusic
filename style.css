@@ -408,6 +408,9 @@ button:active {
 .dropdown-icon {
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   color: var(--text-dim);
+  width: 18px;
+  height: 18px;
+  opacity: 0.7;
 }
 
 .dropdown-icon.is-closed {
@@ -3946,13 +3949,14 @@ button:active {
 .playlist-folder-btn .playlist-folder-arrow {
   align-self: flex-start;
   color: #a78bfa;
-  width: 36px;
-  height: 36px;
+  width: 20px;
+  height: 20px;
 }
 .playlist-header-btn .dropdown-icon {
   color: #a78bfa;
-  width: 32px;
-  height: 32px;
+  width: 18px;
+  height: 18px;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ==========================================================================
