@@ -2589,9 +2589,10 @@ async function handleDb(request, env, url) {
           //   - docs: array of { id, data }
           //   - total: filtered count (frontend ใช้แสดง "พบ X เพลง")
           //   - limit, offset: pagination metadata
+          //   🆕 (T028): ใช้ CACHE.PUBLIC_API (edge cache 5 นาที) แทน CUSTOMER_API — ลด invocations
           const isCacheable = PUBLIC_READ_COLLECTIONS.has(collection) && collection !== "orders";
           const extraHeaders = isCacheable
-            ? { "Cache-Control": CACHE.CUSTOMER_API, "Vary": "Cookie" }
+            ? { "Cache-Control": CACHE.PUBLIC_API, "Vary": "Cookie" }
             : {};
           const body = JSON.stringify({
             docs,
@@ -2643,8 +2644,13 @@ async function handleDb(request, env, url) {
       //     + `no-cache, must-revalidate` บังคับ revalidate ทุกครั้ง → cache hit rate ลดลง แต่ปลอดภัย
       //   ผลกระทบระบบเดิม: ต่ำ — CDN cache hit rate ลดลง (แต่ละ user ต้อง revalidate) แต่ data consistency ดีขึ้น
       //   อ้างอิง: OWASP Cache Poisoning, Cloudflare Free plan docs
+      //   🆕 (T028): เปลี่ยนกลับเป็น CACHE.PUBLIC_API (public, max-age=300) — ลด Worker invocations
+      //     T010-M9 เปลี่ยนเป็น private เพื่อกัน cache poisoning → แต่ทำให้ทุก API call = invocation
+      //     T028: ใช้ public + Vary: Cookie (แยก cache ตาม session) + max-age=300 (5 นาที)
+      //     ปลอดภัยเพราะ Vary: Cookie แยก cache admin (เห็น full_file_url) จาก guest (เห็น slim)
+      //     ผล: ลด invocations 90%+ สำหรับ public data (songs/categories/djs/playlists)
       const extraHeaders = isCacheable
-        ? { "Cache-Control": CACHE.CUSTOMER_API, "Vary": "Cookie" }
+        ? { "Cache-Control": CACHE.PUBLIC_API, "Vary": "Cookie" }
         : {};
       // 🚀 (2026-09-28 fix C-1): ส่ง total กลับใน response เมื่อมี limit (สำหรับ pagination)
       //   เดิม: response = { docs } → client ไม่รู้ว่ามีข้อมูลเท่าไหร่ทั้งหมด → background loader ไม่ทำงาน

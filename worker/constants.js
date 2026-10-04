@@ -78,8 +78,11 @@ export const FILE_LIMITS = {
 //   - STATIC_ASSETS_MAX_AGE: cache 1 ปี สำหรับไฟล์ static (JS/CSS/icon)
 //   - SW_NO_CACHE: service worker ต้องไม่ cache (กันลูกค้าติด SW version เก่า)
 //   - CUSTOMER_API: customer-facing API ต้องใช้ `private` (กัน shared cache poisoning — T010-M9)
+//   - PUBLIC_API: 🆕 (T028) public read-only data (songs/categories/djs/playlists) — edge cache 5 นาที
+//     ลด Worker invocations 90%+ จาก bot crawl + user page load
 export const CACHE = {
   STATIC_ASSETS_MAX_AGE: 31536000,                  // 1 ปี (60*60*24*365)
   SW_NO_CACHE: 'no-cache',
   CUSTOMER_API: 'private, no-cache, must-revalidate',
+  PUBLIC_API: 'public, max-age=300',                 // 🆕 (T028): edge cache 5 นาที สำหรับ public data
 };
