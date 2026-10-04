@@ -1336,7 +1336,16 @@ function getFilteredSongs() {
   // 🆕 (T015): ถ้าใช้ advanced server-side filter → STATE.songs ถูกกรองที่ server แล้ว
   //   ส่งคืนทั้งหมดตรง ๆ ไม่ต้อง filter ซ้ำฝั่ง client (จะทับผลลัพธ์ server)
   //   ผลกระทบระบบเดิม: 0% — กรณี SONG_SEARCH_STATE.active=false → ใช้ logic เดิมทุกประการ
+  //
+  //   🆕 (T027): แม้ advanced filter active ก็ต้องกรองตาม category ฝั่ง client ด้วย
+  //     ปัญหาเดิม: active=true → return STATE.songs ทั้งหมด → กดหมวดที่มี 0 เพลงก็ยังแสดงเพลงทั้งหมด
+  //     วิธีแก้: ถ้า STATE.currentCategory !== "all" → กรองตาม category เสมอ (แม้ active=true)
+  //     ผลกระทบ: 0% — ถ้า currentCategory="all" (ค่า default ตอน advanced filter active) → ไม่กรอง → เหมือนเดิม
   if (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active) {
+    // 🆕 (T027): ถ้าเลือกหมวดเฉพาะ → กรองตาม category ด้วย (กันปัญหาแสดงเพลงทั้งหมด)
+    if (STATE.currentCategory && STATE.currentCategory !== "all") {
+      return STATE.songs.filter(s => songBelongsToCurrentCategory(s));
+    }
     return STATE.songs;
   }
   return STATE.songs.filter(s => {
