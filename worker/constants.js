@@ -64,7 +64,7 @@ export const TTL = {
   CUSTOMER_SESSION_DAYS: 30,       // customer session (auth-helpers.js)
   DOWNLOAD_TOKEN_HOURS: 24,        // one-time download token (download_tokens table)
   ZIP_FILE_HOURS: 24,              // cache ไฟล์ ZIP ใน R2 browser
-  AUDIT_LOG_DAYS: 90,              // retention policy (TODO: cron cleanup)
+  AUDIT_LOG_DAYS: 10,              // retention policy — cron cleanup ทุก 6 ชม. (worker/index.js)
   LOGIN_ATTEMPTS_DAYS: 1,          // retention policy (TODO: cron cleanup)
 };
 
