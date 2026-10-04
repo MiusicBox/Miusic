@@ -880,22 +880,17 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // ============================================================
-// 🆕 (T057-PDPA): Account Settings Modal + Cookie Consent Banner
+// 🆕 (T057-PDPA): Account Settings Modal
 //   - modal "ตั้งค่าบัญชี" สำหรับใช้สิทธิ์ PDPA 6 ข้อ
-//   - cookie consent banner แสดงตอนเข้าเว็บครั้งแรก
 //   ผลกระทบระบบเดิม: 0% — UI ใหม่ ไม่แตะ login/register/favorites เดิม
 // ============================================================
 
-// 🆕 (T060): เอา cookie consent banner ออก — user บอกว่าทำให้ลูกค้าคิดว่าเว็บไม่น่าเชื่อถือ
-//   - เดิม (T057): แสดง banner ข้างล่างจอให้ลูกค้ากด "ยอมรับ" ตอนเข้าเว็บครั้งแรก
-//   - ใหม่ (T060): ไม่แสดง banner แล้ว — ลูกค้าสามารถดู Privacy Policy ได้ที่ /privacy.html ผ่าน footer
-//   - เหตุผล: banner ทำให้ลูกค้าคิดว่าเว็บมี cookie tracking หรือไม่น่าเชื่อถือ
-//   - PDPA ยังครบ: ยังมี privacy.html + ลูกค้าใช้สิทธิ์ PDPA ได้ผ่าน modal "ตั้งค่าบัญชี"
-//   - ผลกระทบระบบเดิม: 0% — เปลี่ยน function เป็น no-op ไม่แตะส่วนอื่น
-function initCookieConsentBanner() {
-  // no-op — เอา banner ออกแล้ว (T060)
-  // ถ้าจะเปิดใหม่ในอนาคต → ลบ no-op นี้ + คืน code เดิมจาก git history (commit ก่อน T060)
-}
+// 🆕 (T060-T061): เอา cookie consent banner ออกจากโค้ดเลย
+//   - T057: เดิมแสดง banner ข้างล่างจอให้ลูกค้ากด "ยอมรับ" → ลูกค้าคิดว่าเว็บไม่น่าเชื่อถือ
+//   - T060: เปลี่ยน function เป็น no-op
+//   - T061: ลบ function + callers + window exposure ออกจากโค้ดเลย
+//   - PDPA ยังครบ: ยังมี privacy.html + ลูกค้าใช้สิทธิ์ PDPA ได้ผ่าน modal "ตั้งค่าบัญชี" (ปุ่ม ⚙️)
+//   - ถ้าจะเปิด banner ใหม่ในอนาคต → คืน code จาก git history (commit ก่อน T061)
 
 // ---------- Account Settings Modal ----------
 function openAccountSettingsModal() {
@@ -1164,18 +1159,8 @@ window.syncCustomerAuthUI = function() {
   }
 };
 
-// 🆕 (T057): init cookie consent banner + account settings ตอน page load
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(initCookieConsentBanner, 1000);
-  });
-} else {
-  setTimeout(initCookieConsentBanner, 1000);
-}
-
 // 🆕 (T057): expose สำหรับเรียกจากภายนอก
 window.openAccountSettingsModal = openAccountSettingsModal;
-window.initCookieConsentBanner = initCookieConsentBanner;
 
 // ============================================================
 // 🆕 (T058-PDPA-Phase2): Recover Account UI + Customer Login Flow
