@@ -131,24 +131,54 @@ button:active {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-family: "Bai Jamjuree", sans-serif;
-  font-weight: 900;
+  /* 🎨 (T047): เปลี่ยน font จาก Bai Jamjuree (ตัวหนา) → Mali (ตัวทำมะดาสวยงาม)
+     เข้ากับคำขอ user: "หนังสือทำมะดาสวยงามเข้ากับธีมเว็บ"
+     Mali โหลดอยู่แล้วใน index.html (Google Fonts: Mali:wght@400;700) */
+  font-family: "Mali", "Bai Jamjuree", "Noto Sans Thai", sans-serif;
+  font-weight: 700;
   font-size: 22px;
-  letter-spacing: -0.3px;
+  letter-spacing: 0;
 }
 
-/* 💙 (2026-09-20): สไตล์ C2 Vivid Cyan — ฟ้านีออนสดชัด→มืด + กระโดดทีละตัว
-   - JavaScript ใน app-user.js จะแยกตัวอักษรเป็น <span class="char"> อัตโนมัติ
-   - สีและ animation-delay ถูก set แบบ inline โดย JS ตามตำแหน่งตัวอักษร */
+/* 🎨 (T047): สไตล์ชื่อร้านแบบหนังสือสวยงามเข้ากับธีมเว็บ
+   - เดิม (C2 Vivid Cyan): สีฟ้านีออนไล่สว่าง→มืด + animation กระโดดทีละตัว → ดูเป็น neon sign
+   - ใหม่ (Elegant Gradient): gradient text ม่วง→ชมพู (accent → accent-2) + glow หายใจเบา ๆ
+     → สไตล์หนังสืออ่านง่าย สวยงาม เข้ากับธีมเว็บ (dark theme + accent ม่วง/ชมพู)
+   - ใช้ background-clip: text + -webkit-background-clip: text ทั้งข้อความ (ไม่แยก span)
+     → ลด CPU จากการ render แต่ละ span + animation ทุกตัวอักษร
+   - รองรับทุก browser ที่ใช้ modern (มี prefix -webkit- สำหรับ Safari/Chrome) */
 .logo #siteName {
   display: inline-flex;
   align-items: baseline;
+  /* 🎨 (T047): gradient text ม่วง→ชมพู เข้ากับธีม */
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  /* glow หายใจเบา ๆ — subtle pulse */
+  filter: drop-shadow(0 0 8px var(--accent-glow));
+  animation: store-name-glow 3s ease-in-out infinite;
+  /* ปรับ font-weight ให้สอดคล้องกับ Mali (มีแค่ 400 + 700) */
+  font-weight: 700;
+  letter-spacing: 0.2px;
 }
+/* 🆕 (T047): เก็บ .char class ไว้ (กัน break ถ้ามี code เดิมยังใช้)
+   แต่ไม่มี animation กระโดดแล้ว เพราะ applyStoreNameAnimation ไม่แยก span อีก */
 .logo #siteName .char {
   display: inline-block;
   transform-origin: center bottom;
-  animation: store-name-jump 1.5s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
 }
+/* 🆕 (T047): glow pulse หายใจเบา ๆ — สลับ glow ม่วง→ชมพู */
+@keyframes store-name-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 8px var(--accent-glow));
+  }
+  50% {
+    filter: drop-shadow(0 0 12px var(--accent-2-glow));
+  }
+}
+/* 🆕 (T047): เก็บ keyframes เดิมไว้ แต่ไม่ใช้แล้ว — กัน break ถ้ามี code อื่นยังอ้างถึง */
 @keyframes store-name-jump {
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-10px); }

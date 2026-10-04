@@ -197,42 +197,26 @@ window.addToCart = addToCart;
 window.findSong = findSong;
 
 // 💙 (2026-09-20): สไตล์ C2 Vivid Cyan — แยกตัวอักษรชื่อร้านเป็น span.char
-//   แต่ละตัวได้สีฟ้าไล่จากสว่าง→มืด + animation-delay ต่างกัน → กระโดดทีละตัว
-//   สี: #67e8f9 (นีออนสว่าง) → #22d3ee → #06b6d4 → #0891b2 → ... → #083344 (มืด)
-//   รองรับชื่อร้านความยาวเท่าไหร่ก็ได้ — คำนวณสีตามตำแหน่ง % ของตัวอักษร
+// 🎨 (T047): applyStoreNameAnimation — เปลี่ยนจากสีฟ้านีออนกระโดดทีละตัว
+//   เป็น gradient accent (ม่วง→ชมพู) สไตล์หนังสือสวยงามเข้ากับธีมเว็บ
+//
+//   เดิม (C2 Vivid Cyan): แยกตัวอักษรเป็น <span class="char"> + สีฟ้าไล่สว่าง→มืด + animation กระโดด
+//     → ดูเด่นเป็น neon sign ไม่เข้ากับธีม (dark theme + accent ม่วง/ชมพู)
+//
+//   ใหม่ (Elegant Gradient): ใช้ gradient text ม่วง→ชมพู (accent → accent-2) + glow หายใจเบา ๆ
+//     → สไตล์หนังสืออ่านง่าย สวยงาม เข้ากับธีมเว็บ
+//     → ยังเก็บ animation ไว้ แต่เปลี่ยนจากกระโดดเป็น glow pulse (subtle)
+//
+//   ผลกระทบระบบเดิม: 0% — แค่เปลี่ยนสี + animation ไม่แตะโครงสร้าง HTML
 function applyStoreNameAnimation(el) {
   if (!el) return;
   const text = el.textContent || "Music Store";
-  // สีฟ้าไล่จากสว่าง→มืด (C2 Vivid Cyan palette)
-  const colors = [
-    { c: "#67e8f9", g: "rgba(103, 232, 249, 0.8)" },
-    { c: "#22d3ee", g: "rgba(34, 211, 238, 0.9)" },
-    { c: "#06b6d4", g: "rgba(6, 182, 212, 1)" },
-    { c: "#0891b2", g: "rgba(8, 145, 178, 1)" },
-    { c: "#0e7490", g: "rgba(14, 116, 144, 1)" },
-    { c: "#155e75", g: "rgba(21, 94, 117, 1)" },
-    { c: "#164e63", g: "rgba(22, 78, 99, 1)" },
-    { c: "#083344", g: "rgba(8, 51, 68, 1)" }
-  ];
-  const chars = text.split("");
-  const half = Math.floor(chars.length / 2);
-  el.innerHTML = chars.map((ch, i) => {
-    if (ch === " ") return '<span class="char">&nbsp;</span>';
-    // ไล่สีจากสว่าง→มืด โดยใช้ตำแหน่ง % ของตัวอักษร
-    // ครึ่งแรก: สว่าง→มืด, ครึ่งหลัง: มืด→สว่าง (วนกลับ เหมือนคลื่น)
-    let pos;
-    if (i <= half) {
-      pos = i / Math.max(half, 1);
-    } else {
-      pos = (chars.length - 1 - i) / Math.max(half, 1);
-    }
-    const colorIdx = Math.min(Math.floor(pos * (colors.length - 1)), colors.length - 1);
-    const color = colors[colorIdx];
-    const delay = (i * 0.06).toFixed(2);
-    const glow1 = `0 0 9px ${color.g}`;
-    const glow2 = `0 0 18px ${color.g.replace(/[\d.]+\)$/, "0.5)")}`;
-    return `<span class="char" style="color:${color.c};text-shadow:${glow1},${glow2};animation-delay:${delay}s;">${ch}</span>`;
-  }).join("");
+  // 🆕 (T047): ใช้ gradient text เข้ากับธีม (accent ม่วง → accent-2 ชมพู)
+  //   ไม่แยกตัวอักษรอีกต่อไป — ใช้ CSS background-clip: text ทั้งข้อความ
+  //   ลดการกิน CPU จากการ render แต่ละ span + animation ทุกตัวอักษร
+  el.innerHTML = text;
+  // เก็บ raw text ไว้ใน dataset เผื่อกรณีต้องการ access (debug)
+  el.dataset.rawText = text;
 }
 
 async function init() {
