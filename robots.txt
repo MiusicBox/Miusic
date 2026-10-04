@@ -1,14 +1,11 @@
 # robots.txt — สั่งการ Google/bot ว่า index อะไรได้บ้าง
-# อนุญาต index หน้าหลัก + หน้าเพลง + หน้าเพลย์ลิสต์ (สำหรับ SEO)
+# 🆕 (T028): เพิ่ม Crawl-delay 10 วินาที — ลด Worker invocations จาก bot crawl
 User-agent: *
+Crawl-delay: 10
 Allow: /
 Allow: /song/
 Allow: /playlist/
-# ห้าม index หน้า admin + migration
 Disallow: /admin.html
 Disallow: /migrate-rate-limit.html
-# ห้าม index API endpoints
 Disallow: /api/
-# หมายเหตุ: ไม่บล็อกไฟล์ .js/.css — Googlebot ต้องโหลดเพื่อแสดงผลหน้าเว็บ
-# Sitemap location (อัปเดตอัตโนมัติจาก Worker — ดึงเพลง/เพลย์ลิสต์จาก D1)
 Sitemap: https://miusic-store.dj-remix.workers.dev/sitemap.xml
