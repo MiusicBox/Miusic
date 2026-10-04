@@ -975,6 +975,14 @@ function setupAdvancedFilters() {
           updateActiveFiltersCount();
           loadSongsWithFilters(true);
         }
+        // 🆕 (T026): กด Enter ในช่องค้นหา → ปิด advanced filter panel ทันที
+        //   เหตุผล: user พิมพ์ค้นหาแล้ว → ไม่ต้องการเห็น panel อีก → ปิดเพื่อให้เห็นผลลัพธ์เต็มจอ
+        const filterPanel = document.getElementById("advancedFilterPanel");
+        const filterToggleBtn = document.getElementById("advancedFilterBtn");
+        if (filterPanel && filterToggleBtn) {
+          filterPanel.style.display = "none";
+          filterToggleBtn.setAttribute("aria-expanded", "false");
+        }
         // (ถ้าไม่มี filter → ให้ behavior เดิมทำงาน — blur + ไม่ trigger server search)
       }
     });
