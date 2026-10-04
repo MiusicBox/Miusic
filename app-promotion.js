@@ -1606,7 +1606,7 @@ function renderMyOrdersForm() {
       </div>
       <div class="field">
         <label>เบอร์โทร/WhatsApp *</label>
-        <input id="myOrdersReceiptPhone" type="tel" inputmode="numeric" placeholder="20XXXXXXXX" autocomplete="tel">
+        <input id="myOrdersReceiptPhone" type="tel" inputmode="numeric" placeholder="ลาว: 020 1234 5678 · ไทย: 081 234 5678" autocomplete="tel">
       </div>
       <button class="btn" id="myOrdersReceiptSearchBtn" type="button">📄 ค้นหาออเดอร์</button>
       <div id="myOrdersReceiptFeedback" class="my-orders-feedback" style="display:none;" aria-live="polite" role="status"></div>
@@ -1620,7 +1620,7 @@ function renderMyOrdersForm() {
       </div>
       <div class="field">
         <label>เบอร์ WhatsApp ที่ใช้สั่งซื้อ *</label>
-        <input id="myOrdersWhatsapp" type="tel" inputmode="numeric" placeholder="20XXXXXXXX" value="${myOrders_escapeHtml(savedWhatsapp)}" autocomplete="off">
+        <input id="myOrdersWhatsapp" type="tel" inputmode="numeric" placeholder="ลาว: 020 1234 5678 · ไทย: 081 234 5678" value="${myOrders_escapeHtml(savedWhatsapp)}" autocomplete="off">
       </div>
       <button class="btn" id="myOrdersSearchBtn" type="button">🔍 ดูออเดอร์ของฉัน</button>
       <!-- 🛡️ (r2-fern-mick-critical C7 fix): เพิ่ม aria-live="polite" role="status"

@@ -46,7 +46,7 @@ const BANNER_DISMISS_KEY = "music_store_banner_dismissed_v1"; // sessionStorage 
 // เพิ่มใหม่: จำชื่อ+เบอร์โทร/WhatsApp ของลูกค้าไว้ในเครื่อง เพื่อเติมให้อัตโนมัติตอนสั่งซื้อครั้งถัดไป (ลดการกรอกซ้ำ)
 const CUSTOMER_INFO_STORAGE_KEY = "music_store_customer_info_v1";
 
-export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhatsAppLink, openTrackOrderAllPicker }) {
+export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhatsAppLink, formatPhoneForDisplay, openTrackOrderAllPicker }) {
   let submitting = false;
   let activeOrderId = null;
   let activeOrderKey = null;
@@ -1339,7 +1339,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
           : ""}
         <div class="receipt-customer">
           <div><span>ลูกค้า</span><strong>${escapeHtml(order.customer_name)}</strong></div>
-          <div><span>WhatsApp</span><strong>${escapeHtml(order.whatsapp)}</strong></div>
+          <div><span>WhatsApp</span><strong>${escapeHtml(formatPhoneForDisplay ? formatPhoneForDisplay(order.whatsapp) : order.whatsapp)}</strong></div>
         </div>
         <div class="receipt-items">${buildReceiptItemRows(order) || '<div class="receipt-empty">ไม่มีรายการสินค้า</div>'}</div>
         ${buildReceiptDiscountRows(order)}

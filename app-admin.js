@@ -4872,7 +4872,28 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
       website_name: document.getElementById("setWebsiteName").value.trim(),
       meta_description: document.getElementById("setMetaDesc").value.trim(),
       admin_name: document.getElementById("setAdminName").value.trim(),
-      whatsapp_number: document.getElementById("setWhatsapp").value.trim(),
+      // 🆕 (T044-D): normalize whatsapp_number ก่อน save → รองรับทั้งลาว+ไทย
+      //   เดิม: บันทึก raw ที่แอดมินกรอก → ถ้าใส่ "0812345678" (ไทย) → DB เก็บ "0812345678"
+      //         → WhatsApp FAB ใช้ wa.me/0812345678 → WhatsApp ตีความเป็นอเมริกา (+1) → ลูกค้าเปิดแชทผิด
+      //   ใหม่: normalize → 85620XXXXXXXX (ลาว) หรือ 668XXXXXXXXX (ไทย) — sync กับ customer orders
+      //   ถ้าเบอร์ไม่ตรงรูปแบบใด ๆ → เก็บ raw (กัน data loss — แอดมินอาจตั้งใจใส่รูปแบบอื่น)
+      whatsapp_number: (() => {
+        const raw = document.getElementById("setWhatsapp").value.trim();
+        if (!raw) return "";
+        let s = String(raw).replace(/[^0-9+]/g, "").replace(/^\+/, "");
+        if (!s) return raw; // ไม่มีตัวเลขเลย → เก็บ raw (best effort)
+        if (s.startsWith("856") || s.startsWith("66")) return s; // มี country code แล้ว
+        // ลาว: 020XXXXXXXX → 85620XXXXXXXX
+        if (s.startsWith("020")) return "856" + s.slice(1);
+        // ลาว: 20XXXXXXXX (10 หลัก) → 85620XXXXXXXX
+        if (s.startsWith("20") && s.length === 10) return "856" + s;
+        // ไทย: 08/09XXXXXXXX (10 หลัก) → 668XXXXXXXXX
+        if ((s.startsWith("08") || s.startsWith("09")) && s.length === 10) return "66" + s.slice(1);
+        // ไทย: 0XXXXXXXXX (10 หลัก) → 66XXXXXXXXX
+        if (s.startsWith("0") && s.length === 10) return "66" + s.slice(1);
+        // ไม่ตรงรูปแบบ → เก็บ raw (best effort)
+        return raw;
+      })(),
       website_logo: document.getElementById("setLogo").value.trim(),
       // Payment settings (added in STEP 1 — merge:true keeps everything backward compatible)
       bank_name: document.getElementById("setBankName").value.trim(),

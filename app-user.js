@@ -135,6 +135,42 @@ function buildWhatsAppLink(number, text) {
   return "https://wa.me/" + clean + "?text=" + encodeURIComponent(text);
 }
 
+// 🆕 (T044-C): formatPhoneForDisplay — แปลงเบอร์ normalized → รูปแบบอ่านง่าย
+//   ใช้ใน receipt (app-cart.js) + my-orders (app-promotion.js) + ส่งเข้า initCart
+//   TODO (T013-R3): migrate to shared-utils.js — ตอนนี้ inline เหมือน helpers อื่น ๆ
+function formatPhoneForDisplay(phone) {
+  if (!phone) return "";
+  let s = String(phone).replace(/[^0-9]/g, "");
+  if (!s) return "";
+  if (s.startsWith("856")) {
+    const rest = s.slice(3);
+    if (rest.startsWith("20") && rest.length === 10) {
+      return `+856 20 ${rest.slice(2, 6)} ${rest.slice(6)}`;
+    }
+    if (rest.length >= 6 && rest.length <= 9) {
+      const mid = rest.slice(0, Math.ceil(rest.length / 2));
+      const end = rest.slice(Math.ceil(rest.length / 2));
+      return `+856 ${mid} ${end}`;
+    }
+    return `+856 ${rest}`;
+  }
+  if (s.startsWith("66")) {
+    const rest = s.slice(2);
+    if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9") || rest.startsWith("6"))) {
+      return `+66 ${rest.slice(0, 2)} ${rest.slice(2, 5)} ${rest.slice(5)}`;
+    }
+    if (rest.length >= 6 && rest.length <= 9) {
+      const mid = rest.slice(0, Math.ceil(rest.length / 2));
+      const end = rest.slice(Math.ceil(rest.length / 2));
+      return `+66 ${mid} ${end}`;
+    }
+    return `+66 ${rest}`;
+  }
+  return s;
+}
+// expose ให้ app-cart.js + app-promotion.js ใช้ผ่าน window (เหมือน showReceipt)
+window.formatPhoneForDisplay = formatPhoneForDisplay;
+
 function debounce(fn, wait) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), wait); }; }
 const { loadCart, bindCartEvents, addToCart, getLastOrderRecord, showReceipt, updatePendingPaymentInfo, getOrderPaymentState, openPaymentModal } = initCart({
   state: STATE,
@@ -142,6 +178,7 @@ const { loadCart, bindCartEvents, addToCart, getLastOrderRecord, showReceipt, up
   escapeHtml,
   formatPrice,
   buildWhatsAppLink,
+  formatPhoneForDisplay,
   // 🔧 (2026-09-26) เพิ่มใหม่: ปุ่ม "ไปชำระเงิน" บนแถบเตือน (app-cart.js) เรียก callback นี้
   //   เพื่อเปิด modal "ติดตามออเดอร์" โหมด "ออเดอร์ทั้งหมดของฉัน" — ฟังก์ชันจริงอยู่ด้านล่างในไฟล์นี้
   //   (function declaration ถูก hoisted จึงอ้างอิงได้แม้นิยามอยู่ถัดไปในไฟล์)
@@ -3301,7 +3338,19 @@ function initWhatsappFab() {
       else alert("ยังไม่ได้ตั้งค่าเบอร์ WhatsApp ของร้าน");
       return;
     }
-    const url = buildWhatsAppLink(waNumber, "สวัสดีครับ/ค่ะ ต้องการสอบถามเกี่ยวกับร้านเพลง");
+    // 🆕 (T044-D): normalize เบอร์ร้านก่อนสร้าง wa.me URL — กันถ้าแอดมินใส่ "0812345678" โดยไม่มี country code
+    //   เดิม: ใช้ raw waNumber → wa.me/0812345678 → WhatsApp ตีความเป็นอเมริกา (+1) → ลูกค้าเปิดแชทผิด
+    //   ใหม่: normalize ผ่าน normalizePhoneForStorage-like logic → 85620XXX หรือ 668XXXXXXXXX
+    //   sync กับ fallback logic ใน worker/index.js buildAdminNotifyWhatsAppUrl (T044-B)
+    let normalizedNum = String(waNumber).replace(/[^0-9]/g, "");
+    if (!normalizedNum.startsWith("856") && !normalizedNum.startsWith("66")) {
+      if (normalizedNum.startsWith("020")) normalizedNum = "856" + normalizedNum.slice(1);
+      else if ((normalizedNum.startsWith("08") || normalizedNum.startsWith("09")) && normalizedNum.length === 10) normalizedNum = "66" + normalizedNum.slice(1);
+      else if (normalizedNum.startsWith("20") && normalizedNum.length === 10) normalizedNum = "856" + normalizedNum;
+      else if (normalizedNum.startsWith("0") && normalizedNum.length === 10) normalizedNum = "66" + normalizedNum.slice(1);
+      else normalizedNum = "856" + normalizedNum; // fallback ลาว (เดิม)
+    }
+    const url = buildWhatsAppLink(normalizedNum, "สวัสดีครับ/ค่ะ ต้องการสอบถามเกี่ยวกับร้านเพลง");
     window.open(url, "_blank");
   });
 }
