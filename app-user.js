@@ -2769,11 +2769,29 @@ if (backdropEl && "MutationObserver" in window) {
   const modalObserver = new MutationObserver(() => {
     if (backdropEl.classList.contains("show")) {
       document.body.classList.add("modal-open");
+      // 🆕 (T022): เมื่อเปิด song modal → scroll ไปบนสุดของ modal เสมอ
+      //   กันปัญหา modal เปิดแล้วอยู่กลาง/ล่าง → บังรายละเอียดเพลง
+      setTimeout(() => {
+        const modalEl = backdropEl.querySelector(".modal");
+        if (modalEl) modalEl.scrollTop = 0;
+      }, 50);
     } else {
       document.body.classList.remove("modal-open");
     }
   });
   modalObserver.observe(backdropEl, { attributes: true, attributeFilter: ["class"] });
+}
+
+// 🆕 (T022): ทำให้ปุ่ม close กดได้เสมอ — กันถูกบังด้วย z-index อื่น
+//   เพิ่ม re-bind click handler (safety net ถ้า handler เดิมถูก override)
+if (modalCloseBtn && !modalCloseBtn.__t022CloseBound) {
+  modalCloseBtn.__t022CloseBound = true;
+  modalCloseBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (backdropEl) backdropEl.classList.remove("show");
+    document.body.classList.remove("modal-open");
+  });
 }
 
 const searchInputEl = document.getElementById("searchInput");

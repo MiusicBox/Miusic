@@ -6819,6 +6819,49 @@ html.admin-page body {
   }
 }
 
+/* 🆕 (T022): Fix song modal position — บนมือถือ song modal ต้องเริ่มจาก bottom (slide up)
+     ไม่ใช่ full-screen จาก top ที่บังรายละเอียดเพลง
+   - ปัญหา: T018 ทำให้ .modal เป็น height:100% → song modal เปิดขึ้นมาเต็มจอ + เริ่มจาก top → บังรายละเอียด
+   - วิธีแก้: song modal ใช้ align-items:flex-end + max-height:90vh + slide up จาก bottom
+   - ผลกระทบระบบเดิม: 0% — scope เฉพาะ #songModalBackdrop เท่านั้น */
+@media (max-width: 600px) {
+  #songModalBackdrop {
+    align-items: flex-end !important;
+  }
+  #songModalBackdrop .modal {
+    height: auto !important;
+    max-height: 92vh !important;
+    border-radius: var(--radius) var(--radius) 0 0 !important;
+    border: 1px solid var(--border) !important;
+    border-bottom: none !important;
+    animation: slideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+  /* ปุ่ม close ต้องอยู่บนสุดเสมอ — กันถูกบัง */
+  #songModalBackdrop .modal-header {
+    position: sticky;
+    top: 0;
+    background: linear-gradient(180deg, var(--surface), var(--surface) 80%, transparent);
+    z-index: 50 !important;
+    padding-bottom: 8px;
+  }
+  #songModalBackdrop .modal-close {
+    position: relative;
+    z-index: 51 !important;
+    pointer-events: auto !important;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* 🆕 (T022): บน desktop — ปุ่ม close ต้องกดได้เสมอ */
+#songModalBackdrop .modal-close {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
 /* ---------- ขั้นตอนที่ 6: font-size ทั่วไป (กัน iOS Safari auto-zoom) ----------
    หมายเหตุ: iOS Safari auto-zoom ถ้า input font-size < 16px → บังคับ 16px
      body ปรับจาก default → 14px (อ่านง่าย)
