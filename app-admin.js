@@ -11,7 +11,7 @@ import {
   checkHasAdmin, bootstrapFirstAdmin
 } from "./auth-client.js";
 import { initOrdersView } from "./orders.js?v=20260922-batch10";
-import { resolveCurrentAdminRole, initAdminsView } from "./admin-roles.js";
+import { resolveCurrentAdminRole, initAdminsView } from "./admin-roles.js?v=20261004-T043";
 import {
   analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS
 } from "./song-analyzer.js?v=20260908-previewrange1";
