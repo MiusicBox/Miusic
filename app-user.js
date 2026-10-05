@@ -380,6 +380,8 @@ async function init() {
   try {
     renderAdvFilterChips(); // 🆕 (T015-v2): เปลี่ยนจาก renderFilterCheckboxes → renderAdvFilterChips (ใช้ chip-style แทน checkbox)
     setupAdvancedFilters();
+    // 🆕 (Feature #1): setup quick filter chips — เพลงฮิต / เพลงใหม่ / ทั้งหมด
+    setupQuickFilterChips();
   } catch (err) {
     console.warn("[init] T015 advanced filter setup failed:", err?.message || err);
   }
@@ -917,6 +919,49 @@ function setupAdvancedFilters() {
       try { loadSongsWithFilters(true); } catch (_) {}
     });
   }
+}
+
+// 🆕 (Feature #1): setupQuickFilterChips — bind click handlers for quick filter chips
+function setupQuickFilterChips() {
+  const chips = document.querySelectorAll('.quick-chip');
+  if (chips.length === 0) return;
+  // ตั้งค่า active เริ่มต้น = 'all'
+  const allChip = document.querySelector('.quick-chip[data-quick-filter="all"]');
+  if (allChip) allChip.classList.add('active');
+  chips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      const filterType = chip.getAttribute('data-quick-filter');
+      if (!filterType) return;
+      // update active class
+      chips.forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      // apply filter
+      applyQuickFilter(filterType);
+    });
+  });
+}
+
+// 🆕 (Feature #1): applyQuickFilter — กด chip 'เพลงฮิต' หรือ 'เพลงใหม่' แล้วเรียงตาม sort นั้น
+//   - 'hot' = sort by likes_count DESC (เพลงฮิต)
+//   - 'new_releases' = created_at ใน 7 วันล่าสุด (เพลงใหม่)
+//   - 'all' = reset กลับสู่สถานะปกติ
+function applyQuickFilter(filterType) {
+  // ล้าง advanced filter ทั้งหมดก่อน
+  resetAdvancedFilterState({ clearQ: true, reloadSongs: false });
+  if (filterType === 'all') {
+    // กลับสู่สถานะปกติ
+    SONG_SEARCH_STATE.active = false;
+    SONG_SEARCH_STATE.sort = 'new';
+    updateActiveFiltersCount();
+    try { loadSongsWithFilters(true); } catch (_) {}
+    return;
+  }
+  // ตั้งค่า sort + active flag
+  SONG_SEARCH_STATE.sort = filterType;
+  SONG_SEARCH_STATE.active = true;
+  updateActiveFiltersCount();
+  // เรียก T015 endpoint
+  loadSongsWithAdvancedFilters(true);
 }
 
 // 🆕 (T015-v2): renderAdvFilterChips — วาด chip list ของ DJ + หมวดใน #advDjList + #advCategoryList
