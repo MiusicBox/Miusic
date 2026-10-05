@@ -8648,3 +8648,349 @@ html.admin-page body {
     padding-left: 68px !important;
   }
 }
+
+/* ============================================================
+   🆕 (T015): Advanced Search — Modal + Filter Panel
+   - ปุ่ม "ขั้นสูง" ใน search-box
+   - Modal แบบ mobile-first (full-screen บนจอ ≤600px, side panel บน desktop)
+   - chip-list สำหรับ multi-select DJ + categories
+   - ทุกสีใช้ CSS variables ที่มีอยู่แล้ว (--accent, --text, --text-dim, --bg, --surface)
+   ============================================================ */
+
+/* ปุ่ม "ขั้นสูง" ใน search-box */
+.advanced-search-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.advanced-search-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent);
+}
+.advanced-search-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.adv-btn-label {
+  font-weight: 600;
+}
+.adv-filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Modal overlay */
+.adv-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+}
+.adv-modal[hidden] {
+  display: none;
+}
+.adv-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+}
+.adv-modal-panel {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  background: var(--bg, #0b0d14);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  animation: advSlideIn 0.2s ease-out;
+}
+@keyframes advSlideIn {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.adv-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.adv-modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+.adv-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-dim, #888);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+.adv-modal-close:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.adv-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+.adv-field {
+  border: none;
+  margin: 0 0 20px 0;
+  padding: 0;
+}
+.adv-field legend {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+  padding: 0;
+}
+.adv-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.15);
+}
+.adv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s;
+}
+.adv-chip:hover {
+  border-color: var(--accent);
+}
+.adv-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.adv-chip-empty {
+  font-size: 11px;
+  color: var(--text-dim, #888);
+  padding: 12px;
+  text-align: center;
+  width: 100%;
+}
+
+/* Price range */
+.adv-price-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.adv-price-row input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 13px;
+  /* iOS Safari: ป้องกัน auto-zoom ต้องใช้ font-size ≥16px */
+  font-size: 16px;
+}
+.adv-price-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.adv-price-sep {
+  color: var(--text-dim, #888);
+  font-size: 13px;
+}
+
+/* Toggles (favorite + promo) */
+.adv-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.adv-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  font-size: 13px;
+}
+.adv-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+/* Sort select */
+.adv-field select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+.adv-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Footer */
+.adv-modal-footer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+}
+.adv-btn-primary,
+.adv-btn-secondary {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+.adv-btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.adv-btn-primary:hover {
+  filter: brightness(1.1);
+}
+.adv-btn-secondary {
+  background: transparent;
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.adv-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Result summary */
+.adv-result-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: 8px 12px 0;
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.adv-result-summary[hidden] {
+  display: none;
+}
+.adv-result-summary #advResultText {
+  color: var(--text);
+  font-weight: 600;
+}
+.adv-clear-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.adv-clear-btn:hover {
+  background: rgba(139, 92, 246, 0.1);
+}
+
+/* Mobile (≤600px): full-screen modal */
+@media (max-width: 600px) {
+  .adv-modal {
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+  .adv-modal-panel {
+    width: 100%;
+    max-width: 100%;
+    height: 90vh;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px 12px 0 0;
+    animation: advSlideUp 0.2s ease-out;
+  }
+  @keyframes advSlideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  .adv-btn-label {
+    display: none; /* ซ่อนข้อความ แสดงแค่ icon บนมือถือ */
+  }
+  .adv-modal-header h2 {
+    font-size: 16px;
+  }
+  .adv-modal-body {
+    padding: 12px 16px;
+  }
+  .adv-modal-footer {
+    padding: 10px 16px;
+  }
+}
+
+/* Desktop (>600px): side panel */
+@media (min-width: 601px) {
+  .adv-modal-panel {
+    height: 100vh;
+  }
+}

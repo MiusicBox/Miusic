@@ -104,6 +104,19 @@ CREATE INDEX IF NOT EXISTS idx_documents_songs_dj_name
   ON documents(json_extract(data, '$.dj_name'))
   WHERE collection = 'songs';
 
+-- 🆕 (T015): indexes สำหรับ advanced song search endpoint (/api/db/songs/_advanced-search)
+--   - price index: สำหรับ filter ช่วงราคา + sort ราคาต่ำ→สูง / สูง→ต่ำ
+--   - created_at index: สำหรับ sort ใหม่ล่าสุด (default) / เก่าสุด
+--   ผลกระทบระบบเดิม: 0% — เป็น index ใหม่ (IF NOT EXISTS) ไม่เปลี่ยนข้อมูล
+--   รันด้วย: wrangler d1 execute miusic-store-db --remote --file=scripts/migrate-t015-indexes.sql
+CREATE INDEX IF NOT EXISTS idx_documents_songs_price
+  ON documents(CAST(json_extract(data, '$.price') AS REAL))
+  WHERE collection = 'songs';
+
+CREATE INDEX IF NOT EXISTS idx_documents_songs_created_at
+  ON documents(json_extract(data, '$.created_at'))
+  WHERE collection = 'songs';
+
 CREATE TABLE IF NOT EXISTS admin_users (
   id             TEXT PRIMARY KEY, -- เทียบเท่า Firebase Auth UID เดิม
   email          TEXT NOT NULL UNIQUE,
