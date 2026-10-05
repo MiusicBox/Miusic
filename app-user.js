@@ -382,6 +382,8 @@ async function init() {
     setupAdvancedFilters();
     // 🆕 (Feature #1): setup quick filter chips — เพลงฮิต / เพลงใหม่ / ทั้งหมด
     setupQuickFilterChips();
+    // 🆕 (Feature #2): setup social share buttons in song modal
+    setupShareButtons();
   } catch (err) {
     console.warn("[init] T015 advanced filter setup failed:", err?.message || err);
   }
@@ -917,6 +919,65 @@ function setupAdvancedFilters() {
     clearBtn.addEventListener("click", () => {
       resetAdvancedFilterState({ clearQ: false, reloadSongs: true });
       try { loadSongsWithFilters(true); } catch (_) {}
+    });
+  }
+}
+
+// 🆕 (Feature #2): Social Share — แชร์เพลงไป Facebook / Line / Copy link
+//   ใช้ Web Share API ถ้า browser รองรับ (มือถือส่วนใหญ่) → แชร์ผ่าน native dialog
+//   ถ้าไม่รองรับ → ใช้ URL scheme ของ Facebook/Line โดยตรง
+function getShareUrl() {
+  // ใช้ URL ปัจจุบัน + hash ไปยังเพลง (ถ้ามี)
+  return window.location.href.split('#')[0];
+}
+function getShareText(songName, djName) {
+  let text = '🎵 ฟังเพลง: ' + (songName || 'เพลงนี้');
+  if (djName) text += ' - DJ ' + djName;
+  text += ' บน Miusic Store';
+  return text;
+}
+function setupShareButtons() {
+  const fbBtn = document.getElementById('shareFacebookBtn');
+  const lineBtn = document.getElementById('shareLineBtn');
+  const copyBtn = document.getElementById('shareCopyBtn');
+  if (fbBtn) {
+    fbBtn.addEventListener('click', () => {
+      const songName = document.getElementById('modalName')?.textContent || '';
+      const djName = document.getElementById('modalArtist')?.textContent || '';
+      const url = encodeURIComponent(getShareUrl());
+      const text = encodeURIComponent(getShareText(songName, djName));
+      window.open('https://www.facebook.com/sharer/sharer.php?u=' + url + '&quote=' + text, '_blank', 'noopener,noreferrer');
+    });
+  }
+  if (lineBtn) {
+    lineBtn.addEventListener('click', () => {
+      const songName = document.getElementById('modalName')?.textContent || '';
+      const djName = document.getElementById('modalArtist')?.textContent || '';
+      const url = encodeURIComponent(getShareUrl());
+      const text = encodeURIComponent(getShareText(songName, djName) + ' ' + getShareUrl());
+      window.open('https://social-plugins.line.me/lineit/share?url=' + url + '&text=' + text, '_blank', 'noopener,noreferrer');
+    });
+  }
+  if (copyBtn) {
+    copyBtn.addEventListener('click', async () => {
+      const url = getShareUrl();
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast('คัดลอกลิงก์แล้ว', 'success');
+      } catch (err) {
+        // fallback: ใช้ execCommand
+        const textarea = document.createElement('textarea');
+        textarea.value = url;
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+          document.execCommand('copy');
+          showToast('คัดลอกลิงก์แล้ว', 'success');
+        } catch (_) {
+          showToast('คัดลอกไม่สำเร็จ กรุณาคัดลอกเอง', 'error');
+        }
+        document.body.removeChild(textarea);
+      }
     });
   }
 }
