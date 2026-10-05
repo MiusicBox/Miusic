@@ -1040,6 +1040,15 @@ async function loadSongsWithAdvancedFilters(resetPagination = true) {
         if (!existingIds.has(s.id)) STATE.songs.push(s);
       }
     }
+    // 🎨 (Sort-Thai-Fix): ถ้า sort="new" (default) → re-sort ด้วย Thai natural sort ฝั่ง client
+    //   เหตุผล: D1 (SQLite) ไม่รองรับ Thai collation ที่ดี → server sort ด้วย LOWER(song_name) COLLATE NOCASE
+    //   ไม่ได้เรียง ก-ฮ + A-Z + 1-10 แบบ natural → ต้อง re-sort ฝั่ง client
+    //   ถ้า user เลือก sort อื่น (price_asc, best_selling, etc.) → ใช้ลำดับจาก server ตรง ๆ (user เลือกเอง)
+    if (SONG_SEARCH_STATE.sort === "new" || SONG_SEARCH_STATE.sort === "old") {
+      STATE.songs = sortSongsByThaiName(STATE.songs);
+      // ถ้า sort="old" → กลับลำดับ (เก่าสุดก่อน)
+      if (SONG_SEARCH_STATE.sort === "old") STATE.songs = STATE.songs.reverse();
+    }
     STATE.songsHasMore = STATE.songs.length < result.total;
     STATE.songsPage = Math.floor(STATE.songs.length / limit);
     try { renderSongGrid(); } catch (_) {}
