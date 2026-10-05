@@ -193,7 +193,7 @@ const { loadCart, bindCartEvents, addToCart, getLastOrderRecord, showReceipt, up
 window.showReceipt = showReceipt;
 window.openPaymentModal = openPaymentModal;
 // 🆕 (2026-10-02 v6 fix): expose addToCart + findSong ไป window
-//   ให้ customer-auth.js เรียกได้จากหน้าบัญชี (ปุ่ม 🛒 ในรายการโปรด)
+//   ให้ customer-auth.js เรียกได้จากหน้าบัญชี (ปุ่ม 🛒 ในบันทึกซื้อทีหลัง)
 //   (addToCart/findSong อยู่ใน module scope ของ app-user.js → ต้อง expose ถึงเรียกได้)
 window.addToCart = addToCart;
 window.findSong = findSong;
@@ -600,7 +600,7 @@ const SONG_SEARCH_STATE = {
   categories: new Set(),
   minPrice: null,
   maxPrice: null,
-  favoriteOnly: false, // 🆕 (T015-v2): เปลี่ยนจาก hasPromo → favoriteOnly (เพลงในรายการโปรดของลูกค้า)
+  favoriteOnly: false, // 🆕 (T015-v2): เปลี่ยนจาก hasPromo → favoriteOnly (เพลงในบันทึกซื้อทีหลังของลูกค้า)
   promoOnly: false,   // 🆕 (T015-v2): เพิ่ม promoOnly (เพลงที่มี discount active)
   sort: "new",        // 🆕 (T015-v2): เปลี่ยน sort values ใหม่: new|old|price_asc|price_desc|name_asc|best_selling
   active: false,
@@ -895,7 +895,7 @@ function setupAdvancedFilters() {
         return;
       }
       if (SONG_SEARCH_STATE.favoriteOnly && !getAdvCustomerId()) {
-        showToast("ต้องล็อกอินเพื่อดูรายการโปรด", "error");
+        showToast("ต้องล็อกอินเพื่อดูบันทึกซื้อทีหลัง", "error");
         return;
       }
       if (modal) {
@@ -1769,7 +1769,7 @@ function renderSongGrid() {
                   <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
                   <span class="like-count" data-like-count>0</span>
                 </button>
-                <button class="btn-icon-mini" type="button" data-favorite-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="เพิ่มในรายการโปรด" title="เพิ่มในรายการโปรด"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
+                <button class="btn-icon-mini" type="button" data-favorite-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="บันทึกซื้อทีหลัง" title="บันทึกซื้อทีหลัง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
                 <button class="cart-add-btn cart-add-btn-row" type="button" data-add-cart="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
                   <span>เพิ่มลงตะกร้า</span>
@@ -1825,7 +1825,7 @@ function renderSongGrid() {
         });
       }
     });
-    // 🆕 (2026-10-02 v7): ปุ่ม 📌 รายการโปรด (favorites) — เดิมเป็น ❤️ เปลี่ยนเป็น bookmark icon
+    // 🆕 (2026-10-02 v7): ปุ่ม 📌 บันทึกซื้อทีหลัง (favorites) — เดิมเป็น ❤️ เปลี่ยนเป็น bookmark icon
     grid.querySelectorAll("[data-favorite-btn]").forEach(el => {
       if (el.dataset._listenerAttached) return;
       el.dataset._listenerAttached = "1";
@@ -1987,7 +1987,7 @@ function renderPlaylists() {
                   <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
                   <span class="like-count" data-like-count>0</span>
                 </button>
-                <button class="btn-icon-mini" type="button" data-favorite-btn="${pl.id}" data-favorite-type="playlist" data-song-name="${escapeHtml(pl.playlist_name)}" aria-label="เพิ่มเพลย์ลิสต์ในรายการโปรด" title="เพิ่มในรายการโปรด"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
+                <button class="btn-icon-mini" type="button" data-favorite-btn="${pl.id}" data-favorite-type="playlist" data-song-name="${escapeHtml(pl.playlist_name)}" aria-label="บันทึกซื้อทีหลัง" title="บันทึกซื้อทีหลัง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
                 <button type="button" class="cart-add-btn playlist-folder-buy-btn" data-add-cart-playlist="${pl.id}" aria-label="ซื้อเพลย์ลิสต์ ${escapeHtml(pl.playlist_name)}">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
                   <span>ซื้อทั้งเพลย์ลิสต์</span>
@@ -2001,7 +2001,7 @@ function renderPlaylists() {
                   <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
                   <span class="like-count" data-like-count>0</span>
                 </button>
-                <button class="btn-icon-mini" type="button" data-favorite-btn="${pl.id}" data-favorite-type="playlist" data-song-name="${escapeHtml(pl.playlist_name)}" aria-label="เพิ่มเพลย์ลิสต์ในรายการโปรด" title="เพิ่มในรายการโปรด"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
+                <button class="btn-icon-mini" type="button" data-favorite-btn="${pl.id}" data-favorite-type="playlist" data-song-name="${escapeHtml(pl.playlist_name)}" aria-label="บันทึกซื้อทีหลัง" title="บันทึกซื้อทีหลัง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
               </div>
             </div>
             `}
@@ -2033,7 +2033,7 @@ function renderPlaylists() {
                         <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
                         <span class="like-count" data-like-count>0</span>
                       </button>
-                      <button class="btn-icon-mini" type="button" data-favorite-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="เพิ่มในรายการโปรด" title="เพิ่มในรายการโปรด"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
+                      <button class="btn-icon-mini" type="button" data-favorite-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="บันทึกซื้อทีหลัง" title="บันทึกซื้อทีหลัง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
                       <button class="cart-add-btn playlist-add-cart cart-add-btn-row" type="button" data-add-cart-song="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
                         <span>เพิ่มลงตะกร้า</span>
@@ -2121,7 +2121,7 @@ function renderPlaylists() {
     }
   });
 
-  // 🆕 (2026-10-02 v7): ปุ่ม 📌 รายการโปรด ใน playlist header + song row
+  // 🆕 (2026-10-02 v7): ปุ่ม 📌 บันทึกซื้อทีหลัง ใน playlist header + song row
   container.querySelectorAll("[data-favorite-btn]").forEach(el => {
     if (el.dataset._listenerAttached) return;
     el.dataset._listenerAttached = "1";
@@ -3392,7 +3392,7 @@ function _upgradeFavoritesEmptyState() {
   first.outerHTML = `
     <div class="empty-state-cute">
       <div class="empty-icon">❤️</div>
-      <div class="empty-title">ยังไม่มีรายการโปรด</div>
+      <div class="empty-title">ยังไม่มีบันทึกซื้อทีหลัง</div>
       <div class="empty-desc">กด ❤️ ในเพลงที่ชอบ — จะเก็บไว้ที่นี่</div>
       <button class="btn empty-cta" type="button" data-empty-goto-home>🎵 ไปเลือกเพลง</button>
     </div>`;
@@ -4285,7 +4285,7 @@ document.getElementById("myAccountRefreshBtn")?.addEventListener("click", () => 
   loadCustomerAccountData();
 });
 
-// 🆕 (2026-10-02): tab switching สำหรับหน้าบัญชี — โปรไฟล์ / ออเดอร์ / รายการโปรด / ตั้งค่า
+// 🆕 (2026-10-02): tab switching สำหรับหน้าบัญชี — โปรไฟล์ / ออเดอร์ / บันทึกซื้อทีหลัง / ตั้งค่า
 // 🆕 (T017): เพิ่ม "dashboard" เป็น tab แรก (default active)
 function switchAccountTab(tab) {
   const tabs = { dashboard: "accountTabDashboard", profile: "accountTabProfile", orders: "accountTabOrders", favorites: "accountTabFavorites", settings: "accountTabSettings" };
@@ -4318,7 +4318,7 @@ document.getElementById("accountTabOrders")?.addEventListener("click", () => {
   switchAccountTab("orders");
   loadCustomerAccountData(); // โหลดออเดอร์เมื่อกด tab
 });
-// 🆕 (2026-10-02 v6): tab รายการโปรด → โหลด favorites
+// 🆕 (2026-10-02 v6): tab บันทึกซื้อทีหลัง → โหลด favorites
 document.getElementById("accountTabFavorites")?.addEventListener("click", () => {
   switchAccountTab("favorites");
   if (typeof loadCustomerFavorites === "function") loadCustomerFavorites();
