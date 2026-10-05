@@ -670,17 +670,37 @@ function applyDateFilter(items, collection) {
       return inRange(createdAt) || inRange(updatedAt);
     });
   }
-  // Step 2: sort ล่าสุดก่อน (มติ "ข้อ 3=ข")
-  //   เรียงตาม updated_at DESC (ถ้ามี) ถ้าไม่มีใช้ created_at DESC
-  //   ถ้าไม่มีทั้งคู่ → ให้อยู่ท้ายสุด
-  return filtered.slice().sort((a, b) => {
-    const aTime = a.updated_at || a.created_at || "";
-    const bTime = b.updated_at || b.created_at || "";
-    if (!aTime && !bTime) return 0;
-    if (!aTime) return 1;  // a ไม่มีวัน → ไปท้าย
-    if (!bTime) return -1; // b ไม่มีวัน → ไปท้าย
-    return bTime.localeCompare(aTime);  // DESC (b มาก่อน a)
-  });
+  // Step 2: sort — เปลี่ยนใหม่ตาม user feedback (Sort-Thai-Fix)
+  //   - ถ้ามี date filter (fromDate/toDate) → เรียงตามวันที่ DESC (user เลือกเอง)
+  //   - ถ้าไม่มี date filter (default) → ใช้ Thai natural sort (ก-ฮ + A-Z + 1-10)
+  //     เหตุผล: user ต้องการให้ทุก list เรียง ก-ฮ A-Z 1-10 เสมอ ไม่สนว่าเพิ่มเพลงไหนก่อน-หลัง
+  //     D1 (SQLite) ไม่รองรับ Thai collation ที่ดี → ต้อง sort ฝั่ง client
+  if (filter.fromDate || filter.toDate) {
+    // มี date filter → เรียงตามวันที่ DESC
+    return filtered.slice().sort((a, b) => {
+      const aTime = a.updated_at || a.created_at || "";
+      const bTime = b.updated_at || b.created_at || "";
+      if (!aTime && !bTime) return 0;
+      if (!aTime) return 1;
+      if (!bTime) return -1;
+      return bTime.localeCompare(aTime);
+    });
+  }
+  // ไม่มี date filter → ใช้ Thai natural sort
+  //   - songs → sortSongsByThaiName (ใช้ song_name)
+  //   - categories → sortByThaiName (ใช้ category_name)
+  //   - djs → sortByThaiName (ใช้ dj_name)
+  //   - playlists → sortByThaiName (ใช้ playlist_name)
+  if (collection === "songs") {
+    return sortSongsByThaiName(filtered);
+  } else if (collection === "categories") {
+    return sortByThaiName(filtered, "category_name");
+  } else if (collection === "djs") {
+    return sortByThaiName(filtered, "dj_name");
+  } else if (collection === "playlists") {
+    return sortByThaiName(filtered, "playlist_name");
+  }
+  return filtered;
 }
 
 // 🆕 sync UI ของ date filter (ปุ่ม active + input value + status text บนปุ่ม toggle) ตาม state ของ collection
@@ -3601,8 +3621,9 @@ async function openDetailSongs(type, id, name) {
   document.getElementById("listSongsBackdrop").classList.add("show");
   // โหลดรายชื่อเพลงล่าสุดเสมอตอนเปิดหน้านี้ (กันกรณีเข้าหน้าหมวดหมู่/DJ/เพลย์ลิสต์โดยยังไม่เคยโหลดเพลงมาก่อน)
   // 🔧 (2026-09-18 v6): ใช้ getDocsAdmin → bypass CDN cache (ดูข้อมูลล่าสุด)
+  // 🎨 (Sort-Thai-Fix): sort ด้วย Thai natural sort (ก-ฮ + A-Z + 1-10) หลังโหลด
   const snap = await getDocsAdmin(collection(db, "songs"));
-  CACHE.songs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  CACHE.songs = sortSongsByThaiName(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   if (currentDetailContext && currentDetailContext.type === type && currentDetailContext.id === id) {
     renderDetailSongsList();
   }
@@ -3744,7 +3765,8 @@ async function deleteSongFromDetailView(id) {
     // ลบไฟล์ cloud แบบ background เช่นเดียวกับ confirmDeleteSong (logic เดียวกันทุกประการ)
     deleteSongFilesFromStorage(songData);
     showToast("ลบเพลงออกจากระบบแล้ว", "success");
-    CACHE.songs = CACHE.songs.filter(x => x.id !== id);
+    // 🎨 (Sort-Thai-Fix): re-sort หลังลบ — กันกรณี CACHE.songs เรียงผิดจากการ push ตอน add
+    CACHE.songs = sortSongsByThaiName(CACHE.songs.filter(x => x.id !== id));
     renderDetailSongsList();
     loadDashboard();
   });
@@ -3777,7 +3799,8 @@ async function forceDeleteSong(id) {
     // ลบไฟล์ cloud แบบ background — ใช้ฟังก์ชันเดิม (มีเช็ค _check-cover-used กันลบรูปที่ใช้ร่วม)
     deleteSongFilesFromStorage(songData);
     // ลบออกจาก CACHE ฝั่ง client ด้วย (เพื่อ refresh UI ทันที)
-    CACHE.songs = CACHE.songs.filter(x => x.id !== id);
+    // 🎨 (Sort-Thai-Fix): re-sort หลังลบ
+    CACHE.songs = sortSongsByThaiName(CACHE.songs.filter(x => x.id !== id));
     return { ok: true, songName };
   } catch (err) {
     console.error(`[forceDeleteSong] failed for ${id}:`, err?.message || err);
@@ -4621,6 +4644,8 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
       // 🔧 (2026-10-01): ใส่เพลงที่เพิ่งบันทึกเข้า CACHE ทันที เพื่อให้การตรวจซ้ำรอบถัดไปเห็นเพลงนี้
       CACHE.songs.push({ id: savedRef.id, ...songPayload });
     }
+    // 🎨 (Sort-Thai-Fix): re-sort CACHE.songs หลัง bulk upload — กันเพลงใหม่ไปต่อท้ายไม่เรียง
+    CACHE.songs = sortSongsByThaiName(CACHE.songs);
     invalidateAdminCache("songs"); // 🔧 (2026-10-01): หน้าจัดการเพลงจะโหลดใหม่ครั้งถัดไป
 
     hideCancelButton("bulkProgressWrap");
