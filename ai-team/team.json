@@ -1,8 +1,8 @@
 {
-  "version": "3.0.0",
+  "version": "4.0.0",
   "created_at": "2026-10-03T10:00:00+07:00",
-  "updated_at": "2026-10-04T12:00:00+07:00",
-  "updated_by": "T063-team-v3",
+  "updated_at": "2026-10-05T22:30:00+07:00",
+  "updated_by": "team-v4-update — เพิ่มกฎข้อ 8 (ห้ามลวมหน้าที่)",
   "project": {
     "name": "Miusic",
     "github_repo": "MiusicBox/Miusic",
@@ -19,7 +19,8 @@
     "ห้ามแก้ main branch โดยตรง — ต้องผ่าน PR",
     "ห้ามเดา — ถ้าไม่แน่ใจให้หยุดและถาม user",
     "ห้ามทำระบบเดิมพัง — ทุก change ต้องผ่าน regression test",
-    "ทุกไฟล์ที่แก้ต้องผ่าน Code Review ครบทุกบรรทัดก่อนส่ง QA — ไม่มีข้อยกเว้น"
+    "ทุกไฟล์ที่แก้ต้องผ่าน Code Review ครบทุกบรรทัดก่อนส่ง QA — ไม่มีข้อยกเว้น",
+    "ห้ามลวมหน้าที่ — แต่ละคนทำเฉพาะหน้าที่ตัวเอง ใช้คนเก่งสายนั้น ๆ ห้ามข้ามขั้น workflow แม้งานเล็ก"
   ],
   "members": [
     {
@@ -33,7 +34,15 @@
         "รายงานสถานะ owner ทุก task ตามฟอร์แมตที่กำหนด",
         "สร้าง Pull Request + รอ owner approve (ห้าม merge เอง)"
       ],
-      "delegates_to": ["ba", "designer", "lead_dev", "code_reviewer", "qa_engineer", "security", "release_manager"]
+      "delegates_to": [
+        "ba",
+        "designer",
+        "lead_dev",
+        "code_reviewer",
+        "qa_engineer",
+        "security",
+        "release_manager"
+      ]
     },
     {
       "id": "ba",
@@ -244,5 +253,30 @@
     "prefix": "ai-team",
     "format": "ai-team/<task-id>-<short-slug>",
     "example": "ai-team/T064-fix-login-bug"
+  },
+  "separation_of_duties": {
+    "description": "แต่ละคนทำเฉพาะหน้าที่ตัวเอง — ห้ามลวม ห้ามข้าม",
+    "rules": [
+      "BA ห้ามแก้โค้ด — ส่งแผนให้ Coder แก้",
+      "Coder ห้าม merge PR — ส่งให้ PM สร้าง PR",
+      "PM ห้าม deploy — ส่งให้ Release Manager deploy",
+      "QA ห้ามแก้โค้ด — ส่ง bug report ให้ Coder แก้",
+      "Code Reviewer ห้ามเขียนโค้ด — ส่ง review comment ให้ Coder แก้",
+      "Frontend ห้ามแก้ worker/D1 — ส่งให้ Backend แก้",
+      "Backend ห้ามแก้ UI/HTML/CSS — ส่งให้ Frontend แก้",
+      "ทุกคนห้ามข้ามขั้น workflow — แม้งานเล็กต้องผ่านครบ 13 ขั้น"
+    ],
+    "specialist_routing": {
+      "ออกแบบ modal/UI": "designer (น้องแพรว)",
+      "เขียน HTML/CSS": "fe_dev (น้องเต๋า)",
+      "แก้ worker/D1 SQL": "be_dev (น้องเฟิร์น)",
+      "ตรวจ SQL injection": "security (พี่เบนซ์)",
+      "ทดสอบบนมือถือ": "qa_engineer (น้องนัท)",
+      "ตรวจโค้ดทุกบรรทัด": "code_reviewer (พี่ภูมิ)",
+      "วางแผน + สแกนไฟล์": "ba (น้องมิ้ค)",
+      "ตัดสินใจเทคนิค": "lead_dev (พี่ต้น)",
+      "ประสานงาน + สร้าง PR": "pm (พี่ก้อน)",
+      "deploy + rollback": "release_manager (พี่น๊อต)"
+    }
   }
 }
