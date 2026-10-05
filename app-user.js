@@ -958,6 +958,44 @@ function setupShareButtons() {
       window.open('https://social-plugins.line.me/lineit/share?url=' + url + '&text=' + text, '_blank', 'noopener,noreferrer');
     });
   }
+  // 🆕 (Feature #2 update): WhatsApp share
+  const whatsappBtn = document.getElementById('shareWhatsappBtn');
+  if (whatsappBtn) {
+    whatsappBtn.addEventListener('click', () => {
+      const songName = document.getElementById('modalName')?.textContent || '';
+      const djName = document.getElementById('modalArtist')?.textContent || '';
+      const text = encodeURIComponent(getShareText(songName, djName) + ' ' + getShareUrl());
+      window.open('https://wa.me/?text=' + text, '_blank', 'noopener,noreferrer');
+    });
+  }
+  // 🆕 (Feature #2 update): TikTok share — TikTok ไม่มี share URL แบบ official
+  //   วิธี: คัดลอกลิงก์ + เปิด TikTok ให้ user แชร์เอง
+  const tiktokBtn = document.getElementById('shareTiktokBtn');
+  if (tiktokBtn) {
+    tiktokBtn.addEventListener('click', async () => {
+      const url = getShareUrl();
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast('คัดลอกลิงก์แล้ว — ไปวางใน TikTok ได้เลย', 'success');
+        // เปิด TikTok ในแท็บใหม่
+        window.open('https://www.tiktok.com/', '_blank', 'noopener,noreferrer');
+      } catch (err) {
+        // fallback: execCommand
+        const textarea = document.createElement('textarea');
+        textarea.value = url;
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+          document.execCommand('copy');
+          showToast('คัดลอกลิงก์แล้ว — ไปวางใน TikTok ได้เลย', 'success');
+          window.open('https://www.tiktok.com/', '_blank', 'noopener,noreferrer');
+        } catch (_) {
+          showToast('คัดลอกไม่สำเร็จ กรุณาคัดลอกเอง', 'error');
+        }
+        document.body.removeChild(textarea);
+      }
+    });
+  }
   if (copyBtn) {
     copyBtn.addEventListener('click', async () => {
       const url = getShareUrl();
