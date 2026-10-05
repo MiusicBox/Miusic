@@ -641,11 +641,9 @@ async function toggleLike(songId) {
     console.warn("[like] toggleLike called with no songId");
     return;
   }
-  console.log("[like] toggleLike start, songId:", songId);
   // ถ้า login → ใช้ customer.id, ถ้าไม่ login → ใช้ fingerprint (anonymous like)
   // 🆕 (T053-M4): await getAnonymousFingerprint() ตอนนี้เป็น async (ดึง IP hash)
   const fingerprint = isCustomerLoggedIn() ? null : await getAnonymousFingerprint();
-  console.log("[like] fingerprint:", fingerprint ? "anon (anonym)" : "logged-in customer");
   try {
     const res = await fetch(`/api/songs/${encodeURIComponent(songId)}/like`, {
       method: "POST",
@@ -653,9 +651,7 @@ async function toggleLike(songId) {
       credentials: "same-origin",
       body: JSON.stringify({ fingerprint }),
     });
-    console.log("[like] response status:", res.status);
     const data = await res.json().catch(() => ({}));
-    console.log("[like] response data:", data);
     if (res.ok) {
       const newCount = data.like_count || 0;
       const isLiked = data.is_liked;

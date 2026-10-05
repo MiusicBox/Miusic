@@ -2243,7 +2243,6 @@ function startOrdersPolling() {
   if (MY_ORDERS_STATE._pollingActive) return;
   MY_ORDERS_STATE._pollingActive = true;
 
-  console.log("[T016] start polling — interval:", ORDERS_POLL_INTERVAL_MS, "ms");
   updateAutoRefreshUI(true);
   updateLastRefreshDisplay();
 
@@ -2253,10 +2252,8 @@ function startOrdersPolling() {
   if (!MY_ORDERS_STATE._visibilityHandler) {
     MY_ORDERS_STATE._visibilityHandler = () => {
       if (document.visibilityState === "visible") {
-        console.log("[T016] tab visible — refresh immediately");
         fetchMyOrdersOnce();
       } else {
-        console.log("[T016] tab hidden — polling will skip next tick");
       }
     };
     document.addEventListener("visibilitychange", MY_ORDERS_STATE._visibilityHandler);
@@ -2294,7 +2291,6 @@ function stopOrdersPolling() {
     document.removeEventListener("visibilitychange", MY_ORDERS_STATE._visibilityHandler);
     MY_ORDERS_STATE._visibilityHandler = null;
   }
-  console.log("[T016] stop polling");
   updateAutoRefreshUI(false);
 }
 

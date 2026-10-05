@@ -281,7 +281,6 @@ async function init() {
   //   🚀 (2026-09-28 fix H-7): forceRefresh=true เพื่อข้าม cache ที่อาจเก่า → แน่ใจว่าเห็น tiered promo
   try {
     STATE.promotions = await fetchActivePromotions(true);
-    console.log("[promo] Loaded promotions for view:", STATE.promotions.length, STATE.promotions.map(p => p.type));
   } catch (e) {
     console.warn("โหลด promotions สำหรับหน้าพรีวิวไม่สำเร็จ — หน้าโปรโมชั่นจะแสดง empty state", e);
     STATE.promotions = [];
@@ -1083,7 +1082,6 @@ let _loadSongsWithFiltersLock = false;
 async function loadSongsWithFilters(resetPagination = true) {
   // 🆕 (T024): กัน concurrent calls — ถ้ามี loadSongsWithFilters อื่นกำลังทำงาน → รอ
   if (_loadSongsWithFiltersLock) {
-    console.log('[T024] loadSongsWithFilters already running — skip');
     return;
   }
   _loadSongsWithFiltersLock = true;
@@ -5828,7 +5826,6 @@ function showPromotionsView() {
   //   ใช้ .then() เพราะ showPromotionsView ไม่ใช่ async function
   fetchActivePromotions(true).then(promos => {
     STATE.promotions = promos;
-    console.log("[promo] Refreshed for view:", STATE.promotions.length, STATE.promotions.map(p => p.type));
     renderPromotionsView();
   }).catch(e => {
     console.warn("[promo] Refresh failed, using cache", e);

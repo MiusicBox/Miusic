@@ -2324,7 +2324,6 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
                 if (raw) c = JSON.parse(raw);
               } catch (_) {}
             }
-            console.log("[checkout] customer login status:", c ? `YES (id: ${c.id})` : "NO");
             return c ? c.id : null;
           })(),
           // 🆕 (2026-10-03 v10 — แยก Login / Guest): แนบ guest_id ของ browser นี้ไปกับออเดอร์เสมอ

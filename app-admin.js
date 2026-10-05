@@ -1154,9 +1154,7 @@ async function loadPasswordResetRequests(status = "pending") {
   wrap.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-dim);font-size:12px;">⏳ กำลังโหลด...</div>';
   try {
     const url = `/api/admin/password-reset-requests${status ? `?status=${encodeURIComponent(status)}` : ""}`;
-    console.log("[pw-reset] loading from:", url); // 🆕 (2026-10-02 v3 debug)
     const res = await fetch(url, { credentials: "same-origin" });
-    console.log("[pw-reset] response status:", res.status); // 🆕 debug
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       console.warn("[pw-reset] error response:", err); // 🆕 debug
@@ -1172,7 +1170,6 @@ async function loadPasswordResetRequests(status = "pending") {
       return;
     }
     const data = await res.json();
-    console.log("[pw-reset] data:", data); // 🆕 debug
     const requests = data?.requests || [];
     if (requests.length === 0) {
       wrap.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-dim);font-size:12px;">ไม่มีคำขาในสถานะนี้</div>';
