@@ -1044,10 +1044,13 @@ async function loadSongsWithAdvancedFilters(resetPagination = true) {
     //   เหตุผล: D1 (SQLite) ไม่รองรับ Thai collation ที่ดี → server sort ด้วย LOWER(song_name) COLLATE NOCASE
     //   ไม่ได้เรียง ก-ฮ + A-Z + 1-10 แบบ natural → ต้อง re-sort ฝั่ง client
     //   ถ้า user เลือก sort อื่น (price_asc, best_selling, etc.) → ใช้ลำดับจาก server ตรง ๆ (user เลือกเอง)
-    if (SONG_SEARCH_STATE.sort === "new" || SONG_SEARCH_STATE.sort === "old") {
-      STATE.songs = sortSongsByThaiName(STATE.songs);
-      // ถ้า sort="old" → กลับลำดับ (เก่าสุดก่อน)
-      if (SONG_SEARCH_STATE.sort === "old") STATE.songs = STATE.songs.reverse();
+    // 🎨 (Bug-Fix #2): ใช้ direction parameter แทน reverse() — กันปัญหา load more
+    //   เดิม: sort ascending + reverse() → เมื่อ load more → re-sort + reverse ทั้ง array → ลำดับเพี้ยน
+    //   ใหม่: ส่ง direction="desc" โดยตรง → sort ครั้งเดียว → ลำดับถูกต้องเสมอ
+    if (SONG_SEARCH_STATE.sort === "new") {
+      STATE.songs = sortSongsByThaiName(STATE.songs, "asc");
+    } else if (SONG_SEARCH_STATE.sort === "old") {
+      STATE.songs = sortSongsByThaiName(STATE.songs, "desc");
     }
     STATE.songsHasMore = STATE.songs.length < result.total;
     STATE.songsPage = Math.floor(STATE.songs.length / limit);

@@ -73,6 +73,14 @@ export function sortByThaiName(list, field) {
 // 🎨 (2026-09-26): เพิ่ม helper สำหรับ sort เพลง — ใช้ song_name เป็น field หลัก
 //   ทำให้การเรียงเพลงเหมือนกันทั้งฝั่ง user และฝั่งแอดมิน
 //   ลำดับ: พยัญชนะไทย ก-ฮ > A-Z > 0-9 (ตัวเลขเทียบตามค่าจริง: A1, A2, A3, A10 ไม่ใช่ A1, A10, A2)
-export function sortSongsByThaiName(songs) {
-  return sortByThaiName(songs, "song_name");
+// 🎨 (Bug-Fix #2): เพิ่ม parameter direction — รองรับ asc/desc
+//   ปัญหาเดิม: sortSongsByThaiName เรียง ascending เสมอ แล้วใช้ reverse() ฝั่ง caller
+//   ปัญหา: เมื่อ load more → append → re-sort → reverse ทั้ง array → ลำดับเพี้ยน
+//   วิธีแก้: รองรับ direction="desc" โดยตรง ไม่ต้อง reverse ภายหลัง
+export function sortSongsByThaiName(songs, direction = "asc") {
+  const sorted = sortByThaiName(songs, "song_name");
+  if (direction === "desc") {
+    return sorted.reverse();
+  }
+  return sorted;
 }
