@@ -1735,15 +1735,21 @@ async function handleDb(request, env, url) {
         orderByClause = "LOWER(json_extract(data, '$.song_name')) ASC";
         break;
       case "best_selling":
-        // ใช้ยอดขายจาก orders — นับ orders ที่ status='completed' และมี song_id นี้ใน items
-        //   ⚠️ orders.items เป็น JSON array → ใช้ json_each + EXISTS
+        // 🐛 (Bug-Fix): Sort 'best_selling' ไม่แม่นยำ — เดิมใช้ CROSS JOIN json_each
+        //   ปัญหา: D1 อาจไม่รองรับ json_each ใน correlated subquery แบบ CROSS JOIN
+        //   วิธีแก้: เปลี่ยนเป็น EXISTS subquery (สะอาดกว่า + เร็วกว่า + D1 รองรับแน่นอน)
+        //   Logic: นับ orders ที่ status สำเร็จ (completed/processing/verified) และมี song_id นี้ใน items
         //   Performance: ใช้ index idx_documents_orders_status + json_each (bounded by completed orders)
-        //   Note: อาจช้าสำหรับ 10K+ orders — แต่เป็น edge case (sort default = new)
+        //   Fallback: ถ้าไม่มีออเดอร์สำเร็จ → count=0 ทุกเพลง → เรียงตาม created_at DESC (เหมือน "new")
+        //   หมายเหตุ: ถ้าระบบใหม่ยังไม่มีออเดอร์สำเร็จ → best_selling จะเหมือน "new" (เป็น behavior ที่ถูกต้อง)
         orderByClause = `(
-          SELECT COUNT(*) FROM documents o, json_each(json_extract(o.data, '$.items'))
+          SELECT COUNT(*) FROM documents o
           WHERE o.collection = 'orders'
             AND json_extract(o.data, '$.status') IN ('completed', 'processing', 'verified')
-            AND json_extract(json_each.value, '$.song_id') = documents.id
+            AND EXISTS (
+              SELECT 1 FROM json_each(json_extract(o.data, '$.items'))
+              WHERE json_extract(value, '$.song_id') = documents.id
+            )
         ) DESC, CAST(json_extract(data, '$.created_at') AS TEXT) DESC`;
         break;
       case "new":
