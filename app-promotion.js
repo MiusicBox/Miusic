@@ -19,24 +19,8 @@
 // ===================================================
 import { db, auth } from "./firebase-init.js?v=20260905-fix1";
 // ────────────────────────────────────────────────────────────────────────────
-// ⚠️  สำหรับ Dev ใหม่: อ่านก่อนแก้ import block นี้  ────────────────────────
-// ────────────────────────────────────────────────────────────────────────────
-// onSnapshot และ listenCustomerOrders ใน import ด้านล่างเป็น "DEAD IMPORTS"
-// คือ import เข้ามาแต่ **ไม่มีการเรียกใช้จริง** ในไฟล์ app-promotion.js ทั้งหมด (ยืนยันด้วย grep)
-//
-//   ประวัติ:
-//     - ก่อน 2026-09-17: เคยใช้ listenCustomerOrders ในส่วน PART 4: MY ORDERS VIEW
-//       (สำหรับ polling ออเดอร์ของลูกค้าแบบ realtime)
-//     - 2026-09-17: ย้ายไปใช้ fetchCustomerOrdersOnce() แบบ one-shot แทน (ลด D1 quota)
-//
-//   ที่ไม่ลบ imports ทิ้ง:
-//     - กฎของโปรเจกต์: "ห้ามลบโค้ดเพียงเพราะคิดว่าไม่ได้ใช้งาน"
-//     - เผื่ออนาคตจะใช้ onSnapshot/listenCustomerOrders จริง ๆ
-//
-//   ⚠️ ถ้าจะลบ imports ทิ้ง:
-//      - ต้องลบ exports ใน db-client.js ด้วย (ดูคอมเมนต์ DEAD CODE ใน db-client.js)
-//      - และลบ imports ใน app-user.js บรรทัด 5 ด้วย (มี dead imports เหมือนกัน)
-//      - ไม่งั้นไม่พัง (เพราะไม่ได้ใช้) แต่เป็น code smell ถ้าเหลืออยู่ฝั่งเดียว
+// 🧹 (Bug-Fix #6): Dead imports ถูกลบแล้ว — เหลือแค่ comment อ้างอิง
+//   ประวัติ: เดิมใช้ onSnapshot/listenCustomerOrders สำหรับ polling → ย้ายไป fetchCustomerOrdersOnce
 // ────────────────────────────────────────────────────────────────────────────
 import {
   collection, doc, getDocs, setDoc, updateDoc, deleteDoc, query,
