@@ -1668,23 +1668,48 @@ async function handleDb(request, env, url) {
       binds.push(...djs);
     }
 
-    // Category filter (multi-value IN บน category_id หรือ category_ids JSON array)
-    //   ⚠️ Miusic song ใช้ category_id (single) และ categoryIds (array) — ต้องเช็คทั้ง 2
-    //   ใช้ OR: category_id IN (...) OR มี categoryIds ที่ intersect กับ list
-    //   สำหรับ categoryIds (JSON array): ใช้ json_each + EXISTS (SQLite)
+    // Category filter (multi-value) — 🐛 (Bug-Fix #14): เพิ่ม category_name matching
+    //   ปัญหา: เพลง 71 เพลงในระบบไม่มี field category_id หรือ categoryIds → filter 0 ผลลัพธ์
+    //   วิธีแก้: ดึง category_name จาก documents collection=categories → match ทั้ง id + name
+    //   (เหมือน T025 pattern ใน GET /api/db/songs)
     if (categories.length > 0) {
-      const placeholders = categories.map(() => "?").join(",");
-      whereClauses.push(`(
-        json_extract(data, '$.category_id') IN (${placeholders})
-        OR EXISTS (
-          SELECT 1 FROM json_each(json_extract(data, '$.categoryIds'))
-          WHERE json_each.value IN (${placeholders})
-        )
-      )`);
-      binds.push(...categories, ...categories);
+      // ดึง category_name ของแต่ละ cat_id จาก documents collection=categories
+      const catNames = [];
+      try {
+        const catPlaceholders = categories.map(() => "?").join(",");
+        const catRows = await env.DB.prepare(
+          `SELECT json_extract(data, '$.category_name') AS name FROM documents
+           WHERE collection = 'categories' AND id IN (${catPlaceholders})`
+        ).bind(...categories).all();
+        for (const r of (catRows.results || [])) {
+          if (r.name) catNames.push(r.name);
+        }
+      } catch (err) {
+        // fallback: ใช้แค่ category_id (กรณีตาราง categories ไม่มี)
+      }
+      const allCatValues = [...categories, ...catNames];
+      if (allCatValues.length > 0) {
+        const placeholders = allCatValues.map(() => "?").join(",");
+        whereClauses.push(`(
+          json_extract(data, '$.category_id') IN (${placeholders})
+          OR EXISTS (
+            SELECT 1 FROM json_each(json_extract(data, '$.categoryIds'))
+            WHERE json_each.value IN (${placeholders})
+          )
+          OR json_extract(data, '$.category_name') IN (${placeholders})
+        )`);
+        binds.push(...allCatValues, ...allCatValues, ...allCatValues);
+      }
     }
 
     // Price range filter (CAST เป็น REAL เพราะ price อาจเป็น string)
+    // 🐛 (Bug-Fix #15): validate price_min <= price_max — กัน attacker ส่งค่าผิดผ่าน API
+    if (priceMin != null && priceMax != null && priceMin > priceMax) {
+      return jsonResponse({
+        error: "ราคาต่ำสุดต้องไม่มากกว่าราคาสูงสุด",
+        code: "invalid_price_range"
+      }, 400);
+    }
     if (priceMin != null) {
       whereClauses.push("CAST(json_extract(data, '$.price') AS REAL) >= ?");
       binds.push(priceMin);
