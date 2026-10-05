@@ -402,7 +402,7 @@ function escapeHtmlCustomer(str) {
 // ============================================================
 // 🆕 (2026-10-02 v6 — ฟีเจอร์ #2): รายการเพลงโปรด (Wishlist) — frontend helpers
 //   - toggleFavorite(songId) → toggle ❤️ (เพิ่ม/ลบ)
-//   - loadCustomerFavorites() → โหลดรายการโปรดในหน้าบัญชี
+//   - loadCustomerFavorites() → โหลดบันทึกซื้อทีหลังในหน้าบัญชี
 //   - checkFavoriteStatus(songId) → ตรวจสถานะ ❤️ ของเพลง (สำหรับแสดงปุ่ม active)
 //   ผลกระทบระบบเดิม: 0% — ฟังก์ชันใหม่
 // ============================================================
@@ -410,12 +410,12 @@ function escapeHtmlCustomer(str) {
 // 🆕 cache สถานะ favorites ของลูกค้าปัจจุบัน (song_id → true) เพื่อลด API calls
 let customerFavoritesCache = new Set();
 
-// 🆕 toggle favorite — เพิ่ม/ลบเพลงจากรายการโปรด
+// 🆕 toggle favorite — เพิ่ม/ลบเพลงจากบันทึกซื้อทีหลัง
 async function toggleFavorite(songId) {
   if (!songId) return;
   if (!isCustomerLoggedIn()) {
-    if (typeof showToast === "function") showToast("กรุณาเข้าสู่ระบบเพื่อเพิ่มรายการโปรด", "info");
-    else alert("กรุณาเข้าสู่ระบบเพื่อเพิ่มรายการโปรด");
+    if (typeof showToast === "function") showToast("กรุณาเข้าสู่ระบบเพื่อบันทึกซื้อทีหลัง", "info");
+    else alert("กรุณาเข้าสู่ระบบเพื่อบันทึกซื้อทีหลัง");
     return;
   }
   const isFav = customerFavoritesCache.has(songId);
@@ -447,7 +447,7 @@ async function toggleFavorite(songId) {
           btn.innerHTML = bookmarkFill;
         }
       });
-      if (typeof showToast === "function") showToast(isFav ? "ลบจากรายการโปรดแล้ว" : "📌 เพิ่มในรายการโปรดแล้ว", isFav ? "info" : "success");
+      if (typeof showToast === "function") showToast(isFav ? "ลบจากบันทึกซื้อทีหลังแล้ว" : "📌 บันทึกซื้อทีหลังแล้ว", isFav ? "info" : "success");
     } else {
       if (typeof showToast === "function") showToast(data?.error || "ไม่สำเร็จ", "error");
     }
@@ -456,7 +456,7 @@ async function toggleFavorite(songId) {
   }
 }
 
-// 🆕 โหลดรายการโปรดทั้งหมด → แสดงในหน้าบัญชี + cache สถานะ
+// 🆕 โหลดบันทึกซื้อทีหลังทั้งหมด → แสดงในหน้าบัญชี + cache สถานะ
 async function loadCustomerFavorites() {
   const wrap = document.getElementById("myAccountFavoritesList");
   if (!wrap) return;
@@ -480,11 +480,11 @@ async function loadCustomerFavorites() {
       return;
     }
     // 🆕 (v6 fix): render เป็น song card สวยๆ เหมือนหน้ารายการเพลง (มี cover, ชื่อ, DJ, ราคา, ปุ่ม ❤️ ⭐ 🛒)
-    //   ถ้าเพลงถูกลบ (song = null) → แสดงข้อความว่าเพลงถูกลบแล้ว + ปุ่มลบจากรายการโปรด
+    //   ถ้าเพลงถูกลบ (song = null) → แสดงข้อความว่าเพลงถูกลบแล้ว + ปุ่มลบจากบันทึกซื้อทีหลัง
     wrap.innerHTML = favorites.map(f => {
       const s = f.song;
       if (!s) {
-        // เพลงถูกลบจากระบบ → แสดงกล่องเตือน + ปุ่มลบจากรายการโปรด
+        // เพลงถูกลบจากระบบ → แสดงกล่องเตือน + ปุ่มลบจากบันทึกซื้อทีหลัง
         return `
           <div style="background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:10px;display:flex;align-items:center;gap:8px;">
             <div style="flex:1;min-width:0;font-size:13px;color:var(--danger);">⚠️ เพลงนี้ถูกลบจากระบบแล้ว</div>
@@ -516,7 +516,7 @@ async function loadCustomerFavorites() {
             <div style="font-size:12px;font-weight:600;color:var(--accent);">${originalPriceDisplay}${priceDisplay}</div>
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-            <button class="btn-icon-mini is-favorite" data-favorite-btn="${escapeHtmlCustomer(f.song_id)}" data-song-name="${songName}" aria-label="ลบจากรายการโปรด" title="ลบจากรายการโปรด"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
+            <button class="btn-icon-mini is-favorite" data-favorite-btn="${escapeHtmlCustomer(f.song_id)}" data-song-name="${songName}" aria-label="ลบจากบันทึกซื้อทีหลัง" title="ลบจากบันทึกซื้อทีหลัง"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
             <button class="btn-icon-mini" data-fav-buy="${escapeHtmlCustomer(f.song_id)}" aria-label="เพิ่มลงตะกร้า" title="เพิ่มลงตะกร้า"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg></button>
           </div>
         </div>`;
