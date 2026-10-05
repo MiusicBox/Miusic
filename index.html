@@ -61,6 +61,9 @@
 <!-- 🎨 (2026-09-20) Google Fonts: Mali (ตัวทำมะดา สำหรับชื่อเพลง) + Bai Jamjuree (ตัวหนา สำหรับหัวเพลย์ลิสต์) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- 🆕 (Bug-Fix #13): Plausible Analytics — privacy-friendly (no cookies, no PII)
+       ⚠️ ต้องสมัคร plausible.io + เปลี่ยน data-domain เป็น domain จริง -->
+  <script defer data-domain="miusic-store.dj-remix.workers.dev" src="https://plausible.io/js/script.js"></script>
 <!-- 🔧 (2026-09-24 SEO/perf): เปลี่ยนจาก <link rel="stylesheet"> ปกติ (บล็อกการแสดงผลหน้าเว็บ ~1,780ms ตาม
      PageSpeed) เป็นเทคนิค media="print" + onload — เบราว์เซอร์โหลดไฟล์แบบไม่บล็อก แล้วค่อยสลับเป็น "all" ตอนโหลด
      เสร็จ ไฟล์/URL เดิมทุกอย่าง ไม่มีไฟล์ไหนถูกตัดออก มี <noscript> รองรับกรณีปิด JavaScript ไว้ด้วย -->
@@ -732,7 +735,7 @@
 
   <div class="player-bar" id="playerBar">
     <div class="player-top">
-      <img id="playerCover" src="" alt="">
+      <img id="playerCover" src="" alt="ปกเพลงที่กำลังเล่น">
       <div class="player-meta">
         <div class="t1" id="playerTitle">-</div>
         <div class="t2" id="playerSub">-</div>
@@ -850,7 +853,7 @@
       <!-- แถวหัว: รูปปก 80x80 ซ้าย + ข้อมูลขวา — กระทัดรัด เหมือนฝั่ง admin -->
       <div id="modalHead">
         <div id="modalCoverWrap">
-          <img id="modalCover" src="" alt="">
+          <img id="modalCover" src="" alt="ปกเพลง">
         </div>
         <div id="modalInfo">
           <h3 id="modalName"></h3>
