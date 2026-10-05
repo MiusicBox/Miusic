@@ -3800,6 +3800,73 @@ function _t017_getDjLookupMap() {
   return _t017_djLookupMap;
 }
 
+// 🆕 (Feature #6): loadCustomerDownloads — โหลดเพลงที่ซื้อแล้ว (status=completed) + ลิงก์ดาวน์โหลด
+//   ใช้ /api/customer/orders endpoint ที่มีอยู่แล้ว — filter เฉพาะ completed orders
+//   แสดงเพลงทุกตัวใน orders ที่ completed + ปุ่มดาวน์โหลด (ถ้ามี zip_download_url)
+async function loadCustomerDownloads() {
+  const listEl = document.getElementById("downloadsList");
+  if (!listEl) return;
+  listEl.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:24px;font-size:13px;">กำลังโหลด...</div>';
+  try {
+    const res = await fetch('/api/customer/orders?limit=200', { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const orders = data.orders || [];
+    // filter เฉพาะ completed orders (มีเพลงให้ดาวน์โหลด)
+    const completedOrders = orders.filter(o => o.status === 'completed' && Array.isArray(o.items) && o.items.length > 0);
+    if (completedOrders.length === 0) {
+      listEl.innerHTML = `
+        <div style="text-align:center;color:var(--text-dim);padding:32px 16px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;">
+          <div style="font-size:36px;margin-bottom:8px;">🎵</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:4px;">ยังไม่มีเพลงที่ซื้อแล้ว</div>
+          <div style="font-size:12px;">ซื้อเพลงครั้งแรกเพื่อดาวน์โหลดได้ที่นี่</div>
+        </div>
+      `;
+      return;
+    }
+    // render list — แต่ละ order แสดงเป็น card พร้อมปุ่มดาวน์โหลด
+    listEl.innerHTML = completedOrders.map(o => {
+      const orderId = o.id || '';
+      const receipt = o.receipt_number || orderId.slice(0, 8);
+      const date = o.created_at ? new Date(o.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+      const songCount = (o.items || []).length;
+      const total = Number(o.final_total || o.total || 0);
+      const zipUrl = o.zip_download_url || '';
+      const zipStatus = o.zip_status || '';
+      const canDownload = zipUrl && zipStatus === 'ready';
+      // แสดงชื่อเพลง 3 ตัวแรก + "และอีก X เพลง" ถ้าเกิน
+      const items = o.items || [];
+      const songNames = items.slice(0, 3).map(i => escapeHtml(i.title || i.song_name || 'เพลง')).join(', ');
+      const moreText = songCount > 3 ? ' และอีก ' + (songCount - 3) + ' เพลง' : '';
+      return `
+        <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;">
+            <div>
+              <div style="font-size:13px;font-weight:700;color:var(--text);">ใบเสร็จ #${escapeHtml(receipt)}</div>
+              <div style="font-size:11px;color:var(--text-dim);">${date} · ${songCount} เพลง · ${formatPrice(total)}</div>
+            </div>
+            ${canDownload ? `<button type="button" class="btn-download" data-download-url="${escapeHtml(zipUrl)}" data-download-id="${escapeHtml(orderId)}" style="background:var(--accent);color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">⬇️ ดาวน์โหลด ZIP</button>` : `<span style="font-size:11px;color:var(--text-dim);padding:6px 12px;">รอเตรียมไฟล์</span>`}
+          </div>
+          <div style="font-size:11px;color:var(--text-dim);line-height:1.4;">${songNames}${moreText}</div>
+        </div>
+      `;
+    }).join('');
+    // bind download buttons
+    listEl.querySelectorAll('[data-download-url]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const url = btn.getAttribute('data-download-url');
+        if (url) {
+          window.open(url, '_blank', 'noopener,noreferrer');
+          showToast('กำลังดาวน์โหลด...', 'success');
+        }
+      });
+    });
+  } catch (err) {
+    console.warn('[Feature #6] loadCustomerDownloads failed:', err?.message || err);
+    listEl.innerHTML = '<div style="text-align:center;color:var(--danger);padding:24px;font-size:13px;">โหลดไม่สำเร็จ กรุณาลองใหม่</div>';
+  }
+}
+
 // 🆕 (T017): ฟังก์ชันหลัก — render dashboard ทั้งหมด
 function renderCustomerDashboard(orders) {
   const summaryEl = document.getElementById("dashboardSummary");
@@ -4354,8 +4421,8 @@ document.getElementById("myAccountRefreshBtn")?.addEventListener("click", () => 
 // 🆕 (2026-10-02): tab switching สำหรับหน้าบัญชี — โปรไฟล์ / ออเดอร์ / บันทึกซื้อทีหลัง / ตั้งค่า
 // 🆕 (T017): เพิ่ม "dashboard" เป็น tab แรก (default active)
 function switchAccountTab(tab) {
-  const tabs = { dashboard: "accountTabDashboard", profile: "accountTabProfile", orders: "accountTabOrders", favorites: "accountTabFavorites", settings: "accountTabSettings" };
-  const sections = { dashboard: "accountSectionDashboard", profile: "accountSectionProfile", orders: "accountSectionOrders", favorites: "accountSectionFavorites", settings: "accountSectionSettings" };
+  const tabs = { dashboard: "accountTabDashboard", profile: "accountTabProfile", orders: "accountTabOrders", downloads: "accountTabDownloads", favorites: "accountTabFavorites", settings: "accountTabSettings" };
+  const sections = { dashboard: "accountSectionDashboard", profile: "accountSectionProfile", orders: "accountSectionOrders", downloads: "accountSectionDownloads", favorites: "accountSectionFavorites", settings: "accountSectionSettings" };
   for (const [key, tabId] of Object.entries(tabs)) {
     const tabBtn = document.getElementById(tabId);
     const section = document.getElementById(sections[key]);
@@ -4383,6 +4450,11 @@ document.getElementById("accountTabProfile")?.addEventListener("click", () => sw
 document.getElementById("accountTabOrders")?.addEventListener("click", () => {
   switchAccountTab("orders");
   loadCustomerAccountData(); // โหลดออเดอร์เมื่อกด tab
+});
+// 🆕 (Feature #6): tab ดาวน์โหลด → โหลดเพลงที่ซื้อแล้ว
+document.getElementById("accountTabDownloads")?.addEventListener("click", () => {
+  switchAccountTab("downloads");
+  loadCustomerDownloads();
 });
 // 🆕 (2026-10-02 v6): tab บันทึกซื้อทีหลัง → โหลด favorites
 document.getElementById("accountTabFavorites")?.addEventListener("click", () => {
