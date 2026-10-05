@@ -9357,6 +9357,23 @@ html.admin-page body {
   background: rgba(6, 199, 85, 0.1);
   border-color: #06c755;
 }
+.share-whatsapp {
+  color: #25d366;
+  border-color: rgba(37, 211, 102, 0.3);
+}
+.share-whatsapp:hover {
+  background: rgba(37, 211, 102, 0.1);
+  border-color: #25d366;
+}
+.share-tiktok {
+  color: #fff;
+  background: linear-gradient(135deg, #25f4ee 0%, #000 50%, #fe2c55 100%);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.share-tiktok:hover {
+  background: linear-gradient(135deg, #25f4ee 0%, #333 50%, #fe2c55 100%);
+  border-color: #fff;
+}
 .share-copy {
   color: var(--text-dim);
 }
