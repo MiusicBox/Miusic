@@ -5230,9 +5230,9 @@ html.admin-page body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.25);
   cursor: pointer;
   position: relative;
@@ -5337,29 +5337,35 @@ html.admin-page body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  gap: 2px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   border: 1px solid rgba(244, 63, 94, 0.4);
   cursor: pointer;
   position: relative;
   overflow: hidden;
   transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
   flex-shrink: 0;
-  padding: 2px;
+  padding: 3px;
   background: linear-gradient(145deg, rgba(253, 164, 175, 0.20) 0%, rgba(244, 63, 94, 0.18) 50%, rgba(159, 18, 57, 0.18) 100%);
   color: #fda4af;
   box-shadow: 0 2px 6px rgba(244, 63, 94, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
 .btn-like-tiktok svg {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   display: block;
   transition: transform 0.2s ease;
 }
+/* 🆕 (UI-Fix): ปรับขนาด SVG ใน btn-icon-mini ให้ใหญ่ขึ้น — กดง่ายบนมือถือ */
+.btn-icon-mini svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
 .btn-like-tiktok .like-count {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: inherit;
   line-height: 1;
@@ -5420,7 +5426,7 @@ html.admin-page body {
     height: 12px;
   }
   .btn-like-tiktok .like-count {
-    font-size: 9px;
+    font-size: 10px;
   }
 }
 
