@@ -62,13 +62,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- 🆕 (Bug-Fix #13 v2): Cloudflare Web Analytics — ฟรี + ไม่ใช้ cookies + ไม่เก็บ PII
-       วิธีตั้งค่า:
-       1. ไปที่ https://dash.cloudflare.com → Web Analytics
-       2. กด Add a site → กรอก miusic-store.dj-remix.workers.dev
-       3. คัดลอก token จาก JS snippet ที่ CF ให้มา
-       4. แทนที่ YOUR_CF_ANALYTICS_TOKEN ด้านล่างด้วย token จริง
-       หมายเหตุ: ถ้ายังไม่ได้เปิดใช้ → script จะไม่ส่งข้อมูล (ไม่พัง แค่ไม่วัดผล) -->
-  <script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "YOUR_CF_ANALYTICS_TOKEN"}'></script>
+       Token ตั้งค่าแล้วจาก CF Dashboard → Web Analytics
+       hostname: miusic-store.dj-remix.workers.dev -->
+  <!-- Cloudflare Web Analytics -->
+  <script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "f01ac9d2536a40b7b635059e75981a47"}'></script>
+  <!-- End Cloudflare Web Analytics -->
 <!-- 🔧 (2026-09-24 SEO/perf): เปลี่ยนจาก <link rel="stylesheet"> ปกติ (บล็อกการแสดงผลหน้าเว็บ ~1,780ms ตาม
      PageSpeed) เป็นเทคนิค media="print" + onload — เบราว์เซอร์โหลดไฟล์แบบไม่บล็อก แล้วค่อยสลับเป็น "all" ตอนโหลด
      เสร็จ ไฟล์/URL เดิมทุกอย่าง ไม่มีไฟล์ไหนถูกตัดออก มี <noscript> รองรับกรณีปิด JavaScript ไว้ด้วย -->
