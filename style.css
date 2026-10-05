@@ -9297,3 +9297,87 @@ html.admin-page body {
     height: 28px;
   }
 }
+
+
+/* ============================================================
+   🆕 (Feature #2): Social Share buttons — ใน song modal
+   ============================================================ */
+.modal-share-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: wrap;
+}
+.modal-share-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-weight: 500;
+  margin-right: 4px;
+}
+.share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  height: 32px;
+}
+.share-btn:hover {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.08);
+}
+.share-btn:active {
+  transform: scale(0.96);
+}
+.share-fb {
+  color: #1877f2;
+  border-color: rgba(24, 119, 242, 0.3);
+}
+.share-fb:hover {
+  background: rgba(24, 119, 242, 0.1);
+  border-color: #1877f2;
+}
+.share-line {
+  color: #06c755;
+  border-color: rgba(6, 199, 85, 0.3);
+}
+.share-line:hover {
+  background: rgba(6, 199, 85, 0.1);
+  border-color: #06c755;
+}
+.share-copy {
+  color: var(--text-dim);
+}
+.share-copy:hover {
+  color: var(--text);
+}
+
+@media (max-width: 600px) {
+  .modal-share-row {
+    gap: 6px;
+    padding: 8px 0;
+  }
+  .share-btn {
+    padding: 5px 10px;
+    font-size: 11px;
+    height: 30px;
+  }
+  .share-btn span {
+    display: none; /* มือถือแสดงแค่ icon */
+  }
+  .modal-share-label {
+    font-size: 11px;
+  }
+}
