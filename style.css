@@ -8830,14 +8830,14 @@ html.admin-page body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  /* Mobile: touch target ใหญ่ขึ้น */
-  min-height: 36px;
-  padding: 8px 14px;
-  border-radius: 18px;
+  /* (T015 mobile fix-3): ลดความสูงจาก 36px → 30px */
+  min-height: 30px;
+  padding: 5px 12px;
+  border-radius: 15px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   user-select: none;
@@ -8872,14 +8872,15 @@ html.admin-page body {
 }
 .adv-price-row input {
   flex: 1;
-  /* Mobile: font-size ≥16px กัน iOS Safari auto-zoom */
+  /* Mobile: font-size ≥16px กัน iOS Safari auto-zoom
+     (T015 mobile fix-3): ลดความสูงจาก 44px → 36px */
   font-size: 16px;
-  padding: 12px 14px;
+  padding: 8px 12px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
   color: var(--text);
-  min-height: 44px;
+  height: 36px;
   -webkit-appearance: none;
   appearance: none;
 }
@@ -8907,14 +8908,14 @@ html.admin-page body {
   display: flex;
   align-items: center;
   gap: 10px;
-  /* Mobile: touch target */
-  min-height: 48px;
-  padding: 12px 14px;
+  /* (T015 mobile fix-3): ลดความสูงจาก 48px → 36px */
+  min-height: 36px;
+  padding: 8px 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
@@ -8930,25 +8931,25 @@ html.admin-page body {
   flex-shrink: 0;
 }
 
-/* Sort select */
+/* Sort select
+   (T015 mobile fix-3): ลดความสูงจาก 48px → 36px (เท่ากับ input อื่น ๆ)
+   ยังกัน iOS zoom ด้วย font-size: 16px */
 .adv-field select {
   width: 100%;
-  /* Mobile: font-size ≥16px กัน iOS zoom */
   font-size: 16px;
-  padding: 12px 14px;
+  padding: 8px 14px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
   color: var(--text);
   cursor: pointer;
-  min-height: 48px;
+  height: 36px;
   -webkit-appearance: none;
   appearance: none;
-  /* Custom arrow */
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'><path d='M1 1L6 6L11 1' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   background-repeat: no-repeat;
-  background-position: right 14px center;
-  padding-right: 40px;
+  background-position: right 12px center;
+  padding-right: 36px;
 }
 .adv-field select:focus {
   outline: none;
@@ -8970,11 +8971,11 @@ html.admin-page body {
 .adv-btn-primary,
 .adv-btn-secondary {
   flex: 1;
-  /* Mobile: touch target ใหญ่ */
-  min-height: 48px;
-  padding: 12px 16px;
+  /* (T015 mobile fix-3): ลดความสูงจาก 48px → 38px — ปุ่มเดิมสูงเกินไปใน modal */
+  height: 38px;
+  padding: 8px 16px;
   border-radius: 8px;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
@@ -9117,14 +9118,31 @@ html.admin-page body {
     min-height: 34px;
   }
 
-  /* Footer */
+  /* Footer — (T015 mobile fix-3): ลด padding และความสูงปุ่ม */
   .adv-modal-footer {
-    padding: 12px 16px;
+    padding: 10px 14px;
   }
   .adv-btn-primary,
   .adv-btn-secondary {
+    font-size: 13px;
+    height: 36px;
+    padding: 6px 12px;
+  }
+  /* Sort select + price input + toggle: เล็กลงบนมือถือ */
+  .adv-field select,
+  .adv-price-row input {
+    height: 34px;
     font-size: 14px;
-    min-height: 48px;
+    padding: 6px 10px;
+  }
+  .adv-toggle {
+    min-height: 34px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .adv-toggle input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
   }
 
   /* Result summary */
