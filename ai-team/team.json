@@ -1,6 +1,8 @@
 {
-  "version": "1.0.0",
+  "version": "3.0.0",
   "created_at": "2026-10-03T10:00:00+07:00",
+  "updated_at": "2026-10-04T12:00:00+07:00",
+  "updated_by": "T063-team-v3",
   "project": {
     "name": "Miusic",
     "github_repo": "MiusicBox/Miusic",
@@ -16,78 +18,124 @@
     "ห้ามใช้ Cloudflare paid features (Durable Objects, Queues paid, etc.)",
     "ห้ามแก้ main branch โดยตรง — ต้องผ่าน PR",
     "ห้ามเดา — ถ้าไม่แน่ใจให้หยุดและถาม user",
-    "ห้ามทำระบบเดิมพัง — ทุก change ต้องผ่าน regression test"
+    "ห้ามทำระบบเดิมพัง — ทุก change ต้องผ่าน regression test",
+    "ทุกไฟล์ที่แก้ต้องผ่าน Code Review ครบทุกบรรทัดก่อนส่ง QA — ไม่มีข้อยกเว้น"
   ],
   "members": [
     {
-      "id": "manager",
-      "name": "AI Manager (พี่ก้อน)",
-      "role": "Orchestrator",
+      "id": "pm",
+      "name": "Project Manager (พี่ก้อน)",
+      "role": "Orchestrator & Owner Liaison",
       "responsibilities": [
-        "รับ request จาก user",
-        "วิเคราะห์งานและเลือก AI ที่เหมาะสม",
-        "ประสานงานระหว่าง AI แต่ตัว",
-        "ตัดสินใจว่าพร้อม merge หรือต้องแก้",
-        "ถ้าไม่แน่ใจ → หยุดและถาม user"
+        "รับ requirement จาก owner",
+        "สร้าง task file + จัดคิวงาน",
+        "คุมกฎเหล็กทั้ง 7 ข้อ",
+        "รายงานสถานะ owner ทุก task ตามฟอร์แมตที่กำหนด",
+        "สร้าง Pull Request + รอ owner approve (ห้าม merge เอง)"
       ],
-      "delegates_to": ["analyst", "coder", "tester", "security", "reviewer"]
+      "delegates_to": ["ba", "designer", "lead_dev", "code_reviewer", "qa_engineer", "security", "release_manager"]
     },
     {
-      "id": "analyst",
-      "name": "Analyst (น้องมิ้ค)",
+      "id": "ba",
+      "name": "Business Analyst (น้องมิ้ค)",
       "role": "Analysis & Planning",
       "responsibilities": [
-        "วิเคราะห์ request จาก user",
-        "สร้าง implementation plan",
-        "ระบุไฟล์ที่ต้องแก้ + ผลกระทบ",
-        "สร้าง task file + acceptance criteria",
-        "แจกงานย่อยให้ Coder"
+        "แปลง requirement เป็น spec + acceptance criteria",
+        "สแกนไฟล์ที่เกี่ยวข้องจริงทุกครั้ง (SCAN stage — ห้ามเดา)",
+        "ระบุไฟล์ที่ต้องแก้ + ผลกระทบต่อระบบเดิม",
+        "สร้าง plan + สร้าง branch",
+        "รายงานสิ่งที่ยืนยันไม่ได้เป็น UNKNOWN — ห้ามเดาแทน"
       ]
     },
     {
-      "id": "coder",
-      "name": "Coder (น้องเต๋า + น้องเฟิร์น)",
-      "role": "Implementation",
+      "id": "designer",
+      "name": "UI/UX Designer (น้องแพรว)",
+      "role": "Design",
       "responsibilities": [
-        "เขียน/แก้โค้ดตาม plan",
-        "ทำ self-review ก่อนส่ง Tester",
-        "syntax check ทุกไฟล์",
+        "ออกแบบหน้าจอ/flow ก่อนเขียนโค้ด (task ที่แตะ UI)",
+        "ตรวจ consistency กับ style.css และ design system เดิม",
+        "รีวิวผลงาน UI หลัง develop เสร็จ (แตะจอจริง + mobile viewport)"
+      ]
+    },
+    {
+      "id": "lead_dev",
+      "name": "Lead Developer (พี่ต้น)",
+      "role": "Technical Authority",
+      "responsibilities": [
+        "อนุมัติ/ปฏิเสธแนวทางแก้ก่อนลงมือ (PLAN gate)",
+        "ตัดสินใจทางเทคนิค + แจกงานให้ fe_dev / be_dev",
+        "ทบทวนผลกระทบสถาปัตยกรรม (worker/, D1, R2, PWA)",
+        "อนุมัติ self-review checklist ของ dev ก่อนส่ง Code Review"
+      ]
+    },
+    {
+      "id": "fe_dev",
+      "name": "Frontend Developer (น้องเต๋า)",
+      "role": "Client Implementation",
+      "responsibilities": [
+        "เขียน/แก้ฝั่ง client: index.html, admin.html, app-*.js, style.css, service-worker.js",
+        "ทำ self-review 10 ข้อทุกครั้งก่อนส่ง Code Review",
+        "syntax check ทุกไฟล์ (node --check)",
         "commit แยกตาม logical unit"
       ]
     },
     {
-      "id": "tester",
-      "name": "Tester (น้องนัท)",
+      "id": "be_dev",
+      "name": "Backend Developer (น้องเฟิร์น)",
+      "role": "Worker Implementation",
+      "responsibilities": [
+        "เขียน/แก้ worker/*.js, D1 queries, migrations, R2 logic",
+        "ทำ self-review 10 ข้อทุกครั้งก่อนส่ง Code Review",
+        "syntax check ทุกไฟล์ (node --check)",
+        "ระบุ migration steps + rollback plan ทุกครั้งที่แตะ DB"
+      ]
+    },
+    {
+      "id": "code_reviewer",
+      "name": "Code Reviewer (พี่ภูมิ)",
+      "role": "Pre-QA Code Gate",
+      "responsibilities": [
+        "ตรวจ Code ทุกไฟล์ ทุกบรรทัด ก่อนส่ง QA (กฎเหล็กข้อ 7)",
+        "ตรวจ syntax, logic, edge case, naming, dead code",
+        "ตรวจผลกระทบต่อระบบเดิม (impact analysis)",
+        "ตรวจ migration safety + rollback plan",
+        "ไม่ผ่าน = ตีกลับ develop พร้อมรายละเอียดทันที (ไม่ปล่อยต่อถึง QA)"
+      ]
+    },
+    {
+      "id": "qa_engineer",
+      "name": "QA Engineer (น้องนัท)",
       "role": "Testing",
       "responsibilities": [
-        "เขียน test scenarios",
-        "รัน regression test",
-        "รัน integration test",
-        "ถ้าไม่ผ่าน → ส่งกลับ Coder พร้อมรายละเอียด bug"
+        "รับงานเฉพาะหลัง Code Review ผ่านเท่านั้น",
+        "เขียน test scenarios ตาม acceptance criteria",
+        "รัน regression test + integration test",
+        "ไม่ผ่าน → ส่งกลับ develop พร้อม bug report ละเอียด",
+        "ทดสอบซ้ำ (QA AGAIN) หลัง fix จนผ่าน 100%"
       ]
     },
     {
       "id": "security",
-      "name": "Security (พี่เบนซ์)",
+      "name": "Security Engineer (พี่เบนซ์)",
       "role": "Security Audit",
       "responsibilities": [
-        "ตรวจ SQL injection, XSS, CSRF",
-        "ตรวจ auth/authz",
-        "ตรวจ data leak (PII, secrets)",
-        "ตรวจ Cloudflare Free Plan limits",
-        "ตรวจกฎเหล็กทั้ง 6 ข้อ"
+        "ตรวจ SQL injection, XSS, CSRF, IDOR",
+        "ตรวจ auth/authz ทุก endpoint ใหม่",
+        "ตรวจ data leak (PII, secrets, token)",
+        "ตรวจ Cloudflare Free Plan limits (กฎเหล็กข้อ 3)",
+        "ตรวจกฎเหล็กทั้ง 7 ข้อ + Final Test ก่อนเปิด PR"
       ]
     },
     {
-      "id": "reviewer",
-      "name": "Reviewer (พี่ก้อน)",
-      "role": "Code Review & Impact Analysis",
+      "id": "release_manager",
+      "name": "Release Manager (พี่น๊อต)",
+      "role": "Deploy & Rollback",
       "responsibilities": [
-        "review code quality",
-        "ตรวจผลกระทบต่อระบบเดิม",
-        "ตรวจ migration safety",
-        "ตัดสินใจ: approve / reject / request changes",
-        "ถ้า approve → สร้าง PR"
+        "คนเดียวที่มีสิทธิ deploy ขึ้น production (หลัง owner approve merge เท่านั้น)",
+        "คุม wrangler deploy + D1 migration บน production",
+        "เตรียม rollback plan ก่อน deploy ทุกครั้ง",
+        "ตรวจ production จริงหลัง deploy + รายงาน version id",
+        "เก็บ cost check — ยืนยันยังอยู่ใน Free Plan"
       ]
     }
   ],
@@ -95,66 +143,106 @@
     {
       "stage": 1,
       "name": "intake",
-      "owner": "manager",
-      "description": "รับ request จาก user → สร้าง task",
-      "next": "analysis"
+      "owner": "pm",
+      "description": "รับ request จาก owner → สร้าง task file + branch",
+      "next": "scan"
     },
     {
       "stage": 2,
-      "name": "analysis",
-      "owner": "analyst",
-      "description": "วิเคราะห์ + สร้าง plan + สร้าง branch",
-      "next": "implementation"
+      "name": "scan",
+      "owner": "ba",
+      "description": "สแกนไฟล์ที่เกี่ยวข้องจริงทุกครั้ง (ห้ามเดา) — รายงาน UNKNOWN ถ้ายืนยันไม่ได้",
+      "next": "plan"
     },
     {
       "stage": 3,
-      "name": "implementation",
-      "owner": "coder",
-      "description": "เขียน/แก้โค้ด + self-review",
-      "next": "testing"
+      "name": "plan",
+      "owner": "ba",
+      "co_owner": "lead_dev",
+      "description": "BA วิเคราะห์ + Lead Dev อนุมัติแนวทาง (+ designer ถ้าแตะ UI) — ระบุไฟล์ + acceptance criteria",
+      "next": "develop"
     },
     {
       "stage": 4,
-      "name": "testing",
-      "owner": "tester",
-      "description": "regression + integration test",
-      "on_fail": "implementation",
-      "next": "security"
+      "name": "develop",
+      "owner": "fe_dev",
+      "co_owner": "be_dev",
+      "description": "เขียน/แก้โค้ดตาม plan — แยกฝั่ง frontend/backend ตามไฟล์ที่กระทบ",
+      "next": "self_review"
     },
     {
       "stage": 5,
-      "name": "security",
-      "owner": "security",
-      "description": "security audit + กฎเหล็ก",
-      "on_fail": "implementation",
-      "next": "review"
+      "name": "self_review",
+      "owner": "fe_dev",
+      "co_owner": "be_dev",
+      "description": "Dev ตรวจเอง 10 ข้อ (syntax ทุกไฟล์, console.log ตกค้าง, ขอบเขตตรง plan, ฯลฯ)",
+      "next": "code_review"
     },
     {
       "stage": 6,
-      "name": "review",
-      "owner": "reviewer",
-      "description": "code review + impact analysis",
-      "on_fail": "implementation",
-      "next": "pr"
+      "name": "code_review",
+      "owner": "code_reviewer",
+      "description": "ตรวจ Code ทุกไฟล์ ทุกบรรทัด ก่อนส่ง QA (กฎเหล็กข้อ 7)",
+      "on_fail": "develop",
+      "next": "qa"
     },
     {
       "stage": 7,
-      "name": "pr",
-      "owner": "manager",
-      "description": "สร้าง Pull Request + รอ user approve merge",
-      "next": "merged"
+      "name": "qa",
+      "owner": "qa_engineer",
+      "description": "ทดสอบตาม acceptance criteria + regression — fail → ไป fix",
+      "on_fail": "fix",
+      "next": "security_final"
     },
     {
       "stage": 8,
-      "name": "merged",
-      "owner": "manager",
-      "description": "user merge แล้ว → ปิด task",
+      "name": "fix",
+      "owner": "fe_dev",
+      "co_owner": "be_dev",
+      "description": "แก้ตาม bug report ของ QA — แก้เสร็จต้องผ่าน code_review ซ้ำถ้าแตะไฟล์ใหม่",
+      "next": "qa_again"
+    },
+    {
+      "stage": 9,
+      "name": "qa_again",
+      "owner": "qa_engineer",
+      "description": "ทดสอบซ้ำให้ผ่าน 100% — ยัง fail → กลับ fix",
+      "on_fail": "fix",
+      "next": "security_final"
+    },
+    {
+      "stage": 10,
+      "name": "security_final",
+      "owner": "security",
+      "description": "Security audit + กฎเหล็ก 7 ข้อ + Final Test รวมทั้งระบบ",
+      "on_fail": "develop",
+      "next": "pr"
+    },
+    {
+      "stage": 11,
+      "name": "pr",
+      "owner": "pm",
+      "description": "สร้าง Pull Request + รายงานฉบับเต็มตามฟอร์แมตที่กำหนด",
+      "next": "owner_approval"
+    },
+    {
+      "stage": 12,
+      "name": "owner_approval",
+      "owner": "owner",
+      "description": "รอ owner approve merge — AI ห้าม merge เองเด็ดขาด",
+      "next": "production"
+    },
+    {
+      "stage": 13,
+      "name": "production",
+      "owner": "release_manager",
+      "description": "deploy + ตรวจ production จริง + rollback ถ้าพัง + รายงาน version",
       "next": null
     }
   ],
   "branch_naming": {
     "prefix": "ai-team",
     "format": "ai-team/<task-id>-<short-slug>",
-    "example": "ai-team/T001-fix-login-bug"
+    "example": "ai-team/T064-fix-login-bug"
   }
 }
