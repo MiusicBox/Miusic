@@ -1,22 +1,62 @@
 {
   "version": "2.0.0",
   "team_version": "3.0.0",
-  "last_updated": "2026-10-04T17:10:00+07:00",
-  "synced_by": "T063-team-v3",
+  "last_updated": "2026-10-05T22:00:00+07:00",
+  "synced_by": "T064-merge-conflict-fix",
   "current_session": {
     "session_id": "web-fef5c92d-a981-46ea-af29-7380411dac47",
     "started_at": "2026-10-04T21:00:00+07:00",
     "user_timezone": "Asia/Vientiane"
   },
   "tasks": {
-    "active": ["T063"],
+    "active": [],
     "pending_user_approval": [],
     "completed": [
-      {"id": "T001-T010", "note": "ดูประวัติเดิมใน git + state.json v1.x (T008 bugs ด่วน PR#7, T009 UX PR#8, T010 security hardening PR#9)"},
-      {"id": "T011-validation-ux-light", "title": "Validation + UX เบา ๆ (L2,L3,L6,L8,L11 + F4,F5,F6)", "pr_number": 10, "merge_sha": "84dcd02"},
-      {"id": "T012-sales-report-search", "title": "ฟีเจอร์ใหม่ — รายงานยอดขาย + ค้นหาขั้นสูง", "pr_number": 11, "merge_sha": "9e1b9fa"},
-      {"id": "T013-refactor-ux-extra", "title": "Refactor + UX เสริม 5 ตัว (R3, Q10, P4, F7, F8)", "pr_number": 12, "merge_sha": "88d8eca"},
-      {"id": "T014-T062", "note": "รวม 49 tasks ถัดไป merge ครบจนถึง T062 — รายละเอียดใน git log (เช่น T017 dashboard ลูกค้า, T019 homepage redesign PR#18, T020 song reviews PR#19, T044-T045 whatsapp/phone thai-lao, T047 store name, T048 audit retention 10d, T052-T055 race conditions, T057-T058 PDPA, T059 PWA offline, T060-T061 cookie banner, T062 promo CTA)", "last_merge": {"pr_number": 62, "title": "T062: แก้ปุ่ม CTA หน้าโปรโมชันเพลย์ลิสต์", "merge_sha": "862203e", "merged_at": "2026-10-04T21:28:49+07:00"}}
+      {
+        "id": "T001-T010",
+        "note": "ดูประวัติเดิมใน git + state.json v1.x (T008 bugs ด่วน PR#7, T009 UX PR#8, T010 security hardening PR#9)"
+      },
+      {
+        "id": "T011-validation-ux-light",
+        "title": "Validation + UX เบา ๆ (L2,L3,L6,L8,L11 + F4,F5,F6)",
+        "pr_number": 10,
+        "merge_sha": "84dcd02"
+      },
+      {
+        "id": "T012-sales-report-search",
+        "title": "ฟีเจอร์ใหม่ — รายงานยอดขาย + ค้นหาขั้นสูง",
+        "pr_number": 11,
+        "merge_sha": "9e1b9fa"
+      },
+      {
+        "id": "T013-refactor-ux-extra",
+        "title": "Refactor + UX เสริม 5 ตัว (R3, Q10, P4, F7, F8)",
+        "pr_number": 12,
+        "merge_sha": "88d8eca"
+      },
+      {
+        "id": "T014-T062",
+        "note": "รวม 49 tasks ถัดไป merge ครบจนถึง T062 — รายละเอียดใน git log (เช่น T017 dashboard ลูกค้า, T019 homepage redesign PR#18, T020 song reviews PR#19, T044-T045 whatsapp/phone thai-lao, T047 store name, T048 audit retention 10d, T052-T055 race conditions, T057-T058 PDPA, T059 PWA offline, T060-T061 cookie banner, T062 promo CTA)",
+        "last_merge": {
+          "pr_number": 62,
+          "title": "T062: แก้ปุ่ม CTA หน้าโปรโมชันเพลย์ลิสต์",
+          "merge_sha": "862203e",
+          "merged_at": "2026-10-04T21:28:49+07:00"
+        }
+      },
+      {
+        "id": "T063-team-v3",
+        "title": "อัปเดตระบบทีมเป็น v3.0.0 — ทีม 10 คน + 13 ขั้น + กฎเหล็ก 7 ข้อ",
+        "pr_number": 63,
+        "merged_at": "2026-10-05T21:50:00+07:00"
+      },
+      {
+        "id": "T064-category-tab",
+        "title": "แท็บหมวดหมู่ (แท็บที่ 3) แสดงการ์ดหมวดหมู่ครบทุกหมวด",
+        "pr_number": 64,
+        "merged_at": "2026-10-05T22:00:00+07:00",
+        "merge_note": "conflict resolved in state.json — main's v3.0.0 kept, T064 appended to completed"
+      }
     ],
     "blocked": []
   },
@@ -32,12 +72,28 @@
     "default_branch": "main",
     "total_commits_main": 1504,
     "open_prs": [
-      {"number": 63, "title": "T063: อัปเดตระบบทีมเป็น v3.0.0 — ทีม 10 คน + หมวดหมู่บังคับ 13 ขั้น + กฎเหล็ก 7 ข้อ", "url": "https://github.com/MiusicBox/Miusic/pull/63", "status": "awaiting_owner_merge", "created_at": "2026-10-04T17:15:00+07:00"}
+      {
+        "number": 63,
+        "title": "T063: อัปเดตระบบทีมเป็น v3.0.0 — ทีม 10 คน + หมวดหมู่บังคับ 13 ขั้น + กฎเหล็ก 7 ข้อ",
+        "url": "https://github.com/MiusicBox/Miusic/pull/63",
+        "status": "awaiting_owner_merge",
+        "created_at": "2026-10-04T17:15:00+07:00"
+      }
     ],
     "recent_merges": [
-      {"number": 60, "title": "T060: เอา cookie consent banner ออก"},
-      {"number": 61, "title": "T061: ลบ cookie consent banner ออกจากโค้ด"},
-      {"number": 62, "title": "T062: แก้ปุ่ม CTA หน้าโปรโมชันเพลย์ลิสต์", "merged_at": "2026-10-04T21:28:49+07:00"}
+      {
+        "number": 60,
+        "title": "T060: เอา cookie consent banner ออก"
+      },
+      {
+        "number": 61,
+        "title": "T061: ลบ cookie consent banner ออกจากโค้ด"
+      },
+      {
+        "number": 62,
+        "title": "T062: แก้ปุ่ม CTA หน้าโปรโมชันเพลย์ลิสต์",
+        "merged_at": "2026-10-04T21:28:49+07:00"
+      }
     ]
   },
   "cloudflare": {
@@ -98,17 +154,60 @@
     "ไม่มี test automation / CI — ทดสอบด้วยมือ + node --check เท่านั้น"
   ],
   "decisions_log": [
-    {"id": "D001-D013", "note": "ดู decisions_log ฉบับ v1.10.0 ใน git history (T001-T013)"},
-    {"id": "T063-D1", "timestamp": "2026-10-04T22:00:00+07:00", "action": "ขยายทีม 6 → 10 คนตามคำสั่ง owner (ทีมงานอย่างน้อย 8-12 คน หน้าที่ชัดเจน) — เพิ่ม designer, lead_dev, code_reviewer, release_manager; แยก coder เป็น fe_dev + be_dev"},
-    {"id": "T063-D2", "timestamp": "2026-10-04T22:00:00+07:00", "action": "เพิ่มกฎเหล็กข้อ 7: ทุกไฟล์ที่แก้ต้องผ่าน Code Review ครบทุกบรรทัดก่อนส่ง QA — ตามคำสั่ง owner (ตรวจ code ให้ถูกต้องทุกตัวก่อนส่ง QA)"},
-    {"id": "T063-D3", "timestamp": "2026-10-04T22:00:00+07:00", "action": "workflow เปลี่ยน 8 → 13 ขั้น: intake → scan → plan → develop → self_review → code_review → qa → fix → qa_again → security_final → pr → owner_approval → production — code_review อยู่หน้า qa ตามกฎเหล็กข้อ 7"},
-    {"id": "T063-D4", "timestamp": "2026-10-04T22:00:00+07:00", "action": "แก้ manager.js ขั้นต่ำ: template stages 13 ขั้น + /8→/13 + stages array + เปลี่ยน hard-coded path เป็น __dirname (เดิมชี้ /home/z/my-project/ai-team และ /home/z/my-project/Miusic ซึ่งไม่มีอยู่จริงบนเครื่องปัจจุบัน — CLI ใช้ไม่ได้)"},
-    {"id": "T063-D5", "timestamp": "2026-10-04T22:00:00+07:00", "action": "sync state.json ให้ตรง git จริง: T011 PR#10, T012 PR#11, T013 PR#12 merge แล้ว (ยืนยันจาก git log) — เคลียร์ pending_user_approval ที่ค้างผิดสถานะ; main ล่าสุด T062 PR#62"},
-    {"id": "T063-D6", "timestamp": "2026-10-04T22:00:00+07:00", "action": "last_deploy ระบุ UNKNOWN — state เก่าอ้างอิง 2026-10-03 ซึ่งล้าสมัย ไม่เดา ต้องตรวจ Cloudflare Dashboard ขณะ deploy จริง"},
-    {"id": "T063-D7", "timestamp": "2026-10-04T17:02:00+07:00", "action": "Code Review ตีกลับ → เพิ่ม fs.mkdirSync(LOGS_DIR, {recursive:true}) ใน createTaskFile — logs/ ไม่มีบน clone สด คำสั่ง new จะ crash ตอนเขียน log"},
-    {"id": "T063-D8", "timestamp": "2026-10-04T17:03:00+07:00", "action": "แก้ nextTaskId (B4 critical): completed เป็น object ตั้งแต่ state v2 — coerce id (string|object) + prefix match /^T(\\d+)/ ยืนยันด้วย smoke test ได้ T064 ถูกต้อง"},
-    {"id": "T063-D9", "timestamp": "2026-10-04T17:04:00+07:00", "action": "จัดข้อความ CLI ตรง v3: approve-merge = owner กด merge เอง (กฎเหล็กข้อ 4) + Release Manager deploy ขั้น 13; stage 2 = scan; 'by user'→'by owner'; B3 (README) ปิดเป็น display artifact — ยืนยัน byte-level ด้วย python"},
-    {"id": "T063-D10", "timestamp": "2026-10-04T17:10:00+07:00", "action": "ปรับ timestamp ใน task file ให้ monotonic ชุดเดียว (เดิมข้าม session ไม่เรียง) + QA AGAIN suite 26/26 PASS + security PASS — พร้อมเปิด PR"}
+    {
+      "id": "D001-D013",
+      "note": "ดู decisions_log ฉบับ v1.10.0 ใน git history (T001-T013)"
+    },
+    {
+      "id": "T063-D1",
+      "timestamp": "2026-10-04T22:00:00+07:00",
+      "action": "ขยายทีม 6 → 10 คนตามคำสั่ง owner (ทีมงานอย่างน้อย 8-12 คน หน้าที่ชัดเจน) — เพิ่ม designer, lead_dev, code_reviewer, release_manager; แยก coder เป็น fe_dev + be_dev"
+    },
+    {
+      "id": "T063-D2",
+      "timestamp": "2026-10-04T22:00:00+07:00",
+      "action": "เพิ่มกฎเหล็กข้อ 7: ทุกไฟล์ที่แก้ต้องผ่าน Code Review ครบทุกบรรทัดก่อนส่ง QA — ตามคำสั่ง owner (ตรวจ code ให้ถูกต้องทุกตัวก่อนส่ง QA)"
+    },
+    {
+      "id": "T063-D3",
+      "timestamp": "2026-10-04T22:00:00+07:00",
+      "action": "workflow เปลี่ยน 8 → 13 ขั้น: intake → scan → plan → develop → self_review → code_review → qa → fix → qa_again → security_final → pr → owner_approval → production — code_review อยู่หน้า qa ตามกฎเหล็กข้อ 7"
+    },
+    {
+      "id": "T063-D4",
+      "timestamp": "2026-10-04T22:00:00+07:00",
+      "action": "แก้ manager.js ขั้นต่ำ: template stages 13 ขั้น + /8→/13 + stages array + เปลี่ยน hard-coded path เป็น __dirname (เดิมชี้ /home/z/my-project/ai-team และ /home/z/my-project/Miusic ซึ่งไม่มีอยู่จริงบนเครื่องปัจจุบัน — CLI ใช้ไม่ได้)"
+    },
+    {
+      "id": "T063-D5",
+      "timestamp": "2026-10-04T22:00:00+07:00",
+      "action": "sync state.json ให้ตรง git จริง: T011 PR#10, T012 PR#11, T013 PR#12 merge แล้ว (ยืนยันจาก git log) — เคลียร์ pending_user_approval ที่ค้างผิดสถานะ; main ล่าสุด T062 PR#62"
+    },
+    {
+      "id": "T063-D6",
+      "timestamp": "2026-10-04T22:00:00+07:00",
+      "action": "last_deploy ระบุ UNKNOWN — state เก่าอ้างอิง 2026-10-03 ซึ่งล้าสมัย ไม่เดา ต้องตรวจ Cloudflare Dashboard ขณะ deploy จริง"
+    },
+    {
+      "id": "T063-D7",
+      "timestamp": "2026-10-04T17:02:00+07:00",
+      "action": "Code Review ตีกลับ → เพิ่ม fs.mkdirSync(LOGS_DIR, {recursive:true}) ใน createTaskFile — logs/ ไม่มีบน clone สด คำสั่ง new จะ crash ตอนเขียน log"
+    },
+    {
+      "id": "T063-D8",
+      "timestamp": "2026-10-04T17:03:00+07:00",
+      "action": "แก้ nextTaskId (B4 critical): completed เป็น object ตั้งแต่ state v2 — coerce id (string|object) + prefix match /^T(\\d+)/ ยืนยันด้วย smoke test ได้ T064 ถูกต้อง"
+    },
+    {
+      "id": "T063-D9",
+      "timestamp": "2026-10-04T17:04:00+07:00",
+      "action": "จัดข้อความ CLI ตรง v3: approve-merge = owner กด merge เอง (กฎเหล็กข้อ 4) + Release Manager deploy ขั้น 13; stage 2 = scan; 'by user'→'by owner'; B3 (README) ปิดเป็น display artifact — ยืนยัน byte-level ด้วย python"
+    },
+    {
+      "id": "T063-D10",
+      "timestamp": "2026-10-04T17:10:00+07:00",
+      "action": "ปรับ timestamp ใน task file ให้ monotonic ชุดเดียว (เดิมข้าม session ไม่เรียง) + QA AGAIN suite 26/26 PASS + security PASS — พร้อมเปิด PR"
+    }
   ],
   "resume_instructions": {
     "how_to_resume": "บอก AI: 'resume ai-team'",
