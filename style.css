@@ -1176,11 +1176,11 @@ button:active {
   height: 14px;
 }
 
-/* 🔧 ปรับใหม่ (2026-09-12 รอบ 6): ลดขนาดปุ่มปิด (X) จาก 30px → 28px ให้เ็กลงเป็นสัดส่วนกับ popup ที่เล็กลง */
+/* 🐛 (Bug-Fix #17): เพิ่มขนาดปุ่มปิด (X) จาก 28px → 36px — กดง่ายบนมือถือ */
 .player-close-btn {
   background: rgba(255, 255, 255, 0.12) !important;
-  width: 28px !important;
-  height: 28px !important;
+  width: 36px !important;
+  height: 36px !important;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.15);
   display: flex;
@@ -9248,62 +9248,6 @@ html.admin-page body {
 }
 
 
-/* ============================================================
-   🆕 (Feature #1): Quick filter chips — เพลงฮิต / เพลงใหม่
-   ============================================================ */
-.quick-filter-row {
-  display: flex;
-  gap: 8px;
-  padding: 8px 16px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  max-width: 1080px;
-  margin: 0 auto;
-}
-.quick-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 14px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: all 0.15s;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  height: 32px;
-}
-.quick-chip:hover {
-  border-color: var(--accent);
-}
-.quick-chip.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  font-weight: 600;
-}
-.quick-chip:active {
-  transform: scale(0.96);
-}
-
-@media (max-width: 600px) {
-  .quick-filter-row {
-    padding: 6px 12px;
-    gap: 6px;
-  }
-  .quick-chip {
-    padding: 5px 10px;
-    font-size: 12px;
-    height: 28px;
-  }
-}
-
 
 /* ============================================================
    🆕 (Feature #2): Social Share buttons — ใน song modal
@@ -9527,5 +9471,73 @@ html.admin-page body {
   }
   .song-rating-text {
     font-size: 9px;
+  }
+}
+
+
+/* ============================================================
+   🐛 (Bug-Fix #18): Song Modal responsive — ปรับ padding/font บนมือถือ
+   เดิม: .modal ไม่มี @media → บนมือถือดูคับแคบ
+   ใหม่: เพิ่ม @media (max-width: 480px) สำหรับ #songModalBackdrop
+   ============================================================ */
+@media (max-width: 480px) {
+  #songModalBackdrop .modal {
+    max-width: 100% !important;
+    max-height: 92vh !important;
+    border-radius: 16px 16px 0 0 !important;
+    padding: 14px 14px calc(16px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  #songModalBackdrop .modal-header {
+    padding: 0 0 8px 0 !important;
+  }
+  #songModalBackdrop .modal-header h3 {
+    font-size: 15px !important;
+  }
+  #modalHead {
+    gap: 10px !important;
+    margin-bottom: 10px !important;
+  }
+  #modalCoverWrap {
+    width: 64px !important;
+    height: 64px !important;
+  }
+  #modalName {
+    font-size: 14px !important;
+  }
+  #modalArtist,
+  #modalDj {
+    font-size: 12px !important;
+  }
+  #modalDesc {
+    font-size: 12px !important;
+    line-height: 1.5 !important;
+  }
+  #songModalBackdrop #modalPlayBtn,
+  #songModalBackdrop #modalBuyBtn {
+    padding: 12px 10px !important;
+    font-size: 13px !important;
+  }
+  /* share buttons — ซ่อนข้อความ เหลือ icon (มีอยู่แล้วใน CSS แต่ย้ำอีกครั้ง) */
+  #songModalBackdrop .share-btn span {
+    display: none !important;
+  }
+  /* recommend grid — ปรับขนาดการ์ด */
+  #songModalBackdrop .modal-recommend-grid {
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)) !important;
+    gap: 6px !important;
+  }
+  #songModalBackdrop .recommend-card-name {
+    font-size: 10px !important;
+  }
+  #songModalBackdrop .recommend-card-price {
+    font-size: 9px !important;
+  }
+}
+
+/* iPad/Tablet (481px-768px) — ปรับ modal ให้พอดีจอ */
+@media (min-width: 481px) and (max-width: 768px) {
+  #songModalBackdrop .modal {
+    max-width: 420px !important;
+    padding: 18px 18px calc(20px + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
