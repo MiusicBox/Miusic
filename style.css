@@ -8658,26 +8658,29 @@ html.admin-page body {
    - chip-list รองรับ scroll แนวตั้งบนมือถือ (max-height adaptive)
    ============================================================ */
 
-/* ปุ่ม "ขั้นสูง" ใน search-box — compact, mobile-friendly */
+/* ปุ่ม "ขั้นสูง" ใน search-box — compact, mobile-friendly
+   ⚠️ (T015 mobile fix-2): ลดความสูงจาก 44px → 32px (เท่ากับ search input)
+   เหตุผล: 44px สูงเกิน input ใน search-box ทำให้ปุ่ม "ขั้นสูง" ดูโดดเด่น/ไม่เท่ากัน
+   32px = ขนาดเดียวกับ input ใน search-box → ดูเป็นระเบียบ + ยังกดง่ายอยู่ */
 .advanced-search-toggle {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  /* Mobile: เพิ่ม touch target */
-  min-height: 44px;
-  min-width: 44px;
-  padding: 8px 12px;
+  height: 32px;
+  min-width: 36px;
+  padding: 4px 10px;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.05);
   color: var(--text);
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
   white-space: nowrap;
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+  align-self: center;
 }
 .advanced-search-toggle:hover {
   background: rgba(255, 255, 255, 0.1);
@@ -9062,13 +9065,27 @@ html.admin-page body {
     to { transform: translateY(0); opacity: 1; }
   }
 
-  /* ปุ่ม "ขั้นสูง" ใน search-box: ซ่อนข้อความ เหลือแค่ icon + badge */
+  /* ปุ่ม "ขั้นสูง" ใน search-box: ซ่อนข้อความ เหลือแค่ icon + badge
+     (T015 mobile fix-2): ลดขนาดลงอีก — เดิม 44px สูงเกิน input ใน search-box
+     ปรับเป็น 28px × 32px = กะทัดรัด + เท่ากับ input */
   .adv-btn-label {
     display: none;
   }
   .advanced-search-toggle {
-    padding: 8px 10px;
-    min-width: 44px;
+    height: 28px;
+    min-width: 32px;
+    padding: 3px 8px;
+    border-radius: 5px;
+  }
+  .advanced-search-toggle svg {
+    width: 16px;
+    height: 16px;
+  }
+  .adv-filter-badge {
+    min-width: 14px;
+    height: 14px;
+    font-size: 9px;
+    padding: 0 3px;
   }
 
   /* Modal header: ขนาดเล็กลง */
@@ -9153,6 +9170,16 @@ html.admin-page body {
     flex: 1 1 100%;
     text-align: center;
     order: 2;
+  }
+  /* (T015 mobile fix-2): ปุ่ม "ขั้นสูง" เล็กลงอีกบนจอเล็กมาก */
+  .advanced-search-toggle {
+    height: 26px;
+    min-width: 28px;
+    padding: 2px 6px;
+  }
+  .advanced-search-toggle svg {
+    width: 14px;
+    height: 14px;
   }
 }
 
