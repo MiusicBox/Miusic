@@ -2477,6 +2477,75 @@ AUDIO.addEventListener("play", updatePlayButtonsUI);
 AUDIO.addEventListener("waiting", () => { STATE.currentLoadingId = STATE.currentPlayingId; updatePlayButtonsUI(); });
 AUDIO.addEventListener("playing", () => { STATE.currentLoadingId = null; updatePlayButtonsUI(); });
 
+// 🆕 (Feature #4): renderRecommendSongs — แสดงเพลงแนะนำจาก DJ เดียวกัน
+//   Algorithm: หาเพลงอื่นของ DJ เดียวกัน (ไม่เกิน 8 เพลง) + ไม่รวมเพลงปัจจุบัน
+//   ถ้าไม่มี DJ → หาเพลงในหมวดเดียวกันแทน
+//   ถ้าไม่มีทั้งคู่ → ซ่อน section
+function renderRecommendSongs(currentSong) {
+  const section = document.getElementById("modalRecommendSection");
+  const grid = document.getElementById("modalRecommendGrid");
+  if (!section || !grid || !currentSong) {
+    if (section) section.style.display = "none";
+    return;
+  }
+  // หาเพลงแนะนำ — ใช้ dj_name เป็นหลัก
+  let recommend = [];
+  if (currentSong.dj_name) {
+    recommend = STATE.songs.filter(s =>
+      s.id !== currentSong.id &&
+      s.dj_name === currentSong.dj_name &&
+      s.status !== "hidden"
+    ).slice(0, 8);
+  }
+  // ถ้ายังไม่ครบ 8 หรือไม่มี DJ → เพิ่มเพลงจากหมวดเดียวกัน
+  if (recommend.length < 4 && currentSong.category_id) {
+    const catRecommend = STATE.songs.filter(s =>
+      s.id !== currentSong.id &&
+      !recommend.find(r => r.id === s.id) &&
+      s.category_id === currentSong.category_id &&
+      s.status !== "hidden"
+    ).slice(0, 8 - recommend.length);
+    recommend = recommend.concat(catRecommend);
+  }
+  // ถ้ายังไม่ครบ → เพิ่มเพลงสุ่ม (เพื่อให้มีอะไรแนะนำบ้าง)
+  if (recommend.length < 4) {
+    const others = STATE.songs.filter(s =>
+      s.id !== currentSong.id &&
+      !recommend.find(r => r.id === s.id) &&
+      s.status !== "hidden"
+    ).slice(0, 8 - recommend.length);
+    recommend = recommend.concat(others);
+  }
+  // ถ้าไม่มีเพลงแนะนำเลย → ซ่อน section
+  if (recommend.length === 0) {
+    section.style.display = "none";
+    return;
+  }
+  // render
+  section.style.display = "block";
+  grid.innerHTML = recommend.map(s => `
+    <div class="recommend-card" data-recommend-id="${escapeHtml(s.id)}" role="button" tabindex="0" aria-label="เปิดเพลง ${escapeHtml(s.song_name || '')}">
+      <img class="recommend-card-cover" src="${escapeHtml(s.cover_url || 'default-song-cover.svg')}" alt="${escapeHtml(s.song_name || 'เพลง')}" loading="lazy">
+      <div class="recommend-card-name">${escapeHtml(s.song_name || 'ไม่มีชื่อ')}</div>
+      <div class="recommend-card-price">${formatPrice(s.price)}</div>
+    </div>
+  `).join("");
+  // bind click — กดแล้วเปิดเพลงนั้น (เปลี่ยน modal ไปเพลงใหม่)
+  grid.querySelectorAll(".recommend-card").forEach(card => {
+    card.addEventListener("click", () => {
+      const id = card.getAttribute("data-recommend-id");
+      if (id) openSongModal(id);
+    });
+    // keyboard support
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        card.click();
+      }
+    });
+  });
+}
+
 function openSongModal(songId) {
   const song = findSong(songId);
   if (!song) return;
@@ -2576,6 +2645,11 @@ function openSongModal(songId) {
   }
   updatePlayButtonsUI();
   if (backdropEl) backdropEl.classList.add("show");
+
+  // 🆕 (Feature #4): แสดงเพลงแนะนำ — เพลงอื่นของ DJ เดียวกัน + หมวดเดียวกัน
+  //   - ทำหลังเปิด modal เพื่อให้ user เห็นเพลงแนะนำทันที
+  //   - ไม่กระทบระบบเดิม — ถ้า fail ข้ามไปเงียบ ๆ (defensive)
+  try { renderRecommendSongs(song); } catch (err) { console.warn("[Feature #4] renderRecommendSongs failed:", err?.message || err); }
 
   // 🆕 (T020): โหลดรีวิวของเพลงนี้ (summary + ล่าสุด 5 รายการ + form state)
   //   - ทำหลังเปิด modal เพื่อให้ user เห็นรีวิวทันที

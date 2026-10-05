@@ -9381,3 +9381,93 @@ html.admin-page body {
     font-size: 11px;
   }
 }
+
+
+/* ============================================================
+   🆕 (Feature #4): Recommend section — เพลงแนะนำใน song modal
+   ============================================================ */
+.modal-recommend-section {
+  margin-top: 16px;
+  padding: 12px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.modal-recommend-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 10px 0;
+}
+.modal-recommend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.recommend-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 6px;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.recommend-card:hover {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.08);
+}
+.recommend-card:active {
+  transform: scale(0.96);
+}
+.recommend-card-cover {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+}
+.recommend-card-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+.recommend-card-price {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.recommend-empty {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 16px;
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 600px) {
+  .modal-recommend-grid {
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 6px;
+  }
+  .recommend-card {
+    padding: 4px;
+  }
+  .recommend-card-name {
+    font-size: 10px;
+  }
+  .recommend-card-price {
+    font-size: 9px;
+  }
+}
