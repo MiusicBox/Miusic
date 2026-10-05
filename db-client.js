@@ -418,3 +418,56 @@ export async function getDocsByIds(collection, ids) {
   }
   return map;
 }
+
+
+// ===================================================
+// 🆕 (T015): advancedSearchSongs — server-side advanced song search
+//   ใช้ endpoint POST /api/db/songs/_advanced-search ที่รัน SQL parameterized ฝั่ง Worker
+//   ลดเวลา query จาก 30s+ (load all + client filter) → <500ms สำหรับ 10,000+ เพลง
+//
+// พารามิเตอร์:
+//   options:
+//     djs: array ของ DJ name (string) — filter หลาย DJ
+//     categories: array ของ category_id (string) — filter หลายหมวด
+//     price_min: number | null — ราคาต่ำสุด (รวม)
+//     price_max: number | null — ราคาสูงสุด (รวม)
+//     favorite_only: boolean — ดูเฉพาะเพลงที่บันทึกในรายการโปรด
+//     favorite_customer_id: string | null — customer_id ของลูกค้า login (จำเป็นถ้า favorite_only=true)
+//     promo_only: boolean — ดูเฉพาะเพลงที่อยู่ในโปรโมชัน (มี discount active)
+//     sort: "new" | "old" | "price_asc" | "price_desc" | "name_asc" | "best_selling"
+//     limit: number (default 50, max 200)
+//     offset: number (default 0, สำหรับ pagination)
+//
+// คืนค่า:
+//   { docs: [{id, data}, ...], total, limit, offset, sort, filters }
+//   docs ถูก sanitize sensitive fields แล้ว (เหมือน getDocs(collection="songs"))
+// ===================================================
+export async function advancedSearchSongs(options = {}) {
+  const body = {
+    djs: Array.isArray(options.djs) ? options.djs : [],
+    categories: Array.isArray(options.categories) ? options.categories : [],
+    price_min: options.price_min != null ? Number(options.price_min) : null,
+    price_max: options.price_max != null ? Number(options.price_max) : null,
+    favorite_only: !!options.favorite_only,
+    favorite_customer_id: options.favorite_customer_id ? String(options.favorite_customer_id) : null,
+    promo_only: !!options.promo_only,
+    sort: options.sort || "new",
+    limit: options.limit != null ? Number(options.limit) : 50,
+    offset: options.offset != null ? Number(options.offset) : 0,
+  };
+  const res = await apiFetch(`/songs/_advanced-search`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  // แปลง docs ให้เป็นรูปแบบ docSnap เหมือน getDocs ปกติ — ให้ caller ใช้ได้ทันที
+  const docs = (res && res.docs) || [];
+  return {
+    docs: docs.map(d => ({ id: d.id, exists: () => true, data: () => d.data })),
+    raw: docs, // สำหรับ caller ที่ต้องการ array ตรง ๆ
+    total: res?.total || 0,
+    limit: res?.limit || body.limit,
+    offset: res?.offset || 0,
+    sort: res?.sort || body.sort,
+    filters: res?.filters || {},
+  };
+}

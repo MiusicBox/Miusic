@@ -577,80 +577,87 @@
       <div class="search-box">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
         <input id="searchInput" type="search" placeholder="ค้นหาเพลง..." aria-label="ค้นหาเพลง" maxlength="100">
+        <!-- 🆕 (T015): ปุ่ม "ค้นหาขั้นสูง" — เปิด modal ที่มี multi-DJ + multi-category + price range + sort -->
+        <button type="button" id="advancedSearchBtn" class="advanced-search-toggle" aria-label="ค้นหาขั้นสูง" title="ค้นหาขั้นสูง">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+          <span class="adv-btn-label">ขั้นสูง</span>
+          <span id="advFilterBadge" class="adv-filter-badge" hidden>0</span>
+        </button>
       </div>
     </div>
     <div class="chip-row" id="categoryChips"></div>
 
     <!-- ============================================================
-         🆕 (T015): Advanced Filter Panel — ค้นหาเพลงขั้นสูง
+         🆕 (T015): Advanced Filter Modal — ค้นหาเพลงขั้นสูง
            - ลูกค้ากรองหลาย DJ / หลายหมวด / ช่วงราคา / มีโปร / เรียงลำดับ
-           - ปุ่ม toggle แสดง/ซ่อน panel (default: ซ่อน — กดเพื่อเปิด)
-           - badge แสดงจำนวน active filters (ถ้า > 0)
-           - ส่วน "Result count" แสดงจำนวนผลลัพธ์หลังกดค้นหา
-           - mobile-friendly: panel ใช้ grid + flex-wrap + responsive font/padding
+           - เปิดจากปุ่ม "ขั้นสูง" ใน search-box (id="advancedSearchBtn")
+           - Mobile-first: full-screen modal บนจอ ≤600px, side panel บน desktop
            - logic ทั้งหมดอยู่ใน app-user.js (setupAdvancedFilters + loadSongsWithFilters)
          ============================================================ -->
-    <div class="advanced-filter-toggle" id="advancedFilterToggle">
-      <button type="button" id="advancedFilterBtn" aria-expanded="false" aria-controls="advancedFilterPanel">
-        ⚙️ ตัวกรองขั้นสูง <span id="activeFiltersCount" class="filter-badge" style="display:none;">0</span>
-      </button>
-    </div>
-
-    <div class="advanced-filter-panel" id="advancedFilterPanel" style="display:none;" role="region" aria-label="ตัวกรองขั้นสูง">
-      <!-- DJ filter -->
-      <div class="filter-section">
-        <h4>🎧 DJ</h4>
-        <div class="filter-checkboxes" id="djFilterCheckboxes" role="group" aria-label="กรองตาม DJ">
-          <!-- populated by app-user.js renderFilterCheckboxes() -->
+    <div id="advancedFilterModal" class="adv-modal" hidden aria-hidden="true" role="dialog" aria-labelledby="advModalTitle">
+      <div class="adv-modal-backdrop" data-adv-close></div>
+      <div class="adv-modal-panel" role="document">
+        <header class="adv-modal-header">
+          <h2 id="advModalTitle">ค้นหาขั้นสูง</h2>
+          <button type="button" class="adv-modal-close" data-adv-close aria-label="ปิด">×</button>
+        </header>
+        <div class="adv-modal-body">
+          <!-- DJ multi-select -->
+          <fieldset class="adv-field">
+            <legend>DJ</legend>
+            <div id="advDjList" class="adv-chip-list" role="group" aria-label="เลือก DJ"></div>
+          </fieldset>
+          <!-- Category multi-select -->
+          <fieldset class="adv-field">
+            <legend>หมวดหมู่</legend>
+            <div id="advCategoryList" class="adv-chip-list" role="group" aria-label="เลือกหมวดหมู่"></div>
+          </fieldset>
+          <!-- Price range -->
+          <fieldset class="adv-field">
+            <legend>ช่วงราคา (บาท)</legend>
+            <div class="adv-price-row">
+              <input type="number" id="advPriceMin" min="0" step="1" placeholder="ต่ำสุด" aria-label="ราคาต่ำสุด">
+              <span class="adv-price-sep">—</span>
+              <input type="number" id="advPriceMax" min="0" step="1" placeholder="สูงสุด" aria-label="ราคาสูงสุด">
+            </div>
+          </fieldset>
+          <!-- Toggles: favorite + promo -->
+          <fieldset class="adv-field adv-toggles">
+            <label class="adv-toggle"><input type="checkbox" id="advFavoriteOnly"> <span>เฉพาะรายการโปรดของฉัน</span></label>
+            <label class="adv-toggle"><input type="checkbox" id="advPromoOnly"> <span>เฉพาะเพลงที่มีโปรโมชัน</span></label>
+          </fieldset>
+          <!-- Sort -->
+          <fieldset class="adv-field">
+            <legend>เรียงตาม</legend>
+            <select id="advSort" aria-label="เรียงลำดับ">
+              <option value="new">ใหม่ล่าสุด</option>
+              <option value="old">เก่าที่สุด</option>
+              <option value="price_asc">ราคาต่ำ → สูง</option>
+              <option value="price_desc">ราคาสูง → ต่ำ</option>
+              <option value="name_asc">ชื่อเพลง A → Z</option>
+              <option value="best_selling">ขายดีที่สุด</option>
+            </select>
+          </fieldset>
         </div>
-      </div>
-
-      <!-- Category filter -->
-      <div class="filter-section">
-        <h4>📂 หมวดหมู่</h4>
-        <div class="filter-checkboxes" id="categoryFilterCheckboxes" role="group" aria-label="กรองตามหมวดหมู่">
-          <!-- populated by app-user.js renderFilterCheckboxes() -->
-        </div>
-      </div>
-
-      <!-- Price range -->
-      <div class="filter-section">
-        <h4>💰 ราคา (LAK)</h4>
-        <div class="price-range-inputs">
-          <input type="number" id="minPriceInput" placeholder="ต่ำสุด" min="0" inputmode="numeric" aria-label="ราคาต่ำสุด">
-          <span aria-hidden="true">—</span>
-          <input type="number" id="maxPriceInput" placeholder="สูงสุด" min="0" inputmode="numeric" aria-label="ราคาสูงสุด">
-        </div>
-      </div>
-
-      <!-- Has promo -->
-      <div class="filter-section">
-        <label class="filter-toggle">
-          <input type="checkbox" id="hasPromoToggle">
-          <span>🎁 มีโปรโมชั่นเท่านั้น</span>
-        </label>
-      </div>
-
-      <!-- Sort -->
-      <div class="filter-section">
-        <h4>📅 เรียงตาม</h4>
-        <select id="sortSelect" aria-label="เรียงลำดับเพลง">
-          <option value="newest">ล่าสุด</option>
-          <option value="price_asc">ราคาต่ำ → สูง</option>
-          <option value="price_desc">ราคาสูง → ต่ำ</option>
-          <option value="name">ชื่อเพลง (A-Z)</option>
-        </select>
-      </div>
-
-      <!-- Action buttons -->
-      <div class="filter-actions">
-        <button type="button" class="btn" id="applyFilterBtn">🔍 ค้นหา</button>
-        <button type="button" class="btn secondary" id="clearFilterBtn">✕ ล้างตัวกรอง</button>
+        <footer class="adv-modal-footer">
+          <button type="button" class="adv-btn-secondary" id="advResetBtn">ล้างทั้งหมด</button>
+          <button type="button" class="adv-btn-primary" id="advApplyBtn">ค้นหา</button>
+        </footer>
       </div>
     </div>
 
-    <!-- Result count (แสดงหลังกดค้นหา — "พบ X เพลง") -->
-    <div class="search-result-count" id="searchResultCount" style="display:none;" role="status" aria-live="polite"></div>
+    <!-- 🆕 (T015): Result summary — แสดงจำนวนผลลัพธ์ + active filters + ปุ่ม clear (หลังกด "ค้นหา") -->
+    <div id="advResultSummary" class="adv-result-summary" hidden>
+      <span id="advResultText">พบ 0 เพลง</span>
+      <button type="button" class="adv-clear-btn" id="advClearBtn">× ล้างตัวกรอง</button>
+    </div>
+
+    <!-- ============================================================
+         🆕 (T015): Advanced Filter Panel — ค้นหาเพลงขั้นสูง
+           (ส่วนนี้ถูกย้ายไปอยู่ใน search-box + Modal แล้ว — ดู advancedSearchBtn + #advancedFilterModal ด้านบน)
+           เดิมเคยวางเป็น panel แยกตรงนี้ แต่ย้ายไป modal เพื่อประหยัดพื้นที่หน้าจอบนมือถือ
+         ============================================================ -->
+
   </div>
 
   <!-- 🎁 (2026-09-20) แบนเนอร์โปรโมชั่นเด่น บนหน้าแรก — สไตล์ J: CYBERPUNK

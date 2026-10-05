@@ -27,9 +27,11 @@ import {
   collection, getDocs, doc, getDoc, query, where, deleteDoc, queryCustomerOrder,
   // 🔧 (2026-09-17): เพิ่ม fetchCustomerOrdersOnce สำหรับ one-shot fetch (ไม่ polling) ลด D1 quota
   //    ↑ ↑ ↑ ฟังก์ชันนี้แหละที่ใช้จริงในไฟล์นี้ (แทน listenCustomerOrders เดิม)
-  fetchCustomerOrdersOnce
+  fetchCustomerOrdersOnce,
+  // 🆕 (T015): advancedSearchSongs — server-side advanced search (multi-DJ, multi-category, price range, etc.)
+  advancedSearchSongs
 // 🔧 (2026-09-17 v2): เพิ่ม ?v=20260917-polling-fix บังคับ browser โหลด db-client.js ใหม่ (กัน cache เก่า)
-} from "./db-client.js?v=20261003-login-guest-v10";
+} from "./db-client.js?v=20261005-T015-advanced-search";
 import { initCart } from "./app-cart.js?v=20261006-T049";
 // ===== ลดราคา + โปรโมชั่น + ออเดอร์ของฉัน (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import {
@@ -371,12 +373,13 @@ async function init() {
   //   - แสดงปุ่มเมื่อ scroll ผ่าน 400px, ซ่อนเมื่อกลับขึ้นบน
   try { initScrollTopBtn(); } catch (err) { console.warn("[init] initScrollTopBtn failed:", err?.message || err); }
 
-  // 🆕 (T015): เริ่มต้น advanced filter panel — วาด checkbox DJ/หมวด + ผูก event listeners
+  // 🆕 (T015): เริ่มต้น advanced filter modal — วาด chip DJ/หมวด + ผูก event listeners
   //   - ทำงานครั้งเดียวหลัง STATE.djs + STATE.categories โหลดเสร็จ (Promise.all ด้านบน)
   //   - ไม่กระทบระบบเดิม — ถ้า element ไม่อยู่ → ข้ามเงียบ ๆ (defensive)
-  //   - หลังจากนี้ user กด "⚙️ ตัวกรองขั้นสูง" เพื่อเปิด panel แล้วเลือก filter ได้
+  //   - หลังจากนี้ user กดปุ่ม "ขั้นสูง" ใน search-box เพื่อเปิด modal แล้วเลือก filter ได้
+  //   - renderAdvFilterChips จะถูกเรียกอีกครั้งทุกครั้งที่เปิด modal (กันกรณี STATE.djs/categories โหลดตอนหลัง)
   try {
-    renderFilterCheckboxes();
+    renderAdvFilterChips(); // 🆕 (T015-v2): เปลี่ยนจาก renderFilterCheckboxes → renderAdvFilterChips (ใช้ chip-style แทน checkbox)
     setupAdvancedFilters();
   } catch (err) {
     console.warn("[init] T015 advanced filter setup failed:", err?.message || err);
@@ -594,9 +597,11 @@ const SONG_SEARCH_STATE = {
   categories: new Set(),
   minPrice: null,
   maxPrice: null,
-  hasPromo: false,
-  sort: "newest",
+  favoriteOnly: false, // 🆕 (T015-v2): เปลี่ยนจาก hasPromo → favoriteOnly (เพลงในรายการโปรดของลูกค้า)
+  promoOnly: false,   // 🆕 (T015-v2): เพิ่ม promoOnly (เพลงที่มี discount active)
+  sort: "new",        // 🆕 (T015-v2): เปลี่ยน sort values ใหม่: new|old|price_asc|price_desc|name_asc|best_selling
   active: false,
+  total: 0,           // 🆕 (T015-v2): จำนวนผลลัพธ์รวมจาก server (สำหรับ pagination)
 };
 
 // 🆕 (T015): hasActiveAdvancedFilters — ตรวจว่ามี active filter อย่างน้อย 1 ตัว
@@ -609,8 +614,9 @@ function hasActiveAdvancedFilters() {
     SONG_SEARCH_STATE.categories.size > 0 ||
     SONG_SEARCH_STATE.minPrice !== null ||
     SONG_SEARCH_STATE.maxPrice !== null ||
-    SONG_SEARCH_STATE.hasPromo ||
-    SONG_SEARCH_STATE.sort !== "newest"
+    SONG_SEARCH_STATE.favoriteOnly ||
+    SONG_SEARCH_STATE.promoOnly ||
+    SONG_SEARCH_STATE.sort !== "new"
   );
 }
 
@@ -630,30 +636,35 @@ function resetAdvancedFilterState(options = {}) {
   SONG_SEARCH_STATE.categories.clear();
   SONG_SEARCH_STATE.minPrice = null;
   SONG_SEARCH_STATE.maxPrice = null;
-  SONG_SEARCH_STATE.hasPromo = false;
-  SONG_SEARCH_STATE.sort = "newest";
+  SONG_SEARCH_STATE.favoriteOnly = false;
+  SONG_SEARCH_STATE.promoOnly = false;
+  SONG_SEARCH_STATE.sort = "new";
   SONG_SEARCH_STATE.active = false;
+  SONG_SEARCH_STATE.total = 0;
   if (clearQ) {
     SONG_SEARCH_STATE.q = "";
     STATE.search = "";
     const searchInput = document.getElementById("searchInput");
     if (searchInput) searchInput.value = "";
   }
-  // reset UI (checkboxes + inputs + sort)
-  document.querySelectorAll("#djFilterCheckboxes input, #categoryFilterCheckboxes input").forEach(cb => {
-    if (cb && cb.type === "checkbox") cb.checked = false;
+  // 🆕 (T015-v2): reset UI ของ modal ใหม่ (adv* IDs) แทน IDs เดิม
+  document.querySelectorAll("#advDjList .adv-chip.active, #advCategoryList .adv-chip.active").forEach(chip => {
+    if (chip) chip.classList.remove("active");
   });
-  const minInput = document.getElementById("minPriceInput");
+  const minInput = document.getElementById("advPriceMin");
   if (minInput) minInput.value = "";
-  const maxInput = document.getElementById("maxPriceInput");
+  const maxInput = document.getElementById("advPriceMax");
   if (maxInput) maxInput.value = "";
-  const promoToggle = document.getElementById("hasPromoToggle");
+  const favToggle = document.getElementById("advFavoriteOnly");
+  if (favToggle) favToggle.checked = false;
+  const promoToggle = document.getElementById("advPromoOnly");
   if (promoToggle) promoToggle.checked = false;
-  const sortSelect = document.getElementById("sortSelect");
-  if (sortSelect) sortSelect.value = "newest";
+  const sortSelect = document.getElementById("advSort");
+  if (sortSelect) sortSelect.value = "new";
   try { updateActiveFiltersCount(); } catch (_) {}
-  const resultEl = document.getElementById("searchResultCount");
-  if (resultEl) resultEl.style.display = "none";
+  // 🆕 (T015-v2): ซ่อน result summary (ใช้ #advResultSummary แทน #searchResultCount)
+  const resultEl = document.getElementById("advResultSummary");
+  if (resultEl) resultEl.hidden = true;
   // reset STATE.songs (filtered results) ถ้าระบุ → ให้ standard path reload ใหม่
   if (reloadSongs) {
     STATE.songs = [];
@@ -745,18 +756,298 @@ function updateActiveFiltersCount() {
   if (SONG_SEARCH_STATE.djs.size > 0) count++;
   if (SONG_SEARCH_STATE.categories.size > 0) count++;
   if (SONG_SEARCH_STATE.minPrice !== null || SONG_SEARCH_STATE.maxPrice !== null) count++;
-  if (SONG_SEARCH_STATE.hasPromo) count++;
-  if (SONG_SEARCH_STATE.sort !== "newest") count++;
+  if (SONG_SEARCH_STATE.favoriteOnly) count++;
+  if (SONG_SEARCH_STATE.promoOnly) count++;
+  if (SONG_SEARCH_STATE.sort !== "new") count++;
   // (ไม่นับ q เพราะ searchInput เป็นตัวกรองหลักที่แยกจาก panel)
 
-  const badge = document.getElementById("activeFiltersCount");
+  const badge = document.getElementById("advFilterBadge");
   if (badge) {
     if (count > 0) {
       badge.textContent = String(count);
-      badge.style.display = "inline-block";
+      badge.hidden = false;
     } else {
-      badge.style.display = "none";
+      badge.hidden = true;
     }
+  }
+}
+
+// 🆕 (T015-v2): setupAdvancedFilters — bind event listeners สำหรับ Advanced Filter Modal
+//   ทำงานครั้งเดียวตอน init() หลัง DOM ready + STATE.djs/categories โหลดเสร็จ
+//   ผูก:
+//     - ปุ่ม "ขั้นสูง" (#advancedSearchBtn) → เปิด modal
+//     - ปุ่มปิด + backdrop → ปิด modal
+//     - chip click → toggle active class + อัปเดต SONG_SEARCH_STATE
+//     - ปุ่ม "ล้างทั้งหมด" (#advResetBtn) → reset state + UI ใน modal
+//     - ปุ่ม "ค้นหา" (#advApplyBtn) → อ่านค่าทั้งหมดจาก UI + ปิด modal + เรียก loadSongsWithAdvancedFilters
+//     - ปุ่ม "ล้างตัวกรอง" (#advClearBtn) นอก modal → reset + reload
+function setupAdvancedFilters() {
+  const openBtn = document.getElementById("advancedSearchBtn");
+  const modal = document.getElementById("advancedFilterModal");
+  if (openBtn && modal) {
+    openBtn.addEventListener("click", () => {
+      modal.hidden = false;
+      modal.setAttribute("aria-hidden", "false");
+      try { renderAdvFilterChips(); } catch (_) {}
+      try { syncAdvUIFromState(); } catch (_) {}
+    });
+  }
+  if (modal) {
+    modal.querySelectorAll("[data-adv-close]").forEach(el => {
+      el.addEventListener("click", () => {
+        modal.hidden = true;
+        modal.setAttribute("aria-hidden", "true");
+      });
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !modal.hidden) {
+        modal.hidden = true;
+        modal.setAttribute("aria-hidden", "true");
+      }
+    });
+  }
+  // chip toggle - DJs
+  const djList = document.getElementById("advDjList");
+  if (djList) {
+    djList.addEventListener("click", (e) => {
+      const chip = e.target.closest(".adv-chip");
+      if (!chip) return;
+      const value = chip.getAttribute("data-value");
+      if (!value) return;
+      chip.classList.toggle("active");
+      if (chip.classList.contains("active")) {
+        SONG_SEARCH_STATE.djs.add(value);
+      } else {
+        SONG_SEARCH_STATE.djs.delete(value);
+      }
+      updateActiveFiltersCount();
+    });
+  }
+  // chip toggle - Categories
+  const catList = document.getElementById("advCategoryList");
+  if (catList) {
+    catList.addEventListener("click", (e) => {
+      const chip = e.target.closest(".adv-chip");
+      if (!chip) return;
+      const value = chip.getAttribute("data-value");
+      if (!value) return;
+      chip.classList.toggle("active");
+      if (chip.classList.contains("active")) {
+        SONG_SEARCH_STATE.categories.add(value);
+      } else {
+        SONG_SEARCH_STATE.categories.delete(value);
+      }
+      updateActiveFiltersCount();
+    });
+  }
+  // ปุ่ม "ล้างทั้งหมด" ใน modal — ล้างเฉพาะ UI ใน modal (ยังไม่ reload)
+  const resetBtn = document.getElementById("advResetBtn");
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      SONG_SEARCH_STATE.djs.clear();
+      SONG_SEARCH_STATE.categories.clear();
+      SONG_SEARCH_STATE.minPrice = null;
+      SONG_SEARCH_STATE.maxPrice = null;
+      SONG_SEARCH_STATE.favoriteOnly = false;
+      SONG_SEARCH_STATE.promoOnly = false;
+      SONG_SEARCH_STATE.sort = "new";
+      document.querySelectorAll("#advDjList .adv-chip.active, #advCategoryList .adv-chip.active").forEach(chip => {
+        chip.classList.remove("active");
+      });
+      const minInput = document.getElementById("advPriceMin");
+      if (minInput) minInput.value = "";
+      const maxInput = document.getElementById("advPriceMax");
+      if (maxInput) maxInput.value = "";
+      const favToggle = document.getElementById("advFavoriteOnly");
+      if (favToggle) favToggle.checked = false;
+      const promoToggle = document.getElementById("advPromoOnly");
+      if (promoToggle) promoToggle.checked = false;
+      const sortSelect = document.getElementById("advSort");
+      if (sortSelect) sortSelect.value = "new";
+      updateActiveFiltersCount();
+    });
+  }
+  // ปุ่ม "ค้นหา" — อ่านค่าจาก UI + ปิด modal + trigger server-side search
+  const applyBtn = document.getElementById("advApplyBtn");
+  if (applyBtn) {
+    applyBtn.addEventListener("click", () => {
+      const minInput = document.getElementById("advPriceMin");
+      const maxInput = document.getElementById("advPriceMax");
+      const favToggle = document.getElementById("advFavoriteOnly");
+      const promoToggle = document.getElementById("advPromoOnly");
+      const sortSelect = document.getElementById("advSort");
+      SONG_SEARCH_STATE.minPrice = (minInput && minInput.value !== "") ? Number(minInput.value) : null;
+      SONG_SEARCH_STATE.maxPrice = (maxInput && maxInput.value !== "") ? Number(maxInput.value) : null;
+      SONG_SEARCH_STATE.favoriteOnly = !!(favToggle && favToggle.checked);
+      SONG_SEARCH_STATE.promoOnly = !!(promoToggle && promoToggle.checked);
+      SONG_SEARCH_STATE.sort = sortSelect ? sortSelect.value : "new";
+      // validate price range
+      if (SONG_SEARCH_STATE.minPrice !== null && SONG_SEARCH_STATE.maxPrice !== null &&
+          SONG_SEARCH_STATE.minPrice > SONG_SEARCH_STATE.maxPrice) {
+        showToast("ราคาต่ำสุดต้องไม่มากกว่าราคาสูงสุด", "error");
+        return;
+      }
+      if (SONG_SEARCH_STATE.favoriteOnly && !getAdvCustomerId()) {
+        showToast("ต้องล็อกอินเพื่อดูรายการโปรด", "error");
+        return;
+      }
+      if (modal) {
+        modal.hidden = true;
+        modal.setAttribute("aria-hidden", "true");
+      }
+      SONG_SEARCH_STATE.active = hasActiveAdvancedFilters();
+      updateActiveFiltersCount();
+      loadSongsWithAdvancedFilters(true);
+    });
+  }
+  // ปุ่ม "× ล้างตัวกรอง" นอก modal
+  const clearBtn = document.getElementById("advClearBtn");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      resetAdvancedFilterState({ clearQ: false, reloadSongs: true });
+      try { loadSongsWithFilters(true); } catch (_) {}
+    });
+  }
+}
+
+// 🆕 (T015-v2): renderAdvFilterChips — วาด chip list ของ DJ + หมวดใน #advDjList + #advCategoryList
+function renderAdvFilterChips() {
+  const djContainer = document.getElementById("advDjList");
+  if (djContainer && Array.isArray(STATE.djs)) {
+    if (STATE.djs.length === 0) {
+      djContainer.innerHTML = `<div class="adv-chip-empty">ยังไม่มี DJ</div>`;
+    } else {
+      djContainer.innerHTML = STATE.djs.map(dj => `
+        <button type="button" class="adv-chip" data-filter="dj" data-value="${escapeHtml(dj.dj_name || "")}">
+          ${escapeHtml(dj.dj_name || "(ไม่มีชื่อ)")}
+        </button>
+      `).join("");
+    }
+  }
+  const catContainer = document.getElementById("advCategoryList");
+  if (catContainer && Array.isArray(STATE.categories)) {
+    if (STATE.categories.length === 0) {
+      catContainer.innerHTML = `<div class="adv-chip-empty">ยังไม่มีหมวดหมู่</div>`;
+    } else {
+      catContainer.innerHTML = STATE.categories.map(cat => `
+        <button type="button" class="adv-chip" data-filter="category" data-value="${escapeHtml(cat.id || "")}">
+          ${escapeHtml(cat.category_name || "(ไม่มีชื่อ)")}
+        </button>
+      `).join("");
+    }
+  }
+}
+
+// 🆕 (T015-v2): syncAdvUIFromState — sync UI ใน modal ให้ตรงกับ SONG_SEARCH_STATE ปัจจุบัน
+function syncAdvUIFromState() {
+  document.querySelectorAll("#advDjList .adv-chip").forEach(chip => {
+    const value = chip.getAttribute("data-value");
+    if (value && SONG_SEARCH_STATE.djs.has(value)) {
+      chip.classList.add("active");
+    } else {
+      chip.classList.remove("active");
+    }
+  });
+  document.querySelectorAll("#advCategoryList .adv-chip").forEach(chip => {
+    const value = chip.getAttribute("data-value");
+    if (value && SONG_SEARCH_STATE.categories.has(value)) {
+      chip.classList.add("active");
+    } else {
+      chip.classList.remove("active");
+    }
+  });
+  const minInput = document.getElementById("advPriceMin");
+  if (minInput) minInput.value = SONG_SEARCH_STATE.minPrice !== null ? SONG_SEARCH_STATE.minPrice : "";
+  const maxInput = document.getElementById("advPriceMax");
+  if (maxInput) maxInput.value = SONG_SEARCH_STATE.maxPrice !== null ? SONG_SEARCH_STATE.maxPrice : "";
+  const favToggle = document.getElementById("advFavoriteOnly");
+  if (favToggle) favToggle.checked = SONG_SEARCH_STATE.favoriteOnly;
+  const promoToggle = document.getElementById("advPromoOnly");
+  if (promoToggle) promoToggle.checked = SONG_SEARCH_STATE.promoOnly;
+  const sortSelect = document.getElementById("advSort");
+  if (sortSelect) sortSelect.value = SONG_SEARCH_STATE.sort;
+}
+
+// 🆕 (T015-v2): getAdvCustomerId — ดึง customer_id ของลูกค้า login (สำหรับ favorite filter)
+function getAdvCustomerId() {
+  try {
+    const raw = localStorage.getItem("customer_session") || localStorage.getItem("customerSession");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.customerId || parsed?.customer_id || null;
+  } catch {
+    return null;
+  }
+}
+
+// 🆕 (T015-v2): updateAdvResultSummary — อัปเดตข้อความ "พบ X เพลง" ใน #advResultSummary
+function updateAdvResultSummary(total) {
+  const summaryEl = document.getElementById("advResultSummary");
+  if (!summaryEl) return;
+  const safeTotal = Math.max(0, Number(total) || 0);
+  SONG_SEARCH_STATE.total = safeTotal;
+  const textEl = document.getElementById("advResultText");
+  if (safeTotal > 0) {
+    summaryEl.hidden = false;
+    if (textEl) textEl.textContent = `พบ ${safeTotal.toLocaleString("en-US")} เพลง`;
+  } else {
+    summaryEl.hidden = false;
+    if (textEl) textEl.textContent = `ไม่พบเพลงที่ตรงกับตัวกรอง — ลองปรับเงื่อนไขหรือกด "ล้างตัวกรอง"`;
+  }
+}
+
+// 🆕 (T015-v2): loadSongsWithAdvancedFilters — โหลดเพลงผ่าน /api/db/songs/_advanced-search
+//   ใช้เมื่อ SONG_SEARCH_STATE.active = true (มี advanced filter อย่างน้อย 1 ตัว)
+//   resetPagination=true → ล้าง STATE.songs + เริ่มจากหน้า 1
+//   resetPagination=false → โหลดหน้าถัดไป (load more)
+//   ผลกระทบระบบเดิม: 0% — ถ้า SONG_SEARCH_STATE.active=false จะไม่เข้า path นี้
+async function loadSongsWithAdvancedFilters(resetPagination = true) {
+  if (!SONG_SEARCH_STATE.active) {
+    return loadSongsWithFilters(resetPagination);
+  }
+  if (resetPagination) {
+    STATE.songsPage = 0;
+    STATE.songsHasMore = true;
+    STATE.songs = [];
+    STATE.currentCategory = "all";
+    STATE.currentDj = null;
+    STATE.search = "";
+  }
+  if (resetPagination) {
+    try { renderSongSkeleton(12); } catch (_) {}
+  }
+  const limit = 50;
+  const offset = resetPagination ? 0 : STATE.songs.length;
+  try {
+    const result = await advancedSearchSongs({
+      djs: Array.from(SONG_SEARCH_STATE.djs),
+      categories: Array.from(SONG_SEARCH_STATE.categories),
+      price_min: SONG_SEARCH_STATE.minPrice,
+      price_max: SONG_SEARCH_STATE.maxPrice,
+      favorite_only: SONG_SEARCH_STATE.favoriteOnly,
+      favorite_customer_id: SONG_SEARCH_STATE.favoriteOnly ? getAdvCustomerId() : null,
+      promo_only: SONG_SEARCH_STATE.promoOnly,
+      sort: SONG_SEARCH_STATE.sort,
+      limit,
+      offset,
+    });
+    const newSongs = (result.docs || []).map(d => ({ id: d.id, ...(d.data() || {}) }));
+    if (resetPagination) {
+      STATE.songs = newSongs;
+    } else {
+      const existingIds = new Set(STATE.songs.map(s => s.id));
+      for (const s of newSongs) {
+        if (!existingIds.has(s.id)) STATE.songs.push(s);
+      }
+    }
+    STATE.songsHasMore = STATE.songs.length < result.total;
+    STATE.songsPage = Math.floor(STATE.songs.length / limit);
+    try { renderSongGrid(); } catch (_) {}
+    updateAdvResultSummary(result.total);
+  } catch (err) {
+    console.error("[T015] loadSongsWithAdvancedFilters failed:", err);
+    showToast("ค้นหาเพลงไม่สำเร็จ กรุณาลองใหม่", "error");
+    updateAdvResultSummary(0);
   }
 }
 
@@ -827,198 +1118,6 @@ async function loadSongsWithFilters(resetPagination = true) {
   }
 }
 
-// 🆕 (T015): setupAdvancedFilters — ผูก event listeners ทั้งหมดของ advanced filter panel
-//   ทำงานครั้งเดียวตอน init() หลัง renderFilterCheckboxes()
-//   ใช้ event delegation ที่ container ของ checkbox groups (กัน re-bind เมื่อ re-render)
-//
-//   🆕 (T024): auto-apply แบบ debounce 500ms — ติ๊ก/เปลี่ยน sort/toggle → กรองอัตโนมัติ
-//     ปัญหาเดิม: ติ๊กแล้วต้องกด Apply ทุกครั้ง → user ลืมกด → เพลงยังเหมือนเดิม
-//     วิธีแก้: ทุกการเปลี่ยนแปลง → debounce 500ms → loadSongsWithFilters(true)
-//     ข้อยกเว้น: price input ใช้ debounce 800ms (เพราะ user อาจพิมพ์ต่อเนื่อง)
-function setupAdvancedFilters() {
-  // 🆕 (T024): auto-apply debounce — ใช้ timer เดียวกันทุก filter
-  let _autoApplyTimer = null;
-  function scheduleAutoApply(delay = 500) {
-    clearTimeout(_autoApplyTimer);
-    _autoApplyTimer = setTimeout(async () => {
-      // sync q จาก searchInput
-      const searchInput = document.getElementById("searchInput");
-      if (searchInput) SONG_SEARCH_STATE.q = searchInput.value.trim();
-      updateActiveFiltersCount();
-      // ปิด panel บนมือถือหลัง auto-apply
-      const panel = document.getElementById("advancedFilterPanel");
-      const toggleBtn = document.getElementById("advancedFilterBtn");
-      if (window.innerWidth < 768 && panel && toggleBtn) {
-        panel.style.display = "none";
-        toggleBtn.setAttribute("aria-expanded", "false");
-      }
-      await loadSongsWithFilters(true);
-    }, delay);
-  }
-
-  // === Toggle panel ===
-  const toggleBtn = document.getElementById("advancedFilterBtn");
-  const panel = document.getElementById("advancedFilterPanel");
-  if (toggleBtn && panel) {
-    toggleBtn.addEventListener("click", () => {
-      const isExpanded = toggleBtn.getAttribute("aria-expanded") === "true";
-      toggleBtn.setAttribute("aria-expanded", String(!isExpanded));
-      panel.style.display = isExpanded ? "none" : "block";
-    });
-  }
-
-  // === DJ checkboxes (event delegation ที่ container) ===
-  const djContainer = document.getElementById("djFilterCheckboxes");
-  if (djContainer) {
-    djContainer.addEventListener("change", (e) => {
-      const t = e.target;
-      if (t && t.dataset && t.dataset.filter === "dj" && t.type === "checkbox") {
-        if (t.checked) SONG_SEARCH_STATE.djs.add(t.value);
-        else SONG_SEARCH_STATE.djs.delete(t.value);
-        updateActiveFiltersCount();
-        scheduleAutoApply(500); // 🆕 (T024): auto-apply
-      }
-    });
-  }
-
-  // === Category checkboxes (event delegation) ===
-  const catContainer = document.getElementById("categoryFilterCheckboxes");
-  if (catContainer) {
-    catContainer.addEventListener("change", (e) => {
-      const t = e.target;
-      if (t && t.dataset && t.dataset.filter === "category" && t.type === "checkbox") {
-        if (t.checked) SONG_SEARCH_STATE.categories.add(t.value);
-        else SONG_SEARCH_STATE.categories.delete(t.value);
-        updateActiveFiltersCount();
-        scheduleAutoApply(500); // 🆕 (T024): auto-apply
-      }
-    });
-  }
-
-  // === Price inputs (apply on change = blur/enter) ===
-  const minInput = document.getElementById("minPriceInput");
-  const maxInput = document.getElementById("maxPriceInput");
-  const handlePriceChange = () => {
-    const minVal = minInput && minInput.value ? parseFloat(minInput.value) : null;
-    const maxVal = maxInput && maxInput.value ? parseFloat(maxInput.value) : null;
-    SONG_SEARCH_STATE.minPrice = (minVal !== null && Number.isFinite(minVal) && minVal >= 0) ? minVal : null;
-    SONG_SEARCH_STATE.maxPrice = (maxVal !== null && Number.isFinite(maxVal) && maxVal >= 0) ? maxVal : null;
-    updateActiveFiltersCount();
-    scheduleAutoApply(800); // 🆕 (T024): auto-apply (debounce นานกว่าเพราะ user พิมพ์ต่อเนื่อง)
-  };
-  if (minInput) minInput.addEventListener("change", handlePriceChange);
-  if (maxInput) maxInput.addEventListener("change", handlePriceChange);
-  // 🆕 (T024): input event สำหรับ auto-apply ระหว่างพิมพ์ (debounce 800ms)
-  if (minInput) minInput.addEventListener("input", () => scheduleAutoApply(800));
-  if (maxInput) maxInput.addEventListener("input", () => scheduleAutoApply(800));
-
-  // === Has promo toggle ===
-  const promoToggle = document.getElementById("hasPromoToggle");
-  if (promoToggle) {
-    promoToggle.addEventListener("change", (e) => {
-      SONG_SEARCH_STATE.hasPromo = !!e.target.checked;
-      updateActiveFiltersCount();
-      scheduleAutoApply(500); // 🆕 (T024): auto-apply
-    });
-  }
-
-  // === Sort select ===
-  const sortSelect = document.getElementById("sortSelect");
-  if (sortSelect) {
-    sortSelect.addEventListener("change", (e) => {
-      SONG_SEARCH_STATE.sort = e.target.value || "newest";
-      updateActiveFiltersCount();
-      scheduleAutoApply(500); // 🆕 (T024): auto-apply
-    });
-  }
-
-  // === Apply button === (ยังเก็บไว้ — สำหรับ user ที่อยากกดเอง)
-  const applyBtn = document.getElementById("applyFilterBtn");
-  if (applyBtn) {
-    applyBtn.addEventListener("click", async () => {
-      clearTimeout(_autoApplyTimer); // ยกเลิก auto-apply ถ้ามี
-      // sync q จาก searchInput ก่อน (กันกรณี user พิมพ์แล้วยังไม่ได้กด Enter)
-      const searchInput = document.getElementById("searchInput");
-      if (searchInput) {
-        SONG_SEARCH_STATE.q = searchInput.value.trim();
-      }
-      updateActiveFiltersCount();
-      // ปิด panel บนมือถือหลังกด apply (เพื่อให้เห็นผลลัพธ์)
-      if (window.innerWidth < 768 && panel && toggleBtn) {
-        panel.style.display = "none";
-        toggleBtn.setAttribute("aria-expanded", "false");
-      }
-      await loadSongsWithFilters(true);
-    });
-  }
-
-  // === Clear button ===
-  const clearBtn = document.getElementById("clearFilterBtn");
-  if (clearBtn) {
-    clearBtn.addEventListener("click", async () => {
-      // reset state
-      SONG_SEARCH_STATE.q = "";
-      SONG_SEARCH_STATE.djs.clear();
-      SONG_SEARCH_STATE.categories.clear();
-      SONG_SEARCH_STATE.minPrice = null;
-      SONG_SEARCH_STATE.maxPrice = null;
-      SONG_SEARCH_STATE.hasPromo = false;
-      SONG_SEARCH_STATE.sort = "newest";
-      SONG_SEARCH_STATE.active = false;
-      // reset UI
-      document.querySelectorAll("#djFilterCheckboxes input, #categoryFilterCheckboxes input").forEach(cb => {
-        if (cb && cb.type === "checkbox") cb.checked = false;
-      });
-      if (minInput) minInput.value = "";
-      if (maxInput) maxInput.value = "";
-      if (promoToggle) promoToggle.checked = false;
-      if (sortSelect) sortSelect.value = "newest";
-      const searchInput = document.getElementById("searchInput");
-      if (searchInput) searchInput.value = "";
-      STATE.search = "";
-      // ซ่อน result count
-      const resultEl = document.getElementById("searchResultCount");
-      if (resultEl) resultEl.style.display = "none";
-      updateActiveFiltersCount();
-      // reload songs (default — no filter)
-      await loadSongsWithFilters(true);
-    });
-  }
-
-  // === Sync searchInput ↔ SONG_SEARCH_STATE.q ===
-  //   เหตุผล: searchInput เป็นตัวกรองหลักที่ใช้ได้ทั้งใน+นอก panel
-  //   - ถ้า user พิมพ์ใน searchInput → sync q (แต่ยังไม่ trigger server search)
-  //   - ถ้า user กด Enter → trigger loadSongsWithFilters (server-side search)
-  //   - ถ้า user พิมพ์แล้วกด Apply Filter ใน panel → ใช้ q ที่ sync ไว้
-  const searchInput = document.getElementById("searchInput");
-  if (searchInput) {
-    // sync q on input (debounce 250ms เหมือนเดิม)
-    searchInput.addEventListener("input", debounce(() => {
-      SONG_SEARCH_STATE.q = searchInput.value.trim();
-    }, 250));
-    // Enter → trigger server-side search (faster than loadAllRemainingSongs)
-    searchInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        SONG_SEARCH_STATE.q = searchInput.value.trim();
-        // ถ้ามี q หรือ filter อื่น active → ใช้ advanced path
-        if (hasActiveAdvancedFilters()) {
-          e.preventDefault();
-          updateActiveFiltersCount();
-          loadSongsWithFilters(true);
-        }
-        // 🆕 (T026): กด Enter ในช่องค้นหา → ปิด advanced filter panel ทันที
-        //   เหตุผล: user พิมพ์ค้นหาแล้ว → ไม่ต้องการเห็น panel อีก → ปิดเพื่อให้เห็นผลลัพธ์เต็มจอ
-        const filterPanel = document.getElementById("advancedFilterPanel");
-        const filterToggleBtn = document.getElementById("advancedFilterBtn");
-        if (filterPanel && filterToggleBtn) {
-          filterPanel.style.display = "none";
-          filterToggleBtn.setAttribute("aria-expanded", "false");
-        }
-        // (ถ้าไม่มี filter → ให้ behavior เดิมทำงาน — blur + ไม่ trigger server search)
-      }
-    });
-  }
-}
 
 // 🔧 (2026-09-18 v6 perf): ติดตั้ง IntersectionObserver ที่ sentinel element ท้าย grid
 //   เมื่อ user scroll ถึง sentinel → trigger loadMoreSongs() + re-render
