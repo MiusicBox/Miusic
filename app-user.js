@@ -1743,6 +1743,61 @@ function renderSongGrid() {
   STATE._filteredSongList = list;  // เก็บ list ทั้งหมดไว้ใช้ตอน append batch ถัดไป
 
   // ฟังก์ชันสร้าง HTML ของ batch (เหมือนเดิม แค่รับ slice ของ list)
+  // 🆕 (Feature #8): loadRatingsForVisibleSongs — โหลด rating เฉลี่ยของเพลงที่แสดงอยู่
+  //   ใช้ /api/songs/:id/reviews/summary endpoint (ที่มีอยู่แล้ว)
+  //   ทำงานเป็น batch — โหลดทีละหลายเพลงพร้อมกัน (ลด HTTP requests)
+  //   ถ้ายังไม่มีรีวิว → ซ่อน rating row (display:none)
+  const _ratingCache = new Map(); // song_id → {avg, count} | null (null = ไม่มีรีวิว)
+  async function loadRatingsForVisibleSongs(songIds) {
+    if (!Array.isArray(songIds) || songIds.length === 0) return;
+    // filter เฉพาะที่ยังไม่ได้โหลด
+    const toLoad = songIds.filter(id => !_ratingCache.has(id));
+    if (toLoad.length === 0) return;
+    // โหลดทีละเพลง (parallel) — ใช้ Promise.allSettled กัน error รัว
+    const promises = toLoad.map(async (songId) => {
+      try {
+        const res = await fetch('/api/songs/' + encodeURIComponent(songId) + '/reviews/summary', { credentials: 'same-origin' });
+        if (!res.ok) { _ratingCache.set(songId, null); return; }
+        const data = await res.json();
+        if (data && data.count > 0) {
+          _ratingCache.set(songId, { avg: data.avg_rating || 0, count: data.count });
+        } else {
+          _ratingCache.set(songId, null);
+        }
+      } catch (err) {
+        _ratingCache.set(songId, null);
+      }
+    });
+    await Promise.allSettled(promises);
+    // render ที่แสดงผล
+    for (const songId of toLoad) {
+      renderRatingInCard(songId);
+    }
+  }
+  function renderRatingInCard(songId) {
+    const rating = _ratingCache.get(songId);
+    const rows = document.querySelectorAll('[data-rating-row="' + songId + '"]');
+    rows.forEach(row => {
+      if (!rating) {
+        row.style.display = 'none';
+        return;
+      }
+      row.style.display = 'flex';
+      // สร้าง stars (filled = avg rounded, empty = 5 - filled)
+      const filledStars = Math.round(rating.avg);
+      const starsHtml = Array.from({ length: 5 }, (_, i) => {
+        if (i < filledStars) {
+          return '<span style="color:#fbbf24;">★</span>';
+        }
+        return '<span style="color:rgba(255,255,255,0.2);">★</span>';
+      }).join('');
+      const starsEl = row.querySelector('[data-rating-stars]');
+      const textEl = row.querySelector('[data-rating-text]');
+      if (starsEl) starsEl.innerHTML = starsHtml;
+      if (textEl) textEl.textContent = rating.avg.toFixed(1) + ' (' + rating.count + ')';
+    });
+  }
+
   function buildBatchHTML(startIdx) {
     const endIdx = Math.min(startIdx + RENDER_BATCH_SIZE, totalSongs);
     const batch = list.slice(startIdx, endIdx);
@@ -1756,6 +1811,10 @@ function renderSongGrid() {
           </div>
           <div class="song-info">
             <div class="song-name">${escapeHtml(s.song_name)}</div>
+            <div class="song-rating-row" data-rating-row="${s.id}" style="display:none;">
+              <span class="song-rating-stars" data-rating-stars></span>
+              <span class="song-rating-text" data-rating-text></span>
+            </div>
             <div class="song-meta-row">
               ${s.dj_name ? `<span class="song-dj-tag">🎧 ${escapeHtml(s.dj_name)}</span>` : ""}
               ${s.artist ? `<span class="song-meta-text">${escapeHtml(s.artist)}</span>` : ""}
@@ -1784,6 +1843,13 @@ function renderSongGrid() {
 
   // ฟังก์ชัน attach event listeners ให้ batch ปัจจุบัน (ใช้กับ elements ที่เพิ่ง add เข้า grid)
   function attachBatchListeners(startIdx) {
+    // 🆕 (Feature #8): โหลด ratings สำหรับเพลงใน batch นี้ (lazy, async — ไม่บล็อก render)
+    const batchEndIdx = Math.min(startIdx + RENDER_BATCH_SIZE, totalSongs);
+    const batchIds = list.slice(startIdx, batchEndIdx).map(s => s.id).filter(Boolean);
+    if (batchIds.length > 0) {
+      // ใช้ setTimeout 0 เพื่อให้ render เสร็จก่อน แล้วค่อยโหลด ratings
+      setTimeout(() => loadRatingsForVisibleSongs(batchIds), 0);
+    }
     const endIdx = Math.min(startIdx + RENDER_BATCH_SIZE, totalSongs);
     // ใช้ querySelector กับ elements ที่อยู่ในช่วง index นี้
     // แต่ querySelectorAll ไม่รองรับ range → ใช้วิธี iterate แบบเดิม + filter เฉพาะที่ยังไม่มี listener

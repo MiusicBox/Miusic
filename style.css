@@ -9488,3 +9488,38 @@ html.admin-page body {
     font-size: 9px;
   }
 }
+
+
+/* ============================================================
+   🆕 (Feature #8): Song rating badge in song card
+   ============================================================ */
+.song-rating-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 4px 0;
+  font-size: 11px;
+  line-height: 1;
+}
+.song-rating-stars {
+  display: inline-flex;
+  font-size: 12px;
+  letter-spacing: -1px;
+}
+.song-rating-text {
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+@media (max-width: 600px) {
+  .song-rating-row {
+    font-size: 10px;
+  }
+  .song-rating-stars {
+    font-size: 11px;
+  }
+  .song-rating-text {
+    font-size: 9px;
+  }
+}
