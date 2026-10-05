@@ -869,7 +869,11 @@ function setupAdvancedFilters() {
   // ปุ่ม "ค้นหา" — อ่านค่าจาก UI + ปิด modal + trigger server-side search
   const applyBtn = document.getElementById("advApplyBtn");
   if (applyBtn) {
-    applyBtn.addEventListener("click", () => {
+    applyBtn.addEventListener("click", async () => {
+      // 🐛 (Bug-Fix #9): เพิ่ม loading state ตอนกด "ค้นหา" — กัน user กดซ้ำ + บอกว่ากำลังโหลด
+      const originalText = applyBtn.textContent;
+      applyBtn.disabled = true;
+      applyBtn.textContent = "กำลังค้นหา...";
       const minInput = document.getElementById("advPriceMin");
       const maxInput = document.getElementById("advPriceMax");
       const favToggle = document.getElementById("advFavoriteOnly");
@@ -896,7 +900,13 @@ function setupAdvancedFilters() {
       }
       SONG_SEARCH_STATE.active = hasActiveAdvancedFilters();
       updateActiveFiltersCount();
-      loadSongsWithAdvancedFilters(true);
+      // 🐛 (Bug-Fix #9): ใช้ await + finally เพื่อ reset button หลังเสร็จ
+      try {
+        await loadSongsWithAdvancedFilters(true);
+      } finally {
+        applyBtn.disabled = false;
+        applyBtn.textContent = originalText;
+      }
     });
   }
   // ปุ่ม "× ล้างตัวกรอง" นอก modal

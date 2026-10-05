@@ -9163,6 +9163,34 @@ html.admin-page body {
 }
 
 /* ============================================================
+   📱 iPad / Tablet (601px-1024px) — ปรับขนาดให้เหมาะกับจอกลาง
+   🐛 (Bug-Fix #5): เดิมไม่มี breakpoint สำหรับ iPad → modal ใหญ่เกิน
+   ============================================================ */
+@media (min-width: 601px) and (max-width: 1024px) {
+  .adv-modal-panel {
+    max-width: 400px;
+    width: 90%;
+  }
+  .adv-modal-header h2 {
+    font-size: 17px;
+  }
+  .adv-modal-body {
+    padding: 14px 16px;
+  }
+  .adv-chip {
+    padding: 6px 12px;
+    font-size: 12px;
+    min-height: 32px;
+  }
+  .adv-btn-primary,
+  .adv-btn-secondary {
+    font-size: 13px;
+    height: 36px;
+    padding: 6px 12px;
+  }
+}
+
+/* ============================================================
    📐 Very small screens (≤380px) — iPhone SE / older Android
    ============================================================ */
 @media (max-width: 380px) {
