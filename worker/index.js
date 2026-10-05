@@ -1649,8 +1649,9 @@ async function handleDb(request, env, url) {
     //   วิธี: ใช้ EXISTS subquery บน documents ที่ collection='discounts' และ target_id เท่ากับ song id
     //   ปลอดภัย: parameterized + ไม่ expose discount รายละเอียดให้ลูกค้า
     const promoOnly = !!body?.promo_only;
-    // sort: 'new' | 'old' | 'price_asc' | 'price_desc' | 'name_asc' | 'best_selling'
-    const ALLOWED_SORT = new Set(["new", "old", "price_asc", "price_desc", "name_asc", "best_selling"]);
+    // sort: 'new' | 'old' | 'price_asc' | 'price_desc' | 'name_asc' | 'best_selling' | 'hot' | 'new_releases'
+    //   🆕 (Feature #1): 'hot' = sort by likes_count DESC, 'new_releases' = created_at ใน 7 วันล่าสุด
+    const ALLOWED_SORT = new Set(["new", "old", "price_asc", "price_desc", "name_asc", "best_selling", "hot", "new_releases"]);
     const sort = ALLOWED_SORT.has(String(body?.sort || "")) ? String(body.sort) : "new";
     // pagination
     const limit = Math.min(Math.max(Number(body?.limit) || 50, 1), 200); // max 200 (เท่า LIMITS.MAX_PAGE ของระบบ)
@@ -1758,6 +1759,24 @@ async function handleDb(request, env, url) {
         break;
       case "name_asc":
         orderByClause = "LOWER(json_extract(data, '$.song_name')) ASC";
+        break;
+      case "hot":
+        // 🆕 (Feature #1): sort by likes_count DESC — ใช้ song_likes table
+        //   Logic: นับ likes ของแต่ละเพลงจาก song_likes table → เรียงมากไปน้อย
+        //   Performance: bounded by songs count (71) → ไม่ช้า
+        orderByClause = `(
+          SELECT COUNT(*) FROM song_likes WHERE song_id = documents.id
+        ) DESC, CAST(json_extract(data, '$.created_at') AS TEXT) DESC`;
+        break;
+      case "new_releases":
+        // 🆕 (Feature #1): เพลงใหม่ — created_at ใน 7 วันล่าสุด เรียงใหม่สุดก่อน
+        //   ใช้ filter + sort พร้อมกัน
+        {
+          const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+          whereClauses.push("CAST(json_extract(data, '$.created_at') AS TEXT) >= ?");
+          binds.push(sevenDaysAgo);
+          orderByClause = "CAST(json_extract(data, '$.created_at') AS TEXT) DESC";
+        }
         break;
       case "best_selling":
         // 🐛 (Bug-Fix): Sort 'best_selling' ไม่แม่นยำ — เดิมใช้ CROSS JOIN json_each

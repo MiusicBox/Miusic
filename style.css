@@ -9240,3 +9240,60 @@ html.admin-page body {
     background: rgba(255, 255, 255, 0.06);
   }
 }
+
+
+/* ============================================================
+   🆕 (Feature #1): Quick filter chips — เพลงฮิต / เพลงใหม่
+   ============================================================ */
+.quick-filter-row {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+.quick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  height: 32px;
+}
+.quick-chip:hover {
+  border-color: var(--accent);
+}
+.quick-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.quick-chip:active {
+  transform: scale(0.96);
+}
+
+@media (max-width: 600px) {
+  .quick-filter-row {
+    padding: 6px 12px;
+    gap: 6px;
+  }
+  .quick-chip {
+    padding: 5px 10px;
+    font-size: 12px;
+    height: 28px;
+  }
+}
