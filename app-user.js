@@ -820,6 +820,12 @@ function updateActiveFiltersCount() {
       badge.textContent = String(count);
       badge.hidden = false;
     } else {
+      // 🔧 (T094 2026-10-06): reset text เป็น "0" ด้วย ไม่ใช่แค่ hide
+      //   เดิม: badge.hidden = true อย่างเดียว → textContent ค้างเป็นค่าเดิม (เช่น "2")
+      //          → owner เช็คผ่าน DevTools/inspect เห็น text stale
+      //   ใหม่: badge.textContent = "0" + hidden = true → text reset จริง ๆ
+      //   ผลกระทบระบบเดิม: 0% — UX เดิม (badge ซ่อนตอน count=0) เหมือนเดิม
+      badge.textContent = "0";
       badge.hidden = true;
     }
   }

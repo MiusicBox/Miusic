@@ -1,0 +1,40 @@
+{
+  "id": "T094-adv-search-badge-reset",
+  "title": "แก้ badge ตัวเลข Advanced Search ไม่ reset เป็น 0 หลังกด 'ล้างทั้งหมด'",
+  "branch": "ai-team/T094-adv-search-badge-reset",
+  "status": "intake",
+  "current_stage": 1,
+  "stage": "intake",
+  "created_at": "2026-10-06T10:30:00+07:00",
+  "updated_at": "2026-10-06T10:30:00+07:00",
+  "agent": "AI Team v3 (PM พี่ก้อน + BA น้องมิ้ค + FE น้องเต๋า + CR พี่ภูมิ + QA น้องนัท + SEC พี่เบนซ์)",
+  "description": "Bug พบจากการตรวจสอบจริง (agent-browser + owner สังเกตเห็น): badge ตัวเลขนับจำนวน active filters ในปุ่ม Advanced Search (id=advFilterBadge) ไม่ reset text เป็น '0' หลังจากกดปุ่ม 'ล้างทั้งหมด' (id=advResetBtn) — badge.hidden=true แล้ว (ซ่อนจากสายตาลูกค้า) แต่ textContent ยังเป็นค่าเดิม (เช่น '2') ทำให้ owner ที่เช็คผ่าน DevTools/inspect เห็น text ค้างอยู่\n\nRoot cause: ใน updateActiveFiltersCount() (app-user.js บรรทัด 807-826) ที่ทำแค่ badge.hidden = true ตอน count = 0 โดยไม่ set badge.textContent = '0' ทำให้ text ค้าง",
+
+  "acceptance_criteria": [
+    {"id": "AC1", "desc": "Badge text reset เป็น '0' จริง ๆ เมื่อกด 'ล้างทั้งหมด' (no stale text)", "status": "PENDING"},
+    {"id": "AC2", "desc": "Badge text เพิ่มถูกต้องเมื่อคลิก chip (1 group → '1', 2 groups → '2')", "status": "PENDING"},
+    {"id": "AC3", "desc": "Badge ยังซ่อน (hidden=true) เมื่อ count = 0 (UX เดิม)", "status": "PENDING"},
+    {"id": "AC4", "desc": "Badge แสดงผลเมื่อ count > 0 (UX เดิม)", "status": "PENDING"},
+    {"id": "AC5", "desc": "ไม่กระทบฟังก์ชันเดิม (chip toggle, Apply, Reset UI อื่น ๆ)", "status": "PENDING"}
+  ],
+
+  "stages": {
+    "intake": {"started_at": "2026-10-06T10:30:00+07:00", "completed_at": "2026-10-06T10:32:00+07:00", "result": "รับ requirement จาก owner + สร้าง branch ai-team/T094-adv-search-badge-reset + สร้าง task file นี้"},
+    "scan": {"started_at": null, "completed_at": null, "scanned_files": [], "unknowns": []},
+    "plan": {"started_at": null, "completed_at": null, "plan": null, "files_to_change": [], "acceptance_criteria": []},
+    "develop": {"started_at": null, "completed_at": null, "commits": [], "files_changed": []},
+    "self_review": {"started_at": null, "completed_at": null, "checklist": null},
+    "code_review": {"started_at": null, "completed_at": null, "review_result": null, "files_reviewed": 0},
+    "qa": {"started_at": null, "completed_at": null, "test_results": null, "bugs_found": []},
+    "fix": {"started_at": null, "completed_at": null, "commits": [], "files_changed": []},
+    "qa_again": {"started_at": null, "completed_at": null, "test_results": null},
+    "security_final": {"started_at": null, "completed_at": null, "audit_result": null, "iron_rules_check": null},
+    "pr": {"started_at": null, "pr_number": null, "pr_url": null, "merged_at": null},
+    "owner_approval": {"started_at": null, "completed_at": null, "approved_by": null},
+    "production": {"started_at": null, "completed_at": null, "deploy_version": null, "rollback_plan": "git revert <merge_sha>"}
+  },
+
+  "blockers": [],
+  "decisions": [],
+  "log_file": "logs/T094-adv-search-badge-reset.log"
+}
