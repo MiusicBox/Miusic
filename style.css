@@ -688,8 +688,8 @@ button:active {
 
 /* 🔧 แก้ (2026-09-13): ไอคอนเล่นในเพลย์ลิสต์ — สีขาว 28px + เงาหนัก (ไม่มีวงกลม) */
 .playlist-play-btn svg {
-  width: 28px !important;
-  height: 28px !important;
+  width: 36px !important;
+  height: 36px !important;
   fill: #fff !important;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.95)) !important;
   margin-left: 3px;
@@ -858,8 +858,8 @@ button:active {
 
 /* 🔧 แก้ (2026-09-13): ไอคอนสามเหลี่ยมลอยกลางรูป — สีขาว 28px + เงาหนัก (ไม่มีวงกลม/ขอบ) */
 .song-cover .play-btn svg {
-  width: 28px !important;
-  height: 28px !important;
+  width: 36px !important;
+  height: 36px !important;
   fill: #fff !important;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.95)) !important;
   margin-left: 3px;
@@ -3256,8 +3256,8 @@ button:active {
 }
 
 .song-card-row .song-cover .play-btn svg {
-  width: 28px !important;
-  height: 28px !important;
+  width: 36px !important;
+  height: 36px !important;
   fill: #fff !important;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.95)) !important;
   margin-left: 3px;
@@ -3586,8 +3586,8 @@ button:active {
 
 /* ไอคอนเล่นในเพลย์ลิสต์ — สีขาว 28px + เงาหนัก (ไม่มีวงกลม) */
 .playlist-song-row.song-card-row .playlist-play-btn svg {
-  width: 28px !important;
-  height: 28px !important;
+  width: 36px !important;
+  height: 36px !important;
   fill: #fff !important;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.95)) !important;
   margin-left: 3px;
@@ -4568,8 +4568,8 @@ button:active {
 }
 .song-card-row .song-cover .play-btn svg,
 .playlist-song-row.song-card-row .playlist-play-btn svg {
-  width: 22px !important;
-  height: 22px !important;
+  width: 36px !important;
+  height: 36px !important;
 }
 
 /* ข้อมูล: ชื่อเพลงขาว 15px + บรรทัด DJ/ศิลปิน สีม่วงอ่อนเรียบ ๆ */
