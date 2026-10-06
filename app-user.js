@@ -930,36 +930,42 @@ function setupAdvancedFilters() {
       const originalText = applyBtn.textContent;
       applyBtn.disabled = true;
       applyBtn.textContent = "กำลังค้นหา...";
-      const minInput = document.getElementById("advPriceMin");
-      const maxInput = document.getElementById("advPriceMax");
-      const favToggle = document.getElementById("advFavoriteOnly");
-      const promoToggle = document.getElementById("advPromoOnly");
-      const sortSelect = document.getElementById("advSort");
-      SONG_SEARCH_STATE.minPrice = (minInput && minInput.value !== "") ? Number(minInput.value) : null;
-      SONG_SEARCH_STATE.maxPrice = (maxInput && maxInput.value !== "") ? Number(maxInput.value) : null;
-      SONG_SEARCH_STATE.favoriteOnly = !!(favToggle && favToggle.checked);
-      SONG_SEARCH_STATE.promoOnly = !!(promoToggle && promoToggle.checked);
-      SONG_SEARCH_STATE.sort = sortSelect ? sortSelect.value : "new";
-      // validate price range
-      if (SONG_SEARCH_STATE.minPrice !== null && SONG_SEARCH_STATE.maxPrice !== null &&
-          SONG_SEARCH_STATE.minPrice > SONG_SEARCH_STATE.maxPrice) {
-        showToast("ราคาต่ำสุดต้องไม่มากกว่าราคาสูงสุด", "error");
-        return;
-      }
-      if (SONG_SEARCH_STATE.favoriteOnly && !getAdvCustomerId()) {
-        showToast("ต้องล็อกอินเพื่อดูบันทึกซื้อทีหลัง", "error");
-        return;
-      }
-      if (modal) {
-        modal.hidden = true;
-        modal.setAttribute("aria-hidden", "true");
-      }
-      SONG_SEARCH_STATE.active = hasActiveAdvancedFilters();
-      updateActiveFiltersCount();
-      // 🐛 (Bug-Fix #9): ใช้ await + finally เพื่อ reset button หลังเสร็จ
+      // 🔧 (T093 2026-10-06): ย้าย reset button ไป finally block เพื่อให้ early return
+      //   จาก validation fail (price min > max + favorite โดยไม่ล็อกอิน) ก็ reset ปุ่มด้วย
+      //   เดิม finally อยู่รอบ await loadSongsWithAdvancedFilters เท่านั้น → early return ข้าม
+      //   ผลลัพธ์: ปุ่มค้าง 'กำลังค้นหา...' ตลอดกาล + disabled → user ต้อง refresh page
+      //   วิธีแก้: ครอบ try ทั้งหมด (รวม validation + modal close + loadSongs) → finally reset ทุกกรณี
+      //   ผลกระทบระบบเดิม: 0% — path สำเร็จยังทำงานเหมือนเดิม; path fail ปุ่ม reset + modal ยังเปิดอยู่ (รอ user แก้)
       try {
+        const minInput = document.getElementById("advPriceMin");
+        const maxInput = document.getElementById("advPriceMax");
+        const favToggle = document.getElementById("advFavoriteOnly");
+        const promoToggle = document.getElementById("advPromoOnly");
+        const sortSelect = document.getElementById("advSort");
+        SONG_SEARCH_STATE.minPrice = (minInput && minInput.value !== "") ? Number(minInput.value) : null;
+        SONG_SEARCH_STATE.maxPrice = (maxInput && maxInput.value !== "") ? Number(maxInput.value) : null;
+        SONG_SEARCH_STATE.favoriteOnly = !!(favToggle && favToggle.checked);
+        SONG_SEARCH_STATE.promoOnly = !!(promoToggle && promoToggle.checked);
+        SONG_SEARCH_STATE.sort = sortSelect ? sortSelect.value : "new";
+        // validate price range
+        if (SONG_SEARCH_STATE.minPrice !== null && SONG_SEARCH_STATE.maxPrice !== null &&
+            SONG_SEARCH_STATE.minPrice > SONG_SEARCH_STATE.maxPrice) {
+          showToast("ราคาต่ำสุดต้องไม่มากกว่าราคาสูงสุด", "error");
+          return;  // ✅ T093: finally จะ reset ปุ่มให้
+        }
+        if (SONG_SEARCH_STATE.favoriteOnly && !getAdvCustomerId()) {
+          showToast("ต้องล็อกอินเพื่อดูบันทึกซื้อทีหลัง", "error");
+          return;  // ✅ T093: finally จะ reset ปุ่มให้
+        }
+        if (modal) {
+          modal.hidden = true;
+          modal.setAttribute("aria-hidden", "true");
+        }
+        SONG_SEARCH_STATE.active = hasActiveAdvancedFilters();
+        updateActiveFiltersCount();
         await loadSongsWithAdvancedFilters(true);
       } finally {
+        // ✅ T093: reset ปุ่มทุกกรณี — สำเร็จ, fail (await throw), หรือ early return
         applyBtn.disabled = false;
         applyBtn.textContent = originalText;
       }
