@@ -518,7 +518,7 @@ async function loadCustomerFavorites() {
     // อัปเดต cache
     customerFavoritesCache = new Set(favorites.map(f => f.song_id));
     if (favorites.length === 0) {
-      wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">ยังไม่มีเพลงโปรด — กด ❤️ ในเพลงเพื่อเพิ่ม</div>';
+      wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">ยังไม่มีเพลงบันทึก — กด 🔖 ในเพลงเพื่อเพิ่ม</div>';
       return;
     }
     // 🆕 (v6 fix): render เป็น song card สวยๆ เหมือนหน้ารายการเพลง (มี cover, ชื่อ, DJ, ราคา, ปุ่ม ❤️ ⭐ 🛒)

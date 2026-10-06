@@ -3696,12 +3696,12 @@ function _upgradeFavoritesEmptyState() {
   if (first.classList && first.classList.contains("empty-state-cute")) return;
   // ตรวจข้อความ — ต้องมีคำว่า "ยังไม่มีเพลงโปรด" (ตรงกับที่ customer-auth.js เขียน)
   const text = (first.textContent || "").trim();
-  if (!text.includes("ยังไม่มีเพลงโปรด")) return;
+  if (!text.includes("ยังไม่มีเพลงบันทึก")) return;
   first.outerHTML = `
     <div class="empty-state-cute">
-      <div class="empty-icon">❤️</div>
+      <div class="empty-icon">🔖</div>
       <div class="empty-title">ยังไม่มีบันทึกซื้อทีหลัง</div>
-      <div class="empty-desc">กด ❤️ ในเพลงที่ชอบ — จะเก็บไว้ที่นี่</div>
+      <div class="empty-desc">กด 🔖 ในเพลงที่ชอบ — จะเก็บไว้ที่นี่</div>
       <button class="btn empty-cta" type="button" data-empty-goto-home>🎵 ไปเลือกเพลง</button>
     </div>`;
 }
