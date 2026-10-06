@@ -8332,6 +8332,83 @@ export default {
       });
     }
 
+    // 🆕 (T101 2026-10-06): GET /api/track-download/:orderId — track customer download + redirect to R2
+    //   Owner request: เมื่อลูกค้ากดดาวน์โหลด → เปลี่ยนสถานะออเดอร์เป็น "completed" อัตโนมัติ
+    //   + บันทึก customer_downloaded_at → แอดมินเห็นในหน้าออเดอร์ว่าลูกค้าดาวน์โหลดแล้ว
+    //   Flow: ลูกค้ากด "⬇️ ดาวน์โหลดเพลง" → browser ไป /api/track-download/<orderId>
+    //     → worker UPDATE order SET status='completed', customer_downloaded_at=NOW()
+    //     → redirect (302) ไป R2 public URL → ลูกค้าได้ไฟล์ ZIP
+    //   ผลกระทบระบบเดิม: 0% — endpoint ใหม่ ไม่แตะ /api/download/* (token-based) เดิม
+    if (url.pathname.startsWith("/api/track-download/") && request.method === "GET") {
+      const orderId = decodeURIComponent(url.pathname.slice("/api/track-download/".length));
+      if (!orderId || !env.DB) {
+        return jsonResponse({ error: "URL หรือ DB ไม่ถูกต้อง" }, 400);
+      }
+      try {
+        // โหลด order ปัจจุบัน
+        const orderRow = await env.DB.prepare(
+          "SELECT data FROM documents WHERE collection='orders' AND id=?"
+        ).bind(orderId).first();
+        if (!orderRow || !orderRow.data) {
+          return jsonResponse({ error: "ไม่พบออเดอร์นี้" }, 404);
+        }
+        let orderData;
+        try { orderData = JSON.parse(orderRow.data); } catch { return jsonResponse({ error: "ข้อมูลออเดอร์เสีย" }, 500); }
+
+        // ตรวจว่ามี zip_download_url จริง → ถ้าไม่มี แจ้ง error
+        const r2Url = orderData.zip_download_url;
+        if (!r2Url) {
+          return jsonResponse({ error: "ออเดอร์นี้ยังไม่มีไฟล์ ZIP พร้อมดาวน์โหลด" }, 404);
+        }
+
+        // 🆕 (T101): UPDATE order status → "completed" + customer_downloaded_at
+        //   ถ้า status ยังเป็น "processing" → เปลี่ยนเป็น "completed" (ลูกค้าดาวน์โหลดแล้ว = ส่งมอบสำเร็จ)
+        //   ถ้า status เป็น "completed" แล้ว → ไม่เปลี่ยน (idempotent — ดาวน์โหลดซ้ำได้)
+        //   ถ้า status เป็น "cancelled"/"rejected" → ไม่เปลี่ยน (กัน download ออเดอร์ที่ยกเลิก)
+        const currentStatus = String(orderData.status || "").toLowerCase();
+        const now = new Date().toISOString();
+        if (currentStatus === "processing" || (currentStatus === "completed" && !orderData.customer_downloaded_at)) {
+          orderData.status = "completed";
+          orderData.customer_downloaded_at = now;
+          orderData.updated_at = now;
+          // append status_history
+          if (Array.isArray(orderData.status_history)) {
+            orderData.status_history.push({
+              status: "completed",
+              at: now,
+              note: "ลูกค้าดาวน์โหลดไฟล์ ZIP แล้ว (อัตโนมัติ)",
+              by: "system",
+              by_name: "Download Tracker",
+            });
+          }
+          // atomic UPDATE
+          try {
+            await env.DB.prepare(
+              "UPDATE documents SET data=?, updated_at=? WHERE collection='orders' AND id=?"
+            ).bind(JSON.stringify(orderData), now, orderId).run();
+            // 🔒 (Audit Fix C-5): atomic INSERT ลงตาราง order_status_history
+            try { await insertOrderStatusHistory(env, orderId, "completed", "ลูกค้าดาวน์โหลดไฟล์ ZIP แล้ว (อัตโนมัติ)", "system", "Download Tracker"); } catch (_) {}
+            console.log(`[T101] Order ${orderId} → status=completed, customer_downloaded_at=${now}`);
+          } catch (updateErr) {
+            console.warn(`[T101] Failed to update order ${orderId}:`, updateErr?.message || updateErr);
+            // ไม่ block download → ยัง redirect ไป R2 ได้ (best-effort tracking)
+          }
+        }
+
+        // Redirect (302) ไป R2 public URL → browser ดาวน์โหลด ZIP
+        const fullR2Url = r2Url.startsWith("http") ? r2Url : (env.R2_PUBLIC_BASE_URL || "") + r2Url;
+        return new Response(null, {
+          status: 302,
+          headers: {
+            "Location": fullR2Url,
+            "Cache-Control": "no-store",
+          },
+        });
+      } catch (err) {
+        return jsonResponse({ error: safeError("ดาวน์โหลดไม่สำเร็จ", err) }, 500);
+      }
+    }
+
     // 🔧 (2026-09-18 v6 Full System): GET /api/health
     // ตรวจสุขภาพระบบ — ใช้สำหรับ uptime monitoring + debugging
     // ไม่ต้อง login (public endpoint) — แต่ไม่เปิดเผยข้อมูล sensitive
