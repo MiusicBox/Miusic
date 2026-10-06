@@ -9384,7 +9384,7 @@ export default {
     //   ผลกระทบระบบเดิม: 0% — เป็นการเพิ่ม routing ใหม่ ไม่ลบ/เปลี่ยน routing เดิม
     // 🆕 (T012): เพิ่ม /api/admin/reports เข้าไปใน routing ให้เรียก handleCustomerAuth()
     //   ใน handleCustomerAuth มี handler สำหรับ /api/admin/reports/sales-summary, top-songs, top-djs
-    if (url.pathname.startsWith("/api/admin/customers") || url.pathname.startsWith("/api/admin/password-reset-requests") || url.pathname.startsWith("/api/admin/reports") || url.pathname.startsWith("/api/admin/song-reviews")) {
+    if (url.pathname.startsWith("/api/admin/customers") || url.pathname.startsWith("/api/admin/password-reset-requests") || url.pathname.startsWith("/api/admin/reports") || url.pathname.startsWith("/api/admin/song-reviews") || url.pathname.startsWith("/api/admin/backfill-sort-keys")) {
       if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
       return handleCustomerAuth(request, env, url);
     }
