@@ -4087,7 +4087,7 @@ async function loadCustomerDownloads() {
               <div style="font-size:13px;font-weight:700;color:var(--text);">ใบเสร็จ #${escapeHtml(receipt)}</div>
               <div style="font-size:11px;color:var(--text-dim);">${date} · ${songCount} เพลง · ${formatPrice(total)}</div>
             </div>
-            ${canDownload ? `<button type="button" class="btn-download" data-download-url="${escapeHtml(zipUrl)}" data-download-id="${escapeHtml(orderId)}" style="background:var(--accent);color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">⬇️ ดาวน์โหลด ZIP</button>` : `<span style="font-size:11px;color:var(--text-dim);padding:6px 12px;">รอเตรียมไฟล์</span>`}
+            ${canDownload ? `<button type="button" class="btn-download" data-download-url="/api/track-download/${escapeHtml(orderId)}" data-download-id="${escapeHtml(orderId)}" style="background:var(--accent);color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">⬇️ ดาวน์โหลด ZIP</button>` : `<span style="font-size:11px;color:var(--text-dim);padding:6px 12px;">รอเตรียมไฟล์</span>`}
           </div>
           <div style="font-size:11px;color:var(--text-dim);line-height:1.4;">${songNames}${moreText}</div>
         </div>
@@ -4485,7 +4485,7 @@ async function loadCustomerOrders(reset = false) {
       const finalTotal = (order.final_total != null) ? Number(order.final_total) : Number(order.total || 0);
       const canDownload = order.zip_download_url && (order.status === "processing" || order.status === "completed");
       const downloadBtnHtml = canDownload
-        ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" data-account-download="${escapeHtml(source)}-${indexInSource}" class="btn list-download-btn">⬇️ ดาวน์โหลดเพลง</a>`
+        ? `<a href="/api/track-download/${escapeHtml(order._docId || order.id || '')}" target="_blank" rel="noopener" data-account-download="${escapeHtml(source)}-${indexInSource}" class="btn list-download-btn">⬇️ ดาวน์โหลดเพลง</a>`
         : "";
       return `
         <div class="track-order-all-card" role="button" tabindex="0" data-account-order-source="${escapeHtml(source)}" data-account-order-idx="${indexInSource}" style="width:100%;text-align:left;">
@@ -4990,7 +4990,7 @@ function renderTrackOrderResult(order) {
     ${(order.zip_download_url && (order.status === "processing" || order.status === "completed"))
       ? `<div class="track-order-zip" style="margin-top:10px;padding:10px;background:rgba(16,185,129,.08);border-radius:10px;">
           <div style="font-size:12px;color:var(--success);font-weight:600;margin-bottom:6px;">📦 ไฟล์เพลงพร้อมดาวน์โหลด</div>
-          <a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" class="btn zip-download-btn"><span class="zip-download-label">⬇️ ดาวน์โหลด ZIP</span><span class="zip-download-name">${escapeHtml(order.zip_file_name || 'Order.zip')}</span></a>
+          <a href="/api/track-download/${escapeHtml(order._docId || order.id || '')}" target="_blank" rel="noopener" class="btn zip-download-btn"><span class="zip-download-label">⬇️ ดาวน์โหลด ZIP</span><span class="zip-download-name">${escapeHtml(order.zip_file_name || 'Order.zip')}</span></a>
         </div>`
       : (order.status === "processing")
         ? `<div style="margin-top:10px;font-size:12px;color:var(--accent);">⏳ แอดมินกำลังเตรียมไฟล์ ZIP ส่งให้คุณ — รอสักครู่</div>`
@@ -5303,7 +5303,7 @@ function renderTrackOrderAllList(orders) {
     // 🆕 (2026-10-02 v7): ปุ่ม "⬇️ ดาวน์โหลดเพลง" — แสดงเฉพาะออเดอร์สำเร็จที่มี zip_download_url
     const canDownload = order.zip_download_url && (order.status === "processing" || order.status === "completed");
     const downloadBtnHtml = canDownload
-      ? `<a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" data-track-download="${index}" class="btn list-download-btn">⬇️ ดาวน์โหลดเพลง</a>`
+      ? `<a href="/api/track-download/${escapeHtml(order._docId || order.id || '')}" target="_blank" rel="noopener" data-track-download="${index}" class="btn list-download-btn">⬇️ ดาวน์โหลดเพลง</a>`
       : "";
     return `
       <div class="track-order-all-card" role="button" tabindex="0" data-track-all-index="${index}">
@@ -5380,7 +5380,7 @@ function openTrackOrderAllDetail(order) {
     ${(order.zip_download_url && (order.status === "processing" || order.status === "completed"))
       ? `<div class="track-order-zip" style="margin-top:10px;padding:10px;background:rgba(16,185,129,.08);border-radius:10px;">
           <div style="font-size:12px;color:var(--success);font-weight:600;margin-bottom:6px;">📦 ไฟล์เพลงพร้อมดาวน์โหลด</div>
-          <a href="${escapeHtml(order.zip_download_url)}" target="_blank" rel="noopener" class="btn zip-download-btn"><span class="zip-download-label">⬇️ ดาวน์โหลด ZIP</span><span class="zip-download-name">${escapeHtml(order.zip_file_name || 'Order.zip')}</span></a>
+          <a href="/api/track-download/${escapeHtml(order._docId || order.id || '')}" target="_blank" rel="noopener" class="btn zip-download-btn"><span class="zip-download-label">⬇️ ดาวน์โหลด ZIP</span><span class="zip-download-name">${escapeHtml(order.zip_file_name || 'Order.zip')}</span></a>
         </div>`
       : (order.status === "processing")
         ? `<div style="margin-top:10px;font-size:12px;color:var(--accent);">⏳ แอดมินกำลังเตรียมไฟล์ ZIP ส่งให้คุณ — รอสักครู่</div>`
