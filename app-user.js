@@ -2,7 +2,7 @@
 // ===================================================
 import { db } from "./firebase-init.js?v=20260905-fix1";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
-import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js?v=20261007-sort-fix";
+import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js?v=20261007-leading-vowel";
 // ────────────────────────────────────────────────────────────────────────────
 // ⚠️  สำหรับ Dev ใหม่: อ่านก่อนแก้ import block นี้  ────────────────────────
 // ────────────────────────────────────────────────────────────────────────────
@@ -547,6 +547,34 @@ async function loadMoreSongs() {
 //
 // กัน concurrent: loadMoreSongs มี STATE.songsLoading check อยู่แล้ว
 // → loadAllRemainingSongs แค่วนลูปเรียกทีละ page จนกว่าจะหมด
+// 🆕 (Sort-All): โหลดเพลง "ทั้งหมด" ให้ครบก่อนแสดงแท็บ เพลย์ลิสต์ / DJ / หมวดหมู่
+//   ปัญหาเดิม: หน้าแรกโหลดเพลงใหม่สุดทีละ 50 (เรียงตามวันที่เพิ่ม) แล้วค่อยเรียงเฉพาะที่โหลดมา
+//     → เพลย์ลิสต์ที่เพลงยังไม่ถูกโหลดจะไม่โผล่ แล้วค่อยแทรกกลางรายการทีหลัง = ดูเหมือนไม่เรียง
+//   ใหม่: เข้าแท็บเหล่านี้ → โหลดที่เหลือต่อจนครบ (ใช้ loadMoreSongs เดิม + cursor) → เรียง ก-ฮ A-Z 0-9 ทั้งหมด
+//   ทำครั้งเดียวต่อรอบการใช้งาน / ไม่ทำเมื่ออยู่โหมดตัวกรองขั้นสูง (server เรียงให้เอง)
+async function ensureAllSongsLoaded() {
+  if (STATE._allSongsPromise) return STATE._allSongsPromise;
+  if (!STATE.songsHasMore) return;
+  if (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active) return;
+  STATE._allSongsPromise = (async () => {
+    let pages = 0;
+    while (STATE.songsHasMore && pages < 400) {
+      if (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active) break;
+      if (STATE.songsLoading) { await new Promise(r => setTimeout(r, 150)); continue; }
+      await loadMoreSongs();
+      pages++;
+      if (pages % 4 === 0) renderPlaylists();
+    }
+    STATE.songs = sortSongsByThaiName(STATE.songs);
+    renderPlaylists();
+    renderSongGrid();
+    togglePlaylistsVisibility();
+  })().catch(err => {
+    console.warn("ensureAllSongsLoaded error:", err?.message || err);
+  }).finally(() => { STATE._allSongsPromise = null; });
+  return STATE._allSongsPromise;
+}
+
 async function loadAllRemainingSongs() {
   // 🚀 (T062): เดิมฟังก์ชันนี้โหลด "ทุกเพลง" ทีละ 50 (10,000 เพลง = 200 request + ~1 ล้านแถวที่ D1 ต้องอ่าน
   //   ต่อการค้นหา 1 ครั้ง + sort ชื่อไทยใหม่ทุกหน้า) → ช้า/กินโควตา D1
@@ -2261,6 +2289,10 @@ function togglePlaylistsVisibility() {
 
 function setView(view) {
   STATE.currentView = view;
+  // 🆕 (Sort-All): แท็บที่ต้องเห็นรายการครบและเรียงทั้งหมด → โหลดเพลงให้ครบเบื้องหลัง
+  if (view === "playlist" || view === "dj" || view === "category") {
+    setTimeout(() => { ensureAllSongsLoaded(); }, 0);
+  }
   const showCategory = view === "home" || view === "category";
   // แสดง DJ ในหน้า "ทั้งหมด" หรือหน้า DJ เท่านั้น
   // 🔧 แก้ (2026-09-14): ลบ `view === "category"` ออกจากเงื่อนไข showDj
