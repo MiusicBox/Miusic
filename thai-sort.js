@@ -1,7 +1,8 @@
 // thai-sort.js — Helper สำหรับจัดเรียงรายการ (หมวดหมู่ / DJ / เพลย์ลิสต์) ตามลำดับ:
 //   1) พยัญชนะไทย ก ข ค ... ฮ ก่อน
 //   2) ตัวอักษรอังกฤษ A-Z ถัดมา
-//   3) ตัวเลขเทียบตามค่าจริง (ก1, ก2, ... ก10 ไม่ใช่ ก1, ก10, ก2)
+//   3) ตัวเลข 0-9 ถัดมา เทียบตามค่าจริง (ก1, ก2, ... ก10 ไม่ใช่ ก1, ก10, ก2)
+//   * คำที่ขึ้นต้นด้วยสระนำ เ แ โ ใ ไ เรียงตามพยัญชนะตัวถัดไป / สัญลักษณ์หน้าคำถูกข้าม
 // ไฟล์นี้เป็นไฟล์ใหม่ที่เพิ่มเข้ามา (additive) ไม่ได้แก้ไฟล์เดิม —
 // app-admin.js และ app-user.js import ฟังก์ชันจากที่นี่ไปใช้ตอนโหลดข้อมูล categories/djs/playlists
 // ===================================================
@@ -17,7 +18,7 @@ function charRank(ch) {
   if (THAI_RANK[ch] !== undefined) return [0, THAI_RANK[ch]];
   const upper = ch.toUpperCase();
   if (upper >= "A" && upper <= "Z") return [1, upper.charCodeAt(0) - 65];
-  return [2, ch.codePointAt(0)];
+  return [3, ch.codePointAt(0)];
 }
 
 // เทียบ chunk ที่เป็นตัวอักษรล้วน (ไม่ใช่ตัวเลข) ทีละตัวอักษรตาม charRank
@@ -42,8 +43,8 @@ function splitChunks(str) {
   return String(str == null ? "" : str).match(/\d+|\D+/g) || [];
 }
 
-// เปรียบเทียบ 2 ค่า (natural sort): พยัญชนะไทย > อังกฤษ > อื่น ๆ ก่อน แล้วค่อยเทียบตัวเลขตามค่าจริง
-export function thaiNaturalCompare(a, b) {
+// เทียบ natural sort ตรง ๆ: พยัญชนะไทย > อังกฤษ > ตัวเลข (ตัวเลขเทียบตามค่าจริง)
+function naturalCompare(a, b) {
   const chunksA = splitChunks(a);
   const chunksB = splitChunks(b);
   const len = Math.max(chunksA.length, chunksB.length);
@@ -57,12 +58,34 @@ export function thaiNaturalCompare(a, b) {
     if (numA && numB) {
       const diff = parseInt(ca, 10) - parseInt(cb, 10);
       if (diff !== 0) return diff;
+    } else if (numA !== numB) {
+      return numA ? 1 : -1; // ตัวอักษรมาก่อนตัวเลข
     } else {
       const diff = compareTextChunk(ca, cb);
       if (diff !== 0) return diff;
     }
   }
   return 0;
+}
+
+// เตรียมข้อความก่อนเทียบ:
+//   - ตัดช่องว่าง/สัญลักษณ์/อีโมจิหน้าคำ  เช่น "  (ก)" -> "ก"
+//   - คำที่ขึ้นต้นด้วยสระนำ เ แ โ ใ ไ ให้เรียงตามพยัญชนะตัวถัดไป (หลักพจนานุกรมไทย)
+//     เช่น "เพลง" เรียงอยู่ที่ พ, "ไก่" เรียงอยู่ที่ ก
+function prepare(v) {
+  const full = String(v == null ? "" : v).normalize("NFC").trim()
+    .replace(/^[^\u0E00-\u0E7FA-Za-z0-9]+/, "");
+  const primary = full
+    .replace(/^[เแโใไ]+/, "")
+    .replace(/[\u0E48-\u0E4C]/g, ""); // ไม้เอก-ไม้จัตวา/การันต์ ไม่นับในรอบแรก
+  return { full, primary };
+}
+
+// เปรียบเทียบ 2 ค่า: ก-ฮ > A-Z > 0-9 (ไม่สนว่าเพิ่มก่อนหรือหลัง)
+export function thaiNaturalCompare(a, b) {
+  const pa = prepare(a);
+  const pb = prepare(b);
+  return naturalCompare(pa.primary, pb.primary) || naturalCompare(pa.full, pb.full);
 }
 
 // เรียง array ของ object ตามค่าฟิลด์ที่กำหนด (ใช้ thaiNaturalCompare) — คืน array ใหม่เสมอ ไม่แก้ array เดิม
