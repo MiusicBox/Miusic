@@ -2651,11 +2651,20 @@ async function handleDb(request, env, url) {
           // text search (q) — LIKE บน song_name + artist พร้อม escapeLikePattern
           if (qParam) {
             const escapedQ = escapeLikePattern(qParam);
+            // 🚀 (T062): ขยายขอบเขตค้นหาให้ตรงกับที่ client เคยค้นเอง (hay = ชื่อเพลง+ศิลปิน+DJ+หมวด+ชื่อเพลย์ลิสต์)
+            //   เพื่อให้ client เลิกโหลดเพลงทั้งหมดมากรองเอง (loadAllRemainingSongs) แล้วใช้ผลจาก server แทน
+            //   ชื่อเพลย์ลิสต์: sub-select จาก collection=playlists (มีจำนวนน้อย) → playlist_id IN (...)
             whereClauses.push(
               "(json_extract(data, '$.song_name') LIKE ? ESCAPE '\\' COLLATE NOCASE " +
-              "OR json_extract(data, '$.artist') LIKE ? ESCAPE '\\' COLLATE NOCASE)"
+              "OR json_extract(data, '$.artist') LIKE ? ESCAPE '\\' COLLATE NOCASE " +
+              "OR json_extract(data, '$.dj_name') LIKE ? ESCAPE '\\' COLLATE NOCASE " +
+              "OR json_extract(data, '$.category_name') LIKE ? ESCAPE '\\' COLLATE NOCASE " +
+              "OR json_extract(data, '$.playlist_id') IN (" +
+              "SELECT id FROM documents WHERE collection = 'playlists' " +
+              "AND json_extract(data, '$.playlist_name') LIKE ? ESCAPE '\\' COLLATE NOCASE))"
             );
-            binds.push(`%${escapedQ}%`, `%${escapedQ}%`);
+            const likeQ = `%${escapedQ}%`;
+            binds.push(likeQ, likeQ, likeQ, likeQ, likeQ);
           }
 
           // DJ filter (multiple) — match ทั้ง dj_id, dj_name และ dj (เก่า)
@@ -2858,7 +2867,46 @@ async function handleDb(request, env, url) {
         // (no advanced filters → fall through to standard listDocuments path)
       }
 
-      let docs = await listDocuments(env, collection, opts);
+      // 🚀 (T062): songs แบบแบ่งหน้า → ORDER BY ที่แน่นอน + keyset cursor
+      //   ปัญหาเดิม: LIMIT/OFFSET ไม่มี ORDER BY → ลำดับไม่การันตี (เพลงอาจซ้ำ/ตกหล่นระหว่างหน้า)
+      //              และ OFFSET ยิ่งลึกยิ่งช้า (หน้าที่ 200 ต้องข้าม 10,000 แถว)
+      //   ใหม่: ORDER BY created_at DESC, id DESC + ?cursor=<token> (WHERE ต่อจากแถวสุดท้าย) → ทุกหน้าเร็วเท่ากัน
+      //   backward compat: ไม่ส่ง cursor → ใช้ offset เหมือนเดิม (orders.js / admin ยังทำงานได้)
+      //   index ที่ใช้: idx_documents_collection_created_id (scripts/migrate-t062-songs-keyset.sql)
+      let songsNextCursor = null;
+      let docs;
+      if (collection === "songs" && opts.limit) {
+        let cursorPair = null;
+        const cursorRaw = urlParams.get("cursor");
+        if (cursorRaw) {
+          try {
+            const b64 = cursorRaw.replace(/-/g, "+").replace(/_/g, "/");
+            const arr = JSON.parse(decodeURIComponent(escape(atob(b64))));
+            if (Array.isArray(arr) && typeof arr[0] === "string" && typeof arr[1] === "string") cursorPair = arr;
+          } catch (_) { cursorPair = null; }
+        }
+        let keysetSql = "SELECT id, data, created_at FROM documents WHERE collection = 'songs'";
+        const keysetBinds = [];
+        if (cursorPair) {
+          keysetSql += " AND (created_at < ? OR (created_at = ? AND id < ?))";
+          keysetBinds.push(cursorPair[0], cursorPair[0], cursorPair[1]);
+        }
+        keysetSql += " ORDER BY created_at DESC, id DESC LIMIT ?";
+        keysetBinds.push(opts.limit);
+        if (!cursorPair && opts.offset) {
+          keysetSql += " OFFSET ?";
+          keysetBinds.push(opts.offset);
+        }
+        const { results: keysetRows } = await env.DB.prepare(keysetSql).bind(...keysetBinds).all();
+        docs = (keysetRows || []).map((row) => ({ id: row.id, data: JSON.parse(row.data) }));
+        if (keysetRows && keysetRows.length === opts.limit) {
+          const last = keysetRows[keysetRows.length - 1];
+          songsNextCursor = btoa(unescape(encodeURIComponent(JSON.stringify([last.created_at, last.id]))))
+            .replace(/\+/g, "-").replace(/\//g, "_");
+        }
+      } else {
+        docs = await listDocuments(env, collection, opts);
+      }
       // 🔒 sanitize ฟิลด์ sensitive ของ songs ถ้าเป็น non-admin
       if (collection === "songs" && !admin) {
         docs = sanitizeSongsForPublic(docs);
@@ -2919,6 +2967,7 @@ async function handleDb(request, env, url) {
       const body = JSON.stringify({
         docs,
         ...(totalCount != null ? { total: totalCount, limit, offset } : {}),
+        ...(songsNextCursor ? { next_cursor: songsNextCursor } : {}),
       });
       return new Response(body, {
         status: 200,
