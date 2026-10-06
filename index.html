@@ -591,7 +591,12 @@
         </button>
       </div>
     </div>
-    <div class="chip-row" id="categoryChips"></div>
+    <!-- 🔧 (T095 2026-10-06): ลบ chip-row (categoryChips) ออก — ลูกค้าใช้ categoryShowcase (cards ใหญ่) แทน
+         - เดิม: chip-row แสดง chips เล็ก ๆ ใต้ search box → ข้อมูลซ้ำกับ categoryShowcase
+         - ใหม่: ลบ HTML element นี้ออก → renderCategoryChips() function ใน app-user.js ยังอยู่
+           (มี guard `if (!wrap) return;` จะ return early ไม่ crash) — ไม่ลบ function ตาม Rule 7
+         - ลูกค้าเลือกหมวดผ่าน #categoryShowcase ที่มี click handler ครบ (line 1481+ ใน app-user.js)
+         - ผลกระทบระบบเดิม: 0% — ไม่กระทบ search/apply filter/reset อื่น ๆ -->
 
     <!-- 🆕 (T015): Result summary — แสดงจำนวนผลลัพธ์ + active filters + ปุ่ม clear (หลังกด "ค้นหา") -->
     <div id="advResultSummary" class="adv-result-summary" hidden>
