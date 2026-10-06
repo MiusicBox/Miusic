@@ -517,3 +517,8 @@ CREATE INDEX IF NOT EXISTS idx_song_reviews_customer ON song_reviews (customer_i
 -- 🚀 (T062): covering index สำหรับ keyset pagination ของเพลง (ดู scripts/migrate-t062-songs-keyset.sql)
 CREATE INDEX IF NOT EXISTS idx_documents_collection_created_id
   ON documents(collection, created_at DESC, id DESC);
+
+-- 🆕 (Sort-Key): เรียงเพลงตาม sort_key (ก-ฮ > A-Z > 0-9) — ดู scripts/migrate-sort-key.sql
+CREATE INDEX IF NOT EXISTS idx_documents_songs_sortkey
+  ON documents(json_extract(data, '$.sort_key'), id)
+  WHERE collection = 'songs';
