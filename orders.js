@@ -10,7 +10,7 @@ import {
 } from "./db-client.js?v=20261003-login-guest-v11";
 import { uploadOrderZip, deleteFromStorage } from "./storage-adapter.js?v=20260904-rawzip";
 // 🎨 (2026-09-26): เพิ่ม import sortSongsByThaiName สำหรับ sort เพลงในฟอร์มสร้างออเดอร์
-import { sortSongsByThaiName } from "./thai-sort.js";
+import { sortSongsByThaiName } from "./thai-sort.js?v=20261007-sort-key";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่) — import มาจาก app-promotion.js กลาง (รวมไฟล์เดียว) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, computeCartPricing
