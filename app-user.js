@@ -2,7 +2,7 @@
 // ===================================================
 import { db } from "./firebase-init.js?v=20260905-fix1";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
-import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js";
+import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js?v=20261007-sort-fix";
 // ────────────────────────────────────────────────────────────────────────────
 // ⚠️  สำหรับ Dev ใหม่: อ่านก่อนแก้ import block นี้  ────────────────────────
 // ────────────────────────────────────────────────────────────────────────────
@@ -1705,6 +1705,13 @@ function renderSongSkeleton(count = 12) {
 }
 
 function renderSongGrid() {
+  // 🚀 (Sort-Fix): sort STATE.songs ทุกครั้งก่อน render — กันกรณี sort ถูกข้าม
+  //   เดิม: sort แค่ใน loadMoreSongs → ถ้าข้ามไป → ไม่เรียง
+  //   ใหม่: sort ใน renderSongGrid ด้วย → เรียงเสมอ ไม่สนว่าเพิ่มเพลงตอนไหน
+  //   Performance: O(n log n) แต่ n ≤ 10,000 → < 10ms → ไม่กระตุก
+  if (!(typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active)) {
+    STATE.songs = sortSongsByThaiName(STATE.songs);
+  }
   const list = getFilteredSongs();
   const grid = document.getElementById("songGrid");
   const empty = document.getElementById("emptyState");
