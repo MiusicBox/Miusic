@@ -1,8 +1,8 @@
 {
-  "version": "2.1.0",
+  "version": "2.2.0",
   "team_version": "3.0.0",
-  "last_updated": "2026-10-06T08:30:00+07:00",
-  "synced_by": "T-sync-state-drift",
+  "last_updated": "2026-10-06T09:00:00+07:00",
+  "synced_by": "T-sync-cleanup",
   "current_session": {
     "session_id": "web-fef5c92d-a981-46ea-af29-7380411dac47",
     "started_at": "2026-10-04T21:00:00+07:00",
@@ -233,7 +233,6 @@
   "known_issues": [
     "TODO/FIXME 83 จุดในโค้ด (สแกน 2026-10-04) — รอจัดคิวแก้",
     "shared-utils.js migration ค้าง 7 ไฟล์ (admin-roles, app-admin, app-cart, app-user, customer-auth, orders, service-worker)",
-    "WORKER_URL secret ต้องตั้งผ่าน wrangler secret put — ถ้าไม่ตั้ง cron ยืนยันโอนอัตโนมัติใช้ไม่ได้",
     "ไม่มี test automation / CI — ทดสอบด้วยมือ + node --check เท่านั้น"
   ],
   "decisions_log": [
@@ -290,6 +289,11 @@
       "id": "T063-D10",
       "timestamp": "2026-10-04T17:10:00+07:00",
       "action": "ปรับ timestamp ใน task file ให้ monotonic ชุดเดียว (เดิมข้าม session ไม่เรียง) + QA AGAIN suite 26/26 PASS + security PASS — พร้อมเปิด PR"
+    },
+    {
+      "id": "T-sync-cleanup-D1",
+      "timestamp": "2026-10-06T09:00:00+07:00",
+      "action": "ลบ WORKER_URL comment ออกจาก wrangler.jsonc + ลบ WORKER_URL entry ออกจาก known_issues — dead reference จาก Sequential Queue rollback (T030): code ที่อ่าน env.WORKER_URL ถูกลบแล้ว แต่ลืมลบ comment + state.json entry → dev ในอนาคตสับสน; ตอนนี้ cleanup แล้ว ไม่ใช่ issue จริง"
     }
   ],
   "resume_instructions": {
