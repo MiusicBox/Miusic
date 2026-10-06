@@ -459,7 +459,15 @@ async function loadMoreSongs() {
     const _filterQs = (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active)
       ? buildSearchQuery()
       : "";
-    const _url = `/api/db/songs?${_filterQs ? _filterQs + "&" : ""}limit=50&offset=${offset}&slim=1`;
+    // 🚀 (T062): โหมดปกติ (ไม่มี filter) ใช้ keyset cursor แทน offset → ทุกหน้าเร็วเท่ากันแม้ 10,000+ เพลง
+    //   cursor ใช้ได้เมื่อตรงกับหน้าปัจจุบันเท่านั้น (ถ้ามีการ reset songsPage ที่อื่น → fallback เป็น offset อัตโนมัติ)
+    const _isFilterActive = (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active);
+    const _cur = STATE.songsCursor;
+    const _useCursor = !_isFilterActive && _cur && _cur.page === (STATE.songsPage || 0) && _cur.value;
+    const _pageQs = _useCursor
+      ? `limit=50&cursor=${encodeURIComponent(_cur.value)}&slim=1`
+      : `limit=50&offset=${offset}&slim=1`;
+    const _url = `/api/db/songs?${_filterQs ? _filterQs + "&" : ""}${_pageQs}`;
     const res = await fetch(_url, {
       credentials: "same-origin",
       signal: _abortCtrl.signal,
@@ -491,6 +499,10 @@ async function loadMoreSongs() {
       .filter(s => s.status !== "hidden" && !existingIds.has(s.id));
     STATE.songs.push(...filtered);
     STATE.songsPage = nextPage;
+    // 🚀 (T062): เก็บ cursor ของหน้าถัดไป (ผูกกับเลขหน้า เพื่อกัน cursor เก่าถูกใช้หลัง reset)
+    STATE.songsCursor = (!_isFilterActive && data.next_cursor)
+      ? { page: nextPage, value: data.next_cursor }
+      : null;
     // 🎨 (2026-09-26): sort เพลงทั้งหมดใหม่หลังโหลดเพิ่ม — เรียง ก-ฮ + A-Z + 0-9 แบบ natural sort
     //   เดิม: push ตามลำดับจาก server (offset-based) → A1, A10, A2, A3 (ผิดลำดับ)
     //   ใหม่: sortSongsByThaiName → A1, A2, A3, A10 (ถูกลำดับ)
@@ -531,48 +543,82 @@ async function loadMoreSongs() {
 // กัน concurrent: loadMoreSongs มี STATE.songsLoading check อยู่แล้ว
 // → loadAllRemainingSongs แค่วนลูปเรียกทีละ page จนกว่าจะหมด
 async function loadAllRemainingSongs() {
-  // กัน concurrent calls (เช่น user พิมพ์เร็วๆ กดซ้ำหลายครั้ง)
-  if (STATE.songsLoadingAllRemaining) return;
-  STATE.songsLoadingAllRemaining = true;
-  try {
-    let pagesLoaded = 0;
-    let lastRenderAt = 0;
-    // 🔧 (2026-09-19 perf): ใช้ requestIdleCallback ถ้ามี (เบราว์เซอร์ใหม่) หรือ setTimeout(0) ถ้าไม่มี
-    //   เหตุผล: แต่ละ iteration ของ loop จะ yield ให้ browser ทำงานอื่น (เช่น scroll, paint) ก่อน
-    //   → กัน loadAllRemainingSongs แย่ง CPU จาก scroll → หน้าเว็บไม่กระตุกระหว่างโหลด background
-    //   ผลกระทบต่อระบบเดิม: 0% — ผลลัพธ์เหมือนเดิม แค่ช้าลงเล็กน้อยเพื่อให้ scroll ลื่น
-    const yieldToBrowser = () => new Promise((resolve) => {
-      if (typeof requestIdleCallback === "function") {
-        requestIdleCallback(() => resolve(), { timeout: 50 });  // รอไม่เกิน 50ms
-      } else {
-        setTimeout(resolve, 0);  // fallback สำหรับเบราว์เซอร์เก่า
-      }
-    });
+  // 🚀 (T062): เดิมฟังก์ชันนี้โหลด "ทุกเพลง" ทีละ 50 (10,000 เพลง = 200 request + ~1 ล้านแถวที่ D1 ต้องอ่าน
+  //   ต่อการค้นหา 1 ครั้ง + sort ชื่อไทยใหม่ทุกหน้า) → ช้า/กินโควตา D1
+  //   ใหม่: ถามเซิร์ฟเวอร์เฉพาะเพลงที่ตรงกับ filter ปัจจุบัน (ค้นหา/หมวด/DJ) แล้ว merge เข้า STATE.songs
+  //   → ฝั่ง client ยังกรองด้วย getFilteredSongs() ตามเดิม แต่ข้อมูลที่ต้องใช้ครบแล้ว
+  //   ชื่อฟังก์ชัน + จุดที่เรียก (search / chip หมวด / DJ / การ์ดหมวด) ไม่เปลี่ยน
+  //   ถ้าไม่มี filter อะไรเลย → ไม่ต้องโหลดอะไร (ปล่อยให้ infinite scroll ทำงานปกติ)
+  if (!STATE.songsHasMore) return;
+  // โหมดตัวกรองขั้นสูง: STATE.songs ถูกกรอง/เรียงโดย server อยู่แล้ว → ให้ infinite scroll โหลดต่อเอง
+  if (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active) return;
+  const q = (STATE.search || "").trim();
+  const categoryId = (STATE.currentCategory && STATE.currentCategory !== "all") ? STATE.currentCategory : "";
+  const djId = STATE.currentDj || "";
+  if (!q && !categoryId && !djId) return;
 
-    // วนลูปโหลดทุก page จนกว่า songsHasMore=false
-    // (สำหรับ 10,000 เพลง = 200 pages × ~50ms = ~10s — แต่ CDN cache ทำให้เร็วกว่า)
-    while (STATE.songsHasMore) {
-      await loadMoreSongs();
-      pagesLoaded += 1;
-      // re-render ทุก 3 pages (เพื่อ user เห็นผลค้นหาเพิ่มขึ้นเรื่อยๆ โดยไม่กระตุก)
+  // ยกเลิกคำค้นก่อนหน้าที่ยังค้างอยู่ (ผู้ใช้พิมพ์ต่อ) — คำค้นล่าสุดชนะเสมอ
+  if (STATE._filterLoadAbort) { try { STATE._filterLoadAbort.abort(); } catch (_) {} }
+  const ctrl = new AbortController();
+  STATE._filterLoadAbort = ctrl;
+  STATE.songsLoadingAllRemaining = true;
+
+  const PAGE = 200;
+  const MAX_RESULTS = 2000; // กันผลลัพธ์บานปลาย (filter กว้างมาก) — เกินนี้ให้ลูกค้าพิมพ์คำค้นให้เจาะจงขึ้น
+  try {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (djId) params.set("djs", djId);
+    if (categoryId) params.set("categories", categoryId);
+    params.set("limit", String(PAGE));
+    params.set("slim", "1");
+
+    const seen = new Set(STATE.songs.map(s => s.id));
+    let offset = 0;
+    let lastRenderAt = 0;
+    while (offset < MAX_RESULTS) {
+      params.set("offset", String(offset));
+      const timeoutId = setTimeout(() => ctrl.abort(), 15000);
+      let res;
+      try {
+        res = await fetch(`/api/db/songs?${params.toString()}`, { credentials: "same-origin", signal: ctrl.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (!res.ok) { console.warn("loadAllRemainingSongs: HTTP", res.status); break; }
+      const data = await res.json();
+      const docs = Array.isArray(data?.docs) ? data.docs : [];
+      for (const d of docs) {
+        if (seen.has(d.id)) continue;
+        const song = { id: d.id, ...d.data };
+        if (song.status === "hidden") continue;
+        seen.add(d.id);
+        STATE.songs.push(song);
+      }
+      offset += PAGE;
+      const total = typeof data.total === "number" ? data.total : null;
+      if (docs.length < PAGE || (total !== null && offset >= total)) break;
       const now = Date.now();
-      if (now - lastRenderAt > 200) {
+      if (now - lastRenderAt > 300) {
+        STATE.songs = sortSongsByThaiName(STATE.songs);
         renderSongGrid();
         renderPlaylists();
         togglePlaylistsVisibility();
         lastRenderAt = now;
       }
-      // 🔧 yield ให้ browser ระหว่าง loop → กันกระตุก scroll/paint
-      await yieldToBrowser();
-      // Safety: กันลูปไม่รู้จบ (สูงสุด 500 pages = 25,000 เพลง)
-      if (pagesLoaded > 500) break;
     }
-    // re-render ครั้งสุดท้ายเพื่อแสดงผลค้นหาทั้งหมด
+    STATE.songs = sortSongsByThaiName(STATE.songs);
     renderSongGrid();
     renderPlaylists();
     togglePlaylistsVisibility();
+  } catch (err) {
+    // AbortError = ถูกแทนที่ด้วยคำค้นใหม่ → ปกติ ไม่ต้องแจ้งเตือน
+    if (err?.name !== "AbortError") console.warn("loadAllRemainingSongs error:", err?.message || err);
   } finally {
-    STATE.songsLoadingAllRemaining = false;
+    if (STATE._filterLoadAbort === ctrl) {
+      STATE._filterLoadAbort = null;
+      STATE.songsLoadingAllRemaining = false;
+    }
   }
 }
 
@@ -1267,6 +1313,11 @@ function setupSongListInfinityScroll() {
     if (!songGrid || songGrid.style.display === "none") return;
     for (const entry of entries) {
       if (entry.isIntersecting && STATE.songsHasMore && !STATE.songsLoading) {
+        // 🚀 (T062): ถ้ากำลังค้นหา/กรองหมวด/DJ อยู่ → ผลที่ตรงถูกโหลดจาก server ครบแล้ว (loadAllRemainingSongs)
+        //   ไม่ต้องไล่โหลดหน้าถัดไปที่ไม่เกี่ยวกับ filter (เปลือง request + D1)
+        const _hasClientFilter = !!STATE.search || !!STATE.currentDj
+          || (STATE.currentCategory && STATE.currentCategory !== "all");
+        if (_hasClientFilter && !(typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active)) continue;
         await loadMoreSongs();
         renderSongGrid();
       }
@@ -1299,7 +1350,7 @@ function renderCategoryChips() {
       STATE.currentDj = null;
       // 🔧 (2026-09-18 v6 Full System): เมื่อกดหมวดหมู่ ถ้ายังโหลดเพลงไม่ครบ → trigger auto-load-all
       //   กันกรณีที่เพลงของหมวดนี้อยู่ใน page หลัง → filter ไม่เจอ
-      if (STATE.songsHasMore && !STATE.songsLoadingAllRemaining) {
+      if (STATE.songsHasMore) { // 🚀 (T062): ไม่ต้องรอ — คำค้น/ตัวกรองล่าสุดจะแทนที่ตัวเก่าเอง
         showToast("กำลังโหลดเพลงทั้งหมดเพื่อกรอง...", "progress");
         loadAllRemainingSongs().then(() => {
           renderSongGrid();
@@ -1441,7 +1492,7 @@ function renderCategoryGrid() {
       }
 
       // 🔧 (2026-09-18 v6 Full System): เมื่อกดหมวดหมู่ ถ้ายังโหลดเพลงไม่ครบ → trigger auto-load-all
-      if (STATE.songsHasMore && !STATE.songsLoadingAllRemaining) {
+      if (STATE.songsHasMore) { // 🚀 (T062): ไม่ต้องรอ — คำค้น/ตัวกรองล่าสุดจะแทนที่ตัวเก่าเอง
         showToast("กำลังโหลดเพลงทั้งหมดเพื่อกรอง...", "progress");
         setView(targetView);
         renderCategoryChips();
@@ -1510,7 +1561,7 @@ function renderDjRow() {
       //   - ถ้าไม่ re-render วงกลมแดงจะไม่โผล่/หายไป ทำให้ผู้ใช้สับสน
       renderDjRow();
       // 🔧 (2026-09-18 v6 Full System): เมื่อกด DJ ถ้ายังโหลดเพลงไม่ครบ → trigger auto-load-all
-      if (STATE.songsHasMore && !STATE.songsLoadingAllRemaining) {
+      if (STATE.songsHasMore) { // 🚀 (T062): ไม่ต้องรอ — คำค้น/ตัวกรองล่าสุดจะแทนที่ตัวเก่าเอง
         showToast("กำลังโหลดเพลงทั้งหมดเพื่อกรอง...", "progress");
         loadAllRemainingSongs().then(() => {
           renderCategoryChips();
