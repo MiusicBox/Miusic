@@ -30,7 +30,9 @@
 // 🆕 (T059): อัปเดต CACHE_VERSION หลัง T059 (PWA offline mode — IndexedDB)
 // 🆕 (T060): อัปเดต CACHE_VERSION หลัง T060 (เอา cookie consent banner ออก)
 // 🐛 (T061): แก้ตัวกรองขั้นสูงสูงเกินจอบนมือถือ
-const CACHE_VERSION = 'miusic-pwa-v1.0.7-T061';
+// 🚀 (T062): ค้นหา/กรองฝั่ง server + keyset paging รองรับ 10,000+ เพลง
+// 🚀 (T063): หน้าแอดมินโหลดเพลงแบบแบ่งหน้า (cursor) แทนโหลดทั้งหมดครั้งเดียว
+const CACHE_VERSION = 'miusic-pwa-v1.0.9-T063';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const FONT_CACHE    = `${CACHE_VERSION}-fonts`;
