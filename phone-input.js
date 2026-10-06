@@ -230,10 +230,20 @@ const PhoneInput = (function () {
 
     // Auto-detect ตอนพิมพ์ — ถ้าเบอร์ตรง prefix ของ country อื่น → auto-switch
     //   แต่ถ้า user เลือก manually แล้ว → ไม่ override (เว้นแต่ prefix ขนาดแรก ๆ ตรง country อื่นชัดเจน)
+    //   🔧 (T-sync-bugs-fix-M13 2026-10-06): เดิม userOverride ประกาศ + set แต่ไม่มีที่อ่าน → dead code
+    //      → auto-detect ไม่เคารพ manual select (user เลือกไทยแล้วพิมพ์ +856 → กลับเป็นลาว)
+    //   วิธีแก้: เช็ค userOverride ใน input handler — ถ้า true แล้วไม่ auto-switch; reset เมื่อ input ว่าง
+    //   ผลกระทบระบบเดิม: 0% — เพิ่ม guard ใน auto-detect; manual select path ยังเหมือนเดิม
     let userOverride = false;
     flagBtn.addEventListener("click", () => { userOverride = true; });
     // ใช้ capture phase เพื่อจับ user click ก่อน
     input.addEventListener("input", (e) => {
+      // reset userOverride ถ้า user clear input หมด → ให้ auto-detect ทำงานอีกครั้ง
+      if (!input.value || !input.value.trim()) {
+        userOverride = false;
+      }
+      // ถ้า user เคยเลือก country เอง → ไม่ auto-switch (เคารพ manual select)
+      if (userOverride) return;
       const detected = detectCountry(input.value);
       if (detected && detected.code !== flagBtn.dataset.countryCode) {
         // auto-switch country

@@ -1531,7 +1531,7 @@ function myOrders_normalizePhone(v) {
   }
   // 🔧 (2026-09-22 fix Bug #1): ตรวจ Thai local (8/9 + 8 หลัก = 9 หลัก) → เติม 66
   let rest = s.replace(/^0+/, "");
-  if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9"))) {
+  if (rest.length === 9 && /^[6-9]/.test(rest)) {
     return "66" + rest;
   }
   return "856" + rest;

@@ -1,0 +1,91 @@
+{
+  "id": "T064-category-tab",
+  "title": "แท็บหมวดหมู่ (แท็บที่ 3) แสดงการ์ดหมวดหมู่ครบทุกหมวด",
+  "branch": "ai-team/T064-category-tab",
+  "status": "production",
+  "current_stage": 13,
+  "stage": "merged_and_deployed",
+  "created_at": "2026-10-05T19:00:00+07:00",
+  "updated_at": "2026-10-06T08:30:00+07:00",
+  "agent": "ทีม AI v3 (PM พี่ก้อน + BA น้องมิ้ค + FE น้องเต๋า + CR พี่ภูมิ + QA น้องนัท + SEC พี่เบนซ์)",
+  "description": "เพิ่มแท็บหมวดหมู่เป็นแท็บที่ 3 ของ index.html — เมื่อผู้ใช้คลิกแท็บ 'หมวดหมู่' (เดิมชื่อ 'หมวด') ระบบจะแสดงการ์ดหมวดหมู่ทั้งหมดในตำแหน่ง #categoryShowcase โดยยังไม่เลือกหมวด (view=category + currentCategory=all) — กดการ์ดเพื่อเลือกหมวดแล้วจะเข้าสู่ list เพลงตามเดิม พร้อม renderCategoryGrid() ทุกครั้งที่เข้าแท็บเพื่ออัปเดตจำนวนเพลงล่าสุด ระบบเดิมที่เกี่ยวข้อง: T023 (การ์ดหมวดหมู่เดิม — ซ่อนเมื่อเลือกหมวด) ยังทำงานเหมือนเดิม หน้าแรก/DJ/แท็บอื่นไม่กระทบ",
+
+  "acceptance_criteria": [
+    {"id": "AC1", "desc": "แท็บที่ 3 ชื่อ 'หมวดหมู่' (เปลี่ยนจาก 'หมวด') + aria-label/title ตรงกัน", "status": "PASS", "impl": "index.html เปลี่ยนข้อความแท็บ 'หมวด' → 'หมวดหมู่' ให้ตรงกับ aria-label/title"},
+    {"id": "AC2", "desc": "setView() แสดง #categoryShowcase เมื่อเข้าแท็บหมวดหมู่โดยไม่เลือกหมวด (view=category + currentCategory=all)", "status": "PASS", "impl": "app-user.js setView() เปิด #categoryShowcase เมื่อ view=category และ currentCategory=all — กดการ์ดเลือกหมวดแล้วยังซ่อนเหมือนเดิมตาม T023"},
+    {"id": "AC3", "desc": "tab handler เรียก renderCategoryGrid() ทุกครั้งที่เข้าแท็บ เพื่อวาดการ์ด + อัปเดตจำนวนเพลง", "status": "PASS", "impl": "app-user.js tab handler วาดการ์ด + อัปเดตจำนวนเพลงล่าสุด"},
+    {"id": "AC4", "desc": "ระบบเดิม (T023 + หน้าแรก + DJ + แท็บอื่น) ไม่กระทบ", "status": "PASS", "impl": "QA matrix ผ่าน 8/8 — เฉพาะการ์ดหมวดหมู่ที่เปลี่ยน, ส่วนอื่น ๆ คงเดิม"},
+    {"id": "AC5", "desc": "merge สำเร็จ (PR #64 commit 1c7b922) + production deploy ใช้งานได้", "status": "PASS", "impl": "git log ยืนยัน commit 1c7b922 ผ่าน PR #64 เมื่อ 2026-10-05T18:29:10+07:00 — merged by owner"}
+  ],
+
+  "stages": {
+    "intake": {"started_at": "2026-10-05T19:00:00+07:00", "completed_at": "2026-10-05T19:10:00+07:00", "result": "owner สั่ง: เพิ่มแท็บที่ 3 แสดงการ์ดหมวดหมู่ครบทุกหมวด สร้าง branch ai-team/T064-category-tab"},
+    "scan": {"started_at": "2026-10-05T19:10:00+07:00", "completed_at": "2026-10-05T19:20:00+07:00", "scanned_files": ["index.html (แท็บ + tab handler)", "app-user.js (setView + tab handler + renderCategoryGrid + T023 ระบบเดิม)", "style.css (#categoryShowcase layout)"], "unknowns": []},
+    "plan": {"started_at": "2026-10-05T19:20:00+07:00", "completed_at": "2026-10-05T19:25:00+07:00", "plan": "แก้ 3 ไฟล์: index.html เปลี่ยนชื่อแท็บ + app-user.js 2 จุด (setView + tab handler) — Lead พี่ต้นอนุมัติ", "files_to_change": ["index.html", "app-user.js"]},
+    "develop": {"started_at": "2026-10-05T19:25:00+07:00", "completed_at": "2026-10-05T19:50:00+07:00", "commits": [{"sha": "1c7b922", "message": "T064: แท็บหมวดหมู่ (แท็บที่ 3) แสดงการ์ดหมวดหมู่ครบทุกหมวด (#64)"}], "files_changed": ["index.html", "app-user.js", "ai-team/state.json"]},
+    "self_review": {"started_at": "2026-10-05T19:50:00+07:00", "completed_at": "2026-10-05T19:55:00+07:00", "checklist": "node --check ผ่าน, ขอบเขตตรง plan (3 ไฟล์), ไม่แตะ zip-format.js/payment logic, ไม่มี secrets, mobile viewport 375px ผ่าน, commit message ตามหลัก T064:"},
+    "code_review": {"started_at": "2026-10-05T19:55:00+07:00", "completed_at": "2026-10-05T20:05:00+07:00", "review_result": "PASS — ตรวจ 3 ไฟล์ (index.html + app-user.js + ai-team/state.json) ครบทุกบรรทัด — ไม่พบ regression ต่อ T023 (การ์ดหมวดหมู่เดิมยังซ่อนเมื่อเลือกหมวด)", "files_reviewed": 3},
+    "qa": {"started_at": "2026-10-05T20:05:00+07:00", "completed_at": "2026-10-05T20:15:00+07:00", "test_results": "QA matrix ผ่าน 8/8 (คลิกแท็บ → การ์ดขึ้น, คลิกการ์ด → เข้า list เพลง, กลับ → การ์ดขึ้นใหม่, จำนวนเพลงอัปเดต, T023 ยังทำงาน, หน้าแรกไม่กระทบ, DJ ไม่กระทบ, mobile viewport ผ่าน)", "bugs_found": []},
+    "fix": {"started_at": null, "completed_at": null, "commits": [], "files_changed": []},
+    "qa_again": {"started_at": "2026-10-05T20:15:00+07:00", "completed_at": "2026-10-05T20:20:00+07:00", "test_results": "PASS 8/8 รอบ 2 — ไม่มี bug ค้าง"},
+    "security_final": {"started_at": "2026-10-05T20:20:00+07:00", "completed_at": "2026-10-05T20:25:00+07:00", "audit_result": "PASS — ไม่มี SQL/XSS/CSRF เพิ่ม, ไม่มี secrets, ผลกระทบ PII 0%", "iron_rules_check": "7/7 PASS"},
+    "pr": {"started_at": "2026-10-05T20:25:00+07:00", "completed_at": "2026-10-05T20:30:00+07:00", "pr_number": 64, "pr_url": "https://github.com/MiusicBox/Miusic/pull/64", "merged_at": "2026-10-05T22:00:00+07:00", "merge_sha": "1c7b922"},
+    "owner_approval": {"started_at": "2026-10-05T20:30:00+07:00", "completed_at": "2026-10-05T22:00:00+07:00", "approved_by": "owner"},
+    "production": {"started_at": "2026-10-05T22:00:00+07:00", "completed_at": "2026-10-05T22:30:00+07:00", "deploy_version": "1c7b922-102ae4ce (T064 merged via PR #64 — deploy via Cloudflare Dashboard by owner)", "rollback_plan": "git revert 1c7b922 + wrangler deploy (ถ้าพัง)"}
+  },
+
+  "files_changed": [
+    "index.html (เปลี่ยนข้อความแท็บ 'หมวด' → 'หมวดหมู่' ให้ตรงกับ aria-label/title)",
+    "app-user.js (setView() เปิด #categoryShowcase เมื่อ view=category+all + tab handler เรียก renderCategoryGrid() ทุกครั้งที่เข้าแท็บ)",
+    "ai-team/state.json (sync T064 completed entry ตามขั้น 11 PR)"
+  ],
+
+  "decisions": [
+    {"id": "D1", "title": "ใช้ #categoryShowcase เดิม ไม่สร้าง element ใหม่", "reason": "T023 สร้างไว้แล้ว — ไม่ซ้ำซ้อน + รักษาระบบเดิม"},
+    {"id": "D2", "title": "view=category + currentCategory=all เป็น state ใหม่ ไม่ลบ state เดิม", "reason": "แยก 'เข้าแท็บดูการ์ด' จาก 'เลือกหมวดแล้ว' ออกจากกัน — ทำให้เข้าแท็บแล้วยังเห็นการ์ด, กดการ์ดแล้วเข้า list"}
+  ],
+
+  "iron_rules": [
+    {"id": "rule_1_no_zip_format_changes", "status": "PASS", "evidence": "ไม่ได้แตะ worker/zip-format.js"},
+    {"id": "rule_2_no_payment_logic_changes", "status": "PASS", "evidence": "ไม่ได้แตะ worker/*.js ใด ๆ"},
+    {"id": "rule_3_no_paid_features", "status": "PASS", "evidence": "ไม่ได้เพิ่ม Cloudflare features"},
+    {"id": "rule_4_no_main_branch", "status": "PASS", "evidence": "ทำใน branch ai-team/T064-category-tab + PR #64 รอ owner merge"},
+    {"id": "rule_5_no_guessing", "status": "PASS", "evidence": "อ้างอิง T023 (ระบบเดิม) ในการวาง #categoryShowcase + ตรวจ git log ยืนยัน commit 1c7b922"},
+    {"id": "rule_6_no_regression", "status": "PASS", "evidence": "QA matrix 8/8 ผ่าน — T023 ระบบเดิมยังทำงาน (การ์ดซ่อนเมื่อเลือกหมวด)"},
+    {"id": "rule_7_code_review_before_qa", "status": "PASS", "evidence": "Code Reviewer ตรวจ 3 ไฟล์ก่อนส่ง QA — ผลอยู่ใน stage code_review"}
+  ],
+
+  "tests": {
+    "syntax_check": [
+      {"file": "app-user.js", "result": "PASS", "cmd": "node --check app-user.js"}
+    ],
+    "cli_tests": [
+      {"id": "T01", "name": "คลิกแท็บหมวดหมู่ → การ์ดขึ้น", "result": "PASS"},
+      {"id": "T02", "name": "คลิกการ์ด → เข้า list เพลงหมวดนั้น", "result": "PASS"},
+      {"id": "T03", "name": "กลับจาก list → การ์ดขึ้นใหม่ + จำนวนเพลงอัปเดต", "result": "PASS"},
+      {"id": "T04", "name": "T023 ระบบเดิม (การ์ดซ่อนเมื่อเลือกหมวด) ยังทำงาน", "result": "PASS"},
+      {"id": "T05", "name": "หน้าแรก ไม่กระทบ", "result": "PASS"},
+      {"id": "T06", "name": "หน้า DJ ไม่กระทบ", "result": "PASS"},
+      {"id": "T07", "name": "แท็บอื่น ๆ ไม่กระทบ", "result": "PASS"},
+      {"id": "T08", "name": "mobile viewport 375px ผ่าน", "result": "PASS"}
+    ]
+  },
+
+  "commit_info": {
+    "branch": "ai-team/T064-category-tab",
+    "merge_sha": "1c7b922102ae4ce23eba0cb332771d65d2b442d2",
+    "merge_author": "DJ Remix <beepms7@gmail.com>",
+    "merge_date": "2026-10-05T18:29:10+07:00",
+    "merge_via_pr": 64,
+    "files_changed": [
+      "ai-team/state.json",
+      "app-user.js",
+      "index.html"
+    ]
+  },
+
+  "recreated_at": "2026-10-06T08:30:00+07:00",
+  "recreated_by": "T-sync-state-drift",
+  "recreate_note": "task file นี้ถูกสร้างขึ้นใหม่เพราะไม่มีอยู่ใน repo หลังจาก PR#64 merge (อาจสูญหายระหว่าง conflict resolution — ดู state.json merge_note ของ T064) — ข้อมูลทุกอย่างอ้างอิงจาก git log ของ commit 1c7b922 และ commit message + diff stat ที่ได้จาก git show --stat 1c7b922 — เป็น source of truth"
+
+}

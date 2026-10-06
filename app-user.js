@@ -29,7 +29,12 @@ import {
   //    ↑ ↑ ↑ ฟังก์ชันนี้แหละที่ใช้จริงในไฟล์นี้ (แทน listenCustomerOrders เดิม)
   fetchCustomerOrdersOnce,
   // 🆕 (T015): advancedSearchSongs — server-side advanced search (multi-DJ, multi-category, price range, etc.)
-  advancedSearchSongs
+  advancedSearchSongs,
+  // 🔧 (T-sync-bugs-fix-H5 2026-10-06): import scopedStorageKey เพื่ออ่าน/ลบ last order record ที่ถูกต้อง
+  //   เดิม: app-user.js อ่าน key "music_store_last_order_v1" ตรง ๆ แต่ db-client.js migrate ลบไปแล้ว
+  //   ผลกระทบเดิม: หลังลบออเดอร์ + reload → banner ยังแสดงออเดอร์ที่ลบไป (เพราะอ่าน legacy key ไม่เจอ)
+  //   วิธีแก้: ใช้ scopedStorageKey("music_store_last_order_v1") ที่จะให้ key ที่ถูกต้องตาม scope (guest/login:ID)
+  scopedStorageKey
 // 🔧 (2026-09-17 v2): เพิ่ม ?v=20260917-polling-fix บังคับ browser โหลด db-client.js ใหม่ (กัน cache เก่า)
 } from "./db-client.js?v=20261005-T015-advanced-search";
 import { initCart } from "./app-cart.js?v=20261006-T049";
@@ -158,7 +163,7 @@ function formatPhoneForDisplay(phone) {
   }
   if (s.startsWith("66")) {
     const rest = s.slice(2);
-    if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9") || rest.startsWith("6"))) {
+    if (rest.length === 9 && /^[6-9]/.test(rest)) {
       return `+66 ${rest.slice(0, 2)} ${rest.slice(2, 5)} ${rest.slice(5)}`;
     }
     if (rest.length >= 6 && rest.length <= 9) {
@@ -1127,12 +1132,17 @@ function syncAdvUIFromState() {
 }
 
 // 🆕 (T015-v2): getAdvCustomerId — ดึง customer_id ของลูกค้า login (สำหรับ favorite filter)
+//   🔧 (T-sync-bugs-fix-H4 2026-10-06): แก้ key ผิด — เดิมอ่าน "customer_session" ที่ไม่มีในระบบ
+//     จริง ๆ: customer-auth.js เก็บที่ key "miusic_customer_session" + field คือ "id" (ไม่ใช่ customerId)
+//     ผลกระทบเดิม: ลูกค้า login แล้วกดกรอง "บันทึกซื้อทีหลัง" เจอ error "ต้องล็อกอิน" ทั้งที่ login อยู่
+//   วิธีแก้: อ่าน key จริง "miusic_customer_session" + อ่าน field "id" — sync กับ customer-auth.js
+//   ผลกระทบระบบเดิม: 0% — ไม่แตะ customer-auth.js saveCustomerToStorage; ใช้แค่ key ที่มีอยู่แล้ว
 function getAdvCustomerId() {
   try {
-    const raw = localStorage.getItem("customer_session") || localStorage.getItem("customerSession");
+    const raw = localStorage.getItem("miusic_customer_session");
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed?.customerId || parsed?.customer_id || null;
+    return parsed?.id || null;
   } catch {
     return null;
   }
@@ -4586,7 +4596,7 @@ function normalizePhone(v) {
   }
   // 🔧 (2026-09-22 fix Bug #1): ตรวจ Thai local (8/9 + 8 หลัก = 9 หลัก) → เติม 66
   let rest = s.replace(/^0+/, "");
-  if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9"))) {
+  if (rest.length === 9 && /^[6-9]/.test(rest)) {
     return "66" + rest;
   }
   return "856" + rest;
@@ -4860,12 +4870,17 @@ function renderTrackOrderResult(order) {
         }
       }
       // 4. ล้าง pending order banner ถ้าเป็นออเดอร์สุดท้าย
+      //   🔧 (T-sync-bugs-fix-H5 2026-10-06): เดิมอ่าน key "music_store_last_order_v1" ตรง ๆ แต่ db-client.js
+      //     migrate ลบไปแล้ว (ย้ายไป scoped key) → อ่านไม่เจอ → banner ยังแสดงออเดอร์ที่ลบไป
+      //   วิธีแก้: ใช้ scopedStorageKey + getLastOrderRecord (sync กับ app-cart.js) แทนอ่านตรง ๆ
+      //   ผลกระทบระบบเดิม: 0% — ไม่แตะ saveLastOrderRecord; แค่เปลี่ยนวิธีอ่าน/ลบ
       try {
-        const raw = localStorage.getItem("music_store_last_order_v1");
+        const scopedKey = scopedStorageKey("music_store_last_order_v1");
+        const raw = localStorage.getItem(scopedKey);
         if (raw) {
           const lastOrder = JSON.parse(raw);
           if (lastOrder && lastOrder.order && lastOrder.order._docId === order._docId) {
-            localStorage.removeItem("music_store_last_order_v1");
+            localStorage.removeItem(scopedKey);
           }
         }
       } catch (_) {}
@@ -5246,12 +5261,17 @@ function openTrackOrderAllDetail(order) {
         }
       }
       // 5. ล้าง pending order banner ถ้าเป็นออเดอร์ที่ลบ
+      //   🔧 (T-sync-bugs-fix-H5 2026-10-06): เดิมอ่าน key "music_store_last_order_v1" ตรง ๆ แต่ db-client.js
+      //     migrate ลบไปแล้ว → อ่านไม่เจอ → banner ยังแสดงออเดอร์ที่ลบ
+      //   วิธีแก้: ใช้ scopedStorageKey (sync กับ app-cart.js saveLastOrderRecord) แทนอ่านตรง ๆ
+      //   ผลกระทบระบบเดิม: 0% — ไม่แตะ saveLastOrderRecord; แค่เปลี่ยนวิธีอ่าน/ลบ
       try {
-        const raw = localStorage.getItem("music_store_last_order_v1");
+        const scopedKey = scopedStorageKey("music_store_last_order_v1");
+        const raw = localStorage.getItem(scopedKey);
         if (raw) {
           const lastOrder = JSON.parse(raw);
           if (lastOrder && lastOrder.order && lastOrder.order._docId === order._docId) {
-            localStorage.removeItem("music_store_last_order_v1");
+            localStorage.removeItem(scopedKey);
           }
         }
       } catch (_) {}

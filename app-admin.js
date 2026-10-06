@@ -5525,11 +5525,10 @@ function adminConfirm(message, options) {
     });
     observer.observe(backdrop, { attributes: true, attributeFilter: ["class"] });
     // Safety: ล้าง observer หลัง 30 วินาที (กัน leak)
-    setTimeout(() => {
-      observer.disconnect();
-      safeResolve(false);
-    }, 30000);
-    // 🆕 (2026-09-26): ESC = ยกเลิก (เหมือน customConfirm ฝั่งลูกค้า)
+    //   🔧 (T-sync-bugs-fix-M12 2026-10-06): เดิม escHandler ไม่ถูก remove ในกรณีที่ user ปิด modal
+    //      ผ่าน OK หรือ backdrop (ไม่ใช่ ESC) → escHandler ค้างใน document → memory leak
+    //   วิธีแก้: ใน cleanup ทุก path (timeout + observer disconnect) → remove escHandler ด้วย
+    //   ผลกระทบระบบเดิม: 0% — เพิ่ม cleanup ไม่เปลี่ยน logic ของ escHandler
     const escHandler = (e) => {
       if (e.key === 'Escape' && backdrop.classList.contains('show')) {
         document.removeEventListener('keydown', escHandler);
@@ -5538,6 +5537,21 @@ function adminConfirm(message, options) {
       }
     };
     document.addEventListener('keydown', escHandler);
+    // ปิด escHandler และ observer หลัง 30 วินาที (กัน leak ทั้งคู่)
+    setTimeout(() => {
+      observer.disconnect();
+      try { document.removeEventListener('keydown', escHandler); } catch (_) {}
+      safeResolve(false);
+    }, 30000);
+    // เพิ่ม observer สำหรับ class ที่เปลี่ยนจาก path อื่น (OK button / backdrop click)
+    // → เมื่อ class .show ถูกลบ → cleanup escHandler ด้วย
+    const observer2 = new MutationObserver(() => {
+      if (!backdrop.classList.contains("show")) {
+        try { document.removeEventListener('keydown', escHandler); } catch (_) {}
+        observer2.disconnect();
+      }
+    });
+    observer2.observe(backdrop, { attributes: true, attributeFilter: ["class"] });
   });
 }
 

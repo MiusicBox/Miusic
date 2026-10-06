@@ -211,7 +211,7 @@ function normalizePhoneForStorage(v) {
   }
   // 🔧 (2026-09-22 fix Bug #1): ตรวจ Thai local (8/9 + 8 หลัก = 9 หลัก) → เติม 66
   let rest = s.replace(/^0+/, "");
-  if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9"))) {
+  if (rest.length === 9 && /^[6-9]/.test(rest)) {
     return "66" + rest;
   }
   return "856" + rest;
@@ -263,7 +263,7 @@ function formatPhoneForDisplay(phone) {
   // ไทย: 668XXXXXXXX → "+66 81 234 5678"
   if (s.startsWith("66")) {
     const rest = s.slice(2);
-    if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9") || rest.startsWith("6"))) {
+    if (rest.length === 9 && /^[6-9]/.test(rest)) {
       return `+66 ${rest.slice(0, 2)} ${rest.slice(2, 5)} ${rest.slice(5)}`;
     }
     if (rest.length >= 6 && rest.length <= 9) {

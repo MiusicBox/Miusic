@@ -134,12 +134,20 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
   }
 
   function saveCart() {
+    // 🔧 (T-sync-bugs-fix-M11 2026-10-06): return boolean success/fail
+    //   เดิม: caller (addToCart) เรียก showToast("เพิ่มลงตะกร้าแล้ว", "success") ก่อน saveCart()
+    //          → ถ้า localStorage quota เต็ม → saveCart fail แต่ user เห็น "เพิ่มลงตะกร้าแล้ว" (ผิด)
+    //   วิธีแก้: saveCart return true/false → caller ตัดสินใจว่าจะโชว์ success toast ไหม
+    //   ผลกระทบระบบเดิม: 0% — backward compat (caller เดิมไม่สนใจ return ก็ทำงานเหมือนเดิม)
+    let success = true;
     try {
       localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(state.cart));
     } catch (_) {
+      success = false;
       showToast("บันทึกตะกร้าไม่ได้ กรุณาตรวจสอบพื้นที่จัดเก็บของเบราว์เซอร์", "error");
     }
     renderCart();
+    return success;
   }
 
   function cartQuantity() {
@@ -210,8 +218,13 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         : [];
     }
     state.cart.push(entry);
-    showToast("เพิ่มลงตะกร้าแล้ว", "success");
-    saveCart();
+    // 🔧 (T-sync-bugs-fix-M11 2026-10-06): ย้าย showToast ไปหลัง saveCart + เช็ค return
+    //   เดิม: showToast("เพิ่มลงตะกร้าแล้ว", "success") ก่อน saveCart() → ถ้า quota เต็ม user เห็น success ทั้งที่ cart ไม่ save
+    //   ใหม่: saveCart ก่อน → ถ้า success → โชว์ success toast; ถ้า fail → saveCart โชว์ error ไปแล้ว
+    const _savedOk = saveCart();
+    if (_savedOk) {
+      showToast("เพิ่มลงตะกร้าแล้ว", "success");
+    }
     // 🆕 (T011-F5): cart badge bounce + haptic feedback ตอนเพิ่มสินค้า
     //   - ทำหลัง saveCart() (badge ถูก render ใหม่แล้วใน renderCart)
     //   - bounce: เพิ่ม class "bounce" → CSS animation scale 1.3 → 1 (0.4s)
@@ -618,7 +631,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     //     - ขึ้นต้นด้วย 8 หรือ 9 และมี 9 หลัก → ไทย (8XXXXXXXX) → เติม 66
     //     - อื่นๆ → สันนิษฐานลาว (default)
     let rest = s.replace(/^0+/, "");
-    if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9"))) {
+    if (rest.length === 9 && /^[6-9]/.test(rest)) {
       // ไทย: 8XXXXXXXX หรือ 9XXXXXXXX (9 หลัก) → เติม 66
       return "66" + rest;
     }

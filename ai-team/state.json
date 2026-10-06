@@ -1,8 +1,8 @@
 {
-  "version": "2.0.0",
+  "version": "2.1.0",
   "team_version": "3.0.0",
-  "last_updated": "2026-10-05T22:00:00+07:00",
-  "synced_by": "T064-merge-conflict-fix",
+  "last_updated": "2026-10-06T08:30:00+07:00",
+  "synced_by": "T-sync-state-drift",
   "current_session": {
     "session_id": "web-fef5c92d-a981-46ea-af29-7380411dac47",
     "started_at": "2026-10-04T21:00:00+07:00",
@@ -55,7 +55,85 @@
         "title": "แท็บหมวดหมู่ (แท็บที่ 3) แสดงการ์ดหมวดหมู่ครบทุกหมวด",
         "pr_number": 64,
         "merged_at": "2026-10-05T22:00:00+07:00",
-        "merge_note": "conflict resolved in state.json — main's v3.0.0 kept, T064 appended to completed"
+        "merge_note": "conflict resolved in state.json — main's v3.0.0 kept, T064 appended to completed (task file recreated 2026-10-06 — T-sync-state-drift)",
+        "merge_sha": "1c7b922"
+      },
+      {
+        "id": "T065-T092",
+        "note": "28 PRs merged ตั้งแต่ PR#65 (T015 Advanced song search) ถึง PR#92 (DJ-Fix normalize dj_name) — ดู git log เป็น source of truth ฉบับเต็ม; state สรุปรวบรัดตามที่ owner เลือกใน T-sync-state-drift",
+        "first_merge": {
+          "pr_number": 65,
+          "title": "T015: Advanced song search — server-side SQL",
+          "merge_sha": "28c2f3c"
+        },
+        "last_merge": {
+          "pr_number": 92,
+          "title": "DJ-Fix: normalize dj_name ท้ายดอกแก้ว → ท้ายดอนแก้ว",
+          "merge_sha": "08a22ba",
+          "merged_at": "2026-10-06T07:53:00+07:00"
+        },
+        "notable_prs": [
+          {
+            "pr": 70,
+            "title": "Sort-Thai-Fix: เรียง ก-ฮ A-Z 1-10 ทุก list user+admin"
+          },
+          {
+            "pr": 72,
+            "title": "Bug-Fix #1: Sort best_selling ใช้ EXISTS แทน CROSS JOIN json_each"
+          },
+          {
+            "pr": 74,
+            "title": "Round 1 Bug #4: ลบ debug console.log ที่อาจ leak ข้อมูล"
+          },
+          {
+            "pr": 76,
+            "title": "Round 3 Bug #11,12,13: SEO + Accessibility"
+          },
+          {
+            "pr": 77,
+            "title": "Bug #13 v2: เปลี่ยน Plausible → Cloudflare Web Analytics"
+          },
+          {
+            "pr": 79,
+            "title": "Bug-Fix #14+15: T015 category filter + price validation"
+          },
+          {
+            "pr": 80,
+            "title": "Feature #1: Quick filter chips — เพลงฮิต/เพลงใหม่"
+          },
+          {
+            "pr": 81,
+            "title": "Feature #2: Social Share — Facebook/Line/Copy link"
+          },
+          {
+            "pr": 82,
+            "title": "Feature #4: Recommend — เพลงแนะนำใน song modal"
+          },
+          {
+            "pr": 84,
+            "title": "Rename: รายการโปรด → บันทึกซื้อทีหลัง"
+          },
+          {
+            "pr": 85,
+            "title": "Feature #8: Rating badge in song card"
+          },
+          {
+            "pr": 86,
+            "title": "Feature #6: ประวัติดาวน์โหลด — tab ใหม่ในหน้าบัญชี"
+          },
+          {
+            "pr": 89,
+            "title": "UI-Fix #16,17,18: ลบ CSS เก่า + ปุ่มใหญ่ขึ้น + Song Modal responsive"
+          },
+          {
+            "pr": 90,
+            "title": "Sort-Fix: เรียงเพลง ก-ฮ A-Z 1-10 ทุกครั้งก่อนแสดง + cache-bust"
+          },
+          {
+            "pr": 92,
+            "title": "DJ-Fix: normalize dj_name ท้ายดอกแก้ว → ท้ายดอนแก้ว"
+          }
+        ]
       }
     ],
     "blocked": []
@@ -70,29 +148,34 @@
   "github": {
     "repo": "MiusicBox/Miusic",
     "default_branch": "main",
-    "total_commits_main": 1504,
-    "open_prs": [
-      {
-        "number": 63,
-        "title": "T063: อัปเดตระบบทีมเป็น v3.0.0 — ทีม 10 คน + หมวดหมู่บังคับ 13 ขั้น + กฎเหล็ก 7 ข้อ",
-        "url": "https://github.com/MiusicBox/Miusic/pull/63",
-        "status": "awaiting_owner_merge",
-        "created_at": "2026-10-04T17:15:00+07:00"
-      }
-    ],
+    "total_commits_main": 1550,
+    "open_prs": [],
     "recent_merges": [
       {
-        "number": 60,
-        "title": "T060: เอา cookie consent banner ออก"
+        "number": 88,
+        "title": "UI-Fix: ปรับปุ่มถูกใจ + บันทึกซื้อทีหลัง ให้ใหญ่ขึ้น",
+        "merge_sha": "0852ef9"
       },
       {
-        "number": 61,
-        "title": "T061: ลบ cookie consent banner ออกจากโค้ด"
+        "number": 89,
+        "title": "UI-Fix #16,17,18: ลบ CSS เก่า + ปุ่มใหญ่ขึ้น + Song Modal responsive",
+        "merge_sha": "b01282c"
       },
       {
-        "number": 62,
-        "title": "T062: แก้ปุ่ม CTA หน้าโปรโมชันเพลย์ลิสต์",
-        "merged_at": "2026-10-04T21:28:49+07:00"
+        "number": 90,
+        "title": "Sort-Fix: เรียงเพลง ก-ฮ A-Z 1-10 ทุกครั้งก่อนแสดง + cache-bust",
+        "merge_sha": "8111504"
+      },
+      {
+        "number": 91,
+        "title": "Sort-Fix: เรียง ก-ฮ A-Z 1-10 ทุก list",
+        "merge_sha": "6748385"
+      },
+      {
+        "number": 92,
+        "title": "DJ-Fix: normalize dj_name ท้ายดอกแก้ว → ท้ายดอนแก้ว",
+        "merge_sha": "08a22ba",
+        "merged_at": "2026-10-06T07:53:00+07:00"
       }
     ]
   },
@@ -221,16 +304,12 @@
   },
   "next_actions_pending_user": [
     {
-      "action": "Review T063 + merge PR",
-      "detail": "T063 อัปเดตระบบทีมเป็น v3.0.0 (10 คน + หมวดหมู่บังคับ 13 ขั้น + กฎเหล็ก 7 ข้อ) — รอ owner กด merge PR #63: https://github.com/MiusicBox/Miusic/pull/63"
+      "action": "รอ owner สั่ง task ถัดไป",
+      "detail": "state sync แล้ว (B1+B2+B3 ครบ) — รอ owner บอกแนวทาง feature/task ถัดไป (owner เลือก 'รอ owner สั่ง' ใน T-sync-state-drift)"
     },
     {
-      "action": "เลือกงานถัดไปหลัง T063 merge",
-      "options": [
-        "T064: แก้ TODO/FIXME กลุ่มเสี่ยง security ก่อน (จาก 83 จุด)",
-        "T065: migration shared-utils.js ทีละไฟล์ (7 ไฟล์ค้าง)",
-        "feature ใหม่ตามที่ owner ต้องการ"
-      ]
+      "action": "(pending — ถ้า owner ต้องการ) sync cache-bust version index.html + admin.html → T092 (B6)",
+      "detail": "owner เลือก cache-bust version T092 แต่ยังไม่ได้สั่งให้ทำในรอบนี้ — รอสั่งแยกใน task ถัดไป"
     }
   ]
 }
