@@ -2,7 +2,7 @@
 // ===================================================
 import { db } from "./firebase-init.js?v=20260905-fix1";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
-import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js?v=20261007-leading-vowel";
+import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js?v=20261007-sort-key";
 // ────────────────────────────────────────────────────────────────────────────
 // ⚠️  สำหรับ Dev ใหม่: อ่านก่อนแก้ import block นี้  ────────────────────────
 // ────────────────────────────────────────────────────────────────────────────
@@ -242,6 +242,7 @@ async function init() {
   STATE.categories = sortByThaiName(catSnap.docs.map(d => ({ id: d.id, ...d.data() })), "category_name");
   STATE.djs = sortByThaiName(djSnap.docs.map(d => ({ id: d.id, ...d.data() })), "dj_name");
   STATE.playlists = sortByThaiName(playlistSnap.docs.map(d => ({ id: d.id, ...d.data() })), "playlist_name");
+  loadPlaylistCounts(); // 🆕 (Playlist-Scale) เบื้องหลัง ไม่รอ
   STATE.settings = settingsSnap.exists() ? settingsSnap.data() : {};
 
   // 🔧 (2026-09-18 v6 perf): โหลด songs แบบ pagination + slim (50 songs/page)
@@ -547,34 +548,6 @@ async function loadMoreSongs() {
 //
 // กัน concurrent: loadMoreSongs มี STATE.songsLoading check อยู่แล้ว
 // → loadAllRemainingSongs แค่วนลูปเรียกทีละ page จนกว่าจะหมด
-// 🆕 (Sort-All): โหลดเพลง "ทั้งหมด" ให้ครบก่อนแสดงแท็บ เพลย์ลิสต์ / DJ / หมวดหมู่
-//   ปัญหาเดิม: หน้าแรกโหลดเพลงใหม่สุดทีละ 50 (เรียงตามวันที่เพิ่ม) แล้วค่อยเรียงเฉพาะที่โหลดมา
-//     → เพลย์ลิสต์ที่เพลงยังไม่ถูกโหลดจะไม่โผล่ แล้วค่อยแทรกกลางรายการทีหลัง = ดูเหมือนไม่เรียง
-//   ใหม่: เข้าแท็บเหล่านี้ → โหลดที่เหลือต่อจนครบ (ใช้ loadMoreSongs เดิม + cursor) → เรียง ก-ฮ A-Z 0-9 ทั้งหมด
-//   ทำครั้งเดียวต่อรอบการใช้งาน / ไม่ทำเมื่ออยู่โหมดตัวกรองขั้นสูง (server เรียงให้เอง)
-async function ensureAllSongsLoaded() {
-  if (STATE._allSongsPromise) return STATE._allSongsPromise;
-  if (!STATE.songsHasMore) return;
-  if (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active) return;
-  STATE._allSongsPromise = (async () => {
-    let pages = 0;
-    while (STATE.songsHasMore && pages < 400) {
-      if (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active) break;
-      if (STATE.songsLoading) { await new Promise(r => setTimeout(r, 150)); continue; }
-      await loadMoreSongs();
-      pages++;
-      if (pages % 4 === 0) renderPlaylists();
-    }
-    STATE.songs = sortSongsByThaiName(STATE.songs);
-    renderPlaylists();
-    renderSongGrid();
-    togglePlaylistsVisibility();
-  })().catch(err => {
-    console.warn("ensureAllSongsLoaded error:", err?.message || err);
-  }).finally(() => { STATE._allSongsPromise = null; });
-  return STATE._allSongsPromise;
-}
-
 async function loadAllRemainingSongs() {
   // 🚀 (T062): เดิมฟังก์ชันนี้โหลด "ทุกเพลง" ทีละ 50 (10,000 เพลง = 200 request + ~1 ล้านแถวที่ D1 ต้องอ่าน
   //   ต่อการค้นหา 1 ครั้ง + sort ชื่อไทยใหม่ทุกหน้า) → ช้า/กินโควตา D1
@@ -2049,6 +2022,65 @@ function renderSongGrid() {
 
 const openPlaylists = new Set();
 
+// 🆕 (Playlist-Scale): แท็บ Playlist ไม่ต้องโหลดเพลงทั้งคลัง (รองรับ 10,000+ เพลง)
+//   - จำนวนเพลงต่อเพลย์ลิสต์มาจากเซิร์ฟเวอร์ครั้งเดียว (/api/db/songs?counts=playlist) → แสดงครบ ไม่หายไม่โผล่ทีหลัง
+//   - เพลงในเพลย์ลิสต์โหลดเมื่อเปิดดู/กดซื้อ (กรองตาม playlist_id ที่เซิร์ฟเวอร์) แล้วเรียง ก-ฮ > A-Z > 0-9
+STATE.playlistCounts = STATE.playlistCounts || null;
+const _plLoadedOnce = new Set();
+const _plLoadingNow = new Map();
+
+async function loadPlaylistCounts() {
+  try {
+    const res = await fetch("/api/db/songs?counts=playlist", { credentials: "same-origin" });
+    if (!res.ok) return;
+    const data = await res.json();
+    STATE.playlistCounts = (data && data.counts) || {};
+    renderPlaylists();
+  } catch (err) {
+    console.warn("loadPlaylistCounts failed:", err?.message || err);
+  }
+}
+
+function ensurePlaylistSongsLoaded(playlistId) {
+  if (!playlistId) return Promise.resolve();
+  if (_plLoadedOnce.has(playlistId)) return Promise.resolve();
+  if (_plLoadingNow.has(playlistId)) return _plLoadingNow.get(playlistId);
+  const task = (async () => {
+    const PAGE = 200;
+    let offset = 0;
+    const seen = new Set(STATE.songs.map(x => x.id));
+    for (let i = 0; i < 100; i++) {
+      const params = new URLSearchParams({ playlists: playlistId, limit: String(PAGE), offset: String(offset), slim: "1" });
+      const res = await fetch(`/api/db/songs?${params.toString()}`, { credentials: "same-origin" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      const docs = Array.isArray(data?.docs) ? data.docs : [];
+      for (const d of docs) {
+        if (seen.has(d.id)) continue;
+        const song = { id: d.id, ...d.data };
+        if (song.status === "hidden") continue;
+        seen.add(d.id);
+        STATE.songs.push(song);
+      }
+      offset += PAGE;
+      const total = typeof data.total === "number" ? data.total : null;
+      if (docs.length < PAGE || (total !== null && offset >= total)) break;
+    }
+    _plLoadedOnce.add(playlistId);
+    STATE.songs = sortSongsByThaiName(STATE.songs);
+  })().catch(err => {
+    console.warn("ensurePlaylistSongsLoaded failed:", err?.message || err);
+    // กันวนลูปโหลดซ้ำตอนเน็ตมีปัญหา — ปล่อยให้ลองใหม่ได้หลัง 30 วินาที
+    _plLoadedOnce.add(playlistId);
+    setTimeout(() => _plLoadedOnce.delete(playlistId), 30000);
+  }).finally(() => {
+    _plLoadingNow.delete(playlistId);
+    renderPlaylists();
+  });
+  _plLoadingNow.set(playlistId, task);
+  return task;
+}
+
 function renderPlaylists() {
   const container = document.getElementById("playlistsContainer");
   if (!container) return;
@@ -2081,22 +2113,26 @@ function renderPlaylists() {
 
   container.innerHTML = filteredPlaylists.map(pl => {
     const songs = STATE.songs.filter(s => s.playlist_id === pl.id);
-    if (songs.length === 0) return "";
+    // 🆕 (Playlist-Scale): จำนวนเพลงจริงจากเซิร์ฟเวอร์ — ถ้ามากกว่าที่โหลดแล้ว = ยังมีเพลงที่ยังไม่ถูกโหลด (โหลดตอนเปิดดู)
+    const serverCount = STATE.playlistCounts ? (STATE.playlistCounts[pl.id] || 0) : 0;
+    const hasPendingSongs = !selectedDjName && serverCount > songs.length;
+    if (songs.length === 0 && !hasPendingSongs) return "";
     // 🔧 เพิ่ม (2026-09-14): ถ้าเลือก DJ แล้ว ให้แสดงเฉพาะเพลงของ DJ คนนั้นในเพลย์ลิสต์
     // - ถ้าไม่ได้เลือก DJ จะแสดงเพลงทั้งหมดในเพลย์ลิสต์เหมือนเดิม
     const displaySongs = selectedDjName
       ? songs.filter(s => s.dj_name === selectedDjName)
       : songs;
-    if (displaySongs.length === 0) return "";
+    if (displaySongs.length === 0 && !hasPendingSongs) return "";
     const isOpen = openPlaylists.has(pl.id) || (STATE.search && STATE.search.length > 0); // เปิดอัตโนมัติเมื่อกำลังค้นหา
     // 🔧 เพิ่ม (2026-09-14): เมื่อเลือก DJ ให้ auto-expand เพลย์ลิสต์ที่มีเพลงของ DJ คนนั้น เพื่อให้เห็นเพลงเลย
     const isAutoOpenForDj = !!selectedDjName;
     const finalIsOpen = isOpen || isAutoOpenForDj;
     const cover = pl.cover_url || songs[0]?.cover_url || "default-playlist-cover.svg";
+    if (hasPendingSongs && finalIsOpen) setTimeout(() => ensurePlaylistSongsLoaded(pl.id), 0);
     // 🔧 เพิ่ม (2026-09-14): ป้ายจำนวนเพลงแสดงเฉพาะเพลงของ DJ คนนั้น ถ้าเลือก DJ
     const songCountLabel = selectedDjName
       ? `${displaySongs.length} เพลง`
-      : `${songs.length} เพลง`;
+      : `${Math.max(serverCount, songs.length)} เพลง`;
     return `
       <div class="playlist-block" data-playlist-id="${pl.id}">
         <div class="playlist-folder-btn" data-toggle-playlist="${pl.id}">
@@ -2139,6 +2175,7 @@ function renderPlaylists() {
         </div>
         <div class="playlist-row-wrap${finalIsOpen ? "" : " is-closed"}">
           <div class="playlist-row">
+            ${hasPendingSongs ? `<div class="empty-state" style="padding:12px;opacity:.7;">กำลังโหลดเพลง...</div>` : ""}
             ${displaySongs.map(s => `
               <div class="playlist-song-row song-card-row" data-id="${escapeHtml(s.id)}">
                 <div class="playlist-cover song-cover">
@@ -2187,15 +2224,16 @@ function renderPlaylists() {
       const willOpen = wrap.classList.contains("is-closed");
       wrap.classList.toggle("is-closed");
       arrow.classList.toggle("is-closed");
-      if (willOpen) openPlaylists.add(id); else openPlaylists.delete(id);
+      if (willOpen) { openPlaylists.add(id); ensurePlaylistSongsLoaded(id); } else openPlaylists.delete(id);
     });
   });
 
   container.querySelectorAll("[data-add-cart-playlist]").forEach(btn => {
-    btn.addEventListener("click", (ev) => {
+    btn.addEventListener("click", async (ev) => {
       ev.stopPropagation();
       const pl = STATE.playlists.find(p => p.id === btn.getAttribute("data-add-cart-playlist"));
       if (!pl) return;
+      await ensurePlaylistSongsLoaded(pl.id); // 🆕 (Playlist-Scale) ให้แน่ใจว่าเพลงครบก่อนทำ snapshot ลงตะกร้า
       const plSongs = STATE.songs.filter(s => s.playlist_id === pl.id);
       const firstSong = plSongs[0];
       addToCart({
@@ -2289,10 +2327,6 @@ function togglePlaylistsVisibility() {
 
 function setView(view) {
   STATE.currentView = view;
-  // 🆕 (Sort-All): แท็บที่ต้องเห็นรายการครบและเรียงทั้งหมด → โหลดเพลงให้ครบเบื้องหลัง
-  if (view === "playlist" || view === "dj" || view === "category") {
-    setTimeout(() => { ensureAllSongsLoaded(); }, 0);
-  }
   const showCategory = view === "home" || view === "category";
   // แสดง DJ ในหน้า "ทั้งหมด" หรือหน้า DJ เท่านั้น
   // 🔧 แก้ (2026-09-14): ลบ `view === "category"` ออกจากเงื่อนไข showDj
