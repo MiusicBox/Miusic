@@ -61,7 +61,7 @@ export function normalizePhone(v) {
     return "66" + rest;
   }
   let rest = s.replace(/^0+/, "");
-  if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9"))) {
+  if (rest.length === 9 && /^[6-9]/.test(rest)) {
     return "66" + rest;
   }
   return "856" + rest;
@@ -115,7 +115,7 @@ export function formatPhoneForDisplay(phone) {
   if (s.startsWith("66")) {
     const rest = s.slice(2);
     // มือถือไทย: 8XXXXXXXX หรือ 9XXXXXXXX (9 หลักหลัง 66)
-    if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9") || rest.startsWith("6"))) {
+    if (rest.length === 9 && /^[6-9]/.test(rest)) {
       return `+66 ${rest.slice(0, 2)} ${rest.slice(2, 5)} ${rest.slice(5)}`;
     }
     // รูปแบบอื่น ๆ ของไทย (เบอร์เครื่องบ้าน ฯลฯ)

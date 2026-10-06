@@ -1305,7 +1305,7 @@ function normalizePhoneServer(v) {
   // 🔧 (2026-09-22 fix Bug #1): ตรวจ Thai local (8XXXXXXXX / 9XXXXXXXX, 9 หลัก) → เติม 66
   //   เดิม: สันนิษฐานลาวเสมอ → 0812345678 → 856812345678 (ผิด!)
   let rest = s.replace(/^0+/, "");
-  if (rest.length === 9 && (rest.startsWith("8") || rest.startsWith("9"))) {
+  if (rest.length === 9 && /^[6-9]/.test(rest)) {
     return "66" + rest;
   }
   return "856" + rest;
@@ -5783,6 +5783,11 @@ function sanitizeOrderForCustomer(order) {
 //   ผลกระทบระบบเดิม: 0% — endpoints ใหม่ทั้งหมด ไม่แตะ /api/auth/* หรือ /api/db/*
 // ===================================================
 async function handleCustomerAuth(request, env, url) {
+  // 🔧 (T-sync-bugs-fix-M8 2026-10-06): เดิม function ไม่รับ ctx param แต่เรียก ctx.waitUntil() 5 จุด
+  //   → ReferenceError ถูก silent catch ทำให้ไม่เห็นปัญหา (audit log ยัง save ได้เพราะ writeAuditLog อ่าน env.__ctx เอง)
+  //   วิธีแก้: ประกาศ ctx จาก env.__ctx (set โดย fetch handler entry ที่บรรทัด ~7848)
+  //   ผลกระทบระบบเดิม: 0% — ctx ใช้ได้แล้ว waitUntil จะทำงานจริง (ดีขึ้น) ไม่ใช่ silent fail
+  const ctx = env.__ctx;
   // 🔧 FIX (like button): /api/songs/:id/like(s) ถูก route เข้ามาที่นี่ด้วย แต่เดิม slice แค่ "/api/customer/" (14 ตัวอักษร)
   //   ทำให้ path ของ /api/songs/... เพี้ยน (ไม่ขึ้นต้นด้วย "songs/") → ไม่เคยเข้า handler ถูกใจ → 404 → กดแล้วไม่เกิดอะไรขึ้น
   //   แก้: ถ้าเป็น /api/songs/... ให้ตัดแค่ "/api/" เพื่อให้ได้ "songs/<id>/like"
@@ -6661,11 +6666,17 @@ async function handleCustomerAuth(request, env, url) {
       } catch {}
 
       // ส่ง JSON พร้อม Content-Disposition ให้ browser download
+      //   🔧 (T-sync-bugs-fix-M14 2026-10-06): เดิมไม่มี securityHeaders → ไม่มี CSP/X-Frame-Options
+      //      ที่จุดอื่น ๆ มี (secureJsonResponse ใส่ securityHeaders ให้อัตโนมัติ)
+      //      → ข้อมูล PII ที่ export อาจถูก iframe จาก site อื่น ๆ ได้ (X-Frame-Options ป้องกัน)
+      //   วิธีแก้: เพิ่ม ...securityHeaders() ใน headers (sync กับ secureJsonResponse pattern)
+      //   ผลกระทบระบบเดิม: 0% — เพิ่ม security headers ไม่เปลี่ยน logic
       return new Response(JSON.stringify(exportData, null, 2), {
         status: 200,
         headers: {
           "Content-Type": "application/json; charset=utf-8",
           "Content-Disposition": `attachment; filename="my-data-${customer.id.slice(0, 8)}-${Date.now()}.json"`,
+          ...securityHeaders(),
           ...corsHeaders(request),
         },
       });
@@ -8190,13 +8201,28 @@ export default {
       const bucketKey = order.zip_public_id || `order-zips/Order-${orderId}.zip`;
 
       // ทำเครื่องหมาย token ว่า used (one-time) — ทำก่อน stream เพื่อกัน race
+      //   🔧 (T-sync-bugs-fix-M7 2026-10-06): เดิม atomic UPDATE ถูกต้อง แต่ไม่ check meta.changes
+      //      → ถ้า 2 requests เข้าพร้อมกัน → ทั้งคู่ UPDATE → ทั้งคู่ stream ZIP → ทะลุ one-time use
+      //   วิธีแก้: ตรวจ meta.changes === 1 (update สำเร็จ) — ถ้า === 0 → token ถูกใช้ไปแล้วโดย request อื่น
+      //   ผลกระทบระบบเดิม: 0% — path success ยังทำงานเหมือนเดิม; path ที่ race จะได้ 410 (ถูกต้อง)
+      let tokenMarkedAsUsed = false;
       try {
-        await env.DB.prepare(
+        const result = await env.DB.prepare(
           "UPDATE download_tokens SET used_at = ? WHERE token = ? AND used_at IS NULL"
         ).bind(nowIso, token).run();
+        // meta.changes === 1 → UPDATE สำเร็จ (token ยังไม่ถูกใช้ → เรา mark เป็นคนแรก)
+        // meta.changes === 0 → UPDATE ไม่ match WHERE → token ถูกใช้ไปแล้วโดย request อื่น → ปฏิเสธ
+        const changes = result?.meta?.changes || 0;
+        if (changes === 1) {
+          tokenMarkedAsUsed = true;
+        } else {
+          // race condition — token ถูกใช้โดย request อื่นระหว่างที่เราตรวจ tokenRow ถึง UPDATE
+          return jsonResponse({ error: "download token นี้ถูกใช้ไปแล้ว — กรุณาขอลิงก์ใหม่จากร้าน" }, 410);
+        }
       } catch (err) {
         console.warn("download_tokens: failed to mark as used:", err?.message || err);
         // ไม่ block download — ยังส่งไฟล์ให้ลูกค้า (audit log อาจไม่สมบูรณ์ แต่ UX ดีกว่า)
+        // กรณีนี้ถือว่า best-effort — ถ้า DB UPDATE ล้มเราไม่สามารถยืนยัน one-time use ได้ แต่ก็ไม่ block ลูกค้า
       }
 
       // ดึง ZIP จาก R2 → stream ส่งลูกค้า (ไม่ reveal R2 public URL)
@@ -8737,6 +8763,11 @@ export default {
       if (!orderRow || !orderRow.data) return jsonResponse({ error: "ไม่พบใบสั่งซื้อ" }, 404);
       let orderData = null;
       try { orderData = JSON.parse(orderRow.data); } catch { return jsonResponse({ error: "ข้อมูลใบสั่งซื้อเสีย" }, 500); }
+      // 🔧 (T-sync-bugs-fix-M6 2026-10-06): เก็บ snapshot updated_at ตอนอ่าน order
+      //   ใช้เป็น guard ใน UPDATE ตอนท้ายเพื่อกัน read-modify-write race กับ admin verify
+      //   ถ้า admin verify ทำ UPDATE ไปแล้วระหว่างที่เรา read → write
+      //   → json_extract(data, '$.updated_at') ใน DB > snapshot ของเรา → UPDATE ไม่ match → ไม่ overwrite
+      const orderDataPrevUpdated = String(orderData?.updated_at || "");
 
       // 2. status check — อนุญาตเฉพาะ pending_verify และ cancelled (ลูกค้าอัปใหม่ได้หลังปฏิเสธ)
       //    ห้ามอัป slip หลัง status='processing' หรือ 'completed' (admin ยืนยันแล้ว)
@@ -8862,9 +8893,25 @@ export default {
       // 🔒 (Audit Fix C-5): atomic INSERT ลงตาราง order_status_history (คู่ขนาน JSON array)
       try { await insertOrderStatusHistory(env, orderId, orderData.status || "pending_verify", "ลูกค้าอัปโหลดสลิปการโอนเงิน", "customer", "ลูกค้า"); } catch (_) {}
       try {
-        await env.DB.prepare(
-          `UPDATE documents SET data=?, updated_at=? WHERE collection='orders' AND id=?`
-        ).bind(JSON.stringify(orderData), uploadedAt, orderId).run();
+        // 🔧 (T-sync-bugs-fix-M6 2026-10-06): แก้ read-modify-write race ระหว่าง customer upload vs admin verify
+        //   เดิม: SELECT order → mutate → UPDATE documents SET data=? WHERE id=?
+        //          → ถ้า admin verify ทำงานพร้อมกัน → customer's stale UPDATE อาจ revert 'verified' → 'pending'
+        //   วิธีแก้: conditional UPDATE — ใช้ json_extract(data, '$.updated_at') <= ? เป็น guard
+        //          → ถ้า updated_at เปลี่ยนไประหว่างที่เรา SELECT ถึง UPDATE (admin verify ไปแล้ว)
+        //          → changes=0 → ไม่ overwrite (admin's verify wins)
+        //   ผลกระทบระบบเดิม: 0% — path ปกติ (no race) ยัง UPDATE สำเร็จเหมือนเดิม
+        //                      — path race: customer ได้ success แต่ order payment_proof_status ไม่เปลี่ยน (ดีกว่า revert)
+        const orderPrevUpdated = String(orderDataPrevUpdated || ""); // snapshot ตอนอ่าน (เก็บจากขั้นตอน SELECT)
+        const updateResult = await env.DB.prepare(
+          `UPDATE documents SET data=?, updated_at=? WHERE collection='orders' AND id=?
+           AND (json_extract(data, '$.updated_at') <= ? OR json_extract(data, '$.updated_at') IS NULL)`
+        ).bind(JSON.stringify(orderData), uploadedAt, orderId, orderPrevUpdated).run();
+        const okChanges = updateResult?.meta?.changes || 0;
+        if (okChanges === 0) {
+          // race detected — admin verified/rejected ไปแล้วระหว่าง customer's read → write
+          // ไม่ fail request (slip ถูกบันทึกใน payment_proofs แล้ว — admin ยังเห็นได้)
+          console.warn(`[upload-slip] Order ${orderId} updated_at changed during upload — race detected (admin may have verified). Order's payment_proof_status not overwritten.`);
+        }
       } catch (err) {
         // ไม่ fail ทั้งหมด — slip ถูกบันทึกใน payment_proofs แล้ว, order แค่ไม่มี reference
         // (admin ยังเห็น slip ผ่าน endpoint /api/payment-proofs/pending ได้)

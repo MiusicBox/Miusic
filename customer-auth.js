@@ -92,6 +92,27 @@ function syncCustomerAuthUI() {
       if (!confirm("ต้องการออกจากระบบใช่ไหม?")) return;
       await customerLogout();
     });
+    // 🆕 (T057 → T-sync-bugs-fix-H1 2026-10-06): เพิ่มปุ่ม "ตั้งค่าบัญชี" ⚙️ PDPA
+    //   เดิม: logic นี้อยู่ใน wrapper `window.syncCustomerAuthUI` (line 1135) แต่ไม่มี caller เรียกผ่าน window.*
+    //          ทุก caller เรียก `syncCustomerAuthUI()` ตรง ๆ → ไม่ผ่าน wrapper → ปุ่ม ⚙️ ไม่ขึ้น
+    //          → ลูกค้า login แล้วใช้สิทธิ์ PDPA (export/consent/delete account) ไม่ได้
+    //   วิธีแก้: ย้าย logic เข้าไปใน function เดิม (Rule 6 — แก้ระบบเดิม ไม่สร้างใหม่)
+    //   ผลกระทบระบบเดิม: 0% — เพิ่มปุ่มใหม่ ไม่แตะปุ่ม👤/logout เดิม; wrapper เดิมยังเรียก _originalSyncCustomerAuthUI อยู่
+    if (!document.getElementById("accountSettingsBtn")) {
+      const settingsBtn = document.createElement("button");
+      settingsBtn.id = "accountSettingsBtn";
+      settingsBtn.type = "button";
+      settingsBtn.title = "ตั้งค่าบัญชี + PDPA";
+      settingsBtn.setAttribute("aria-label", "ตั้งค่าบัญชี");
+      settingsBtn.style.cssText = `
+        background: transparent; border: 1px solid var(--border,rgba(255,255,255,0.1));
+        color: var(--text-dim,#94a3b8); padding: 6px 8px; border-radius: 6px;
+        cursor: pointer; font-size: 14px;
+      `;
+      settingsBtn.textContent = "⚙️";
+      settingsBtn.addEventListener("click", () => openAccountSettingsModal());
+      btnArea.appendChild(settingsBtn);
+    }
   } else {
     // ยังไม่ login — แสดงปุ่มสมัคร/เข้าสู่ระบบ (gradient ม่วงสวย)
     btnArea.innerHTML = `
@@ -338,6 +359,20 @@ async function customerLogin() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
+      // 🆕 (T058 → T-sync-bugs-fix-H2 2026-10-06): ถ้า 401 → ลอง recover (อาจเป็นบัญชีที่ถูก soft delete)
+      //   เดิม: logic นี้อยู่ใน wrapper `window.customerLogin` (line 1170) แต่ click handler bind ที่ line 759
+      //          ก่อน wrapper สร้าง → bind ไปที่ original customerLogin → wrapper ไม่ถูกเรียก
+      //          → ลูกค้าที่บัญชีถูก soft delete เห็น error "รหัสผ่านไม่ถูก" แทน modal recover
+      //   วิธีแก้: ย้าย recover logic เข้าไปใน customerLogin เดิม (Rule 6 — แก้ระบบเดิม ไม่สร้างใหม่)
+      //   ผลกระทบระบบเดิม: 0% — เพิ่ม path ใหม่ในกรณี 401; path สำเร็จปกติยังเหมือนเดิม
+      if (res.status === 401) {
+        // 🆕 (T058): ลอง recover — อาจเป็นบัญชีที่ถูก soft delete
+        const recovered = await tryRecoverAccount(login, password);
+        if (recovered) return;
+        // ไม่ใช่บัญชีที่ถูกลบ → แสดง error ตามปกติ
+        if (errEl) errEl.textContent = data?.error || "อีเมล/เบอร์ WhatsApp หรือรหัสผ่านไม่ถูกต้อง";
+        return;
+      }
       if (errEl) errEl.textContent = data?.error || "เข้าสู่ระบบไม่สำเร็จ";
       return;
     }
@@ -377,6 +412,13 @@ async function customerLogout() {
   //   สำคัญมาก: ถ้าไม่ clear → user A logout → user B login → B อาจเห็น orders ของ A ใน IndexedDB
   try {
     if (window.IDB) await window.IDB.clearAll();
+  } catch (_) {}
+  // 🔧 (T-sync-bugs-fix-M9 2026-10-06): ล้าง customerFavoritesCache หลัง logout
+  //   เดิม: cache Set ไม่ถูก clear ตอน logout → user A logout → user B login เห็น bookmark "saved" ของ A
+  //   วิธีแก้: clear Set ก่อน syncCustomerAuthUI (จะได้ไม่มี stale data ใน UI)
+  //   ผลกระทบระบบเดิม: 0% — ไม่แตะ API; cache จะถูก load ใหม่ตอน customerLogin คนถัดไป (loadFavoritesFromServer)
+  try {
+    customerFavoritesCache.clear();
   } catch (_) {}
   syncCustomerAuthUI();
   if (typeof showToast === "function") showToast("ออกจากระบบแล้ว", "info");
@@ -1166,8 +1208,22 @@ window.openAccountSettingsModal = openAccountSettingsModal;
 // ============================================================
 
 // ตรวจ customerLogin ที่มีอยู่ → ถ้า error เป็น "บัญชีถูกลบ" → เปิด modal recover
+//   🔧 (T-sync-bugs-fix-H2 2026-10-06): logic recover ถูกย้ายเข้าใน customerLogin เดิมแล้ว (line 368-375)
+//      เพราะ click handler bind ที่ line 759 ก่อน wrapper สร้าง → ไม่เคยเรียก wrapper
+//      wrapper นี้จึงเปลี่ยนเป็น alias → เรียก original ตรง ๆ ที่มี recover ฝังแล้ว
+//   Rule 7 — ห้ามลบ wrapper เดิม (อาจมี caller ภายนอกเรียก window.customerLogin)
+//      แต่ logic เดิมใน wrapper (ที่เป็น duplicate ของ original) ถูก comment out เพื่อกัน duplicate recover
 const _originalCustomerLogin = customerLogin;
 window.customerLogin = async function() {
+  // เรียก original ที่มี recover logic ฝังอยู่แล้ว — ไม่ duplicate logic
+  return _originalCustomerLogin.apply(this, arguments);
+};
+
+/* 🔧 (T-sync-bugs-fix-H2): logic ของเดิมใน wrapper นี้ถูก comment out เพราะย้ายเข้า customerLogin เดิมแล้ว (line 368-375)
+   เก็บไว้เป็นประวัติ reference เท่านั้น — ห้ามลบตาม Rule 7
+
+if (false) {
+  const _deadCodeReference = async function() {
   const login = document.getElementById("customerAuthLogin")?.value?.trim() || "";
   const password = document.getElementById("customerAuthPassword")?.value || "";
   const errEl = document.getElementById("customerAuthError");
@@ -1207,6 +1263,8 @@ window.customerLogin = async function() {
     if (errEl) errEl.textContent = err?.message || "เข้าสู่ระบบไม่สำเร็จ";
   }
 };
+}
+*/
 
 // 🆕 (T058): ลอง recover account — เรียก /api/customer/recover
 async function tryRecoverAccount(login, password) {

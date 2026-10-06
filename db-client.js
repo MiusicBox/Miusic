@@ -81,7 +81,18 @@ async function apiFetch(path, options = {}) {
         //   ถ้า session หมด → redirect ครั้งเดียว (UX ชัดเจน)
         if (res.status === 401 && typeof window !== "undefined" && window.location.pathname.includes("/admin")) {
           // Only redirect on admin pages — customer pages use 401 for order ID conflicts
-          document.cookie = "session_token=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0";
+          // 🔧 (T-sync-bugs-fix-M10 2026-10-06): เดิมพยายามล้าง HttpOnly cookie ผ่าน document.cookie
+          //   → JS ไม่สามารถอ่าน/เขียน HttpOnly cookie ได้ (มันถูกออกแบบมาให้ server-only)
+          //   → บรรทัดนี้จึงไม่ทำงานจริง (cookie ยังค้างใน browser → ทุก request ถัดไปยังส่ง cookie เก่ามา)
+          //   วิธีแก้: เรียก /api/auth/logout (server-side) → server ส่ง Set-Cookie: session_token=; Max-Age=0
+          //          แล้วค่อย reload → server เป็นคนล้าง cookie ให้ (ถูกต้องตาม HttpOnly semantics)
+          //   ผลกระทบระบบเดิม: 0% — ใช้ fetch POST /api/auth/logout ที่มีอยู่แล้ว (buildClearCookie)
+          //                      — ถ้า logout endpoint พัง → fallback reload เหมือนเดิม (cookie ยังค้างแต่ UX ดีกว่า)
+          try {
+            await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+          } catch (_) {
+            // logout endpoint ล้ม → reload เหมือนเดิม (best-effort)
+          }
           window.location.reload();
         }
         // 🔒 (H-27): retry เฉพาะ 5xx (server error) — ไม่ retry 4xx (client error)
