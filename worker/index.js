@@ -48,6 +48,7 @@ import {
 // 🆕 (T010-R6): Centralized constants — แทน magic numbers (LIMIT 200, rate limit thresholds, TTL, Cache-Control)
 //   ใช้ในจุดใหม่ที่เพิ่มในรอบ T010 (M3/M9/M10/M11) — จุดเดิมยังใช้ literal อยู่ (TODO รอบถัดไป)
 import { LIMITS, RATE_LIMITS, CACHE, TTL } from "./constants.js";
+import { thaiSortKey } from "../thai-sort.js";
 
 // โฟลเดอร์เหล่านี้เดิมใช้ toCloudinaryDownloadUrl() เติม fl_attachment ให้บังคับดาวน์โหลด
 // (ไฟล์เพลงเต็ม/ไฟล์ ZIP ออเดอร์ — ไม่ใช่ไฟล์ที่เปิดเล่น/แสดงผลตรงๆ บนเว็บ)
@@ -1749,7 +1750,8 @@ async function handleDb(request, env, url) {
     let orderByClause;
     switch (sort) {
       case "old":
-        orderByClause = "CAST(json_extract(data, '$.created_at') AS TEXT) ASC";
+        // 🆕 (Sort-Key): UI ตั้งค่า "old" = เรียงย้อนกลับ (Z→ก) ตรงกับที่ฝั่ง client ทำอยู่ (sortSongsByThaiName desc)
+        orderByClause = "json_extract(data, '$.sort_key') DESC, id DESC";
         break;
       case "price_asc":
         orderByClause = "CAST(json_extract(data, '$.price') AS REAL) ASC";
@@ -1758,7 +1760,7 @@ async function handleDb(request, env, url) {
         orderByClause = "CAST(json_extract(data, '$.price') AS REAL) DESC";
         break;
       case "name_asc":
-        orderByClause = "LOWER(json_extract(data, '$.song_name')) ASC";
+        orderByClause = "json_extract(data, '$.sort_key') ASC, id ASC";
         break;
       case "hot":
         // 🆕 (Feature #1): sort by likes_count DESC — ใช้ song_likes table
@@ -1798,7 +1800,8 @@ async function handleDb(request, env, url) {
         break;
       case "new":
       default:
-        orderByClause = "CAST(json_extract(data, '$.created_at') AS TEXT) DESC";
+        // 🆕 (Sort-Key): ค่าเริ่มต้น = เรียงตามชื่อ ก-ฮ > A-Z > 0-9 (ตรงกับที่ฝั่ง client ทำอยู่) — ทั่วทั้งคลัง ไม่ใช่แค่หน้าที่โหลด
+        orderByClause = "json_extract(data, '$.sort_key') ASC, id ASC";
         break;
     }
 
@@ -2614,6 +2617,30 @@ async function handleDb(request, env, url) {
       //     - cache headers (Cache-Control + Vary: Cookie) เหมือนเดิม
       // ============================================================
       if (collection === "songs") {
+        // 🆕 (Playlist-Counts): จำนวนเพลงต่อเพลย์ลิสต์ — ให้แท็บ Playlist แสดงครบ/นับถูกโดยไม่ต้องโหลดเพลงทั้งหมด
+        //   GET /api/db/songs?counts=playlist → { counts: { <playlist_id>: n } } (ไม่นับเพลง hidden)
+        //   ไม่มีข้อมูลลับ → cache แบบ public ร่วมกันทุกคน (ไม่ใส่ Vary: Cookie) ลดการอ่าน D1
+        if (urlParams.get("counts") === "playlist") {
+          try {
+            const { results: cRows } = await env.DB.prepare(
+              `SELECT json_extract(data, '$.playlist_id') AS pid, COUNT(*) AS c
+                 FROM documents
+                WHERE collection = 'songs'
+                  AND json_extract(data, '$.playlist_id') IS NOT NULL
+                  AND COALESCE(json_extract(data, '$.status'), '') != 'hidden'
+                GROUP BY pid`
+            ).all();
+            const counts = {};
+            for (const r of (cRows || [])) if (r.pid) counts[r.pid] = r.c;
+            return new Response(JSON.stringify({ counts }), {
+              status: 200,
+              headers: { "Content-Type": "application/json", ...corsHeaders(), "Cache-Control": CACHE.PUBLIC_API, ...securityHeaders() },
+            });
+          } catch (err) {
+            console.warn("playlist counts failed:", err?.message || err);
+            return jsonResponse({ error: "โหลดจำนวนเพลงไม่สำเร็จ" }, 500);
+          }
+        }
         // parse advanced filter params (default values ปลอดภัย)
         const qParam = (urlParams.get("q") || "").trim();
         const djsParam = (urlParams.get("djs") || "").trim();
@@ -2621,7 +2648,9 @@ async function handleDb(request, env, url) {
         const minPriceRaw = urlParams.get("min_price");
         const maxPriceRaw = urlParams.get("max_price");
         const hasPromoParam = urlParams.get("has_promo") === "true";
-        const sortParam = (urlParams.get("sort") || "newest").trim();
+        // 🆕 (Sort-Key): ไม่ส่ง sort มา = "default" → เรียงตามชื่อ (ก-ฮ > A-Z > 0-9); ส่ง sort=newest มาชัดเจน = ใหม่สุดก่อน
+        const sortParam = (urlParams.get("sort") || "default").trim();
+        const playlistsParam = (urlParams.get("playlists") || "").trim();
 
         // parse + validate price (NaN/Infinity → null)
         let minPrice = (minPriceRaw !== null && minPriceRaw !== "") ? Number(minPriceRaw) : null;
@@ -2634,19 +2663,25 @@ async function handleDb(request, env, url) {
         //   รวมถึงกรณี client เดิมที่ยังไม่ update → ยังใช้เส้นเดิมได้
         const djIds = djsParam ? djsParam.split(",").map(s => s.trim()).filter(Boolean) : [];
         const catIds = catsParam ? catsParam.split(",").map(s => s.trim()).filter(Boolean) : [];
+        const plIds = playlistsParam ? playlistsParam.split(",").map(s => s.trim()).filter(Boolean).slice(0, 45) : [];
         const hasAdvancedFilters =
           qParam.length > 0 ||
+          plIds.length > 0 ||
           djIds.length > 0 ||
           catIds.length > 0 ||
           minPrice !== null ||
           maxPrice !== null ||
           hasPromoParam ||
-          sortParam !== "newest";
+          (sortParam !== "newest" && sortParam !== "default");
 
         if (hasAdvancedFilters) {
           // === build WHERE clauses + binds (parameterized — กัน SQL injection) ===
           const whereClauses = ["collection = 'songs'"];
           const binds = [];
+          if (plIds.length > 0) {
+            whereClauses.push(`json_extract(data, '$.playlist_id') IN (${plIds.map(() => "?").join(",")})`);
+            binds.push(...plIds);
+          }
 
           // text search (q) — LIKE บน song_name + artist พร้อม escapeLikePattern
           if (qParam) {
@@ -2779,13 +2814,14 @@ async function handleDb(request, env, url) {
           //     idx_documents_collection_created_at ได้ → เร็วมาก
           //   - price_asc/desc: CAST(json_extract(data, '$.price') AS REAL)
           //   - name: json_extract(data, '$.song_name') (case-insensitive via COLLATE NOCASE)
-          let orderByClause = "created_at DESC"; // default = newest
-          if (sortParam === "price_asc") {
-            orderByClause = "CAST(json_extract(data, '$.price') AS REAL) ASC";
+          //   🆕 (Sort-Key): ค่าเริ่มต้น/name = เรียงตาม sort_key (ก-ฮ > A-Z > 0-9) + id; newest = ใหม่สุดก่อน (เลือกเอง)
+          let orderByClause = "json_extract(data, '$.sort_key') ASC, id ASC";
+          if (sortParam === "newest") {
+            orderByClause = "created_at DESC, id DESC";
+          } else if (sortParam === "price_asc") {
+            orderByClause = "CAST(json_extract(data, '$.price') AS REAL) ASC, id ASC";
           } else if (sortParam === "price_desc") {
-            orderByClause = "CAST(json_extract(data, '$.price') AS REAL) DESC";
-          } else if (sortParam === "name") {
-            orderByClause = "json_extract(data, '$.song_name') COLLATE NOCASE ASC";
+            orderByClause = "CAST(json_extract(data, '$.price') AS REAL) DESC, id ASC";
           }
 
           const whereSql = whereClauses.join(" AND ");
@@ -2885,13 +2921,22 @@ async function handleDb(request, env, url) {
             if (Array.isArray(arr) && typeof arr[0] === "string" && typeof arr[1] === "string") cursorPair = arr;
           } catch (_) { cursorPair = null; }
         }
-        let keysetSql = "SELECT id, data, created_at FROM documents WHERE collection = 'songs'";
+        // 🆕 (Sort-Key): เรียงตาม sort_key (ก-ฮ > A-Z > 0-9) + id — ไม่สนว่าเพิ่มเพลงก่อน/หลัง
+        //   cursor = [sort_key, id] ของแถวสุดท้าย; แถวที่ยังไม่มี sort_key (ก่อน backfill) จะอยู่หัวแถว
+        //   index: idx_documents_songs_sortkey (scripts/migrate-sort-key.sql)
+        const SK = "json_extract(data, '$.sort_key')";
+        let keysetSql = `SELECT id, data, ${SK} AS sk FROM documents WHERE collection = 'songs'`;
         const keysetBinds = [];
         if (cursorPair) {
-          keysetSql += " AND (created_at < ? OR (created_at = ? AND id < ?))";
-          keysetBinds.push(cursorPair[0], cursorPair[0], cursorPair[1]);
+          if (cursorPair[0] === "") {
+            keysetSql += ` AND ((${SK} IS NULL AND id > ?) OR ${SK} IS NOT NULL)`;
+            keysetBinds.push(cursorPair[1]);
+          } else {
+            keysetSql += ` AND (${SK} > ? OR (${SK} = ? AND id > ?))`;
+            keysetBinds.push(cursorPair[0], cursorPair[0], cursorPair[1]);
+          }
         }
-        keysetSql += " ORDER BY created_at DESC, id DESC LIMIT ?";
+        keysetSql += ` ORDER BY ${SK} ASC, id ASC LIMIT ?`;
         keysetBinds.push(opts.limit);
         if (!cursorPair && opts.offset) {
           keysetSql += " OFFSET ?";
@@ -2901,7 +2946,7 @@ async function handleDb(request, env, url) {
         docs = (keysetRows || []).map((row) => ({ id: row.id, data: JSON.parse(row.data) }));
         if (keysetRows && keysetRows.length === opts.limit) {
           const last = keysetRows[keysetRows.length - 1];
-          songsNextCursor = btoa(unescape(encodeURIComponent(JSON.stringify([last.created_at, last.id]))))
+          songsNextCursor = btoa(unescape(encodeURIComponent(JSON.stringify([last.sk == null ? "" : String(last.sk), last.id]))))
             .replace(/\+/g, "-").replace(/\//g, "_");
         }
       } else {
@@ -6175,6 +6220,48 @@ async function handleCustomerAuth(request, env, url) {
   //   - DELETE /api/admin/customers/:id — ลบลูกค้า (main admin เท่านั้น)
   //   ผลกระทบระบบเดิม: 0% — endpoints ใหม่
   // ============================================================
+
+  // ============================================================
+  // 🆕 (Sort-Key): POST /api/admin/backfill-sort-keys — เติม sort_key ให้เพลงเดิมที่ยังไม่มี (ทำทีละ 100 เพลง)
+  //   ตอบ { updated, remaining } — เรียกซ้ำจนกว่า remaining = 0 (หน้าแอดมินเรียกให้เองอัตโนมัติ)
+  //   ?force=1 → คำนวณทับทุกเพลง (ใช้เมื่อแก้อัลกอริทึมใน thai-sort.js) โดยไล่ต่อจาก ?after=<id>
+  //   ปลอดภัย: admin เท่านั้น, ไม่แตะฟิลด์อื่น, ทำซ้ำได้ไม่มีผลเสีย
+  // ============================================================
+  if (url.pathname === "/api/admin/backfill-sort-keys" && request.method === "POST") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    try {
+      const force = url.searchParams.get("force") === "1";
+      const after = url.searchParams.get("after") || "";
+      const BATCH = 100;
+      const sel = force
+        ? env.DB.prepare("SELECT id, data FROM documents WHERE collection = 'songs' AND id > ? ORDER BY id LIMIT ?").bind(after, BATCH)
+        : env.DB.prepare("SELECT id, data FROM documents WHERE collection = 'songs' AND json_extract(data, '$.sort_key') IS NULL LIMIT ?").bind(BATCH);
+      const { results } = await sel.all();
+      const rows = results || [];
+      const stmts = [];
+      for (const r of rows) {
+        let d;
+        try { d = JSON.parse(r.data); } catch (_) { continue; }
+        d.sort_key = thaiSortKey(typeof d.song_name === "string" ? d.song_name : "");
+        stmts.push(env.DB.prepare("UPDATE documents SET data = ? WHERE collection = 'songs' AND id = ?").bind(JSON.stringify(d), r.id));
+      }
+      if (stmts.length) await env.DB.batch(stmts);
+      const lastId = rows.length ? rows[rows.length - 1].id : null;
+      let remaining;
+      if (force) {
+        remaining = rows.length === BATCH ? 1 : 0;
+      } else {
+        const left = await env.DB.prepare("SELECT id FROM documents WHERE collection = 'songs' AND json_extract(data, '$.sort_key') IS NULL LIMIT 1").first();
+        remaining = left ? 1 : 0;
+      }
+      return jsonResponse({ updated: stmts.length, remaining, last_id: lastId });
+    } catch (err) {
+      console.warn("backfill-sort-keys failed:", err?.message || err);
+      return jsonResponse({ error: "เติมกุญแจเรียงไม่สำเร็จ" }, 500);
+    }
+  }
 
   if (url.pathname === "/api/admin/customers" && request.method === "GET") {
     if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
