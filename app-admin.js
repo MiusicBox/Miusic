@@ -18,7 +18,7 @@ import {
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261006-T049";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
-import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js";
+import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js?v=20261007-sort-key";
 
 const CACHE = { songs: [], categories: [], djs: [], playlists: [] };
 // 🔧 (2026-09-17 Phase 1): TTL cache สำหรับ admin views — ลด D1 reads ตอนเข้า view ซ้ำ ๆ
@@ -2105,8 +2105,28 @@ window.__updateOrdersBadge = updateOrdersBadge;
 //   - ถ้า Worker เก่ายังไม่ส่ง next_cursor → fallback ใช้ offset เอง
 //   - เรียกซ้อนกัน → ใช้ request ชุดเดียวกัน (กันโหลดซ้ำ)
 let _songsPagedInflight = null;
+// 🆕 (Sort-Key): เติม sort_key (กุญแจเรียง ก-ฮ > A-Z > 0-9) ให้เพลงเดิมที่ยังไม่มี — ทำเบื้องหลังอัตโนมัติ
+//   ฝั่งลูกค้าเรียงเพลงทั่วทั้งคลังด้วยกุญแจนี้ (รองรับ 10,000+ เพลง) → เพลงที่ไม่มีกุญแจจะอยู่หัวแถว
+//   เรียกซ้ำจนกว่า remaining = 0 (ครั้งละ 100 เพลง) — ถ้าเพลงครบแล้วจะจบในคำขอเดียว ไม่กินโควตาเพิ่ม
+let _sortKeyBackfillStarted = false;
+async function ensureSongSortKeys() {
+  if (_sortKeyBackfillStarted) return;
+  _sortKeyBackfillStarted = true;
+  try {
+    for (let i = 0; i < 500; i++) {
+      const res = await fetch("/api/admin/backfill-sort-keys", { method: "POST", credentials: "same-origin" });
+      if (!res.ok) break;
+      const body = await res.json();
+      if (!body || !body.remaining) break;
+    }
+  } catch (err) {
+    console.warn("ensureSongSortKeys failed:", err?.message || err);
+  }
+}
+
 function getAllSongsAdminPaged(onProgress) {
   if (_songsPagedInflight) return _songsPagedInflight;
+  ensureSongSortKeys(); // 🆕 (Sort-Key) เบื้องหลัง ไม่รอ
   _songsPagedInflight = (async () => {
     const LIMIT = 500;
     const out = [];
