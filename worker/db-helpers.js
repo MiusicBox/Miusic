@@ -25,6 +25,17 @@ function rowToAdminDoc(row) {
   };
 }
 
+import { thaiSortKey } from "../thai-sort.js";
+
+// 🆕 (Sort-Key): เพลงทุกเพลงเก็บ sort_key (กุญแจเรียง ก-ฮ > A-Z > 0-9) ไว้ใน data
+//   → ฐานข้อมูล ORDER BY sort_key + แบ่งหน้าได้ถูกต้องทั่วทั้งคลัง 10,000+ เพลง
+//   คำนวณใหม่ทุกครั้งที่บันทึก/แก้ไขเพลง (ไม่เชื่อค่าที่ client ส่งมา)
+function withSongSortKey(collection, data) {
+  if (collection !== "songs" || !data || typeof data !== "object") return data;
+  if (typeof data.song_name !== "string") return data;
+  return { ...data, sort_key: thaiSortKey(data.song_name) };
+}
+
 export async function getDocument(env, collection, id) {
   if (collection === "admins") {
     const row = await env.DB.prepare(`SELECT ${ADMIN_SAFE_COLUMNS} FROM admin_users WHERE id = ?`)
@@ -212,6 +223,7 @@ export async function setDocument(env, collection, id, data, merge, actorEmail) 
       .bind(collection, id).first();
     if (existing) finalData = { ...JSON.parse(existing.data), ...data };
   }
+  finalData = withSongSortKey(collection, finalData);
   await env.DB.prepare(
     `INSERT INTO documents (collection, id, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(collection, id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
@@ -229,7 +241,7 @@ export async function updateDocument(env, collection, id, data) {
   const existing = await env.DB.prepare("SELECT data FROM documents WHERE collection = ? AND id = ?")
     .bind(collection, id).first();
   if (!existing) return { notFound: true };
-  const merged = { ...JSON.parse(existing.data), ...data };
+  const merged = withSongSortKey(collection, { ...JSON.parse(existing.data), ...data });
   const now = new Date().toISOString();
   await env.DB.prepare("UPDATE documents SET data = ?, updated_at = ? WHERE collection = ? AND id = ?")
     .bind(JSON.stringify(merged), now, collection, id).run();
