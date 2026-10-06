@@ -1083,6 +1083,8 @@ async function loadSongsFromDatabase() {
         // เก็บ total เพื่อ lazy load ในภายหลัง
         loadSongsFromDatabase._totalCount = data.total;
         loadSongsFromDatabase._offsetLoaded = 200;
+        // 🚀 (T063): เก็บ cursor ของหน้าถัดไป (ผูกกับ offset ที่โหลดแล้ว) — keyset เร็วเท่ากันทุกหน้า แม้ 10,000+ เพลง
+        loadSongsFromDatabase._cursor = data.next_cursor ? { at: 200, value: data.next_cursor } : null;
         // เริ่ม lazy load batch ถัดไปใน background (ไม่ block response)
         setTimeout(() => loadSongsRemainingInBackground(), 100);
       } else {
@@ -1148,7 +1150,11 @@ async function loadSongsRemainingInBackground() {
 
   try {
     const offset = loadSongsFromDatabase._offsetLoaded;
-    const res = await fetch(`/api/db/songs?limit=200&offset=${offset}&slim=1`, { credentials: "same-origin" });
+    const _cur = loadSongsFromDatabase._cursor;
+    const _pageQs = (_cur && _cur.at === offset && _cur.value)
+      ? `limit=200&cursor=${encodeURIComponent(_cur.value)}`
+      : `limit=200&offset=${offset}`;
+    const res = await fetch(`/api/db/songs?${_pageQs}&slim=1`, { credentials: "same-origin" });
     if (res.ok) {
       const data = await res.json();
       const docs = Array.isArray(data?.docs) ? data.docs : [];
@@ -1166,6 +1172,7 @@ async function loadSongsRemainingInBackground() {
       const merged = [...loadSongsFromDatabase._cached, ...newSongs];
       loadSongsFromDatabase._cached = sortSongsByThaiName(merged);
       loadSongsFromDatabase._offsetLoaded = offset + docs.length;
+      loadSongsFromDatabase._cursor = data.next_cursor ? { at: offset + docs.length, value: data.next_cursor } : null;
 
       // 🚀 (H-1): อัปเดต state.songs ด้วย — กัน search ไม่เจอเพลงที่โหลดมาใหม่
       //   เดิม: cache update แค่ใน _cached → state.songs ไม่อัปเดต → search ไม่เจอ
