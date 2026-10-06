@@ -10,7 +10,7 @@ import {
   reauthenticateWithCredential, EmailAuthProvider, updatePassword,
   checkHasAdmin, bootstrapFirstAdmin
 } from "./auth-client.js";
-import { initOrdersView } from "./orders.js?v=20261006-T049";
+import { initOrdersView } from "./orders.js?v=20261007-T063";
 import { resolveCurrentAdminRole, initAdminsView } from "./admin-roles.js?v=20261004-T044";
 import {
   analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS
@@ -2073,6 +2073,91 @@ async function updateOrdersBadge(orders) {
 window.__updateOrdersBadge = updateOrdersBadge;
 
 // ================= SONGS =================
+// 🚀 (T063): โหลดเพลงทั้งหมดของแอดมินแบบแบ่งหน้า (รองรับ 10,000+ เพลง)
+//   เดิม: getDocsAdmin(collection(db,"songs")) = 1 request โหลดทุกเพลงเต็ม ๆ (~20MB ที่ 10,000 เพลง)
+//         → ช้า/ค้าง/Worker หน่วยความจำเต็มได้ และต้องโหลดซ้ำทุกครั้งที่เปิดดูเพลงในหมวด/DJ/เพลย์ลิสต์
+//   ใหม่: ดึงทีละ 500 เพลงด้วย keyset cursor (?limit=500&cursor=...) → แต่ละ request ~1MB เร็วและเสถียร
+//         คืนค่ารูปเดียวกับ getDocsAdmin ({ docs: [{ id, data() }] }) → โค้ดเดิมที่ใช้ CACHE.songs ไม่ต้องแก้
+//   - ใส่ nocache ทุก request (ข้าม CDN cache เหมือน getDocsAdmin)
+//   - ถ้า Worker เก่ายังไม่ส่ง next_cursor → fallback ใช้ offset เอง
+//   - เรียกซ้อนกัน → ใช้ request ชุดเดียวกัน (กันโหลดซ้ำ)
+let _songsPagedInflight = null;
+function getAllSongsAdminPaged(onProgress) {
+  if (_songsPagedInflight) return _songsPagedInflight;
+  _songsPagedInflight = (async () => {
+    const LIMIT = 500;
+    const out = [];
+    const seen = new Set();
+    let cursor = null;
+    let offset = 0;
+    let total = null;
+    for (let page = 0; page < 400; page++) {
+      const qs = new URLSearchParams({ limit: String(LIMIT), nocache: `${Date.now()}-${page}` });
+      if (cursor) qs.set("cursor", cursor);
+      else if (offset > 0) qs.set("offset", String(offset));
+      let body = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const res = await fetch(`/api/db/songs?${qs.toString()}`, { credentials: "same-origin" });
+          if (res.status === 401) { window.location.reload(); throw new Error("session หมดอายุ"); }
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          body = await res.json();
+          break;
+        } catch (err) {
+          if (attempt === 2) throw err;
+          await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+        }
+      }
+      const docs = Array.isArray(body?.docs) ? body.docs : [];
+      let added = 0;
+      for (const d of docs) {
+        if (seen.has(d.id)) continue;
+        seen.add(d.id);
+        out.push(d);
+        added += 1;
+      }
+      if (typeof body?.total === "number") total = body.total;
+      try { if (typeof onProgress === "function") onProgress(out.length, total); } catch (_) {}
+      if (docs.length < LIMIT || added === 0) break;
+      if (body.next_cursor) { cursor = body.next_cursor; }
+      else { cursor = null; offset += LIMIT; }
+    }
+    return {
+      docs: out.map(d => ({ id: d.id, data: () => d.data })),
+      size: out.length,
+      empty: out.length === 0,
+    };
+  })();
+  const clear = () => { _songsPagedInflight = null; };
+  _songsPagedInflight.then(clear, clear);
+  return _songsPagedInflight;
+}
+
+// 🚀 (T063): ข้อความความคืบหน้าในรายการเพลง (แสดงเฉพาะตอนยังไม่มีข้อมูลเดิมให้ดู)
+function showSongsLoadProgress(loaded, total) {
+  const wrap = document.getElementById("songList");
+  if (!wrap || (CACHE.songs && CACHE.songs.length > 0)) return;
+  wrap.innerHTML = `<div class="empty-state">กำลังโหลดเพลง ${Number(loaded).toLocaleString("en-US")}${total ? " / " + Number(total).toLocaleString("en-US") : ""} ...</div>`;
+}
+
+// 🚀 (T063): ensureAdminSongsLoaded — ให้แน่ใจว่า CACHE.songs ครบและไม่เก่าเกิน TTL
+//   ใช้ก่อนนับ/ลบเพลงทั้งหมวด/DJ/เพลย์ลิสต์ (เดิมถ้าไม่เคยเปิดหน้า "จัดการเพลง" CACHE.songs ว่าง → นับเป็น 0 แล้วลบเพลงไม่ครบ)
+async function ensureAdminSongsLoaded() {
+  if (isAdminCacheFresh("songs")) return true;
+  try {
+    showToast("⏳ กำลังโหลดรายการเพลงทั้งหมด...", "progress");
+    const snap = await getAllSongsAdminPaged((n, t) =>
+      showToast(`⏳ กำลังโหลดรายการเพลง ${n.toLocaleString("en-US")}${t ? " / " + t.toLocaleString("en-US") : ""}`, "progress"));
+    CACHE.songs = sortSongsByThaiName(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    CACHE_AT.songs = Date.now();
+    showToast("โหลดรายการเพลงเสร็จแล้ว");
+    return true;
+  } catch (err) {
+    console.warn("ensureAdminSongsLoaded failed:", err?.message || err);
+    showToast("❌ โหลดรายการเพลงไม่สำเร็จ กรุณาลองใหม่", "error");
+    return false;
+  }
+}
 let songSelectMode = false;
 const selectedSongIds = new Set();
 let currentSongListView = [];
@@ -2089,7 +2174,7 @@ async function loadSongs() {
   const fetchKeys = [];
   // 🔧 (2026-09-18 v6): ใช้ getDocsAdmin สำหรับ songs → bypass CDN cache
   //   ส่วน categories/djs/playlists ใช้ getDocs ปกติ (CDN cache ได้ — ไม่ค่อยเปลี่ยน)
-  if (needSongs) { fetches.push(getDocsAdmin(collection(db, "songs"))); fetchKeys.push("songs"); }
+  if (needSongs) { fetches.push(getAllSongsAdminPaged(showSongsLoadProgress)); fetchKeys.push("songs"); } // 🚀 (T063) แบ่งหน้า
   if (needCats) { fetches.push(getDocs(collection(db, "categories"))); fetchKeys.push("categories"); }
   if (needDjs) { fetches.push(getDocs(collection(db, "djs"))); fetchKeys.push("djs"); }
   if (needPlaylists) { fetches.push(getDocs(collection(db, "playlists"))); fetchKeys.push("playlists"); }
@@ -2168,9 +2253,9 @@ function findGroupDuplicateSongs(songName, target, excludeIds) {
 // 🔧 (2026-10-01): โหลดรายการเพลงล่าสุดจากฐานข้อมูลก่อนตรวจเพลงซ้ำ (ข้าม TTL cache)
 // เดิม: ตรวจซ้ำจาก CACHE.songs ที่อาจว่าง (ถ้าไม่เคยเข้าหน้าจัดการเพลง) หรือเก่า (หลังอัปเสร็จไม่รีเฟรช) → เพลงซ้ำหลุด
 // คืน true ถ้าโหลดสำเร็จ / false ถ้าโหลดไม่ได้ (ผู้เรียกควรหยุดอัปโหลด เพราะตรวจซ้ำไม่ได้)
-async function refreshSongsForDupCheck() {
+async function refreshSongsForDupCheck(onProgress) {
   try {
-    const snap = await getDocsAdmin(collection(db, "songs"));
+    const snap = await getAllSongsAdminPaged(onProgress); // 🚀 (T063) แบ่งหน้า
     CACHE.songs = sortSongsByThaiName(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     CACHE_AT.songs = Date.now();
     return true;
@@ -2592,9 +2677,10 @@ document.getElementById("playlistSelectAllChk")?.addEventListener("change", (e) 
 
 // 🆕 ปุ่ม "ลบที่เลือก" — ถามครั้งเดียว (มติ "ข้อ 2=ก") + ลบทีละรายการด้วย cascade delete เดิม
 //   ลอก pattern จาก songBulkDeleteBtn (บรรทัด 1738) — แต่ใช้ deleteSongsFromCategory/Dj/Playlist เดิม
-document.getElementById("catBulkDeleteBtn")?.addEventListener("click", () => {
+document.getElementById("catBulkDeleteBtn")?.addEventListener("click", async () => {
   const ids = Array.from(selectedCatIds);
   if (ids.length === 0) return;
+  if (!(await ensureAdminSongsLoaded())) return; // 🚀 (T063) นับเพลงจากข้อมูลครบเสมอ
   // นับจำนวนเพลงรวมที่จะถูกลบ (เพื่อแสดงใน dialog)
   let totalSongs = 0;
   for (const id of ids) totalSongs += (CACHE.songs || []).filter(s => s.category_id === id).length;
@@ -2632,9 +2718,10 @@ document.getElementById("catBulkDeleteBtn")?.addEventListener("click", () => {
   });
 });
 
-document.getElementById("djBulkDeleteBtn")?.addEventListener("click", () => {
+document.getElementById("djBulkDeleteBtn")?.addEventListener("click", async () => {
   const ids = Array.from(selectedDjIds);
   if (ids.length === 0) return;
+  if (!(await ensureAdminSongsLoaded())) return; // 🚀 (T063)
   // นับจำนวนเพลงรวม (match ด้วย dj_name — ตามระบบเดิม)
   let totalSongs = 0;
   for (const djId of ids) {
@@ -2671,9 +2758,10 @@ document.getElementById("djBulkDeleteBtn")?.addEventListener("click", () => {
   });
 });
 
-document.getElementById("playlistBulkDeleteBtn")?.addEventListener("click", () => {
+document.getElementById("playlistBulkDeleteBtn")?.addEventListener("click", async () => {
   const ids = Array.from(selectedPlaylistIds);
   if (ids.length === 0) return;
+  if (!(await ensureAdminSongsLoaded())) return; // 🚀 (T063)
   let totalSongs = 0;
   for (const id of ids) totalSongs += (CACHE.songs || []).filter(s => s.playlist_id === id).length;
   const msg = totalSongs > 0
@@ -3229,7 +3317,7 @@ async function deleteSongFilesFromStorage(song) {
         //   เพื่อความเข้ากันได้กับ worker เวอร์ชันเก่า — กัน admin เห็น error หากยังไม่ได้ deploy
         console.warn("deleteSongFilesFromStorage: _check-cover-used endpoint failed, fallback to legacy method", err?.message || err);
         const [songsSnap, playlistsSnap] = await Promise.all([
-          getDocsAdmin(collection(db, "songs")),
+          getAllSongsAdminPaged(), // 🚀 (T063) แบ่งหน้า
           getDocs(collection(db, "playlists")),
         ]);
         stillUsed =
@@ -3324,8 +3412,9 @@ async function loadCategories() {
     if (c) openDetailSongs("category", c.id, c.category_name);
   }));
   wrap.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => openEditCat(b.getAttribute("data-edit"))));
-  wrap.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
+  wrap.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => {
     const catId = b.getAttribute("data-del");
+    if (!(await ensureAdminSongsLoaded())) return; // 🚀 (T063)
     const cat = CACHE.categories.find(x => x.id === catId);
     const catName = cat?.category_name || "หมวดหมู่นี้";
     // 🆕 (2026-10-01 Cascade): นับจำนวนเพลงในหมวดก่อนถาม เพื่อแสดงใน dialog ยืนยัน
@@ -3425,8 +3514,9 @@ async function loadDjs() {
     if (d) openDetailSongs("dj", d.id, d.dj_name);
   }));
   wrap.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => openEditDj(b.getAttribute("data-edit"))));
-  wrap.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
+  wrap.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => {
     const djId = b.getAttribute("data-del");
+    if (!(await ensureAdminSongsLoaded())) return; // 🚀 (T063)
     const dj = CACHE.djs.find(x => x.id === djId);
     const djName = dj?.dj_name || "DJ นี้";
     // 🆕 (2026-10-01 Cascade): นับจำนวนเพลงของ DJ นี้ (match ด้วย dj_name — ตามระบบเดิม)
@@ -3559,8 +3649,9 @@ async function loadPlaylists() {
     if (p) openDetailSongs("playlist", p.id, p.playlist_name);
   }));
   wrap.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => openEditPlaylist(b.getAttribute("data-edit"))));
-  wrap.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
+  wrap.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => {
     const playlistId = b.getAttribute("data-del");
+    if (!(await ensureAdminSongsLoaded())) return; // 🚀 (T063)
     const playlist = CACHE.playlists.find(x => x.id === playlistId);
     const playlistName = playlist?.playlist_name || "เพลย์ลิสต์นี้";
     // 🆕 (2026-10-01 Cascade): นับจำนวนเพลงในเพลย์ลิสต์ก่อนถาม
@@ -3619,8 +3710,13 @@ async function openDetailSongs(type, id, name) {
   // โหลดรายชื่อเพลงล่าสุดเสมอตอนเปิดหน้านี้ (กันกรณีเข้าหน้าหมวดหมู่/DJ/เพลย์ลิสต์โดยยังไม่เคยโหลดเพลงมาก่อน)
   // 🔧 (2026-09-18 v6): ใช้ getDocsAdmin → bypass CDN cache (ดูข้อมูลล่าสุด)
   // 🎨 (Sort-Thai-Fix): sort ด้วย Thai natural sort (ก-ฮ + A-Z + 1-10) หลังโหลด
-  const snap = await getDocsAdmin(collection(db, "songs"));
-  CACHE.songs = sortSongsByThaiName(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  // 🚀 (T063): ถ้า CACHE.songs ยังสด (TTL 60 วิ) ใช้ต่อได้เลย — ไม่ต้องโหลดเพลงทั้งหมดซ้ำทุกครั้งที่เปิดป๊อปอัป
+  //   (หลังแก้/ลบ/เพิ่มเพลง invalidateAdminCache จะทำให้โหลดใหม่เองอัตโนมัติ)
+  if (!isAdminCacheFresh("songs")) {
+    const _snap = await getAllSongsAdminPaged();
+    CACHE.songs = sortSongsByThaiName(_snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    CACHE_AT.songs = Date.now();
+  }
   if (currentDetailContext && currentDetailContext.type === type && currentDetailContext.id === id) {
     renderDetailSongsList();
   }
@@ -4338,7 +4434,9 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
   // ถ้าทุกเพลงในชุดซ้ำ → ไม่ต้องถาม บอกยกเลิกเลย
   const skippedDupNames = []; // 🔧 (2026-10-01): ชื่อเพลงที่ถูกข้ามเพราะซ้ำ — ไว้สรุปท้ายงาน
   btn.disabled = true; btn.textContent = "กำลังตรวจเพลงซ้ำ...";
-  const dupCheckReady = await refreshSongsForDupCheck();
+  const dupCheckReady = await refreshSongsForDupCheck((n, t) => {
+    btn.textContent = `กำลังตรวจเพลงซ้ำ... ${n.toLocaleString("en-US")}${t ? "/" + t.toLocaleString("en-US") : ""}`;
+  });
   btn.disabled = false; btn.textContent = "เริ่มอัปโหลดทั้งหมด";
   if (!dupCheckReady) { showToast("❌ ตรวจเพลงซ้ำไม่สำเร็จ (โหลดรายการเพลงไม่ได้) กรุณาลองใหม่", "error"); return; }
   {
