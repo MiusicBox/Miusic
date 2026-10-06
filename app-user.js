@@ -831,6 +831,8 @@ function updateActiveFiltersCount() {
 function setupAdvancedFilters() {
   const openBtn = document.getElementById("advancedSearchBtn");
   const modal = document.getElementById("advancedFilterModal");
+  // 🐛 FIX (T064): ให้ modal อยู่ใต้ <body> เสมอ — กัน ancestor ที่มี transform/z-index ทำให้ position:fixed เพี้ยน
+  if (modal && modal.parentElement !== document.body) document.body.appendChild(modal);
   if (openBtn && modal) {
     openBtn.addEventListener("click", () => {
       modal.hidden = false;
