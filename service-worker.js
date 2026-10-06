@@ -29,7 +29,8 @@
 // 🆕 (T058): อัปเดต CACHE_VERSION หลัง T058 (PDPA Phase 2 — admin dashboard + recover account)
 // 🆕 (T059): อัปเดต CACHE_VERSION หลัง T059 (PWA offline mode — IndexedDB)
 // 🆕 (T060): อัปเดต CACHE_VERSION หลัง T060 (เอา cookie consent banner ออก)
-const CACHE_VERSION = 'miusic-pwa-v1.0.6-T060';
+// 🐛 (T061): แก้ตัวกรองขั้นสูงสูงเกินจอบนมือถือ
+const CACHE_VERSION = 'miusic-pwa-v1.0.7-T061';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const FONT_CACHE    = `${CACHE_VERSION}-fonts`;
