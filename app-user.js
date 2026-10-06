@@ -2683,6 +2683,31 @@ if (playerCloseBtn) {
   });
 }
 
+// 🆕 (T100 2026-10-06): คลิกที่ปก/ชื่อเพลงใน player bar → เปิด modal รายละเอียดเพลง
+//   Owner request: เวลาลูกค้าเปิดฟังเพลง → player bar ข้างล่างขึ้น → กดที่ player bar
+//   → แสดง popup รายละเอียดเพลง (เดียวกับตอนกดที่แถวเพลง)
+//   วิธี: เพิ่ม click handler ให้ #playerCover + .player-meta → openSongModal(STATE.currentPlayingId)
+//   ไม่กระทบ: #playerToggle (play/pause) + #playerClose (close) + #playerSeek (seek) — มี handler ของตัวเอง
+//   ผลกระทบระบบเดิม: 0% — เพิ่ม handler ใหม่ ไม่แตะ handler เดิม
+{
+  const playerCover = document.getElementById("playerCover");
+  const playerMeta = document.querySelector(".player-meta");
+  const openModalFromPlayer = () => {
+    if (STATE.currentPlayingId) {
+      openSongModal(STATE.currentPlayingId);
+    }
+  };
+  // ใส่ cursor:pointer ให้รู้ว่าคลิกได้
+  if (playerCover) {
+    playerCover.style.cursor = "pointer";
+    playerCover.addEventListener("click", openModalFromPlayer);
+  }
+  if (playerMeta) {
+    playerMeta.style.cursor = "pointer";
+    playerMeta.addEventListener("click", openModalFromPlayer);
+  }
+}
+
 let isSeeking = false;
 const seekEl = document.getElementById("playerSeek");
 
