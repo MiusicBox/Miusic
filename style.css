@@ -492,8 +492,8 @@ button:active {
 }
 
 .playlist-folder-cover {
-  width: 46px;
-  height: 46px;
+  width: 40px;
+  height: 40px;
   border-radius: 8px;
   background: var(--surface-2);
   overflow: hidden;
@@ -516,7 +516,7 @@ button:active {
 }
 
 .playlist-folder-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   color: var(--text);
   white-space: nowrap;
@@ -526,7 +526,7 @@ button:active {
 }
 
 .playlist-folder-count {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-dim);
   margin-top: 2px;
   font-weight: 600;
@@ -3735,7 +3735,7 @@ button:active {
 
 .playlist-folder-btn {
   border-radius: 0 !important;
-  padding: 14px 14px !important;
+  padding: 10px 12px !important;
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), transparent) !important;
   transition: all 0.2s ease;
 }
