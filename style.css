@@ -8748,6 +8748,10 @@ html.admin-page body {
   animation: advSlideIn 0.25s ease-out;
   /* ป้องกัน scroll จาก body ปนเข้ามา */
   overscroll-behavior: contain;
+  /* 🐛 FIX: ห้ามเนื้อหาล้น panel (เดิมล้น → เห็นแต่ด้านล่าง) */
+  overflow: hidden;
+  max-height: 100vh;
+  max-height: 100dvh;
 }
 @keyframes advSlideIn {
   from { transform: translateX(20px); opacity: 0; }
@@ -8761,11 +8765,8 @@ html.admin-page body {
   justify-content: space-between;
   padding: 16px 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  /* Sticky บนมือถือ — กดปุ่มปิดได้ตลอดเวลา */
-  position: sticky;
-  top: 0;
+  flex-shrink: 0; /* 🐛 FIX: header อยู่บนสุดเสมอ ไม่ทับ footer */
   background: var(--bg, #0b0d14);
-  z-index: 10;
 }
 .adv-modal-header h2 {
   margin: 0;
@@ -8798,8 +8799,10 @@ html.admin-page body {
 
 /* Modal body */
 .adv-modal-body {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0; /* 🐛 FIX สำคัญ: ให้ body หดและ scroll ภายในตัวเองได้ */
   overflow-y: auto;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch; /* iOS smooth scroll */
   padding: 16px 20px;
 }
@@ -8969,10 +8972,7 @@ html.admin-page body {
   padding: 14px 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(0, 0, 0, 0.2);
-  /* Sticky บนมือถือ — กดปุ่มได้ตลอดเวลา */
-  position: sticky;
-  bottom: 0;
-  z-index: 10;
+  flex-shrink: 0; /* 🐛 FIX: footer อยู่ล่างสุดเสมอ ไม่ทับ header */
 }
 .adv-btn-primary,
 .adv-btn-secondary {
@@ -9060,6 +9060,8 @@ html.admin-page body {
     width: 100%;
     max-width: 100%;
     height: 92vh;
+    height: 88dvh; /* 🐛 FIX: dvh = พื้นที่ที่เห็นจริง (หักแถบ browser) */
+    max-height: 88dvh;
     border-left: none;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 16px 16px 0 0;
@@ -9202,6 +9204,8 @@ html.admin-page body {
 @media (max-width: 380px) {
   .adv-modal-panel {
     height: 95vh;
+    height: 90dvh;
+    max-height: 90dvh;
     border-radius: 12px 12px 0 0;
   }
   .adv-modal-body {
@@ -9540,4 +9544,23 @@ html.admin-page body {
     max-width: 420px !important;
     padding: 18px 18px calc(20px + env(safe-area-inset-bottom, 0px)) !important;
   }
+}
+
+
+/* ============================================================
+   🐛 FIX (2026-10-07): ตัวกรองขั้นสูงสูงเกินจอ — เห็นแต่ด้านล่าง
+   - ใช้ dvh + min-height:0 ให้ body scroll ภายใน panel
+   - จอเตี้ย / หน้าต่าง browser เล็ก (แนวนอน, split view) → ย่อ spacing
+   ============================================================ */
+@media (max-width: 600px) {
+  .adv-chip-list { max-height: 120px; }
+}
+@media (max-height: 640px) {
+  .adv-modal-panel { height: 100dvh; max-height: 100dvh; border-radius: 0; }
+  .adv-modal-header { padding: 8px 14px; }
+  .adv-modal-close { min-height: 36px; min-width: 36px; padding: 4px 8px; }
+  .adv-modal-body { padding: 10px 14px; }
+  .adv-field { margin-bottom: 12px; }
+  .adv-chip-list { max-height: 90px; }
+  .adv-modal-footer { padding: 8px 14px; }
 }
