@@ -347,6 +347,10 @@ async function init() {
   renderPromotionBanner(); // 🎁 (2026-09-20) เพิ่มใหม่: แสดงแบนเนอร์โปรโมชั่นเด่นบนหน้าแรก (ถ้ามีโปร active)
   setView("home");
   togglePlaylistsVisibility();
+  // 🆕 (T098): Auto-open song modal จาก URL ?song=<id> (deep link)
+  //   เรียกหลัง renderSongGrid (STATE.songs โหลดแล้ว) — ถ้ามี ?song= → openSongModal อัตโนมัติ
+  //   ผลกระทบระบบเดิม: 0% — ถ้า URL ไม่มี ?song= → return ทันที ไม่ทำอะไร
+  try { openSongModalFromUrl(); } catch (err) { console.warn("[T098] openSongModalFromUrl failed:", err?.message || err); }
   // 🔧 (2026-09-18 v6 perf): ติดตั้ง IntersectionObserver สำหรับ load-more-on-scroll
   //   เมื่อ user scroll ถึง card สุดท้าย → trigger loadMoreSongs() → append page ถัดไป
   setupSongListInfinityScroll();
@@ -987,18 +991,69 @@ function setupAdvancedFilters() {
   }
 }
 
-// 🆕 (Feature #2): Social Share — แชร์เพลงไป Facebook / Line / Copy link
+// 🆕 (Feature #2 → T098 2026-10-06): Social Share — แชร์เพลงไป Facebook / Line / WhatsApp / TikTok / Copy link
 //   ใช้ Web Share API ถ้า browser รองรับ (มือถือส่วนใหญ่) → แชร์ผ่าน native dialog
 //   ถ้าไม่รองรับ → ใช้ URL scheme ของ Facebook/Line โดยตรง
+//
+// 🆕 (T098): Deep link — เพิ่ม `?song=<id>` ใน URL ที่แชร์ → ลูกค้าที่คลิกลิงก์จะเข้า modal เพลงนั้นอัตโนมัติ
+//   - getShareUrl(): ใช้ modalCurrentSongId (set ตอน openSongModal) เป็น deep link
+//   - getShareText(): รวม URL ในข้อความด้วย → ลูกค้าสามารถ copy จากข้อความได้โดยไม่ต้องพึ่ง u/url param
+//   - init(): ตรวจ URL ตอน page load → ถ้ามี ?song=<id> → เปิด modal อัตโนมัติหลัง STATE.songs โหลดเสร็จ
 function getShareUrl() {
-  // ใช้ URL ปัจจุบัน + hash ไปยังเพลง (ถ้ามี)
-  return window.location.href.split('#')[0];
+  // 🆕 (T098): สร้าง deep link URL พร้อม ?song=<id> ถ้า modal เปิดอยู่
+  //   เดิม: ใช้ window.location.href.split('#')[0] → URL เป็นหน้าแรกเฉย ๆ ลูกค้าที่คลิกต้องหาเพลงเอง
+  //   ใหม่: ใช้ modalCurrentSongId (module-level var set ตอน openSongModal) สร้าง URL พร้อม ?song=<id>
+  //   ผลกระทบระบบเดิม: 0% — ถ้า modal ไม่ได้เปิด (modalCurrentSongId = null) → ใช้ base URL เดิม
+  const baseUrl = window.location.href.split('?')[0].split('#')[0];
+  if (typeof modalCurrentSongId !== 'undefined' && modalCurrentSongId) {
+    return baseUrl + '?song=' + encodeURIComponent(modalCurrentSongId);
+  }
+  return baseUrl;
 }
 function getShareText(songName, djName) {
   let text = '🎵 ฟังเพลง: ' + (songName || 'เพลงนี้');
   if (djName) text += ' - DJ ' + djName;
   text += ' บน Miusic Store';
+  // 🆕 (T098): เพิ่ม URL ในข้อความด้วย — ลูกค้าเห็น URL ใน preview text + สามารถ copy จากข้อความได้
+  //   เดิม: text มีแค่ "🎵 ฟังเพลง: ... บน Miusic Store" → URL ถูกส่งแยกใน u/url param
+  //   ใหม่: text มี URL ต่อท้าย → WhatsApp/TikTok ที่ไม่มี URL param แยก จะส่ง URL ไปได้
+  //   ผลกระทบระบบเดิม: 0% — Facebook/Line ยังใช้ u/url param แยก (URL ใน text ไม่กระทบ preview)
+  text += '\n🔗 ' + getShareUrl();
   return text;
+}
+
+// 🆕 (T098): Auto-open song modal จาก URL ?song=<id>
+//   เรียกจาก init() หลัง STATE.songs โหลดครั้งแรก
+//   รอ STATE.songs โหลดเสร็จ (retry สูงสุด 20 ครั้ง ทุก 500ms = 10s) → ถ้าเจอเพลง → openSongModal
+//   ผลกระทบระบบเดิม: 0% — ถ้า URL ไม่มี ?song= → return ทันที ไม่ทำอะไร
+function openSongModalFromUrl() {
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const songId = urlParams.get('song');
+    if (!songId) return;
+    // ล้าง query string ออกจาก URL (history.replaceState) เพื่อกันลูกค้า refresh → modal เปิดซ้ำ
+    //   + กัน share URL ปนใน history (back button จะไม่เปิด modal ซ้ำ)
+    try {
+      const cleanUrl = window.location.href.split('?')[0];
+      window.history.replaceState({}, document.title, cleanUrl);
+    } catch (_) {}
+    // รอ STATE.songs โหลด
+    const tryOpen = (attempt) => {
+      if (attempt > 20) {
+        console.warn('[T098] Song not found after 10s — songId:', songId);
+        return;
+      }
+      const song = findSong(songId);
+      if (song) {
+        openSongModal(songId);
+      } else {
+        setTimeout(() => tryOpen(attempt + 1), 500);
+      }
+    };
+    tryOpen(0);
+  } catch (err) {
+    console.warn('[T098] openSongModalFromUrl failed:', err?.message || err);
+  }
 }
 function setupShareButtons() {
   const fbBtn = document.getElementById('shareFacebookBtn');
@@ -1018,7 +1073,8 @@ function setupShareButtons() {
       const songName = document.getElementById('modalName')?.textContent || '';
       const djName = document.getElementById('modalArtist')?.textContent || '';
       const url = encodeURIComponent(getShareUrl());
-      const text = encodeURIComponent(getShareText(songName, djName) + ' ' + getShareUrl());
+      // 🔧 (T098): text ไม่ต้อง append URL อีก เพราะ getShareText มี URL ใน text แล้ว
+      const text = encodeURIComponent(getShareText(songName, djName));
       window.open('https://social-plugins.line.me/lineit/share?url=' + url + '&text=' + text, '_blank', 'noopener,noreferrer');
     });
   }
@@ -1028,7 +1084,8 @@ function setupShareButtons() {
     whatsappBtn.addEventListener('click', () => {
       const songName = document.getElementById('modalName')?.textContent || '';
       const djName = document.getElementById('modalArtist')?.textContent || '';
-      const text = encodeURIComponent(getShareText(songName, djName) + ' ' + getShareUrl());
+      // 🔧 (T098): text ไม่ต้อง append URL อีก เพราะ getShareText มี URL ใน text แล้ว
+      const text = encodeURIComponent(getShareText(songName, djName));
       window.open('https://wa.me/?text=' + text, '_blank', 'noopener,noreferrer');
     });
   }
