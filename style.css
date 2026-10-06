@@ -9564,3 +9564,31 @@ html.admin-page body {
   .adv-chip-list { max-height: 90px; }
   .adv-modal-footer { padding: 8px 14px; }
 }
+
+
+/* ============================================================
+   🐛 FIX (T064): ตัวกรองขั้นสูง — ให้เห็นครบทั้งจอใหญ่และมือถือ
+   - modal ถูกย้ายมาไว้ใต้ <body> แล้ว (เต็มจอจริง อยู่เหนือเมนูล่าง)
+   - มือถือ: bottom-sheet สูงตามเนื้อหา (ไม่สั้นเกิน ไม่ยาวเกิน) สูงสุด 92% ของจอ — เกินค่อยเลื่อนเฉพาะส่วนกลาง
+   - จอใหญ่/แท็บเล็ต: side panel เต็มความสูง ปุ่ม "ค้นหา" ปักอยู่ล่างสุดเสมอ
+   - ช่องราคา: ไม่ล้นกรอบอีก
+   ============================================================ */
+.adv-modal { z-index: 3000; }
+.adv-price-row { min-width: 0; }
+.adv-price-row input { flex: 1 1 0; min-width: 0; width: 100%; box-sizing: border-box; }
+.adv-modal-panel { box-sizing: border-box; }
+
+@media (min-width: 601px) {
+  .adv-modal-panel { height: 100%; max-height: 100%; }
+}
+@media (max-width: 600px) {
+  .adv-modal-panel {
+    height: auto;
+    max-height: 92vh;
+    max-height: 92dvh;
+  }
+}
+/* จอเตี้ยมาก (มือถือแนวนอน / หน้าต่างเล็ก) → เต็มจอ เลื่อนเฉพาะส่วนกลาง */
+@media (max-height: 560px) {
+  .adv-modal-panel { height: 100%; max-height: 100%; border-radius: 0; }
+}
