@@ -1168,6 +1168,12 @@ async function loadSongsRemainingInBackground() {
         return;
       }
 
+      // 🔧 (T-sync-low-fix-L4 2026-10-06): edge case — ถ้าทุกเพลงใน batch นี้ถูก filter เป็น hidden
+      //   เดิม: newSongs.length === 0 แต่ docs.length > 0 → ไม่ stop → recursive ต่อ → infinite loop / wasted requests
+      //   วิธีแก้: ตรวจถ้า newSongs.length === 0 → ดู cursor ว่ามี next ไหม — ถ้าไม่มี → stop
+      //   ผลกระทบระบบเดิม: 0% — path ปกติ (newSongs.length > 0) ยังทำงานเหมือนเดิม
+      //                      — path hidden-all: stop ไม่ load ต่อ (correct)
+
       // append เข้า cache + re-sort
       const merged = [...loadSongsFromDatabase._cached, ...newSongs];
       loadSongsFromDatabase._cached = sortSongsByThaiName(merged);
@@ -1194,6 +1200,13 @@ async function loadSongsRemainingInBackground() {
       }
 
       // ถ้ายังไม่ครบ → load batch ถัดไป (recursive)
+      //   🔧 (T-sync-low-fix-L4): ถ้า newSongs.length === 0 (ทุกเพลง hidden) + ไม่มี next_cursor → stop
+      //      กัน infinite loop ในกรณี DB มีแต่ hidden songs ทั้งหมด
+      if (newSongs.length === 0 && !data.next_cursor) {
+        console.warn("[H8-L4] loadSongsRemainingInBackground: all songs in remaining batches are hidden, stopping");
+        loadSongsFromDatabase._totalCount = loadSongsFromDatabase._offsetLoaded;
+        return;
+      }
       if (loadSongsFromDatabase._offsetLoaded < loadSongsFromDatabase._totalCount) {
         setTimeout(() => loadSongsRemainingInBackground(), 200);
       }
