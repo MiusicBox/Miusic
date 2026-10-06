@@ -65,13 +65,38 @@ let audioUnlocked = false;
 //   buildWhatsAppLink, debounce, normalizePhone, normalizeName
 //   อย่าลบ helpers เดิมทันที — migrate ทีละไฟล์ + test รอบละไฟล์เพื่อความปลอดภัย
 //   ดู /shared-utils.js สำหรับ implementation ที่รวบรวมแล้ว
+// 🆕 (T105): showToast แบบสวย — มี icon + progress bar + ปุ่มปิด
+//   type: "success" | "error" | "info" | "progress" | undefined (default=info)
+//   icon อัตโนมัติตาม type: ✅ ❌ ℹ️ ⏳
+//   backward compat: ทุก caller เดิมยังทำงานเหมือนเดิม (message, type)
 function showToast(message, type) {
   const el = document.getElementById("toast");
   if (!el) return;
-  el.textContent = message;
+  // 🆕 (T105): icon ตาม type
+  const icons = {
+    success: "✅",
+    error: "❌",
+    info: "ℹ️",
+    progress: "⏳",
+    success_long: "✅",
+    error_long: "❌",
+  };
+  const icon = icons[type] || icons.info;
+  // 🆕 (T105): ใช้ toast-text แทน textContent ตรง ๆ (รองรับ icon + close button)
+  const textEl = el.querySelector(".toast-text");
+  const iconEl = el.querySelector(".toast-icon");
+  if (textEl) {
+    textEl.textContent = message;
+  } else {
+    // fallback: ถ้าไม่มี .toast-text (old HTML) → ใช้ textContent ตรง ๆ
+    el.textContent = message;
+  }
+  if (iconEl) iconEl.textContent = icon;
   el.className = "toast show" + (type ? " " + type : "");
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => { el.className = "toast"; }, 2600);
+  // 🆕 (T105): duration ตาม type — progress/error_long นานกว่า
+  const duration = type === "progress" ? 6000 : type === "error_long" ? 6000 : type === "success_long" ? 4000 : 2600;
+  showToast._t = setTimeout(() => { el.className = "toast"; }, duration);
 }
 
 function escapeHtml(str) {

@@ -2194,8 +2194,8 @@ button:active {
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 13px 22px;
-  border-radius: var(--radius-full);
+  padding: 0;
+  border-radius: 16px;
   font-size: 13.5px;
   font-weight: 600;
   z-index: 200;
@@ -2204,17 +2204,73 @@ button:active {
   pointer-events: none;
   box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255,255,255,.04);
   min-width: 280px; max-width: 90vw;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  /* 🆕 (T009-F3): อนุญาตหลายบรรทัด — ข้อความยาวไม่ถูกตัดด้วย ellipsis
-     (เดิมใช้ white-space:nowrap + overflow:hidden + text-overflow:ellipsis → error ยาวถูกตัด) */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   white-space: pre-wrap;
   word-wrap: break-word;
   overflow-wrap: break-word;
   max-height: 200px;
   overflow-y: auto;
-  border-radius: 16px;
+  overflow: hidden;
 }
+/* 🆕 (T105): Toast inner layout — icon + text + close button */
+.toast-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px 13px 14px;
+}
+.toast-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.toast-text {
+  flex: 1;
+  line-height: 1.5;
+}
+.toast-close {
+  flex-shrink: 0;
+  background: rgba(255,255,255,.15);
+  border: none;
+  color: inherit;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: .6;
+  transition: opacity .2s;
+  pointer-events: auto;
+}
+.toast-close:hover {
+  opacity: 1;
+  background: rgba(255,255,255,.25);
+}
+/* 🆕 (T105): Progress bar — แสดงเวลาที่เหลือก่อน toast หาย */
+.toast-progress {
+  height: 3px;
+  background: rgba(255,255,255,.2);
+  border-radius: 0 0 16px 16px;
+  overflow: hidden;
+}
+.toast-progress::after {
+  content: '';
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: rgba(255,255,255,.5);
+  transform-origin: left;
+  animation: toastProgress 2.6s linear forwards;
+}
+@keyframes toastProgress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+.toast.no-progress .toast-progress { display: none; }
 
 .toast.show {
   opacity: 1;
