@@ -1336,6 +1336,8 @@ function setupSongListInfinityScroll() {
 function renderCategoryChips() {
   const wrap = document.getElementById("categoryChips");
   if (!wrap) return;
+  // 🚀 (Sort-Fix): sort categories ทุกครั้งก่อน render — กันกรณีข้อมูลเปลี่ยนทีหลัง
+  STATE.categories = sortByThaiName(STATE.categories, "category_name");
   let html = `<div class="chip${STATE.currentCategory === "all" ? " active" : ""}" data-cat="all">ทั้งหมด</div>`;
   STATE.categories.forEach(c => {
     html += `<div class="chip${STATE.currentCategory === c.id ? " active" : ""}" data-cat="${c.id}">${escapeHtml(c.category_name)}</div>`;
@@ -1382,6 +1384,8 @@ function renderCategoryChips() {
 function renderCategoryGrid() {
   const grid = document.getElementById("categoryGrid");
   if (!grid) return;
+  // 🚀 (Sort-Fix): sort categories ทุกครั้งก่อน render
+  STATE.categories = sortByThaiName(STATE.categories, "category_name");
 
   // 🆕 (T019): category icon mapping — emoji สำหรับหมวดยอดนิยม
   //   - ถ้า cat.id ตรงกับ key → ใช้ emoji นั้น
@@ -1536,6 +1540,8 @@ function renderCategoryGrid() {
 function renderDjRow() {
   const wrap = document.getElementById("djRow");
   if (!wrap) return;
+  // 🚀 (Sort-Fix): sort DJs ทุกครั้งก่อน render
+  STATE.djs = sortByThaiName(STATE.djs, "dj_name");
   // 🎧 (2026-09-20) เพิ่ม class "selected" ให้ DJ ที่กำลังถูกเลือก (STATE.currentDj)
   //   - CSS จะแสดงวงกลมสีแดง + เปลี่ยนสีชื่อ + ขยายขอบ avatar อัตโนมัติ
   //   - ถ้า STATE.currentDj เป็น null → ไม่มี class selected → ไม่มีวงกลมแดง
@@ -2008,6 +2014,8 @@ const openPlaylists = new Set();
 function renderPlaylists() {
   const container = document.getElementById("playlistsContainer");
   if (!container) return;
+  // 🚀 (Sort-Fix): sort playlists ทุกครั้งก่อน render
+  STATE.playlists = sortByThaiName(STATE.playlists, "playlist_name");
   if (STATE.playlists.length === 0) { container.innerHTML = ""; return; }
 
   // 🔧 เพิ่ม (2026-09-14): ถ้าเลือก DJ อยู่ → กรองเพลย์ลิสต์/เพลงตาม DJ คนนั้น
