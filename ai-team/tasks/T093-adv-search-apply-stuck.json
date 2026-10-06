@@ -1,0 +1,40 @@
+{
+  "id": "T093-adv-search-apply-stuck",
+  "title": "แก้ Apply Advanced Search ค้าง 'กำลังค้นหา...' ตลอดกาลเมื่อ validation พัง",
+  "branch": "ai-team/T093-adv-search-apply-stuck",
+  "status": "intake",
+  "current_stage": 1,
+  "stage": "intake",
+  "created_at": "2026-10-06T10:00:00+07:00",
+  "updated_at": "2026-10-06T10:00:00+07:00",
+  "agent": "AI Team v3 (PM พี่ก้อน + BA น้องมิ้ค + FE น้องเต๋า + CR พี่ภูมิ + QA น้องนัท + SEC พี่เบนซ์)",
+  "description": "Bug พบจากการทดสอบจริงบน production: ลูกค้าเปิด Advanced Search modal → ตั้งค่า favorite filter โดยไม่ได้ล็อกอิน (หรือตั้งราคา min > max) → กด Apply → showToast error + Apply button ติด 'กำลังค้นหา...' + disabled ตลอดกาล → ลูกค้าต้อง refresh page ถึงจะใช้งานได้อีกครั้ง\n\nRoot cause: ใน applyBtn.addEventListener (app-user.js บรรทัด 944-952) มี early return 2 จุดเมื่อ validation fail (price min > max + favorite โดยไม่ล็อกอิน) โดยไม่ reset applyBtn.disabled และ textContent กลับเป็นปกติ — finally block ที่ reset อยู่ที่บรรทัด 962 แต่อยู่หลังจาก await ทำให้ early return ไม่ผ่าน finally",
+
+  "acceptance_criteria": [
+    {"id": "AC1", "desc": "Apply button กลับเป็นปกติ (enabled + text 'ค้นหา') หลังจาก validation พัง (price min > max)", "status": "PENDING"},
+    {"id": "AC2", "desc": "Apply button กลับเป็นปกติ หลังจาก favorite filter + ไม่ล็อกอิน → showToast + ปุ่ม reset กลับ", "status": "PENDING"},
+    {"id": "AC3", "desc": "Apply button ทำงานปกติเมื่อ validation ผ่าน — ส่ง POST /api/db/songs/_advanced-search ปกติ + ปิด modal + แสดงผลลัพธ์", "status": "PENDING"},
+    {"id": "AC4", "desc": "Modal ยังเปิดอยู่เมื่อ validation พัง (รอให้ user แก้ค่า) — ไม่ปิด modal ก่อน", "status": "PENDING"},
+    {"id": "AC5", "desc": "ไม่กระทบฟังก์ชันเดิม (chip toggle / reset button / การใช้งานปกติทุก path)", "status": "PENDING"}
+  ],
+
+  "stages": {
+    "intake": {"started_at": "2026-10-06T10:00:00+07:00", "completed_at": "2026-10-06T10:05:00+07:00", "result": "รับ requirement จาก owner (พบ bug จากการทดสอบจริงด้วย agent-browser) + สร้าง branch ai-team/T093-adv-search-apply-stuck + สร้าง task file นี้"},
+    "scan": {"started_at": null, "completed_at": null, "scanned_files": [], "unknowns": []},
+    "plan": {"started_at": null, "completed_at": null, "plan": null, "files_to_change": [], "acceptance_criteria": []},
+    "develop": {"started_at": null, "completed_at": null, "commits": [], "files_changed": []},
+    "self_review": {"started_at": null, "completed_at": null, "checklist": null},
+    "code_review": {"started_at": null, "completed_at": null, "review_result": null, "files_reviewed": 0},
+    "qa": {"started_at": null, "completed_at": null, "test_results": null, "bugs_found": []},
+    "fix": {"started_at": null, "completed_at": null, "commits": [], "files_changed": []},
+    "qa_again": {"started_at": null, "completed_at": null, "test_results": null},
+    "security_final": {"started_at": null, "completed_at": null, "audit_result": null, "iron_rules_check": null},
+    "pr": {"started_at": null, "pr_number": null, "pr_url": null, "merged_at": null},
+    "owner_approval": {"started_at": null, "completed_at": null, "approved_by": null},
+    "production": {"started_at": null, "completed_at": null, "deploy_version": null, "rollback_plan": "git revert <merge_sha> + wrangler deploy"}
+  },
+
+  "blockers": [],
+  "decisions": [],
+  "log_file": "logs/T093-adv-search-apply-stuck.log"
+}
