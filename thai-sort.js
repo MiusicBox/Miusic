@@ -1,109 +1,86 @@
-// thai-sort.js — Helper สำหรับจัดเรียงรายการ (หมวดหมู่ / DJ / เพลย์ลิสต์) ตามลำดับ:
-//   1) พยัญชนะไทย ก ข ค ... ฮ ก่อน
-//   2) ตัวอักษรอังกฤษ A-Z ถัดมา
-//   3) ตัวเลข 0-9 ถัดมา เทียบตามค่าจริง (ก1, ก2, ... ก10 ไม่ใช่ ก1, ก10, ก2)
-//   * คำที่ขึ้นต้นด้วยสระนำ เ แ โ ใ ไ เรียงตามพยัญชนะตัวถัดไป / สัญลักษณ์หน้าคำถูกข้าม
-// ไฟล์นี้เป็นไฟล์ใหม่ที่เพิ่มเข้ามา (additive) ไม่ได้แก้ไฟล์เดิม —
-// app-admin.js และ app-user.js import ฟังก์ชันจากที่นี่ไปใช้ตอนโหลดข้อมูล categories/djs/playlists
-// ===================================================
+// thai-sort.js — ตัวเรียงลำดับกลางของทั้งระบบ (ลูกค้า / แอดมิน / เซิร์ฟเวอร์ใช้ตัวเดียวกัน)
+//   ลำดับ: 1) พยัญชนะไทย ก-ฮ  2) อังกฤษ A-Z (ไม่สนตัวพิมพ์เล็ก/ใหญ่)  3) ตัวเลข 0-9 (เทียบตามค่าจริง 2 < 10)
+//   - คำที่ขึ้นต้นด้วยสระนำ เ แ โ ใ ไ เรียงตามพยัญชนะตัวถัดไป (เพลงรัก อยู่หมวด พ, ไก่ อยู่หมวด ก)
+//   - ช่องว่าง/สัญลักษณ์/อีโมจิหน้าคำถูกข้าม
+//
+// 🆕 หัวใจ: thaiSortKey(text) คืน "กุญแจเรียง" เป็น string ที่เทียบแบบ binary ธรรมดาได้
+//   - ฝั่งเซิร์ฟเวอร์เก็บกุญแจนี้ไว้ในเพลงทุกเพลง (ฟิลด์ sort_key) แล้วให้ฐานข้อมูล ORDER BY + แบ่งหน้าเอง
+//     → เพลง 10,000+ เพลงก็เรียงครบทุกหน้าโดยไม่ต้องโหลดทั้งหมดมาเรียงในเครื่อง
+//   - ฝั่งเบราว์เซอร์ใช้ฟังก์ชันเดียวกัน → ลำดับตรงกับเซิร์ฟเวอร์ 100%
+//   ⚠️ ถ้าแก้อัลกอริทึมในไฟล์นี้ ต้องรัน backfill ใหม่ (แอดมินเปิดหน้าแอดมินแล้วระบบทำให้เอง — ดู worker /api/admin/backfill-sort-keys)
+export const SORT_KEY_VERSION = 1;
 
-// ลำดับพยัญชนะไทย ก-ฮ (ใช้ตำแหน่งใน string นี้เป็นค่าลำดับ)
+// ลำดับพยัญชนะไทย ก-ฮ
 const THAI_ORDER = "กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลฦวศษสหฬอฮ";
 const THAI_RANK = {};
 for (let i = 0; i < THAI_ORDER.length; i++) THAI_RANK[THAI_ORDER[i]] = i;
 
-// คืนค่า [กลุ่ม, ลำดับในกลุ่ม] ของตัวอักษร 1 ตัว
-//   กลุ่ม 0 = พยัญชนะไทย (ก-ฮ), กลุ่ม 1 = อังกฤษ A-Z, กลุ่ม 2 = อื่น ๆ (สระ/วรรณยุกต์ไทย ฯลฯ)
-function charRank(ch) {
-  if (THAI_RANK[ch] !== undefined) return [0, THAI_RANK[ch]];
-  const upper = ch.toUpperCase();
-  if (upper >= "A" && upper <= "Z") return [1, upper.charCodeAt(0) - 65];
-  return [3, ch.codePointAt(0)];
+// แปลง 1 ตัวอักษรเป็นอักขระ "ลำดับ" (ช่วงรหัสแยกกลุ่ม: ไทย < อังกฤษ < ตัวเลข < อื่น ๆ)
+function charKey(ch) {
+  const r = THAI_RANK[ch];
+  if (r !== undefined) return String.fromCharCode(0x100 + r);              // พยัญชนะไทย
+  const up = ch.toUpperCase();
+  if (up >= "A" && up <= "Z") return String.fromCharCode(0x200 + up.charCodeAt(0) - 65); // A-Z
+  const cp = ch.codePointAt(0);
+  if (cp >= 0x0E00 && cp <= 0x0E7F) return String.fromCharCode(0x400 + (cp - 0x0E00));  // สระ/วรรณยุกต์ไทย
+  return String.fromCharCode(0x500 + (cp & 0x7FFF));                       // อื่น ๆ
 }
 
-// เทียบ chunk ที่เป็นตัวอักษรล้วน (ไม่ใช่ตัวเลข) ทีละตัวอักษรตาม charRank
-function compareTextChunk(a, b) {
-  const len = Math.max(a.length, b.length);
-  for (let i = 0; i < len; i++) {
-    const ca = a[i];
-    const cb = b[i];
-    if (ca === undefined) return -1;
-    if (cb === undefined) return 1;
-    const [ga, ra] = charRank(ca);
-    const [gb, rb] = charRank(cb);
-    if (ga !== gb) return ga - gb;
-    if (ra !== rb) return ra - rb;
-  }
-  return 0;
+// ตัวเลขทั้งก้อน → มาร์กเกอร์ + ความยาว + ตัวเลข (ทำให้ 2 < 10 < 100 เมื่อเทียบเป็น string)
+function numberKey(digits) {
+  const d = digits.replace(/^0+(?=\d)/, "");
+  return "\u0300" + String(Math.min(d.length, 999)).padStart(3, "0") + d;
 }
 
-// แยก string เป็น chunk สลับ [ตัวอักษร, ตัวเลข, ตัวอักษร, ตัวเลข, ...]
-// เช่น "ก10" -> ["ก", "10"], "ก2ข3" -> ["ก", "2", "ข", "3"]
-function splitChunks(str) {
-  return String(str == null ? "" : str).match(/\d+|\D+/g) || [];
+function encode(str) {
+  let out = "";
+  const chunks = str.match(/\d+|\D/g) || [];
+  for (const c of chunks) out += /^\d+$/.test(c) ? numberKey(c) : charKey(c);
+  return out;
 }
 
-// เทียบ natural sort ตรง ๆ: พยัญชนะไทย > อังกฤษ > ตัวเลข (ตัวเลขเทียบตามค่าจริง)
-function naturalCompare(a, b) {
-  const chunksA = splitChunks(a);
-  const chunksB = splitChunks(b);
-  const len = Math.max(chunksA.length, chunksB.length);
-  for (let i = 0; i < len; i++) {
-    const ca = chunksA[i];
-    const cb = chunksB[i];
-    if (ca === undefined) return -1;
-    if (cb === undefined) return 1;
-    const numA = /^\d+$/.test(ca);
-    const numB = /^\d+$/.test(cb);
-    if (numA && numB) {
-      const diff = parseInt(ca, 10) - parseInt(cb, 10);
-      if (diff !== 0) return diff;
-    } else if (numA !== numB) {
-      return numA ? 1 : -1; // ตัวอักษรมาก่อนตัวเลข
-    } else {
-      const diff = compareTextChunk(ca, cb);
-      if (diff !== 0) return diff;
-    }
-  }
-  return 0;
-}
-
-// เตรียมข้อความก่อนเทียบ:
-//   - ตัดช่องว่าง/สัญลักษณ์/อีโมจิหน้าคำ  เช่น "  (ก)" -> "ก"
-//   - คำที่ขึ้นต้นด้วยสระนำ เ แ โ ใ ไ ให้เรียงตามพยัญชนะตัวถัดไป (หลักพจนานุกรมไทย)
-//     เช่น "เพลง" เรียงอยู่ที่ พ, "ไก่" เรียงอยู่ที่ ก
 function prepare(v) {
-  const full = String(v == null ? "" : v).normalize("NFC").trim()
-    .replace(/^[^\u0E00-\u0E7FA-Za-z0-9]+/, "");
+  const full = String(v == null ? "" : v).normalize("NFC").trim().slice(0, 200)
+    .replace(/^[^\u0E00-\u0E7FA-Za-z0-9]+/, "");           // ตัดช่องว่าง/สัญลักษณ์หน้าคำ
   const primary = full
-    .replace(/^[เแโใไ]+/, "")
-    .replace(/[\u0E48-\u0E4C]/g, ""); // ไม้เอก-ไม้จัตวา/การันต์ ไม่นับในรอบแรก
+    .replace(/^[เแโใไ]+/, "")                              // ข้ามสระนำ
+    .replace(/[\u0E48-\u0E4C]/g, "");                       // ไม้เอก-จัตวา/การันต์ ไม่นับรอบแรก
   return { full, primary };
 }
 
-// เปรียบเทียบ 2 ค่า: ก-ฮ > A-Z > 0-9 (ไม่สนว่าเพิ่มก่อนหรือหลัง)
+const KEY_CACHE = new Map();
+
+export function thaiSortKey(text) {
+  const raw = text == null ? "" : String(text);
+  const hit = KEY_CACHE.get(raw);
+  if (hit !== undefined) return hit;
+  const { full, primary } = prepare(raw);
+  const key = encode(primary) + "\u0001" + encode(full);
+  if (KEY_CACHE.size > 60000) KEY_CACHE.clear();
+  KEY_CACHE.set(raw, key);
+  return key;
+}
+
+// เปรียบเทียบ 2 ค่า: ก-ฮ > A-Z > 0-9
 export function thaiNaturalCompare(a, b) {
-  const pa = prepare(a);
-  const pb = prepare(b);
-  return naturalCompare(pa.primary, pb.primary) || naturalCompare(pa.full, pb.full);
+  const ka = thaiSortKey(a);
+  const kb = thaiSortKey(b);
+  return ka < kb ? -1 : ka > kb ? 1 : 0;
 }
 
-// เรียง array ของ object ตามค่าฟิลด์ที่กำหนด (ใช้ thaiNaturalCompare) — คืน array ใหม่เสมอ ไม่แก้ array เดิม
+// เรียง array ของ object ตามฟิลด์ — คืน array ใหม่เสมอ (ชื่อเหมือนกัน → เรียงตาม id เพื่อให้ตรงกับเซิร์ฟเวอร์)
 export function sortByThaiName(list, field) {
-  return [...(list || [])].sort((a, b) => thaiNaturalCompare(a && a[field], b && b[field]));
+  return [...(list || [])].sort((a, b) => {
+    const c = thaiNaturalCompare(a && a[field], b && b[field]);
+    if (c !== 0) return c;
+    const ia = String((a && a.id) ?? "");
+    const ib = String((b && b.id) ?? "");
+    return ia < ib ? -1 : ia > ib ? 1 : 0;
+  });
 }
 
-// 🎨 (2026-09-26): เพิ่ม helper สำหรับ sort เพลง — ใช้ song_name เป็น field หลัก
-//   ทำให้การเรียงเพลงเหมือนกันทั้งฝั่ง user และฝั่งแอดมิน
-//   ลำดับ: พยัญชนะไทย ก-ฮ > A-Z > 0-9 (ตัวเลขเทียบตามค่าจริง: A1, A2, A3, A10 ไม่ใช่ A1, A10, A2)
-// 🎨 (Bug-Fix #2): เพิ่ม parameter direction — รองรับ asc/desc
-//   ปัญหาเดิม: sortSongsByThaiName เรียง ascending เสมอ แล้วใช้ reverse() ฝั่ง caller
-//   ปัญหา: เมื่อ load more → append → re-sort → reverse ทั้ง array → ลำดับเพี้ยน
-//   วิธีแก้: รองรับ direction="desc" โดยตรง ไม่ต้อง reverse ภายหลัง
+// เรียงเพลงด้วย song_name — direction "asc" | "desc"
 export function sortSongsByThaiName(songs, direction = "asc") {
   const sorted = sortByThaiName(songs, "song_name");
-  if (direction === "desc") {
-    return sorted.reverse();
-  }
-  return sorted;
+  return direction === "desc" ? sorted.reverse() : sorted;
 }
