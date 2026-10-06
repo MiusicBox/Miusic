@@ -1078,15 +1078,37 @@ function setupShareButtons() {
       window.open('https://social-plugins.line.me/lineit/share?url=' + url + '&text=' + text, '_blank', 'noopener,noreferrer');
     });
   }
-  // 🆕 (Feature #2 update): WhatsApp share
+  // 🆕 (Feature #2 update → T099 2026-10-06): WhatsApp share — ใช้ Web Share API เป็นหลัก
+  //   🔧 (T099): เดิมใช้ wa.me/?text= อย่างเดียว → บนมือถือบางครั้งข้อความหายตอนเข้าแชท
+  //      (wa.me/?text= เปิด WhatsApp → user เลือกผู้ติดต่อ → แชทเปิด → แต่ข้อความไม่ถูกใส่ในช่อง input)
+  //   ใหม่: ใช้ navigator.share() (Web Share API) เป็น primary → native share sheet
+  //      → user เลือก WhatsApp → ข้อความ + URL ถูกส่งเข้าแชทเสมอ (ไม่หาย)
+  //      Fallback: wa.me/?text= สำหรับ desktop ที่ไม่รองรับ Web Share API
+  //   ผลกระทบระบบเดิม: 0% — ถ้า navigator.share ไม่มี → ใช้ wa.me URL เดิม
   const whatsappBtn = document.getElementById('shareWhatsappBtn');
   if (whatsappBtn) {
-    whatsappBtn.addEventListener('click', () => {
+    whatsappBtn.addEventListener('click', async () => {
       const songName = document.getElementById('modalName')?.textContent || '';
       const djName = document.getElementById('modalArtist')?.textContent || '';
-      // 🔧 (T098): text ไม่ต้อง append URL อีก เพราะ getShareText มี URL ใน text แล้ว
-      const text = encodeURIComponent(getShareText(songName, djName));
-      window.open('https://wa.me/?text=' + text, '_blank', 'noopener,noreferrer');
+      const text = getShareText(songName, djName);
+      const url = getShareUrl();
+      // 🆕 (T099): ใช้ Web Share API ถ้า browser รองรับ (มือถือส่วนใหญ่ + desktop Chrome/Safari รุ่นใหม่)
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: 'Miusic Store',
+            text: text,
+            url: url,
+          });
+          return; // share สำเร็จ → ไม่ต้องทำอะไรต่อ
+        } catch (err) {
+          // user ยกเลิก (AbortError) → ไม่ทำอะไร
+          if (err.name === 'AbortError') return;
+          // error อื่น → ใช้ fallback wa.me ด้านล่าง
+        }
+      }
+      // Fallback: ใช้ wa.me URL (กรณี browser ไม่รองรับ Web Share API — ส่วนใหญ่ desktop)
+      window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener,noreferrer');
     });
   }
   // 🆕 (Feature #2 update): TikTok share — TikTok ไม่มี share URL แบบ official
