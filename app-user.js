@@ -1827,7 +1827,7 @@ function renderSongGrid() {
     return batch.map((s, i) => {
       const globalIdx = startIdx + i;
       return `
-        <div class="song-card song-card-row" data-id="${s.id}">
+        <div class="song-card song-card-row" data-id="${escapeHtml(s.id)}">
           <div class="song-cover">
             <img src="${escapeHtml(s.cover_url || "default-song-cover.svg")}" loading="lazy" alt="${escapeHtml(s.song_name)}" onerror="this.src='default-song-cover.svg'">
             <button class="play-btn" data-play="${s.id}" aria-label="เล่น ${escapeHtml(s.song_name)}"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg></button>
@@ -2102,7 +2102,7 @@ function renderPlaylists() {
         <div class="playlist-row-wrap${finalIsOpen ? "" : " is-closed"}">
           <div class="playlist-row">
             ${displaySongs.map(s => `
-              <div class="playlist-song-row song-card-row" data-id="${s.id}">
+              <div class="playlist-song-row song-card-row" data-id="${escapeHtml(s.id)}">
                 <div class="playlist-cover song-cover">
                   <img src="${escapeHtml(s.cover_url || pl.cover_url || "default-song-cover.svg")}" loading="lazy" alt="${escapeHtml(s.song_name)}" onerror="this.src='default-song-cover.svg'">
                   <button class="playlist-play-btn play-btn" data-play="${s.id}" aria-label="เล่น ${escapeHtml(s.song_name)}">
@@ -6329,11 +6329,32 @@ function updatePromoCountdowns() {
 // เริ่ม interval ของ countdown (เรียกครั้งเดียวตอน init)
 //   - ไม่กระทบระบบเดิม ใช้ interval แยก
 //   - อัปเดตทุก 1 วินาที (1000ms)
+//   🔧 (T-sync-low-fix-L3 2026-10-06): เพิ่ม stopPromoCountdown() + visibilitychange handler
+//      เดิม: _promoCountdownInterval ถูก clear แค่ใน beforeunload → ตอน tab hidden ยังรัน (waste CPU)
+//      วิธีแก้: เพิ่ม stopPromoCountdown() + visibilitychange — clear ตอน hidden, restart ตอน visible
+//      ผลกระทบระบบเดิม: 0% — startPromoCountdown เดิมยังทำงานเหมือนเดิม; เพิ่ม lifecycle management
 let _promoCountdownInterval = null;
 function startPromoCountdown() {
   if (_promoCountdownInterval) return; // กันเริ่มซ้ำ
   _promoCountdownInterval = setInterval(updatePromoCountdowns, 1000);
 }
+function stopPromoCountdown() {
+  if (_promoCountdownInterval) {
+    clearInterval(_promoCountdownInterval);
+    _promoCountdownInterval = null;
+  }
+}
+// 🔧 (T-sync-low-fix-L3): clear/restart interval ตาม tab visibility — ประหยัด battery บน mobile
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    stopPromoCountdown();
+  } else {
+    if (!_promoCountdownInterval && typeof updatePromoCountdowns === "function") {
+      updatePromoCountdowns(); // อัปเดตทันทีตอน visible
+      startPromoCountdown();
+    }
+  }
+});
 
 // 🆕 (T004-pwa): Register Service Worker
 //   - ลงทะเบียน SW หลัง window 'load' เพื่อไม่บล็อก first paint

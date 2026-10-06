@@ -1385,7 +1385,15 @@ syncAdminButtonVisibility();
 //   🆕 (2026-10-01 fix bug badge ไม่แสดง): sync ทั้ง textContent + classList (show/warn/alert/critical)
 //     ปัญหา: เดิม sync แค่ textContent → badge ใหม่ไม่มี class 'show' → display:none ตลอด → ไม่แสดง
 //     วิธีแก้: copy classList ด้วย (เพิ่ม/ลบ show/warn/alert/critical ให้ตรงกับ badge เดิม)
-setInterval(() => {
+//   🔧 (T-sync-low-fix-L1 2026-10-06): เก็บ interval id ในตัวแปร + clear ตอน page hide
+//     เดิม: setInterval(...) ไม่เก็บ id → ไม่สามารถ clear ได้ (page lifetime เท่านั้น browser reclaim ตอน unload)
+//     วิธีแก้: เก็บ id + ใช้ visibilitychange event — เมื่อ tab hidden → clear interval (ประหยัด battery/CPU)
+//                                เมื่อ tab visible → start interval ใหม่ (badge อัปเดตทันที + 1 รอบ)
+//     ผลกระทบระบบเดิม: 0% — logic sync ยังเหมือนเดิม; เพิ่ม lifecycle management เท่านั้น
+let _badgeSyncIntervalId = null;
+function _startBadgeSync() {
+  if (_badgeSyncIntervalId) return; // กันเริ่มซ้ำ
+  _badgeSyncIntervalId = setInterval(() => {
   try {
     // helper: sync badge classes + textContent จาก src → target
     function syncBadgeClasses(src, target) {
@@ -1410,6 +1418,21 @@ setInterval(() => {
     syncBadgeClasses(oldPayments, document.getElementById("paymentsBadgeChoice"));
   } catch (_) {}
 }, 2000);
+}
+// เริ่ม interval ตอน script load (เหมือนเดิม) + จัดการ lifecycle ผ่าน visibilitychange
+_startBadgeSync();
+// 🔧 (T-sync-low-fix-L1): clear interval เมื่อ tab hidden + restart เมื่อ visible
+//   ป้องกัน CPU/battery drain ตอน admin เปิด tab ไว้แต่ไม่ได้ดู
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    if (_badgeSyncIntervalId) {
+      clearInterval(_badgeSyncIntervalId);
+      _badgeSyncIntervalId = null;
+    }
+  } else {
+    _startBadgeSync();
+  }
+});
 // ============================================================
 // /🆕 dashboard reorg — สิ้นสุดส่วนเพิ่มใหม่
 // ============================================================
@@ -5425,7 +5448,24 @@ document.getElementById("refreshPaymentsBtn")?.addEventListener("click", () => {
 });
 
 // poll payments badge every 60s (same pattern as orders badge)
-setInterval(refreshPaymentsBadge, 60_000);
+//   🔧 (T-sync-low-fix-L2 2026-10-06): เก็บ interval id + ใช้ visibilitychange (เหมือน L1 badge sync)
+//      เดิม: setInterval(refreshPaymentsBadge, 60_000) ไม่เก็บ id → ไม่ clear ได้ → รันตลอดแม้ tab hidden
+//      วิธีแก้: เก็บ id + clear ตอน tab hidden + restart ตอน visible (ประหยัด API quota)
+//      ผลกระทบระบบเดิม: 0% — refreshPaymentsBadge ยังทำงานทุก 60s ตอน tab active; ตอน hidden ไม่รัน
+let _paymentsPollIntervalId = setInterval(refreshPaymentsBadge, 60_000);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    if (_paymentsPollIntervalId) {
+      clearInterval(_paymentsPollIntervalId);
+      _paymentsPollIntervalId = null;
+    }
+  } else {
+    if (!_paymentsPollIntervalId) {
+      refreshPaymentsBadge(); // รอบทันทีตอน visible
+      _paymentsPollIntervalId = setInterval(refreshPaymentsBadge, 60_000);
+    }
+  }
+});
 refreshPaymentsBadge();
 
 // ================= Confirm modal =================
