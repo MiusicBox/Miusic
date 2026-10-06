@@ -2694,10 +2694,15 @@ AUDIO.addEventListener("play", updatePlayButtonsUI);
 AUDIO.addEventListener("waiting", () => { STATE.currentLoadingId = STATE.currentPlayingId; updatePlayButtonsUI(); });
 AUDIO.addEventListener("playing", () => { STATE.currentLoadingId = null; updatePlayButtonsUI(); });
 
-// 🆕 (Feature #4): renderRecommendSongs — แสดงเพลงแนะนำจาก DJ เดียวกัน
-//   Algorithm: หาเพลงอื่นของ DJ เดียวกัน (ไม่เกิน 8 เพลง) + ไม่รวมเพลงปัจจุบัน
-//   ถ้าไม่มี DJ → หาเพลงในหมวดเดียวกันแทน
-//   ถ้าไม่มีทั้งคู่ → ซ่อน section
+// 🆕 (Feature #4 → T097 2026-10-06): renderRecommendSongs — แสดงเพลงแนะนำ
+//   Algorithm ใหม่ (ตาม owner request):
+//   1. Priority 1: เพลงใน playlist เดียวกัน → แสดงทั้งหมด (ไม่จำกัด 8)
+//      - มี 4 → แสดง 4, มี 5 → แสดง 5, มี 10 → แสดง 10 (ไม่ slice)
+//   2. Priority 2-4 (max 8): ถ้าไม่มี playlist → ใช้ chain DJ > หมวด > สุ่ม
+//      - DJ เดียวกัน → เพิ่มจนครบ 8
+//      - หมวดเดียวกัน → เติมถ้ายังไม่ครบ 4
+//      - สุ่ม → เติมถ้ายังไม่ครบ 4
+//   ถ้าไม่มีเพลงแนะนำเลย → ซ่อน section
 function renderRecommendSongs(currentSong) {
   const section = document.getElementById("modalRecommendSection");
   const grid = document.getElementById("modalRecommendGrid");
@@ -2705,34 +2710,54 @@ function renderRecommendSongs(currentSong) {
     if (section) section.style.display = "none";
     return;
   }
-  // หาเพลงแนะนำ — ใช้ dj_name เป็นหลัก
   let recommend = [];
-  if (currentSong.dj_name) {
-    recommend = STATE.songs.filter(s =>
+
+  // 🆕 (T097): Priority 1 — เพลงใน playlist เดียวกัน (แสดงทั้งหมด ไม่จำกัด 8)
+  //   ถ้าเพลงปัจจุบันมี playlist_id → หาเพลงอื่นใน playlist เดียวกันทั้งหมด
+  //   ผลกระทบ: ถ้า playlist มี 10 เพลง → แสดง 10 (ไม่ slice ที่ 8)
+  if (currentSong.playlist_id) {
+    const playlistSongs = STATE.songs.filter(s =>
       s.id !== currentSong.id &&
-      s.dj_name === currentSong.dj_name &&
+      s.playlist_id === currentSong.playlist_id &&
       s.status !== "hidden"
-    ).slice(0, 8);
+    );
+    if (playlistSongs.length > 0) {
+      recommend = playlistSongs;  // ✅ ไม่ slice — แสดงทั้งหมดตาม owner request
+    }
   }
-  // ถ้ายังไม่ครบ 8 หรือไม่มี DJ → เพิ่มเพลงจากหมวดเดียวกัน
-  if (recommend.length < 4 && currentSong.category_id) {
-    const catRecommend = STATE.songs.filter(s =>
-      s.id !== currentSong.id &&
-      !recommend.find(r => r.id === s.id) &&
-      s.category_id === currentSong.category_id &&
-      s.status !== "hidden"
-    ).slice(0, 8 - recommend.length);
-    recommend = recommend.concat(catRecommend);
+
+  // 🆕 (T097): Priority 2-4 (max 8) — ถ้าไม่มี playlist หรือ playlist ไม่มีเพลงอื่น
+  //   ใช้ chain เดิม: DJ > หมวด > สุ่ม (max 8)
+  if (recommend.length === 0) {
+    // Priority 2: DJ เดียวกัน (max 8)
+    if (currentSong.dj_name) {
+      recommend = STATE.songs.filter(s =>
+        s.id !== currentSong.id &&
+        s.dj_name === currentSong.dj_name &&
+        s.status !== "hidden"
+      ).slice(0, 8);
+    }
+    // Priority 3: หมวดเดียวกัน (เติมถ้ายังไม่ครบ 4)
+    if (recommend.length < 4 && currentSong.category_id) {
+      const catRecommend = STATE.songs.filter(s =>
+        s.id !== currentSong.id &&
+        !recommend.find(r => r.id === s.id) &&
+        s.category_id === currentSong.category_id &&
+        s.status !== "hidden"
+      ).slice(0, 8 - recommend.length);
+      recommend = recommend.concat(catRecommend);
+    }
+    // Priority 4: สุ่ม (เติมถ้ายังไม่ครบ 4)
+    if (recommend.length < 4) {
+      const others = STATE.songs.filter(s =>
+        s.id !== currentSong.id &&
+        !recommend.find(r => r.id === s.id) &&
+        s.status !== "hidden"
+      ).slice(0, 8 - recommend.length);
+      recommend = recommend.concat(others);
+    }
   }
-  // ถ้ายังไม่ครบ → เพิ่มเพลงสุ่ม (เพื่อให้มีอะไรแนะนำบ้าง)
-  if (recommend.length < 4) {
-    const others = STATE.songs.filter(s =>
-      s.id !== currentSong.id &&
-      !recommend.find(r => r.id === s.id) &&
-      s.status !== "hidden"
-    ).slice(0, 8 - recommend.length);
-    recommend = recommend.concat(others);
-  }
+
   // ถ้าไม่มีเพลงแนะนำเลย → ซ่อน section
   if (recommend.length === 0) {
     section.style.display = "none";
