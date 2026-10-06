@@ -1172,7 +1172,14 @@
 
   <!-- 🛡️ (r2-fern-mick-critical C6 fix): เพิ่ม aria-live="polite" aria-atomic="true"
        ให้ screen reader announce toast message ให้ผู้ใช้ตาบอดได้ยินด้วย -->
-  <div class="toast" id="toast" aria-live="polite" aria-atomic="true" role="status"></div>
+  <div class="toast" id="toast" aria-live="polite" aria-atomic="true" role="status">
+    <div class="toast-inner">
+      <span class="toast-icon"></span>
+      <span class="toast-text"></span>
+      <button class="toast-close" type="button" aria-label="ปิดแจ้งเตือน" onclick="document.getElementById('toast').className='toast'">✕</button>
+    </div>
+    <div class="toast-progress"></div>
+  </div>
 
   <!-- 🎨 (2026-09-26) Custom Confirm Modal — แทน window.confirm() แบบเดิม
        ใช้ผ่าน window.customConfirm(message, options) → Promise<boolean>
