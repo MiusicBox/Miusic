@@ -5230,8 +5230,8 @@ html.admin-page body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.25);
   cursor: pointer;
@@ -5307,19 +5307,19 @@ html.admin-page body {
 }
 /* 🆕 (T039): SVG ในปุ่ม favorite ลดจาก 20px → 14px */
 .btn-icon-mini svg {
-  width: 14px;
-  height: 14px;
+  width: 22px;
+  height: 22px;
   display: block;
 }
 /* บนมือถือ — ปุ่มเล็กลง 28×28, SVG 12px */
 @media (max-width: 640px) {
   .btn-icon-mini {
-    width: 28px;
-    height: 28px;
+    width: 40px;
+    height: 40px;
   }
   .btn-icon-mini svg {
-    width: 12px;
-    height: 12px;
+    width: 18px;
+    height: 18px;
   }
 }
 
@@ -5338,8 +5338,8 @@ html.admin-page body {
   align-items: center;
   justify-content: center;
   gap: 2px;
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   border-radius: 10px;
   border: 1px solid rgba(244, 63, 94, 0.4);
   cursor: pointer;
@@ -5353,15 +5353,15 @@ html.admin-page body {
   box-shadow: 0 2px 6px rgba(244, 63, 94, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
 .btn-like-tiktok svg {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   display: block;
   transition: transform 0.2s ease;
 }
 /* 🆕 (UI-Fix): ปรับขนาด SVG ใน btn-icon-mini ให้ใหญ่ขึ้น — กดง่ายบนมือถือ */
 .btn-icon-mini svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   display: block;
 }
 .btn-like-tiktok .like-count {
@@ -5418,12 +5418,12 @@ html.admin-page body {
 /* 🆕 (T039): บนมือถือ — ปุ่ม ❤️ ถูกใจเล็กลง 28×28 */
 @media (max-width: 640px) {
   .btn-like-tiktok {
-    width: 28px;
-    height: 28px;
+    width: 40px;
+    height: 40px;
   }
   .btn-like-tiktok svg {
-    width: 12px;
-    height: 12px;
+    width: 18px;
+    height: 18px;
   }
   .btn-like-tiktok .like-count {
     font-size: 10px;
