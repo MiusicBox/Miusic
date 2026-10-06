@@ -513,3 +513,7 @@ CREATE TABLE IF NOT EXISTS song_reviews (
 
 CREATE INDEX IF NOT EXISTS idx_song_reviews_song_id ON song_reviews (song_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_song_reviews_customer ON song_reviews (customer_id);
+
+-- 🚀 (T062): covering index สำหรับ keyset pagination ของเพลง (ดู scripts/migrate-t062-songs-keyset.sql)
+CREATE INDEX IF NOT EXISTS idx_documents_collection_created_id
+  ON documents(collection, created_at DESC, id DESC);
