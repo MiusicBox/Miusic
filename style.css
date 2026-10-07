@@ -9648,3 +9648,196 @@ html.admin-page body {
 @media (max-height: 560px) {
   .adv-modal-panel { height: 100%; max-height: 100%; border-radius: 0; }
 }
+
+
+/* ==========================================================================
+   📱 (2026-10-07) แถวเพลงกระชับ — ลดความสูงแถวเพลงหลัก + แถวเพลงในเพลย์ลิสต์ ~25-30%
+   --------------------------------------------------------------------------
+   สาเหตุที่แถวสูง: ความสูงแถวถูกกำหนดโดยคอลัมน์ข้อมูลด้านขวา (ชื่อ + DJ + ราคา + ปุ่ม ❤️ 🔖 เพิ่ม)
+   ซึ่งปุ่มสูง 44-48px ไม่ใช่รูปปก → จึงลดที่ปุ่ม / padding / ช่องไฟ / ขนาดตัวอักษร
+   ✅ ไม่แตะขนาดรูปปก (.song-cover / .playlist-cover) เลย — ใช้ค่าเดิมของแต่ละช่วงจอ
+   ✅ แถวเพลงหลัก และ แถวเพลงในเพลย์ลิสต์ ใช้ตัวแปรชุดเดียวกัน → ความสูงเท่ากันทุกจอ
+   ✅ ไม่แตะ HTML/JS — ย้อนกลับ: ลบบล็อกนี้ทั้งหมด
+   ตัวแปรทั้งหมดอยู่ที่ :root แล้วเปลี่ยนค่าตามช่วงจอด้านล่าง (ค่าเริ่มต้น = จอ ≥1024px)
+   ========================================================================== */
+:root {
+  --sr-pad-y: 7px;        /* padding บน-ล่างของแถว */
+  --sr-pad-x: 12px;       /* padding ซ้าย-ขวาของแถว */
+  --sr-gap: 12px;         /* ช่องไฟระหว่างรูปปก กับ ข้อมูล */
+  --sr-space: 6px;        /* ระยะห่างระหว่างแถว */
+  --sr-pl-mx: 12px;       /* margin ซ้าย-ขวาของแถวในเพลย์ลิสต์ */
+  --sr-info-gap: 2px;     /* ช่องไฟระหว่าง ชื่อ / DJ / ราคา+ปุ่ม */
+  --sr-btn: 34px;         /* ความสูงปุ่ม ❤️ 🔖 เพิ่ม (เดิม 44-48px) */
+  --sr-name: 15px;
+  --sr-meta: 12px;
+  --sr-price: 14px;
+  --sr-orig: 12.5px;
+  --sr-actions-gap: 5px;
+}
+
+/* ---------- กฎหลัก (ใช้ตัวแปรเดียวกันทั้งเพลงหลัก + เพลงในเพลย์ลิสต์) ---------- */
+.song-card-row,
+.playlist-song-row.song-card-row,
+.playlist-block .playlist-song-row.song-card-row {
+  padding: var(--sr-pad-y) var(--sr-pad-x) !important;
+  gap: var(--sr-gap) !important;
+  align-items: center !important;
+}
+
+/* ระยะห่างระหว่างแถว: เพลงหลักใช้ gap ของ grid, เพลงในเพลย์ลิสต์ใช้ margin บน-ล่าง */
+.song-grid .song-card-row { margin-bottom: 0 !important; }
+.song-grid { gap: var(--sr-space) !important; }
+.playlist-song-row.song-card-row,
+.playlist-song-row.song-card-row:last-child {
+  margin: calc(var(--sr-space) / 2) var(--sr-pl-mx) !important;
+}
+
+/* คอลัมน์ข้อมูล — ชิดกัน ไม่มี padding เกิน */
+.song-card-row .song-info,
+.playlist-song-row.song-card-row .playlist-info {
+  gap: var(--sr-info-gap) !important;
+  padding: 0 !important;
+  justify-content: center !important;
+}
+
+/* ชื่อเพลง — line-height 1.35 กันสระ/วรรณยุกต์ไทยโดนตัด */
+.song-card-row .song-name,
+.playlist-song-row.song-card-row .playlist-item-name,
+.playlist-block .playlist-song-row.song-card-row .playlist-item-name {
+  font-size: var(--sr-name) !important;
+  line-height: 1.35 !important;
+}
+
+/* บรรทัด DJ / ศิลปิน */
+.song-card-row .song-meta-row { margin-top: 0 !important; gap: 5px !important; line-height: 1.3; }
+.song-card-row .song-dj-tag,
+.song-card-row .song-meta-text {
+  font-size: var(--sr-meta) !important;
+  line-height: 1.3 !important;
+}
+
+/* ดาวรีวิว (แสดงเฉพาะเพลงที่มีรีวิว) — บีบให้เตี้ยที่สุด */
+.song-card-row .song-rating-row { margin: 0 !important; line-height: 1; }
+
+/* แถวราคา + ปุ่ม */
+.song-card-row .song-footer {
+  margin-top: 0 !important;
+  gap: 6px !important;
+  align-items: center !important;
+}
+.song-card-row .song-actions-row { gap: var(--sr-actions-gap) !important; flex-wrap: nowrap !important; }
+
+/* ราคา */
+.song-card-row .song-price,
+.song-card-row .price-discounted {
+  font-size: var(--sr-price) !important;
+  line-height: 1.2 !important;
+  padding: 2px 9px !important;
+}
+.song-card-row .price-stack .price-discounted { padding: 1px 8px !important; }
+.song-card-row .price-stack .price-original,
+.song-card-row .price-original {
+  font-size: var(--sr-orig) !important;
+  line-height: 1 !important;
+}
+
+/* ปุ่ม ❤️ และ 🔖 — เหลี่ยมเล็กลง สัดส่วนไอคอนตามขนาดปุ่ม */
+.song-card-row .btn-like-tiktok,
+.song-card-row .btn-icon-mini {
+  width: var(--sr-btn) !important;
+  height: var(--sr-btn) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border-radius: 8px !important;
+  box-sizing: border-box;
+}
+.song-card-row .btn-like-tiktok { gap: 0 !important; padding: 1px 0 !important; }
+.song-card-row .btn-like-tiktok svg { width: calc(var(--sr-btn) * 0.46) !important; height: calc(var(--sr-btn) * 0.46) !important; }
+.song-card-row .btn-like-tiktok .like-count { font-size: calc(var(--sr-btn) * 0.31) !important; line-height: 1 !important; }
+.song-card-row .btn-icon-mini svg { width: calc(var(--sr-btn) * 0.5) !important; height: calc(var(--sr-btn) * 0.5) !important; }
+
+/* ปุ่ม "เพิ่ม / เพิ่มลงตะกร้า" (ยกเลิก min-height 44px เดิม) */
+.song-card-row .cart-add-btn-row,
+.playlist-song-row.song-card-row .cart-add-btn-row,
+.playlist-block .playlist-song-row.song-card-row .cart-add-btn-row {
+  height: var(--sr-btn) !important;
+  min-height: 0 !important;
+  padding: 0 12px !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  box-sizing: border-box;
+}
+.song-card-row .cart-add-btn-row svg { width: 15px !important; height: 15px !important; }
+
+/* ================= ช่วงจอ (เรียงจากใหญ่ → เล็ก) ================= */
+
+/* 🖥️ iMac / MacBook Pro 16" / จอใหญ่ ≥1440px — คงค่าเริ่มต้น แค่อ่านสบายขึ้นนิดเดียว */
+@media (min-width: 1440px) {
+  :root { --sr-name: 15.5px; --sr-meta: 12.5px; }
+}
+
+/* 💻 MacBook Air/Pro 13-14" + iPad Pro แนวนอน (1024–1439px) = ค่าเริ่มต้น */
+
+/* 📱 iPad / iPad Air / iPad mini แนวตั้ง (768–1023px) */
+@media (min-width: 768px) and (max-width: 1023.98px) {
+  :root { --sr-pl-mx: 10px; --sr-pad-x: 11px; --sr-gap: 11px; }
+}
+
+/* 📱 มือถือจอใหญ่ / พับได้ / มือถือแนวนอน / iPad mini เล็ก (481–767px) */
+@media (min-width: 481px) and (max-width: 767.98px) {
+  :root {
+    --sr-pad-y: 6px; --sr-pad-x: 10px; --sr-gap: 10px;
+    --sr-space: 5px; --sr-pl-mx: 10px;
+    --sr-btn: 34px;
+    --sr-name: 14px; --sr-meta: 11.5px; --sr-price: 13px; --sr-orig: 12px;
+  }
+}
+
+/* 📱 iPhone Plus / Pro / Pro Max / Android ส่วนใหญ่ (391–480px) */
+@media (max-width: 480px) {
+  :root {
+    --sr-pad-y: 5px; --sr-pad-x: 8px; --sr-gap: 8px;
+    --sr-space: 5px; --sr-pl-mx: 8px;
+    --sr-info-gap: 1px;
+    --sr-btn: 32px;
+    --sr-name: 13px; --sr-meta: 11px; --sr-price: 12.5px; --sr-orig: 12px;
+    --sr-actions-gap: 4px;
+  }
+  .song-card-row .cart-add-btn-row,
+  .playlist-song-row.song-card-row .cart-add-btn-row,
+  .playlist-block .playlist-song-row.song-card-row .cart-add-btn-row { padding: 0 11px !important; }
+  .song-card-row .cart-add-btn-row::after { font-size: 12px !important; line-height: 1 !important; }
+}
+
+/* 📱 iPhone 12/13/14/15 (390px), iPhone mini (375px), Android 360 (≤390px) */
+@media (max-width: 390px) {
+  :root { --sr-pad-y: 5px; --sr-pad-x: 7px; --sr-gap: 8px; --sr-pl-mx: 6px; }
+}
+
+/* 📱 จอเล็กมาก: iPhone SE รุ่นแรก (320px), มือถือเล็ก (≤360px) */
+@media (max-width: 360px) {
+  :root {
+    --sr-pad-y: 4px; --sr-pad-x: 6px; --sr-gap: 6px;
+    --sr-space: 4px; --sr-pl-mx: 5px;
+    --sr-btn: 30px;
+    --sr-name: 12.5px; --sr-meta: 10.5px; --sr-price: 12px; --sr-orig: 11px;
+    --sr-actions-gap: 3px;
+  }
+  .song-card-row .cart-add-btn-row,
+  .playlist-song-row.song-card-row .cart-add-btn-row,
+  .playlist-block .playlist-song-row.song-card-row .cart-add-btn-row { padding: 0 9px !important; }
+  .song-card-row .price-stack .price-discounted,
+  .song-card-row .song-price,
+  .song-card-row .price-discounted { padding-left: 6px !important; padding-right: 6px !important; }
+}
+
+/* 📱 มือถือแนวนอน (จอเตี้ย) — ประหยัดแนวตั้งสูงสุด + กันรอยบาก (notch) ของ iPhone */
+@media (max-height: 480px) and (orientation: landscape) {
+  :root { --sr-pad-y: 4px; --sr-btn: 30px; --sr-space: 4px; --sr-info-gap: 1px; }
+  .song-grid {
+    padding-left: max(8px, env(safe-area-inset-left, 0px)) !important;
+    padding-right: max(8px, env(safe-area-inset-right, 0px)) !important;
+  }
+}
