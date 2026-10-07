@@ -7596,15 +7596,29 @@ html.admin-page body {
 }
 
 .category-card .cat-name {
-  /* 🎨 (T113): font 14→12px + letter-spacing + tighter margin */
+  /* 🎨 (T113): font 14→12px + letter-spacing + tighter margin
+     🎨 (T118 2026-10-07 fix): เปลี่ยนจาก nowrap+ellipsis → 2-line clamp
+       - Owner report: "รายชื่อหมวดหมู่ต่างๆ ถ้ามันกายขอบไปแล้วมันตัดไม่เห็นเต็ม
+         ตัวอย่าง เพลงดังTick tok มันเห็นแค่ เพลงดังTick T…"
+       - Bug (verified): "เพลงดังTick Tok🔥" (16 chars) ถูกตัดเป็น "เพลงดังTick T..."
+         เพราะ white-space:nowrap บังคับ 1 บรรทัด + overflow:hidden
+       - Fix: เปลี่ยนเป็น -webkit-line-clamp: 2 (text 2 บรรทัด + ellipsis ถ้ายาวเกิน)
+         + min-height: 2.4em → การ์ดสูงเท่ากัน (ถ้าชื่อสั้นก็มีพื้นที่ว่าง 2 บรรทัด)
+       - ผลกระทบระบบเดิม: 0% — CSS-only, การ์ดสูงขึ้นเล็กน้อย (~16px) แต่ยังอยู่ในแนวเลื่อนซ้าย-ขวา */
   font-size: 12px;
   font-weight: 700;
   color: var(--text);
   position: relative;
   z-index: 1;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  min-height: 2.4em;
+  line-height: 1.2;
   margin-bottom: 4px;
   letter-spacing: 0.2px;
 }
