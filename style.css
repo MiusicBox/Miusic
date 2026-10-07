@@ -7310,13 +7310,47 @@ html.admin-page body {
   box-sizing: border-box;
 }
 .category-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  /* 🆕 (T112 2026-10-07 redesign): เปลี่ยนจาก grid (ลงแถวแนวตั้ง) → flex เลื่อนซ้าย-ขวา
+     - Owner request: "เวลาที่หมวดหมู่กายสายอันหลือเกินกว่าหน้าจอ ให้สะแดงเรียงกันให้สามาเลื่อนไปกับออกข้างจอ
+       แทนการลงแถวเพื่อให้หน้าไม่ลดและกะชับ"
+     - เดิม: display: grid + grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) → การ์ด 2 คอลัมน์
+       ลงแถวเป็นแนวตั้ง → ถ้ามี 6 หมวด ก็ 3 แถว → หน้ายาว
+     - ใหม่: display: flex + overflow-x: auto + scroll-snap → การ์ดเรียงแนวนอน 1 แถว เลื่อนซ้าย-ขวา
+       เหมือน DJ row (line 328) + ใช้ scroll-snap สำหรับ mobile UX (snap เข้าที่การ์ด)
+     - ผลกระทบระบบเดิม: 0% — การ์ดยังเป็น .category-card เหมือนเดิม, แค่เปลี่ยน container
+     - Backward compat: ในกรณีที่มีแค่ 1-2 หมวด → flex จะโชว์ 1-2 การ์ดในแถวเดียว (ไม่เต็มจอ)
+       แต่เพราะ .category-card มี width: 140px fixed → การ์ดจะไม่ยืดเต็มจอเหมือนเดิม */
+  display: flex;
   gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent) transparent;
+  padding: 4px 0 12px;
+  /* hide scrollbar on mobile (เหมือน DJ row), show thin accent on desktop */
+}
+.category-grid::-webkit-scrollbar {
+  height: 4px;
+}
+.category-grid::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: 2px;
+}
+.category-grid::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-/* 🆕 (T034): Category card redesign — สวยขึ้น + gradient + glassmorphism */
+/* 🆕 (T034): Category card redesign — สวยขึ้น + gradient + glassmorphism
+   🆕 (T112 2026-10-07): เพิ่ม flex-shrink: 0 + width: 140px + scroll-snap-align: start
+     - เพื่อให้การ์ดไม่ถูกบีบเล็กลงตอนอยู่ใน flex container (.category-grid)
+     - รักษาขนาดคงที่ 140px → เลื่อนซ้าย-ขวาแล้ว snap เข้าที่การ์ด */
 .category-card {
+  flex-shrink: 0;
+  width: 140px;
+  scroll-snap-align: start;
   background: linear-gradient(145deg, var(--surface) 0%, var(--surface-2) 100%);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -7477,10 +7511,14 @@ html.admin-page body {
     padding: 0 8px;
   }
   .category-grid {
-    grid-template-columns: repeat(2, 1fr);
+    /* 🆕 (T112 2026-10-07): mobile ใช้ flex scroll เหมือน desktop — ไม่ใช้ grid 2-col แล้ว
+       เพราะ owner ต้องการให้การ์ดเลื่อนซ้าย-ขวา ไม่ลงแถวแนวตั้ง
+       ลด gap และ padding ให้กระชับขึ้นบนจอมือถือ */
     gap: 8px;
+    padding: 4px 0 10px;
   }
   .category-card {
+    width: 130px;
     padding: 14px 10px;
     border-radius: 14px;
   }
@@ -8314,10 +8352,13 @@ html.admin-page body {
 
   /* Category showcase */
   .category-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
+    /* 🆕 (T112 2026-10-07): extra-small mobile ยังใช้ flex scroll ไม่ใช้ grid 2-col
+       ลด gap + padding ให้กระชับขึ้นบนจอเล็ก ๆ */
     gap: 6px !important;
+    padding: 4px 0 8px !important;
   }
   .category-card {
+    width: 120px !important;
     padding: 10px 8px !important;
     border-radius: 12px !important;
   }
