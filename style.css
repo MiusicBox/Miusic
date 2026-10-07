@@ -8362,11 +8362,16 @@ html.admin-page body {
   line-height: 1.2;
 }
 .price-stack .price-original {
-  font-size: 11px !important;
+  /* 🎨 (T115 2026-10-07): เปลี่ยนจาก 11px → 15px เท่ากับ .price-discounted
+     - Owner request: "ทำให้ราคาขีดฆนมีขนาดเท่ากับราคาที่หลือ"
+     - ยังเก็บ line-through + color text-dim + font-weight 500 (จากเดิม) เพื่อให้ visual hierarchy ชัดว่าราคานี้หมดไปแล้ว
+     - ผลกระทบระบบเดิม: 0% — ยังเป็น class เดิม, แค่เพิ่มขนาดให้เท่ากัน */
+  font-size: 15px !important;
   color: var(--text-dim) !important;
   text-decoration: line-through;
   white-space: nowrap;
   font-weight: 500;
+  opacity: 0.85;
 }
 .price-stack .price-discounted {
   font-size: 15px !important;
@@ -8388,9 +8393,11 @@ html.admin-page body {
   flex-shrink: 0;
 }
 
-/* 🆕 (T037): ในเพลย์ลิสต์ — ราคา 2 แถวเหมือนเพลงเดี่ยว */
+/* 🆕 (T037): ในเพลย์ลิสต์ — ราคา 2 แถวเหมือนเพลงเดี่ยว
+   🎨 (T115 2026-10-07): เปลี่ยนขนาดให้เท่ากับ .price-discounted (13px) */
 .playlist-item-price.price-stack .price-original {
-  font-size: 10px !important;
+  font-size: 13px !important;
+  opacity: 0.85;
 }
 .playlist-item-price.price-stack .price-discounted {
   font-size: 13px !important;
@@ -8731,18 +8738,22 @@ html.admin-page body {
 /* ==========================================================================
    🔧 (2026-10-04) ราคาเดิมที่ขีดฆ่า (price-original) ใหญ่ขึ้น อ่านง่ายแบบเว็บร้านค้าทั่วไป
    ใช้กับ 3 จุดเท่ากัน: เพลงเดี่ยว (หน้าแรก) / แถวเพลงในเพลย์ลิสต์ / หัวเพลย์ลิสต์
-   ขนาดเดิม 11-12px → 14px (มือถือ ≤480px = 13px) ยังเล็กกว่าราคาหลังลด (15px) เล็กน้อยเพื่อให้ราคาจริงเด่นกว่า
+   🎨 (T115 2026-10-07): ปรับขนาดให้เท่ากับราคาคงเหลือ (--sr-price) — เดิมขีดฆ่าเล็กกว่า
+   - Owner request: "ทำให้ราคาขีดฆนมีขนาดเท่ากับราคาที่หลือ แต่ต้องคงลักษณะราคาขีดฆ่าไว้"
+   - Desktop: 14px (เท่ากับ --sr-price), Mobile: 13px (เท่ากับ --sr-price)
+   - ยังเก็บ line-through + color text-dim + font-weight 500 ไว้ เพื่อ visual hierarchy
    ไม่แตะหน้าตะกร้า/แอดมิน — ย้อนกลับ: ลบบล็อกนี้
    ========================================================================== */
 .song-card-row .price-stack .price-original,
 .playlist-block .playlist-folder-btn .playlist-folder-price-block .price-original {
-  font-size: 14px !important;
+  font-size: var(--sr-price) !important;
   line-height: 1.2 !important;
+  opacity: 0.85;
 }
 @media (max-width: 480px) {
   .song-card-row .price-stack .price-original,
   .playlist-block .playlist-folder-btn .playlist-folder-price-block .price-original {
-    font-size: 13px !important;
+    font-size: var(--sr-price) !important;
   }
 }
 
@@ -9865,8 +9876,9 @@ html.admin-page body {
   --sr-btn: 34px;         /* ความสูงปุ่ม ❤️ 🔖 เพิ่ม (เดิม 44-48px) */
   --sr-name: 15px;
   --sr-meta: 12px;
+  /* 🎨 (T115 2026-10-07): --sr-orig เท่ากับ --sr-price ตาม owner request (เดิม 12.5px) */
   --sr-price: 14px;
-  --sr-orig: 12.5px;
+  --sr-orig: 14px;
   --sr-actions-gap: 5px;
 }
 
@@ -9986,7 +9998,7 @@ html.admin-page body {
     --sr-pad-y: 6px; --sr-pad-x: 10px; --sr-gap: 10px;
     --sr-space: 5px; --sr-pl-mx: 10px;
     --sr-btn: 34px;
-    --sr-name: 14px; --sr-meta: 11.5px; --sr-price: 13px; --sr-orig: 12px;
+    --sr-name: 14px; --sr-meta: 11.5px; --sr-price: 13px; --sr-orig: 13px;
   }
 }
 
@@ -9997,7 +10009,7 @@ html.admin-page body {
     --sr-space: 5px; --sr-pl-mx: 8px;
     --sr-info-gap: 1px;
     --sr-btn: 32px;
-    --sr-name: 13px; --sr-meta: 11px; --sr-price: 12.5px; --sr-orig: 12px;
+    --sr-name: 13px; --sr-meta: 11px; --sr-price: 12.5px; --sr-orig: 12.5px;
     --sr-actions-gap: 4px;
   }
   .song-card-row .cart-add-btn-row,
@@ -10017,7 +10029,7 @@ html.admin-page body {
     --sr-pad-y: 4px; --sr-pad-x: 6px; --sr-gap: 6px;
     --sr-space: 4px; --sr-pl-mx: 5px;
     --sr-btn: 30px;
-    --sr-name: 12.5px; --sr-meta: 10.5px; --sr-price: 12px; --sr-orig: 11px;
+    --sr-name: 12.5px; --sr-meta: 10.5px; --sr-price: 12px; --sr-orig: 12px;
     --sr-actions-gap: 3px;
   }
   .song-card-row .cart-add-btn-row,
@@ -10054,8 +10066,9 @@ html.admin-page body {
   --sf-btn: 38px;          /* ปุ่ม ❤️ 🔖 ซื้อ (แถวเพลง = --sr-btn) */
   --sf-name: 17px;         /* แถวเพลง = 15px */
   --sf-count: 12px;
+  /* 🎨 (T115 2026-10-07): --sf-orig เท่ากับ --sf-price ตาม owner request (เดิม 12.5px) */
   --sf-price: 15px;        /* แถวเพลง = 14px */
-  --sf-orig: 12.5px;
+  --sf-orig: 15px;
   --sf-buy-font: 13px;
   --sf-actions-gap: 6px;
   --sf-bottom-mr: -34px;
@@ -10139,13 +10152,13 @@ html.admin-page body {
 @media (min-width: 481px) and (max-width: 767.98px) {
   :root {
     --sf-pad-y: 8px; --sf-pad-x: 12px; --sf-gap: 10px;
-    --sf-btn: 38px; --sf-name: 15.5px; --sf-count: 11.5px; --sf-price: 14px; --sf-orig: 12px; --sf-buy-font: 12.5px;
+    --sf-btn: 38px; --sf-name: 15.5px; --sf-count: 11.5px; --sf-price: 14px; --sf-orig: 14px; --sf-buy-font: 12.5px;
   }
 }
 @media (max-width: 480px) {
   :root {
     --sf-pad-y: 7px; --sf-pad-x: 10px; --sf-gap: 9px;
-    --sf-btn: 36px; --sf-name: 14.5px; --sf-count: 11px; --sf-price: 13.5px; --sf-orig: 12px; --sf-buy-font: 12px;
+    --sf-btn: 36px; --sf-name: 14.5px; --sf-count: 11px; --sf-price: 13.5px; --sf-orig: 13.5px; --sf-buy-font: 12px;
     --sf-actions-gap: 5px;
     --sf-bottom-mr: -36px;
   }
@@ -10161,7 +10174,7 @@ html.admin-page body {
 @media (max-width: 360px) {
   :root {
     --sf-pad-y: 6px; --sf-pad-x: 8px; --sf-gap: 7px;
-    --sf-btn: 34px; --sf-name: 14px; --sf-count: 10.5px; --sf-price: 13px; --sf-orig: 11px;
+    --sf-btn: 34px; --sf-name: 14px; --sf-count: 10.5px; --sf-price: 13px; --sf-orig: 13px;
     --sf-actions-gap: 4px;
   }
   .playlist-block .playlist-folder-btn .playlist-folder-buy-btn { padding: 0 10px !important; }
