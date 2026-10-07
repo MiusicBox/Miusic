@@ -10255,3 +10255,55 @@ html.admin-page body {
 @media (max-width: 360px) {
   .song-card-row .price-stack { --price-inset: 7px; } /* 1px border + 6px padding */
 }
+
+/* ============================================================
+   🎨 (T119 2026-10-07): Player popup responsive — ขยับขวาหนี WhatsApp FAB + responsive ทุกขนาด
+   - Owner request: "ปรับ popup ตัวเล่นเพลงข้างล่างให้ขยับมาด้านขวาอีกนิดเพื่อไม่ให้ปุ่ม WhatsApp บัง
+     และ ปรับขนาดให้เหมาะสมกับการใช้ในมือถือ
+     ช่วยเขียน @media ให้ popup เล่นเพลงนั้นด้วยให้มันยืดหดตามขนาดหน้าจอทุกลุน แอนดอย ไอโฟน ไอแพด macbook
+     ถ้าเป็นหน้าจอใหญ่ iPad macbook pc ไม่ต้องให้มันยืดเต็มจอ ให้มันยืดพอดีสวยใช้งานง่ายก็พอ"
+   - Bug (verified on production mobile 375x812):
+     - player bar: x=6-369 (width 363, centered)
+     - WhatsApp FAB: x=12-56 (left:12 + width:44)
+     - overlap = TRUE ❌ — player bar บัง FAB
+   - Fix: เปลี่ยน positioning strategy ตามขนาดจอ:
+     - Mobile (Android/iPhone ≤480px): ย้ายขวาของ FAB + ยืดพอดี (left:76px, right:8px)
+     - iPad/Tablet (481-1023px): centered + max-width:400px (compact, ไม่ยืดเต็ม)
+     - Desktop (≥1024px — MacBook/PC): centered + max-width:360px (กระชับสุด)
+   - ผลกระทบระบบเดิม: 0% — CSS-only, เปลี่ยนเฉพาะ positioning + size ไม่แตะ logic
+   ============================================================ */
+
+/* 📱 Mobile (Android/iPhone ≤480px) — ขวาของ FAB + ยืดพอดี */
+@media (max-width: 480px) {
+  .player-bar {
+    left: 76px !important;        /* ขวาของ FAB (left:12 + width:50 + margin:14) */
+    right: 8px !important;        /* ติดขอบขวา */
+    width: auto !important;       /* ยืด auto ระหว่าง 76px ถึงขอบขวา */
+    max-width: none !important;   /* ไม่จำกัด max-width */
+    transform: translateY(0) translateZ(0) !important;  /* ไม่ center แล้ว + คง GPU compositing */
+    padding: 6px 8px !important;
+    bottom: calc(70px + var(--safe-bottom)) !important;
+  }
+  /* override animation สำหรับ mobile — ใช้ translateY อย่างเดียว (ไม่มี -50% เพราะไม่ center) */
+  .player-bar.show {
+    animation: slideUpPlayerMobile 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+  @keyframes slideUpPlayerMobile {
+    from { transform: translateY(100%) translateZ(0); opacity: 0; }
+    to { transform: translateY(0) translateZ(0); opacity: 1; }
+  }
+}
+
+/* 📱 Tablet/iPad (481-1023px) — centered + compact (ไม่ยืดเต็มจอ) */
+@media (min-width: 481px) and (max-width: 1023px) {
+  .player-bar {
+    max-width: 400px !important;
+  }
+}
+
+/* 💻 Desktop (≥1024px — MacBook/PC) — centered + กระชับสุด */
+@media (min-width: 1024px) {
+  .player-bar {
+    max-width: 360px !important;
+  }
+}
