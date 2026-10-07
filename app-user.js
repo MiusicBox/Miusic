@@ -2211,12 +2211,27 @@ function renderPlaylists() {
     ? (STATE.djs.find(d => d.id === STATE.currentDj)?.dj_name || null)
     : null;
 
+  // 🆕 (T109 2026-10-06): ถ้า Advanced Search active + เลือก DJ → กรองเพลย์ลิสต์ตาม DJ ที่เลือก
+  //   Owner: เวลาลูกค้าเลือกชื่อ DJ ในตัวกรองขั้นสูง → หน้า Playlist แสดงเฉพาะเพลย์ลิสต์ของ DJ นั้น
+  //   วิธี: ดึง DJ names จาก SONG_SEARCH_STATE.djs (Set ของ dj_name strings) → กรองเพลย์ลิสต์
+  //   ผลกระทบระบบเดิม: 0% — ถ้าไม่ได้เปิด Advanced Search → ใช้ selectedDjName (STATE.currentDj) เหมือนเดิม
+  const advSearchDjNames = (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active && SONG_SEARCH_STATE.djs.size > 0)
+    ? Array.from(SONG_SEARCH_STATE.djs)
+    : null;
+
   // กรองเพลย์ลิสต์ตามคำค้นหาด้วย (ถ้าช่องค้นหาตรงกับชื่อเพลย์ลิสต์ จะแสดงเพลย์ลิสต์นั้น)
   const filteredPlaylists = STATE.playlists.filter(pl => {
     // 🔧 เพิ่ม (2026-09-14): ถ้าเลือก DJ แล้ว เพลย์ลิสต์ต้องมีเพลงของ DJ คนนั้นอย่างน้อย 1 เพลง
     if (selectedDjName) {
       const hasDjSong = STATE.songs.some(s =>
         s.playlist_id === pl.id && s.dj_name === selectedDjName
+      );
+      if (!hasDjSong) return false;
+    }
+    // 🆕 (T109): ถ้า Advanced Search active + เลือก DJ → กรองเพลย์ลิสต์ตาม DJ ที่เลือก
+    if (advSearchDjNames) {
+      const hasDjSong = STATE.songs.some(s =>
+        s.playlist_id === pl.id && advSearchDjNames.includes(s.dj_name)
       );
       if (!hasDjSong) return false;
     }
@@ -2237,11 +2252,14 @@ function renderPlaylists() {
     // - ถ้าไม่ได้เลือก DJ จะแสดงเพลงทั้งหมดในเพลย์ลิสต์เหมือนเดิม
     const displaySongs = selectedDjName
       ? songs.filter(s => s.dj_name === selectedDjName)
-      : songs;
+      : advSearchDjNames
+        ? songs.filter(s => advSearchDjNames.includes(s.dj_name))
+        : songs;
     if (displaySongs.length === 0 && !hasPendingSongs) return "";
     const isOpen = openPlaylists.has(pl.id) || (STATE.search && STATE.search.length > 0); // เปิดอัตโนมัติเมื่อกำลังค้นหา
     // 🔧 เพิ่ม (2026-09-14): เมื่อเลือก DJ ให้ auto-expand เพลย์ลิสต์ที่มีเพลงของ DJ คนนั้น เพื่อให้เห็นเพลงเลย
-    const isAutoOpenForDj = !!selectedDjName;
+    // 🆕 (T109): auto-expand ด้วยเมื่อ Advanced Search active + เลือก DJ
+    const isAutoOpenForDj = !!selectedDjName || !!advSearchDjNames;
     const finalIsOpen = isOpen || isAutoOpenForDj;
     const cover = pl.cover_url || songs[0]?.cover_url || "default-playlist-cover.svg";
     if (hasPendingSongs && finalIsOpen) setTimeout(() => ensurePlaylistSongsLoaded(pl.id), 0);
