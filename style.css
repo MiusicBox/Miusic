@@ -10339,10 +10339,12 @@ html.admin-page body {
     height: 28px !important;
     border-radius: 4px !important;
   }
-  /* 4. ลด play/pause button + SVG */
+  /* 4. ลด play/pause button + SVG + override min-width/height 44px (accessibility) */
   .player-bar .ctrl {
     width: 30px !important;
     height: 30px !important;
+    min-width: 30px !important;
+    min-height: 30px !important;
     transform: scale(1) !important;
   }
   .player-bar .ctrl:hover {
@@ -10352,10 +10354,12 @@ html.admin-page body {
     width: 12px !important;
     height: 12px !important;
   }
-  /* 5. ลด close button + SVG */
+  /* 5. ลด close button + SVG + override min-width/height 44px (accessibility) */
   .player-close-btn {
     width: 30px !important;
     height: 30px !important;
+    min-width: 30px !important;
+    min-height: 30px !important;
     margin-left: 2px !important;
   }
   .player-close-btn svg {
