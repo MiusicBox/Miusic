@@ -1616,8 +1616,11 @@ function renderCategoryGrid() {
   let html = "";
 
   // การ์ดแรก: "ทั้งหมด" (เหมือน chip แรกใน chip-row) — กดแล้ว reset category + scroll ไป songGrid
+  //   🎨 (T117 2026-10-07): เพิ่ม class "selected" เมื่อ STATE.currentCategory === "all"
+  //     - ทำให้ CSS แสดงตัวบอกว่าหมวด "ทั้งหมด" กำลังถูกเลือกอยู่ (เหมือน .dj-item.selected)
   const totalSongs = (STATE.songs || []).length;
-  html += `<div class="category-card" data-category-id="all" role="button" tabindex="0" aria-label="ดูเพลงทั้งหมด">
+  const isAllSelected = !STATE.currentCategory || STATE.currentCategory === "all";
+  html += `<div class="category-card${isAllSelected ? " selected" : ""}" data-category-id="all" role="button" tabindex="0" aria-label="ดูเพลงทั้งหมด">
     <div class="cat-icon">🎵</div>
     <div class="cat-name">ทั้งหมด</div>
     <div class="cat-count">${totalSongs} เพลง</div>
@@ -1646,7 +1649,7 @@ function renderCategoryGrid() {
       ].flatMap(getCategoryValues);
       return songValues.some(value => selectedValues.includes(value));
     }).length;
-    return `<div class="category-card" data-category-id="${escapeHtml(cat.id)}" role="button" tabindex="0" aria-label="ดูเพลงหมวด ${escapeHtml(cat.category_name || "")}">
+    return `<div class="category-card${STATE.currentCategory === cat.id ? " selected" : ""}" data-category-id="${escapeHtml(cat.id)}" role="button" tabindex="0" aria-label="ดูเพลงหมวด ${escapeHtml(cat.category_name || "")}">
       <div class="cat-icon">${icon}</div>
       <div class="cat-name">${escapeHtml(cat.category_name || cat.name || "ไม่มีชื่อ")}</div>
       <div class="cat-count">${songCount} เพลง</div>
@@ -1723,6 +1726,7 @@ function renderCategoryGrid() {
       // 🆕 (T035): กรณีปกติ — โหลดครบแล้ว + ไม่มี advanced filter
       setView(targetView);
       renderCategoryChips();
+      renderCategoryGrid(); // 🎨 (T117 2026-10-07): re-render เพื่ออัปเดต class "selected" ของการ์ดหมวดที่เลือก
       renderSongGrid();
       renderPlaylists();
       togglePlaylistsVisibility();
@@ -2595,8 +2599,16 @@ function setView(view) {
   //   - ใหม่: เข้าแท็บหมวดหมู่ (view=category และยังไม่เลือกหมวด currentCategory=all) → แสดงการ์ดหมวดทั้งหมด
   //   - กดการ์ดเลือกหมวดแล้ว (currentCategory != all) → ยังซ่อนเหมือนเดิม (T023: โฟกัสเพลงของหมวดนั้น)
   //   - ไม่กระทบหน้าอื่น — เงื่อนไขเดิม showDj ยังอยู่ครบ เพียงเพิ่ม OR เฉพาะ view=category
+  //
+  //   🎨 (T117 2026-10-07 fix): ปรับเงื่อนไขให้ categoryShowcase ยังโชว์อยู่แม้กดเข้าหมวดเฉพาะ
+  //     - Owner request: "เวลากดเข้าหมวดหมู่ ให้มันแสดงรายการชื่อหมวดหมู่ทั้งหมดไว้ห้ามซ่อน"
+  //     - เดิม: showDj || (view === "category" && STATE.currentCategory === "all")
+  //       → กดเข้าหมวดเฉพาะ → currentCategory != all → categoryShowcase ถูกซ่อน
+  //     - ใหม่: showDj || view === "category"
+  //       → แสดง categoryShowcase ตลอดเวลาที่อยู่แท็บหมวดหมู่ แม้กดเข้าหมวดเฉพาะ
+  //     - ผลกระทบระบบเดิม: 0% — หน้าอื่น ๆ (playlist/myorders/promotions) ยังซ่อนอยู่ เพราะ showDj=false และ view!="category"
   const showCategoryShowcase =
-    showDj || (view === "category" && STATE.currentCategory === "all");
+    showDj || view === "category";
   if (categoryShowcase) categoryShowcase.style.display = showCategoryShowcase ? "" : "none";
 
   // 🆕 (T031): แสดง #playlistsView เฉพาะตอน view="playlist"

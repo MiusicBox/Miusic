@@ -7522,6 +7522,46 @@ html.admin-page body {
   opacity: 1;
 }
 
+/* 🎨 (T117 2026-10-07): selected state — แสดงตัวบอกว่าการ์ดหมวดไหนถูกเลือกอยู่
+   - Owner request: "เวลากดเข้าหมวดหมู่ ให้มันแสดงรายการชื่อหมวดหมู่ทั้งหมดไว้ห้ามซ่อน
+                    และ มีตัวเลือกต้องแสดงให้ถูกต้องตามจริง"
+   - Style: ขอบ accent หนา 2px + glow สดขึ้น + bg tint accent-glow + lift เล็กน้อย
+   - ทำให้ user เห็นชัดว่าหมวดไหนกำลัง active อยู่ (เหมือน .dj-item.selected) */
+.category-card.selected {
+  border: 2px solid var(--accent) !important;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(139, 92, 246, 0.25) 0%, transparent 55%),
+    linear-gradient(155deg, var(--accent-glow) 0%, var(--surface-2) 100%) !important;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.2),
+    0 0 0 1px var(--accent),
+    0 0 20px rgba(139, 92, 246, 0.45) !important;
+  transform: translateY(-2px);
+}
+.category-card.selected .cat-icon {
+  transform: scale(1.08);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.3),
+    0 0 14px rgba(236, 72, 153, 0.5),
+    0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+.category-card.selected .cat-name {
+  color: var(--accent) !important;
+}
+/* selected ต้องดึงกว่า hover — กัน hover state ทับ selected state */
+.category-card.selected:hover,
+.category-card.selected:focus-visible {
+  transform: translateY(-2px) scale(1.02);
+  border: 2px solid var(--accent) !important;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(139, 92, 246, 0.25) 0%, transparent 55%),
+    linear-gradient(155deg, var(--accent-glow) 0%, var(--surface-2) 100%) !important;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.3),
+    0 0 0 1px var(--accent),
+    0 0 28px rgba(139, 92, 246, 0.55) !important;
+}
+
 /* 🆕 (T034): Icon — ใหญ่ขึ้น + มีวงกลมพื้นหลัง + glow
    🎨 (T113 2026-10-07): เล็กลง + gradient สดขึ้น + inner glow + ขอบ gradient */
 .category-card .cat-icon {
