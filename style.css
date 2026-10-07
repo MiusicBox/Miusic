@@ -10276,7 +10276,7 @@ html.admin-page body {
 /* 📱 Mobile (Android/iPhone ≤480px) — ขวาของ FAB + ยืดพอดี */
 @media (max-width: 480px) {
   .player-bar {
-    left: 76px !important;        /* ขวาของ FAB (left:12 + width:50 + margin:14) */
+    left: 73px !important;        /* 🎨 (T122 2026-10-07): ย้ายจาก 76px → 73px ยืดซ้าย 3px ตาม owner request */ /* ขวาของ FAB (left:12 + width:50 + margin:11) */
     right: 8px !important;        /* ติดขอบขวา */
     width: auto !important;       /* ยืด auto ระหว่าง 76px ถึงขอบขวา */
     max-width: none !important;   /* ไม่จำกัด max-width */
