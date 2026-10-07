@@ -1053,9 +1053,25 @@ function setupAdvancedFilters() {
   // ปุ่ม "× ล้างตัวกรอง" นอก modal
   const clearBtn = document.getElementById("advClearBtn");
   if (clearBtn) {
-    clearBtn.addEventListener("click", () => {
+    clearBtn.addEventListener("click", async () => {
+      // 🔧 (2026-10-07): กด "× ล้างตัวกรอง" นอก popup → คืนค่าทั้งหมดอัตโนมัติ (ไม่ต้องเปิด popup กดล้าง + ค้นหาอีก)
+      //   เดิม: reset state แล้วโหลดเพลงใหม่ แต่ไม่ได้ renderPlaylists() → เพลย์ลิสต์ยังค้างตามตัวกรองเก่า
+      //         และถ้ามีการโหลดอื่นล็อกอยู่ loadSongsWithFilters จะ return ทิ้งเฉย ๆ
+      //   ใหม่: reset → วาดเพลย์ลิสต์ทันที → รอ lock ปล่อย → โหลดเพลงใหม่ → วาดเพลย์ลิสต์อีกรอบ
+      //   ผลกระทบระบบเดิม: 0% — ปุ่ม "ล้างทั้งหมด"/"ค้นหา" ใน popup ทำงานเหมือนเดิม
       resetAdvancedFilterState({ clearQ: false, reloadSongs: true });
-      try { loadSongsWithFilters(true); } catch (_) {}
+      const _summaryEl = document.getElementById("advResultSummary");
+      if (_summaryEl) _summaryEl.hidden = true;
+      try { renderPlaylists(); } catch (_) {}
+      try {
+        let waited = 0;
+        while (typeof _loadSongsWithFiltersLock !== "undefined" && _loadSongsWithFiltersLock && waited < 50) {
+          await new Promise(r => setTimeout(r, 100));
+          waited++;
+        }
+        await loadSongsWithFilters(true);
+      } catch (_) {}
+      try { renderPlaylists(); } catch (_) {}
     });
   }
 }
