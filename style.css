@@ -10307,3 +10307,70 @@ html.admin-page body {
     max-width: 360px !important;
   }
 }
+
+/* ============================================================
+   🎨 (T120 2026-10-07): Mobile player compact — เล็กกระชับเหมือน Spotify mini player
+   - Owner request: "ปรับในมือถือให้ทำให้ popup เล็กกะชับลงอีกให้เท่ากับตัวเล่นเพลงของ Spotify"
+   - ปรับเฉพาะมือถือ (≤480px) เท่านั้น — iPad/Desktop คงไว้
+   - Strategy (เทียบกับ Spotify mini player):
+     1. ซ่อน .player-seek-row (Spotify mini ไม่โชว์ seek bar — ซ่อนไว้ใน expanded view)
+     2. ลด padding: 6px 8px → 4px 8px
+     3. ลด cover: 30px → 28px
+     4. ลด play/pause button: 36px → 30px + SVG 14px → 12px
+     5. ลด close button: 36px → 30px + SVG 14px → 12px
+     6. ลด title font: 11.5px → 11px
+     7. ลด subtitle font: 10px → 9.5px
+     8. ลด gap: 8px → 6px
+   - ผลกระทบระบบเดิม: 0% — CSS-only, เฉพาะ mobile เท่านั้น
+   ============================================================ */
+@media (max-width: 480px) {
+  /* 1. ซ่อน seek row — Spotify mini ไม่มี seek bar */
+  .player-seek-row {
+    display: none !important;
+  }
+  /* 2. ลด padding + gap ของ player bar */
+  .player-bar {
+    padding: 4px 8px !important;
+    gap: 2px !important;
+  }
+  /* 3. ลดขนาด cover */
+  .player-bar img {
+    width: 28px !important;
+    height: 28px !important;
+    border-radius: 4px !important;
+  }
+  /* 4. ลด play/pause button + SVG */
+  .player-bar .ctrl {
+    width: 30px !important;
+    height: 30px !important;
+    transform: scale(1) !important;
+  }
+  .player-bar .ctrl:hover {
+    transform: scale(1.08) !important;
+  }
+  .player-bar .ctrl svg {
+    width: 12px !important;
+    height: 12px !important;
+  }
+  /* 5. ลด close button + SVG */
+  .player-close-btn {
+    width: 30px !important;
+    height: 30px !important;
+    margin-left: 2px !important;
+  }
+  .player-close-btn svg {
+    width: 12px !important;
+    height: 12px !important;
+  }
+  /* 6. ลด title + subtitle font */
+  .player-meta .t1 {
+    font-size: 11px !important;
+  }
+  .player-meta .t2 {
+    font-size: 9.5px !important;
+  }
+  /* 7. ลด gap ใน player-top row */
+  .player-top {
+    gap: 6px !important;
+  }
+}
