@@ -10182,3 +10182,22 @@ html.admin-page body {
 @media (max-height: 480px) and (orientation: landscape) {
   :root { --sf-pad-y: 6px; --sf-btn: 32px; }
 }
+
+/* ============================================================
+   🎨 (2026-10-07): จัดราคาขีดฆ่าให้ "ตัวเลข" ตรงกับตัวเลขราคาหลังลด
+   - ราคาหลังลดอยู่ในกรอบ (border 1px + padding ซ้าย 8px) ตัวเลขจึงถูกดันเข้าไป
+   - ขยับราคาขีดฆ่าเข้าไปเท่ากับ border + padding ซ้ายของกรอบ (ไม่สนพื้นหลัง/กรอบ)
+   - ใช้ margin-left จึงไม่กระทบขนาด/ตำแหน่งของกรอบราคาหลังลดและปุ่มอื่น
+   ============================================================ */
+.song-card-row .price-stack,
+.playlist-block .playlist-folder-btn .playlist-folder-price-block .price-stack {
+  --price-inset: 9px; /* 1px border + 8px padding */
+}
+.song-card-row .price-stack .price-original,
+.playlist-block .playlist-folder-btn .playlist-folder-price-block .price-stack .price-original {
+  margin-left: var(--price-inset) !important;
+  margin-right: 0 !important;
+}
+@media (max-width: 360px) {
+  .song-card-row .price-stack { --price-inset: 7px; } /* 1px border + 6px padding */
+}
