@@ -9841,3 +9841,136 @@ html.admin-page body {
     padding-right: max(8px, env(safe-area-inset-right, 0px)) !important;
   }
 }
+
+
+/* ==========================================================================
+   📱 (2026-10-07) หัวเพลย์ลิสต์กระชับ — เล็กลง แต่ยังใหญ่กว่าแถวเพลงเล็กน้อย (~10-15%)
+   --------------------------------------------------------------------------
+   ปรับ: padding / ชื่อเพลย์ลิสต์ / จำนวนเพลง / ราคา / ปุ่ม "ซื้อทั้งเพลย์ลิสต์" / ปุ่ม ❤️ / ปุ่ม 🔖
+   ✅ ไม่แตะรูปปกหัวเพลย์ลิสต์ และ ลูกศรเปิด-ปิด
+   ✅ ใช้ตัวแปร --sf-* (sf = song folder) ที่ :root เปลี่ยนค่าตามช่วงจอ เหมือน --sr-* ของแถวเพลง
+   ✅ --sf-bottom-mr = margin ติดลบเดิมของแถวราคา+ปุ่ม ปรับใหม่ให้ขอบขวาปุ่ม "ซื้อ" ตรงกับปุ่ม "เพิ่ม" ของแถวเพลง
+   ✅ ไม่แตะ HTML/JS — ย้อนกลับ: ลบบล็อกนี้ทั้งหมด
+   ========================================================================== */
+:root {
+  --sf-pad-y: 9px;
+  --sf-pad-x: 14px;
+  --sf-gap: 12px;
+  --sf-btn: 38px;          /* ปุ่ม ❤️ 🔖 ซื้อ (แถวเพลง = --sr-btn) */
+  --sf-name: 17px;         /* แถวเพลง = 15px */
+  --sf-count: 12px;
+  --sf-price: 15px;        /* แถวเพลง = 14px */
+  --sf-orig: 12.5px;
+  --sf-buy-font: 13px;
+  --sf-actions-gap: 6px;
+  --sf-bottom-mr: -34px;
+}
+
+.playlist-block .playlist-folder-btn {
+  padding: var(--sf-pad-y) var(--sf-pad-x) !important;
+  gap: var(--sf-gap) !important;
+}
+.playlist-block .playlist-folder-btn .playlist-folder-info { padding-right: 6px !important; }
+
+.playlist-block .playlist-folder-btn .playlist-folder-name {
+  font-size: var(--sf-name) !important;
+  line-height: 1.35 !important;          /* กันสระ/วรรณยุกต์ไทยโดนตัด */
+  margin-bottom: 1px !important;
+}
+.playlist-block .playlist-folder-btn .playlist-folder-count {
+  font-size: var(--sf-count) !important;
+  line-height: 1.3 !important;
+  margin-bottom: 2px !important;
+}
+.playlist-block .playlist-folder-btn .playlist-folder-bottom {
+  margin-top: 3px !important;
+  gap: 6px !important;
+  align-items: center !important;
+  margin-right: var(--sf-bottom-mr) !important;
+}
+.playlist-block .playlist-folder-btn .song-actions-row {
+  gap: var(--sf-actions-gap) !important;
+  flex-wrap: nowrap !important;
+}
+
+/* ราคาหัวเพลย์ลิสต์ */
+.playlist-block .playlist-folder-btn .playlist-folder-price-block .song-price,
+.playlist-block .playlist-folder-btn .playlist-folder-price-block .price-discounted {
+  font-size: var(--sf-price) !important;
+  line-height: 1.2 !important;
+  padding: 2px 9px !important;
+}
+.playlist-block .playlist-folder-btn .playlist-folder-price-block .price-stack .price-discounted { padding: 1px 8px !important; }
+.playlist-block .playlist-folder-btn .playlist-folder-price-block .price-original {
+  font-size: var(--sf-orig) !important;
+  line-height: 1 !important;
+}
+
+/* ปุ่ม ❤️ 🔖 */
+.playlist-block .playlist-folder-btn .btn-like-tiktok,
+.playlist-block .playlist-folder-btn .btn-icon-mini {
+  width: var(--sf-btn) !important;
+  height: var(--sf-btn) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border-radius: 8px !important;
+  box-sizing: border-box;
+}
+.playlist-block .playlist-folder-btn .btn-like-tiktok { gap: 0 !important; padding: 1px 0 !important; }
+.playlist-block .playlist-folder-btn .btn-like-tiktok svg { width: calc(var(--sf-btn) * 0.46) !important; height: calc(var(--sf-btn) * 0.46) !important; }
+.playlist-block .playlist-folder-btn .btn-like-tiktok .like-count { font-size: calc(var(--sf-btn) * 0.30) !important; line-height: 1 !important; }
+.playlist-block .playlist-folder-btn .btn-icon-mini svg { width: calc(var(--sf-btn) * 0.5) !important; height: calc(var(--sf-btn) * 0.5) !important; }
+
+/* ปุ่ม "ซื้อทั้งเพลย์ลิสต์" (ยกเลิก min-height 44px เดิม) */
+.playlist-block .playlist-folder-btn .playlist-folder-buy-btn {
+  height: var(--sf-btn) !important;
+  min-height: 0 !important;
+  padding: 0 13px !important;
+  font-size: var(--sf-buy-font) !important;
+  line-height: 1 !important;
+  border-radius: 8px !important;
+  box-sizing: border-box;
+}
+.playlist-block .playlist-folder-btn .playlist-folder-buy-btn svg { width: 15px !important; height: 15px !important; }
+
+/* ================= ช่วงจอ (ตรงกับ --sr-* ของแถวเพลง) ================= */
+@media (min-width: 1440px) {
+  :root { --sf-name: 17.5px; }
+}
+@media (min-width: 768px) and (max-width: 1023.98px) {
+  :root { --sf-pad-x: 12px; --sf-gap: 11px; }
+}
+@media (min-width: 481px) and (max-width: 767.98px) {
+  :root {
+    --sf-pad-y: 8px; --sf-pad-x: 12px; --sf-gap: 10px;
+    --sf-btn: 38px; --sf-name: 15.5px; --sf-count: 11.5px; --sf-price: 14px; --sf-orig: 12px; --sf-buy-font: 12.5px;
+  }
+}
+@media (max-width: 480px) {
+  :root {
+    --sf-pad-y: 7px; --sf-pad-x: 10px; --sf-gap: 9px;
+    --sf-btn: 36px; --sf-name: 14.5px; --sf-count: 11px; --sf-price: 13.5px; --sf-orig: 12px; --sf-buy-font: 12px;
+    --sf-actions-gap: 5px;
+    --sf-bottom-mr: -36px;
+  }
+  .playlist-block .playlist-folder-btn .playlist-folder-buy-btn { padding: 0 12px !important; }
+  .playlist-block .playlist-folder-btn .playlist-folder-buy-btn::after { font-size: 12px !important; line-height: 1 !important; }
+}
+@media (min-width: 391px) and (max-width: 480px) {
+  :root { --sf-bottom-mr: -35px; }
+}
+@media (max-width: 390px) {
+  :root { --sf-pad-x: 9px; --sf-gap: 8px; }
+}
+@media (max-width: 360px) {
+  :root {
+    --sf-pad-y: 6px; --sf-pad-x: 8px; --sf-gap: 7px;
+    --sf-btn: 34px; --sf-name: 14px; --sf-count: 10.5px; --sf-price: 13px; --sf-orig: 11px;
+    --sf-actions-gap: 4px;
+  }
+  .playlist-block .playlist-folder-btn .playlist-folder-buy-btn { padding: 0 10px !important; }
+}
+@media (max-height: 480px) and (orientation: landscape) {
+  :root { --sf-pad-y: 6px; --sf-btn: 32px; }
+}
