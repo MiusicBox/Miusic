@@ -10309,72 +10309,97 @@ html.admin-page body {
 }
 
 /* ============================================================
-   🎨 (T120 2026-10-07): Mobile player compact — เล็กกระชับเหมือน Spotify mini player
-   - Owner request: "ปรับในมือถือให้ทำให้ popup เล็กกะชับลงอีกให้เท่ากับตัวเล่นเพลงของ Spotify"
-   - ปรับเฉพาะมือถือ (≤480px) เท่านั้น — iPad/Desktop คงไว้
-   - Strategy (เทียบกับ Spotify mini player):
-     1. ซ่อน .player-seek-row (Spotify mini ไม่โชว์ seek bar — ซ่อนไว้ใน expanded view)
-     2. ลด padding: 6px 8px → 4px 8px
-     3. ลด cover: 30px → 28px
-     4. ลด play/pause button: 36px → 30px + SVG 14px → 12px
-     5. ลด close button: 36px → 30px + SVG 14px → 12px
-     6. ลด title font: 11.5px → 11px
-     7. ลด subtitle font: 10px → 9.5px
-     8. ลด gap: 8px → 6px
+   🎨 (T120 2026-10-07 → T121 2026-10-07 revise): Mobile player — ปรับขนาดพอดี + เอา seek bar กลับมา
+   - Owner request (T120): "เล็กกระชับเหมือน Spotify mini"
+   - Owner request (T121): "แก้ใหม่ตัวนี้เล็กเกินไป และ ไม่มีแถบเลื่อนเพลง ต้องมีตัวเลื่อนเพลงที่สามารถใช้มือเลื่อนไปมาฟังจุดไหนของเพลงก็ได้ ทำให้เลื่อนง่ายแต่ไม่ใหญ่ และ ไม่เล็กจนเกินไป"
+   - Strategy (T121 revise T120):
+     1. เอา seek bar กลับมา (ลบ display: none) — owner ต้องการเลื่อนฟังจุดไหนก็ได้
+     2. ปรับ seek bar ให้ compact แต่ touchable — track 4px + thumb 16px (สัมผัสนิ้วได้)
+     3. เพิ่ม padding: 4px → 6px (พอดีไม่แน่นจนเกิน)
+     4. ปุ่ม play/close: 30px → 36px (กลับเป็นขนาดเดิม — ไม่เล็กจนเกินไป)
+     5. cover: 28px → 32px (พอดีอ่านรูปเห็น)
+     6. title: 11px → 12px (อ่านง่ายขึ้น)
+     7. subtitle: 9px → 10px (อ่านง่ายขึ้น)
+     8. gap: 6px → 8px (หายใจสบายขึ้น)
    - ผลกระทบระบบเดิม: 0% — CSS-only, เฉพาะ mobile เท่านั้น
    ============================================================ */
 @media (max-width: 480px) {
-  /* 1. ซ่อน seek row — Spotify mini ไม่มี seek bar */
+  /* 1. seek bar กลับมา (T120 ซ่อนไว้) — แต่ปรับให้ compact + touchable */
   .player-seek-row {
-    display: none !important;
+    display: flex !important;
+    margin-top: 2px !important;
+    gap: 6px !important;
   }
-  /* 2. ลด padding + gap ของ player bar */
+  .player-seek-row .time {
+    font-size: 9px !important;
+    width: 26px !important;  /* กว้างพอแสดงเวลา 0:00 */
+  }
+  .player-seek-row input[type="range"] {
+    height: 20px !important;  /* สูงพอให้นิ้วสัมผัส */
+    margin: 0 !important;
+  }
+  .player-seek-row input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px !important;  /* track บาง ไม่หนาเกิน */
+    border-radius: 4px;
+  }
+  .player-seek-row input[type="range"]::-webkit-slider-thumb {
+    width: 16px !important;  /* thumb ใหญ่พอให้นิ้วจับได้สบาย */
+    height: 16px !important;
+    margin-top: -6px !important;  /* จัดให้อยู่กลาง track */
+    border-radius: 50%;
+    background: var(--accent) !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4) !important;
+  }
+  .player-seek-row input[type="range"]:active::-webkit-slider-thumb {
+    transform: scale(1.2);  /* ขยายตอนแตะ เพื่อ feedback */
+  }
+  /* 2. ปรับ padding + gap ของ player bar — พอดีไม่แน่น */
   .player-bar {
-    padding: 4px 8px !important;
+    padding: 6px 8px !important;
     gap: 2px !important;
   }
-  /* 3. ลดขนาด cover */
+  /* 3. cover — 32px (พอดีอ่านรูปเห็น) */
   .player-bar img {
-    width: 28px !important;
-    height: 28px !important;
-    border-radius: 4px !important;
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 5px !important;
   }
-  /* 4. ลด play/pause button + SVG + override min-width/height 44px (accessibility) */
+  /* 4. play/pause button — กลับเป็น 36px (ไม่เล็กจนเกินไป) */
   .player-bar .ctrl {
-    width: 30px !important;
-    height: 30px !important;
-    min-width: 30px !important;
-    min-height: 30px !important;
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
     transform: scale(1) !important;
   }
   .player-bar .ctrl:hover {
     transform: scale(1.08) !important;
   }
   .player-bar .ctrl svg {
-    width: 12px !important;
-    height: 12px !important;
+    width: 14px !important;
+    height: 14px !important;
   }
-  /* 5. ลด close button + SVG + override min-width/height 44px (accessibility) */
+  /* 5. close button — 32px (compromise ระหว่าง 30 กับ 36) */
   .player-close-btn {
-    width: 30px !important;
-    height: 30px !important;
-    min-width: 30px !important;
-    min-height: 30px !important;
-    margin-left: 2px !important;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+    margin-left: 4px !important;
   }
   .player-close-btn svg {
-    width: 12px !important;
-    height: 12px !important;
+    width: 13px !important;
+    height: 13px !important;
   }
-  /* 6. ลด title + subtitle font */
+  /* 6. title + subtitle — กลับเป็นขนาดปกติ (อ่านง่าย) */
   .player-meta .t1 {
-    font-size: 11px !important;
+    font-size: 12px !important;
   }
   .player-meta .t2 {
-    font-size: 9.5px !important;
+    font-size: 10px !important;
   }
-  /* 7. ลด gap ใน player-top row */
+  /* 7. gap ใน player-top row */
   .player-top {
-    gap: 6px !important;
+    gap: 8px !important;
   }
 }
