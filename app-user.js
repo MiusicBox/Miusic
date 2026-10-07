@@ -44,7 +44,14 @@ import {
   initMyOrdersView, cleanupMyOrdersView,
   // 🎁 (2026-09-20) เพิ่มใหม่: formatDateTime ใช้สำหรับแสดงวันที่ในหน้าโปรโมชั่นพรีวิว (เรียกจาก app-promotion.js ที่มีอยู่แล้ว)
   formatDateTime
-} from "./app-promotion.js?v=20261003-login-guest-v10";
+} from "./app-promotion.js?v=20261003-login-guest-v11";
+// 🔧 (T116 2026-10-07 fix): ปรับ version จาก v10 → v11 ให้ตรงกับ app-cart.js + orders.js
+//   - Bug: cache-bust version ต่างกัน → ES module ถือว่าเป็น 2 instances คนละตัว
+//     app-user.js (v10) init() populate _discountsCache ใน v10 instance
+//     app-cart.js (v11) renderCart() อ่าน _discountsCache จาก v11 instance (ว่าง!)
+//     → ราคาลดไม่แสดงในตะกร้าทั้วที่มี discount active
+//   - Fix: ใช้ v11 ทั้วหมด → module instance เดียวกัน → cache ใช้ร่วมกันได้
+//   - ผลกระทบระบบเดิม: 0% — เปลี่ยน cache-bust string เท่านั้น ไม่แตะ logic
 
 const STATE = {
   songs: [], categories: [], djs: [], playlists: [], settings: {},
