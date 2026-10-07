@@ -911,6 +911,12 @@ function setupAdvancedFilters() {
         SONG_SEARCH_STATE.djs.delete(value);
       }
       updateActiveFiltersCount();
+      // 🆕 (T111 2026-10-07 fix Bug #1): re-render playlists ทันทีเมื่อ toggle DJ chip
+      //   เดิม T110 commit message บอก "chip toggle ส่งผลทันที" แต่จริง ๆ ไม่ได้เรียก renderPlaylists()
+      //   → badge ขึ้น "1" แต่ playlist ยังโชว์ครบทุกอัน (ไม่กรอง) — หลอก user
+      //   วิธีแก้: เรียก renderPlaylists() เหมือน Apply/Reset handler ที่ T110 ทำไว้
+      //   ผลกระทบระบบเดิม: 0% — ถ้าไม่มี DJ chip active → renderPlaylists ใช้ selectedDjName (STATE.currentDj)
+      try { renderPlaylists(); } catch (_) {}
     });
   }
   // chip toggle - Categories
@@ -928,6 +934,11 @@ function setupAdvancedFilters() {
         SONG_SEARCH_STATE.categories.delete(value);
       }
       updateActiveFiltersCount();
+      // 🆕 (T111 2026-10-07 fix Bug #1): re-render playlists ทันทีเมื่อ toggle Category chip
+      //   เหตุผลเดียวกับ DJ chip — ในกรณีที่ category filter กระทบ playlist (แม้ปัจจุบัน renderPlaylists
+      //   ใช้แค่ advSearchDjNames ไม่ใช้ categories แต่เรียกไว้กัน race กับ state ในอนาคต)
+      //   ผลกระทบระบบเดิม: 0% — renderPlaylists ไม่ได้อ่าน SONG_SEARCH_STATE.categories
+      try { renderPlaylists(); } catch (_) {}
     });
   }
   // ปุ่ม "ล้างทั้งหมด" ใน modal — ล้างเฉพาะ UI ใน modal (ยังไม่ reload)
@@ -955,6 +966,16 @@ function setupAdvancedFilters() {
       const sortSelect = document.getElementById("advSort");
       if (sortSelect) sortSelect.value = "new";
       updateActiveFiltersCount();
+      // 🆕 (T111 2026-10-07 fix Bug #3): ซ่อน advResultSummary หลัง Reset + reset text
+      //   ปัญหา: หลัง Apply กับ DJ filter → advResultSummary โชว์ "พบ X เพลง" ค้างอยู่
+      //   แล้วกด Reset → text ค้างต่อไป เพราะ Reset handler ไม่ได้ซ่อนมัน (แค่เคลียร์ state)
+      //   วิธีแก้: ตั้ง SONG_SEARCH_STATE.active = false + ซ่อน advResultSummary + reset text เหมือน resetAdvancedFilterState
+      //   ผลกระทบระบบเดิม: 0% — ไม่กระทบ logic อื่น เพราะ active=false อยู่แล้วตามมาจาก djs.size=0
+      SONG_SEARCH_STATE.active = false;
+      const _summaryEl = document.getElementById("advResultSummary");
+      if (_summaryEl) _summaryEl.hidden = true;
+      const _textEl = document.getElementById("advResultText");
+      if (_textEl) _textEl.textContent = "พบ 0 เพลง";
       // 🆕 (T110): re-render playlists หลัง Reset → แสดงทั้งหมด (djs cleared)
       try { renderPlaylists(); } catch (_) {}
     });
@@ -1000,6 +1021,18 @@ function setupAdvancedFilters() {
         }
         SONG_SEARCH_STATE.active = hasActiveAdvancedFilters();
         updateActiveFiltersCount();
+        // 🆕 (T111 2026-10-07 fix Bug #3): ถ้าไม่มี active filter → ซ่อน advResultSummary + reset text
+        //   ปัญหา: หลัง Apply กับ DJ filter (advResultSummary โชว์ "พบ 13 เพลง") → toggle DJ ออก → Apply อีก
+        //   → SONG_SEARCH_STATE.active=false → loadSongsWithAdvancedFilters แตะ early return ผ่าน loadSongsWithFilters
+        //   → loadSongsWithFilters ไม่ได้เรียก updateAdvResultSummary → text "พบ 13 เพลง" ค้างอยู่ใต้ search bar
+        //   วิธีแก้: ถ้า !active → ซ่อน advResultSummary + reset text ก่อนเรียก loadSongsWithAdvancedFilters
+        //   ผลกระทบระบบเดิม: 0% — ถ้า active=true → ไม่เข้า if → updateAdvResultSummary จะถูกเรียกตามปกติ
+        if (!SONG_SEARCH_STATE.active) {
+          const _summaryEl = document.getElementById("advResultSummary");
+          if (_summaryEl) _summaryEl.hidden = true;
+          const _textEl = document.getElementById("advResultText");
+          if (_textEl) _textEl.textContent = "พบ 0 เพลง";
+        }
         await loadSongsWithAdvancedFilters(true);
         // 🆕 (T110): re-render playlists หลัง Apply → กรองตาม DJ ที่เลือก
         try { renderPlaylists(); } catch (_) {}
@@ -1853,6 +1886,24 @@ function renderSongGrid() {
   const grid = document.getElementById("songGrid");
   const empty = document.getElementById("emptyState");
   if (!grid) return;
+
+  // 🆕 (T111 2026-10-07 fix Bug #2): ถ้าไม่ใช่ view ที่โชว์เพลง (home/category/dj) → ซ่อน emptyState + return early
+  //   ปัญหา: เมื่อ user อยู่แท็บ Playlist และกด Apply โดยไม่มี active filter → loadSongsWithFilters
+  //     รัน loadMoreSongs() ที่มี guard `if (songGrid.style.display === "none") return` (line 478, T007 hardening)
+  //     → STATE.songs ว่าง → renderSongGrid ตั้ง emptyState.style.display = "block" (line 1881 ด้านล่าง)
+  //     → ทับ display:none ที่ setView() ตั้งไว้ → "ไม่พบเพลง" + emoji 🎵 โผล่ใน songGrid area
+  //     ระหว่าง search bar กับ playlist content ทั้งที่ user อยู่แท็บ Playlist
+  //   วิธีแก้: เพิ่ม guard ข้างบน — ถ้า currentView ไม่ใช่ view ที่โชว์เพลง → ซ่อน emptyState เสมอ
+  //     + return early ไม่ยอมแตะ emptyState.style.display = "block"
+  //   ผลกระทบระบบเดิม: 0% — setView() ก็ตั้ง emptyState แบบเดียวกันอยู่แล้ว (line 2534-2535)
+  //     ที่นี่คือ defense-in-depth สำหรับ call site อื่น ๆ ที่อาจ trigger renderSongGrid นอก setView
+  const _isSongsView = STATE.currentView === "home"
+    || STATE.currentView === "category"
+    || STATE.currentView === "dj";
+  if (!_isSongsView) {
+    if (empty) empty.style.display = "none";
+    return;
+  }
 
   // 🆕 (T035b): ล้าง observer เก่า + sentinel เก่าก่อนทุกครั้ง — กันเพลงเก่าปน
   //   ปัญหา: IntersectionObserver เก่ายิง renderNextBatch หลัง grid.innerHTML=""
