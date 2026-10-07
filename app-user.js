@@ -955,6 +955,8 @@ function setupAdvancedFilters() {
       const sortSelect = document.getElementById("advSort");
       if (sortSelect) sortSelect.value = "new";
       updateActiveFiltersCount();
+      // 🆕 (T110): re-render playlists หลัง Reset → แสดงทั้งหมด (djs cleared)
+      try { renderPlaylists(); } catch (_) {}
     });
   }
   // ปุ่ม "ค้นหา" — อ่านค่าจาก UI + ปิด modal + trigger server-side search
@@ -999,6 +1001,8 @@ function setupAdvancedFilters() {
         SONG_SEARCH_STATE.active = hasActiveAdvancedFilters();
         updateActiveFiltersCount();
         await loadSongsWithAdvancedFilters(true);
+        // 🆕 (T110): re-render playlists หลัง Apply → กรองตาม DJ ที่เลือก
+        try { renderPlaylists(); } catch (_) {}
       } finally {
         // ✅ T093: reset ปุ่มทุกกรณี — สำเร็จ, fail (await throw), หรือ early return
         applyBtn.disabled = false;
@@ -2211,11 +2215,12 @@ function renderPlaylists() {
     ? (STATE.djs.find(d => d.id === STATE.currentDj)?.dj_name || null)
     : null;
 
-  // 🆕 (T109 2026-10-06): ถ้า Advanced Search active + เลือก DJ → กรองเพลย์ลิสต์ตาม DJ ที่เลือก
+  // 🆕 (T109→T110 2026-10-07): ถ้าเลือก DJ ในตัวกรองขั้นสูง → กรองเพลย์ลิสต์ตาม DJ ที่เลือก
   //   Owner: เวลาลูกค้าเลือกชื่อ DJ ในตัวกรองขั้นสูง → หน้า Playlist แสดงเฉพาะเพลย์ลิสต์ของ DJ นั้น
-  //   วิธี: ดึง DJ names จาก SONG_SEARCH_STATE.djs (Set ของ dj_name strings) → กรองเพลย์ลิสต์
-  //   ผลกระทบระบบเดิม: 0% — ถ้าไม่ได้เปิด Advanced Search → ใช้ selectedDjName (STATE.currentDj) เหมือนเดิม
-  const advSearchDjNames = (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.active && SONG_SEARCH_STATE.djs.size > 0)
+  //   T110 fix: ไม่ต้องรอกด Apply — เช็คแค่ djs.size > 0 (chip toggle ส่งผลทันที)
+  //   เมื่อกดล้าง → djs.clear() → size=0 → advSearchDjNames=null → แสดงทั้งหมด
+  //   ผลกระทบระบบเดิม: 0% — ถ้าไม่ได้เลือก DJ ในตัวกรองขั้นสูง → ใช้ selectedDjName (STATE.currentDj) เหมือนเดิม
+  const advSearchDjNames = (typeof SONG_SEARCH_STATE !== "undefined" && SONG_SEARCH_STATE.djs.size > 0)
     ? Array.from(SONG_SEARCH_STATE.djs)
     : null;
 
