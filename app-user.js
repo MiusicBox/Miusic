@@ -127,6 +127,22 @@ function renderDiscountedPriceForSong(song) {
   return `<div class="price-stack"><span class="price-original">${formatPrice(original)}</span><span class="price-discounted">${formatPrice(finalPrice)}</span></div>`;
 }
 
+// 🆕 (2026-10-07): เช็คว่าเพลย์ลิสต์มีโปรโมชัน/ส่วนลดที่ใช้งานอยู่จริงไหม
+//   ใช้ logic เดียวกับ renderDiscountedPriceForPlaylist (findActiveDiscountFor + applyDiscountToPrice)
+//   → เพลย์ลิสต์ที่โชว์ราคาขีดฆ่า = เพลย์ลิสต์ที่ผ่านตัวกรอง "เฉพาะเพลงที่มีโปรโมชัน"
+function playlistHasActiveDiscount(playlist) {
+  if (!playlist) return false;
+  const original = Number(playlist.price) || 0;
+  if (original <= 0) return false;
+  try {
+    const discount = findActiveDiscountFor({ targetType: "playlist", targetId: playlist.id, discounts: STATE.discounts });
+    if (!discount) return false;
+    return !!applyDiscountToPrice(original, discount).hasDiscount;
+  } catch (_) {
+    return false;
+  }
+}
+
 function renderDiscountedPriceForPlaylist(playlist) {
   if (!playlist) return `<span class="song-price">${formatPrice(0)}</span>`;
   const original = Number(playlist.price) || 0;
@@ -2298,8 +2314,15 @@ function renderPlaylists() {
     ? Array.from(SONG_SEARCH_STATE.djs)
     : null;
 
+  // 🆕 (2026-10-07): ตัวกรองขั้นสูง "เฉพาะเพลงที่มีโปรโมชัน" → เพลย์ลิสต์แสดงเฉพาะอันที่ลดราคา เหมือนเพลงเดี่ยว
+  //   ทำงานเมื่อกด "ค้นหา" แล้ว (active + promoOnly) — กดล้าง → promoOnly=false → แสดงเพลย์ลิสต์ทั้งหมดตามเดิม
+  const promoOnlyPlaylists = (typeof SONG_SEARCH_STATE !== "undefined")
+    && SONG_SEARCH_STATE.active === true
+    && SONG_SEARCH_STATE.promoOnly === true;
+
   // กรองเพลย์ลิสต์ตามคำค้นหาด้วย (ถ้าช่องค้นหาตรงกับชื่อเพลย์ลิสต์ จะแสดงเพลย์ลิสต์นั้น)
   const filteredPlaylists = STATE.playlists.filter(pl => {
+    if (promoOnlyPlaylists && !playlistHasActiveDiscount(pl)) return false;
     // 🔧 เพิ่ม (2026-09-14): ถ้าเลือก DJ แล้ว เพลย์ลิสต์ต้องมีเพลงของ DJ คนนั้นอย่างน้อย 1 เพลง
     if (selectedDjName) {
       const hasDjSong = STATE.songs.some(s =>
