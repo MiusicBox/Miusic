@@ -7219,21 +7219,83 @@ html.admin-page body {
    - title ใช้ gradient text (accent → accent-2) + ตัดขาวใส่ (transparent fill)
    - subtitle สี text-dim + จำกัด max-width 480px (อ่านง่าย)
    - CTA ปุ่มกลม (radius 9999px) + gradient + shadow accent
-   - ไม่มีรูป → ไม่ต้อง lazy load; ใช้ gradient + radial glow แทน (performance ดี) */
+   - ไม่มีรูป → ไม่ต้อง lazy load; ใช้ gradient + radial glow แทน (performance ดี)
+
+   🎨 (T114 2026-10-07 redesign): สวยขึ้น + มีชีวิต
+     - Owner request: "ปรับแบนเนอร์ให้สวย + เริ่มฟังเพลงปุ่มให้สวย"
+     - เพิ่ม: multi-layer radial gradient (purple + pink + blue tints) + slow rotation animation
+     - Title: เพิ่ม shimmer gradient animation (background-position moves) + glow drop-shadow
+     - CTA: เพิ่ม pulse glow animation + icon bounce on hover + ขยาย size
+     - Decorative: animated equalizer bars (CSS-only) ที่มุมขวาบน
+     - Border: gradient border (mask technique) สวยขึ้น */
 .hero-banner {
   position: relative;
   margin: 12px auto 20px;
   max-width: 1080px;
-  border-radius: 16px;
+  border-radius: 18px;
   overflow: hidden;
-  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
+  /* 🎨 (T114): gradient หลายชั้น — dark base + 3 radial tints (purple, pink, blue) */
+  background:
+    radial-gradient(circle at 15% 20%, rgba(139, 92, 246, 0.18) 0%, transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(236, 72, 153, 0.16) 0%, transparent 45%),
+    radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 60%),
+    linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
+  /* 🎨 (T114): gradient border ด้วย mask technique — สีขอบไล่จาก accent → accent-2 */
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(139, 92, 246, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+/* 🎨 (T114): slow rotation on background gradients (60s รอบ) — subtle movement ไม่ฉีกตา */
+@keyframes hero-bg-drift {
+  0%, 100% { background-position: 0% 0%, 100% 100%, 50% 50%, 0 0; }
+  50% { background-position: 5% 8%, 95% 92%, 52% 48%, 0 0; }
+}
+.hero-banner::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: inherit;
+  background-clip: padding-box;
+  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+  z-index: 0;
+}
+/* 🎨 (T114): animated equalizer bars ที่มุมขวาบน — CSS-only, ไม่มีรูป */
+.hero-banner::after {
+  content: "";
+  position: absolute;
+  top: 18px;
+  right: 24px;
+  width: 28px;
+  height: 32px;
+  background:
+    linear-gradient(to top,
+      var(--accent) 0%, var(--accent) 30%, transparent 30%) 0 100% / 6px 100% no-repeat,
+    linear-gradient(to top,
+      var(--accent-2) 0%, var(--accent-2) 50%, transparent 50%) 8px 100% / 6px 100% no-repeat,
+    linear-gradient(to top,
+      var(--accent) 0%, var(--accent) 70%, transparent 70%) 16px 100% / 6px 100% no-repeat,
+    linear-gradient(to top,
+      var(--accent-2) 0%, var(--accent-2) 40%, transparent 40%) 24px 100% / 6px 100% no-repeat;
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 0;
+  animation: hero-eq 1.2s ease-in-out infinite alternate;
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.5));
+}
+@keyframes hero-eq {
+  0% { transform: scaleY(0.6); }
+  100% { transform: scaleY(1); }
 }
 .hero-banner-content {
   position: relative;
   z-index: 1;
-  padding: 28px 24px;
+  padding: 32px 28px 28px;
   text-align: center;
   box-sizing: border-box;
 }
@@ -7247,23 +7309,38 @@ html.admin-page body {
   pointer-events: none;
 }
 .hero-title {
-  font-size: 24px;
+  /* 🎨 (T114): 24→28px desktop + animated shimmer gradient + glow drop-shadow */
+  font-size: 28px;
   font-weight: 800;
-  margin: 0 0 8px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  margin: 0 0 10px;
+  background: linear-gradient(110deg,
+    var(--accent) 0%,
+    var(--accent-2) 25%,
+    #f9a8d4 50%,
+    var(--accent-2) 75%,
+    var(--accent) 100%);
+  background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
   letter-spacing: -0.3px;
   line-height: 1.3;
+  animation: hero-title-shimmer 4s ease-in-out infinite;
+  filter: drop-shadow(0 2px 12px rgba(139, 92, 246, 0.35));
+}
+@keyframes hero-title-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
 }
 .hero-subtitle {
+  /* 🎨 (T114): 14→14px (คงไว้) + เพิ่ม letter-spacing + accent tint */
   font-size: 14px;
   color: var(--text-dim);
-  margin: 0 auto 16px;
-  max-width: 480px;
-  line-height: 1.6;
+  margin: 0 auto 18px;
+  max-width: 560px;
+  line-height: 1.65;
+  letter-spacing: 0.1px;
 }
 .hero-actions {
   display: flex;
@@ -7272,23 +7349,54 @@ html.admin-page body {
   flex-wrap: wrap;
 }
 .hero-cta {
+  /* 🎨 (T114): ขยาย size (14→16px font + padding 10px 24px → 14px 32px) + pulse glow + icon bounce */
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   color: #fff;
   border: none;
-  padding: 10px 24px;
+  padding: 14px 32px;
   border-radius: 9999px;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 4px 12px var(--accent-glow);
+  box-shadow:
+    0 4px 16px var(--accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  animation: hero-cta-pulse 2.5s ease-in-out infinite;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+@keyframes hero-cta-pulse {
+  0%, 100% {
+    box-shadow:
+      0 4px 16px var(--accent-glow),
+      0 0 0 0 rgba(139, 92, 246, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+  50% {
+    box-shadow:
+      0 6px 24px var(--accent-glow),
+      0 0 0 12px rgba(139, 92, 246, 0),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
 }
 .hero-cta:hover {
-  transform: scale(1.05);
-  box-shadow: 0 6px 18px var(--accent-glow);
+  transform: scale(1.06) translateY(-2px);
+  box-shadow:
+    0 8px 28px var(--accent-glow),
+    0 0 24px rgba(236, 72, 153, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  animation: none;  /* pause pulse ตอน hover เพื่อไม่ให้ conflict */
+}
+.hero-cta:hover::first-letter {
+  display: inline-block;
+  animation: icon-bounce 0.6s ease-in-out infinite alternate;
+}
+@keyframes icon-bounce {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-3px); }
 }
 .hero-cta:active {
   transform: scale(0.98);
@@ -7516,23 +7624,30 @@ html.admin-page body {
 
 /* ---------- AC#7: Mobile responsive สำหรับ T019 elements ---------- */
 @media (max-width: 480px) {
-  /* Hero Banner mobile */
+  /* Hero Banner mobile — 🎨 (T114): ปรับขนาดให้เล็กลง + เก็บ shimmer + pulse animation */
   .hero-banner {
     margin: 10px 8px 16px;
     border-radius: 14px;
   }
   .hero-banner-content {
-    padding: 20px 16px;
+    padding: 22px 16px 18px;
   }
   .hero-title {
-    font-size: 20px;
+    font-size: 22px;
   }
   .hero-subtitle {
-    font-size: 13px;
+    font-size: 12px;
+    line-height: 1.6;
+    max-width: 100%;
   }
   .hero-cta {
-    padding: 8px 20px;
-    font-size: 13px;
+    /* 🎨 (T114): ขยาย CTA บนมือถือ 13→14px + padding 8px→12px 28px */
+    padding: 12px 28px;
+    font-size: 14px;
+  }
+  /* 🎨 (T114): ซ่อน equalizer bars บนมือถือ (width แคบ จะทับกับ title) */
+  .hero-banner::after {
+    display: none;
   }
 
   /* 🆕 (T034): Category Showcase mobile — 2 columns + compact */
@@ -7610,6 +7725,13 @@ html.admin-page body {
   .hero-cta:hover,
   .category-card:hover {
     transform: none !important;
+  }
+  /* 🎨 (T114 accessibility): ปิด T114 animations สำหรับผู้ใช้ที่ตั้งค่าลดการเคลื่อนไหว */
+  .hero-title,
+  .hero-cta,
+  .hero-banner::after,
+  .hero-cta:hover::first-letter {
+    animation: none !important;
   }
 }
 
@@ -8420,15 +8542,15 @@ html.admin-page body {
     max-width: 60px !important;
   }
 
-  /* Hero banner */
+  /* Hero banner — 🎨 (T114): extra-small mobile ปรับขนาดเล็กลง + ยังเก็บ animation */
   .hero-banner-content {
-    padding: 16px 12px !important;
+    padding: 14px 10px !important;
   }
   .hero-title {
     font-size: 18px !important;
   }
   .hero-subtitle {
-    font-size: 12px !important;
+    font-size: 11px !important;
   }
 
   /* Song modal */
