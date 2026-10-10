@@ -31,6 +31,7 @@ export function formatPrice(amount) {
 }
 
 export function showToast(message, type = "info", duration = 3000) {
+  if (window.__notify) { window.__notify.toast(message, type); return; } // 🎨 ระบบแจ้งเตือนใหม่
   const toast = document.getElementById("toast");
   if (!toast) return;
   toast.textContent = message;
