@@ -244,6 +244,7 @@ function hideCancelButton(wrapId) {
 //   ดู /shared-utils.js สำหรับ implementation ที่รวบรวมแล้ว
 // 🆕 (T105): showToast แบบสวย — มี icon + progress bar + ปุ่มปิด (sync กับ app-user.js)
 function showToast(message, type) {
+  if (window.__notify) { window.__notify.toast(message, type); return; } // 🎨 ระบบแจ้งเตือนใหม่ (notify.js)
   const el = document.getElementById("toast");
   if (!el) return;
   const icons = { success: "✅", error: "❌", info: "ℹ️", progress: "⏳", success_long: "✅", error_long: "❌" };
@@ -1046,7 +1047,7 @@ async function loadCustomers(search = "") {
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
         const id = btn.getAttribute("data-customer-delete");
-        if (!confirm("ต้องการลบลูกค้านี้ใช่ไหม? (ออเดอร์จะไม่ถูกลบ)")) return;
+        if (!(await window.__notify.confirm("ลบลูกค้ารายนี้ออกจากระบบ (ออเดอร์เดิมจะไม่ถูกลบ)", { title: "ลบลูกค้า", okText: "ลบ", danger: true }))) return;
         try {
           const delRes = await fetch(`/api/admin/customers/${encodeURIComponent(id)}`, { method: "DELETE", credentials: "same-origin" });
           if (delRes.ok) {
@@ -1215,7 +1216,7 @@ async function loadPasswordResetRequests(status = "pending") {
     wrap.querySelectorAll("[data-pw-dismiss]").forEach(btn => {
       btn.addEventListener("click", async () => {
         const reqId = btn.getAttribute("data-pw-dismiss");
-        const note = prompt("ยกเลิกคำขานี้\nหมายเหตุ (ไม่บังคับ):", "");
+        const note = await window.__notify.prompt("ใส่หมายเหตุ (ไม่บังคับ) แล้วกดยืนยันเพื่อยกเลิกคำขอนี้", { title: "ยกเลิกคำขอ", placeholder: "หมายเหตุ", okText: "ยกเลิกคำขอ", type: "warning" });
         if (note === null) return; // กด cancel ใน prompt
         try {
           const res = await fetch(`/api/admin/password-reset-requests/${encodeURIComponent(reqId)}/dismiss`, {
@@ -5249,7 +5250,7 @@ async function rejectPayment(proofId, orderId) {
       { title: "ปฏิเสธสลิปการชำระ", placeholder: "ตัวอย่าง: ยอดเงินไม่ตรง / สลิปไม่ชัด / โอนผิดบัญชี", maxLength: 500 }
     );
   } else {
-    reason = prompt("กรุณาระบุเหตุผลที่ปฏิเสธ (ลูกค้าจะเห็นข้อความนี้ใน WhatsApp):\n\nตัวอย่าง: ยอดเงินไม่ตรง / สลิปไม่ชัด / โอนผิดบัญชี", "ยอดเงินไม่ตรง / สลิปไม่ชัด");
+    reason = await window.__notify.prompt("ลูกค้าจะเห็นเหตุผลนี้ใน WhatsApp", { title: "ปฏิเสธสลิปการชำระ", placeholder: "เช่น ยอดเงินไม่ตรง / สลิปไม่ชัด / โอนผิดบัญชี", value: "ยอดเงินไม่ตรง / สลิปไม่ชัด", okText: "ปฏิเสธสลิป", type: "danger" });
   }
   if (reason === null || reason === undefined) return;
   reason = String(reason).trim().slice(0, 500); // 🔒 (M-19): enforce max length 500
@@ -6716,7 +6717,7 @@ async function loadDeletedCustomers() {
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
         const id = btn.getAttribute("data-restore-customer");
-        if (!confirm("ต้องการกู้คืนบัญชีนี้ไหม? (ลูกค้าจะ login ได้อีกครั้ง)")) return;
+        if (!(await window.__notify.confirm("ลูกค้าจะกลับมาเข้าสู่ระบบได้อีกครั้ง", { title: "กู้คืนบัญชี", okText: "กู้คืน", success: true }))) return;
         try {
           const restoreRes = await fetch(`/api/admin/customers/${encodeURIComponent(id)}/restore`, {
             method: "POST",
@@ -6740,8 +6741,8 @@ async function loadDeletedCustomers() {
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
         const id = btn.getAttribute("data-hard-delete-customer");
-        if (!confirm("⚠️ คุณกำลังจะลบถาวรบัญชีนี้\n\n• ข้อมูลทั้งหมดจะถูกลบจากระบบ\n• ไม่สามารถกู้คืนได้\n\nต้องดำเนินการต่อไหม?")) return;
-        if (!confirm("⚠️ ยืนยันอีกครั้ง — การกระทำนี้ไม่สามารถย้อนกลับได้\n\nกด OK เพื่อลบถาวร")) return;
+        if (!(await window.__notify.confirm("ข้อมูลทั้งหมดจะถูกลบจากระบบ และไม่สามารถกู้คืนได้\n\nต้องดำเนินการต่อไหม?", { title: "ลบบัญชีถาวร", okText: "ดำเนินการต่อ", danger: true }))) return;
+        if (!(await window.__notify.confirm("การกระทำนี้ย้อนกลับไม่ได้ กดยืนยันเพื่อลบถาวร", { title: "ยืนยันอีกครั้ง", okText: "ลบถาวร", danger: true }))) return;
         try {
           const delRes = await fetch(`/api/admin/customers/${encodeURIComponent(id)}/hard-delete`, {
             method: "POST",
