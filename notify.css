@@ -1,0 +1,318 @@
+/* ==========================================================================
+   notify.css — ระบบแจ้งเตือนกลางของ Miusic (toast + dialog)
+   ธีม: dark navy + ม่วง→ชมพู ตรงกับ style.css (ใช้ตัวแปรสีเดิมของเว็บ)
+   - Toast: เล็ก กะทัดรัด ลอยบนสุดของจอ ไม่บังเมนู/เพลเยอร์ด้านล่าง
+   - Dialog: การ์ดกลางจอ มีไอคอนสถานะ ใช้แทน alert()/confirm() ของเบราว์เซอร์
+   - ปรับ modal ยืนยัน/แจ้งเตือนเดิมฝั่งแอดมินให้หน้าตาเหมือนกัน
+   ========================================================================== */
+
+:root {
+  --nf-ok: #34d399;
+  --nf-err: #f87171;
+  --nf-warn: #fbbf24;
+  --nf-info: var(--accent, #8b5cf6);
+  --nf-panel: rgba(21, 25, 40, .94);
+  --nf-line: rgba(255, 255, 255, .09);
+  --nf-text: var(--text, #f8fafc);
+  --nf-dim: var(--text-dim, #94a3b8);
+  --nf-font: 'IBM Plex Sans Thai', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* toast เดิม (#toast ใน HTML) ถูกแทนที่ด้วยระบบใหม่ — ซ่อนไว้กันซ้อน */
+#toast { display: none !important; }
+
+/* ===================== TOAST ===================== */
+.nf-stack {
+  position: fixed;
+  top: calc(var(--safe-top, env(safe-area-inset-top, 0px)) + 10px);
+  left: 0; right: 0;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  pointer-events: none;
+  font-family: var(--nf-font);
+}
+
+.nf-toast {
+  --c: var(--nf-info);
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  min-width: 0;
+  max-width: min(100%, 380px);
+  padding: 9px 8px 11px 10px;
+  background: var(--nf-panel);
+  border: 1px solid var(--nf-line);
+  border-radius: 14px;
+  color: var(--nf-text);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .45), 0 0 0 1px rgba(0, 0, 0, .2);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  overflow: hidden;
+  pointer-events: auto;
+  animation: nfIn .32s cubic-bezier(.16, 1, .3, 1) both;
+}
+.nf-toast.success { --c: var(--nf-ok); }
+.nf-toast.error   { --c: var(--nf-err); }
+.nf-toast.warning { --c: var(--nf-warn); }
+.nf-toast.info,
+.nf-toast.progress { --c: var(--nf-info); }
+.nf-toast.leaving { animation: nfOut .22s ease-in both; }
+
+.nf-ico {
+  flex: 0 0 auto;
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+}
+.nf-ico svg { width: 15px; height: 15px; display: block; }
+.nf-toast.progress .nf-ico svg { animation: nfSpin .9s linear infinite; }
+
+.nf-msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: .005em;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+.nf-count {
+  flex: 0 0 auto;
+  min-width: 20px; height: 20px;
+  padding: 0 6px;
+  display: inline-grid; place-items: center;
+  border-radius: 999px;
+  font-size: 11px; font-weight: 700;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+}
+.nf-x {
+  flex: 0 0 auto;
+  width: 24px; height: 24px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 50%;
+  background: transparent;
+  color: var(--nf-dim);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.nf-x:hover { background: rgba(255, 255, 255, .08); color: var(--nf-text); }
+.nf-x svg { width: 12px; height: 12px; display: block; }
+
+.nf-bar {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 2px;
+  background: var(--c);
+  opacity: .75;
+  transform-origin: left center;
+  animation: nfBar var(--d, 2600ms) linear forwards;
+}
+.nf-toast:hover .nf-bar { animation-play-state: paused; }
+.nf-toast.progress .nf-bar {
+  width: 40%;
+  right: auto;
+  background: linear-gradient(90deg, transparent, var(--accent, #8b5cf6), var(--accent-2, #ec4899), transparent);
+  opacity: 1;
+  animation: nfSlide 1.2s ease-in-out infinite;
+}
+
+@keyframes nfIn  { from { opacity: 0; transform: translateY(-14px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes nfOut { to   { opacity: 0; transform: translateY(-10px) scale(.97); } }
+@keyframes nfBar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes nfSlide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@keyframes nfSpin { to { transform: rotate(360deg); } }
+
+/* ===================== DIALOG ===================== */
+.nf-backdrop {
+  position: fixed; inset: 0;
+  z-index: 9500;
+  display: grid; place-items: center;
+  padding: 20px;
+  background: rgba(6, 8, 15, .62);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  transition: opacity .2s ease;
+  font-family: var(--nf-font);
+}
+.nf-backdrop.show { opacity: 1; }
+
+.nf-dialog {
+  --c: var(--nf-info);
+  width: 100%;
+  max-width: 340px;
+  padding: 24px 20px calc(18px + var(--safe-bottom, 0px) * 0);
+  text-align: center;
+  color: var(--nf-text);
+  background: linear-gradient(180deg, rgba(30, 36, 56, .98), rgba(19, 23, 34, .98));
+  border: 1px solid var(--nf-line);
+  border-radius: 22px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .6), 0 0 0 1px rgba(0, 0, 0, .25);
+  transform: translateY(10px) scale(.96);
+  transition: transform .28s cubic-bezier(.16, 1, .3, 1);
+}
+.nf-backdrop.show .nf-dialog { transform: none; }
+.nf-dialog.success { --c: var(--nf-ok); }
+.nf-dialog.error, .nf-dialog.danger { --c: var(--nf-err); }
+.nf-dialog.warning { --c: var(--nf-warn); }
+
+.nf-halo {
+  width: 52px; height: 52px;
+  margin: 0 auto 14px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 15%, transparent);
+  box-shadow: 0 0 0 7px color-mix(in srgb, var(--c) 7%, transparent);
+}
+.nf-halo svg { width: 24px; height: 24px; display: block; }
+
+.nf-title {
+  margin: 0 0 6px;
+  font-size: 17px; font-weight: 700;
+  letter-spacing: -.01em; line-height: 1.35;
+}
+.nf-body {
+  margin: 0;
+  font-size: 14px; line-height: 1.6;
+  color: var(--nf-dim);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  max-height: 40vh; overflow-y: auto;
+}
+.nf-input {
+  width: 100%;
+  margin-top: 14px;
+  padding: 11px 14px;
+  font: inherit; font-size: 14.5px;
+  color: var(--nf-text);
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid var(--nf-line);
+  border-radius: 12px;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.nf-input:focus {
+  border-color: var(--border-focus, rgba(139, 92, 246, .55));
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, .18);
+}
+
+.nf-actions { display: flex; gap: 10px; margin-top: 20px; }
+.nf-btn {
+  flex: 1 1 0;
+  min-height: 44px;
+  padding: 0 14px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font: inherit; font-size: 14.5px; font-weight: 600;
+  text-decoration: none;
+  border-radius: 12px;
+  border: 1px solid var(--nf-line);
+  color: var(--nf-text);
+  background: rgba(255, 255, 255, .06);
+  cursor: pointer;
+  transition: transform .12s, background .15s, filter .15s;
+}
+.nf-btn:hover { background: rgba(255, 255, 255, .1); }
+.nf-btn:active { transform: scale(.97); }
+.nf-btn.primary {
+  border-color: transparent; color: #fff;
+  background: linear-gradient(135deg, var(--accent, #8b5cf6), #7c3aed);
+  box-shadow: 0 6px 18px rgba(139, 92, 246, .35);
+}
+.nf-dialog.success .nf-btn.primary { background: linear-gradient(135deg, #10b981, #059669); box-shadow: 0 6px 18px rgba(16, 185, 129, .32); }
+.nf-dialog.danger .nf-btn.primary,
+.nf-dialog.error .nf-btn.primary { background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 6px 18px rgba(239, 68, 68, .32); }
+.nf-dialog.warning .nf-btn.primary { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 6px 18px rgba(245, 158, 11, .3); }
+.nf-btn.primary:hover { filter: brightness(1.08); }
+.nf-btn:focus-visible, .nf-x:focus-visible { outline: 2px solid #c4b5fd; outline-offset: 2px; }
+body.nf-lock { overflow: hidden; }
+
+/* ===================== modal ยืนยัน/แจ้งเตือนเดิมฝั่งแอดมิน ===================== */
+#confirmBackdrop, #alertBackdrop { z-index: 9400; }
+#confirmBackdrop .modal, #alertBackdrop .modal {
+  --c: var(--nf-info);
+  max-width: 340px !important;
+  padding: 24px 20px 18px !important;
+  text-align: center;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(30, 36, 56, .98), rgba(19, 23, 34, .98));
+  border: 1px solid var(--nf-line);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .6);
+}
+#confirmBackdrop .modal:has(.btn.danger, .btn.danger-confirm) { --c: var(--nf-err); }
+#confirmBackdrop .modal:has(.btn.success-confirm) { --c: var(--nf-ok); }
+#confirmBackdrop .modal-header, #alertBackdrop .modal-header {
+  display: block; padding: 0; margin: 0; border: 0;
+}
+#confirmBackdrop .modal-close, #alertBackdrop .modal-close { display: none; }
+#confirmTitle, #alertTitle { margin: 0 0 6px; font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+#confirmBackdrop #confirmContent, #alertBackdrop #alertContent { padding: 0 !important; }
+#confirmText, #alertMessage, #confirmMessage {
+  margin: 0 !important; font-size: 14px !important; line-height: 1.6 !important; color: var(--nf-dim) !important;
+}
+#confirmBackdrop .modal > div:last-child, #alertBackdrop .modal > div:last-child { margin-top: 20px !important; gap: 10px !important; flex-wrap: nowrap !important; }
+#confirmBackdrop .modal .btn, #alertBackdrop .modal .btn {
+  flex: 1 1 0 !important; min-width: 0 !important; min-height: 44px; border-radius: 12px; font-size: 14.5px; font-weight: 600;
+}
+
+/* ---- override กฎ modal เต็มจอบนมือถือใน style.css ให้ dialog ยืนยัน/แจ้งเตือนเป็นการ์ดกลางจอ ---- */
+#confirmBackdrop, #alertBackdrop {
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 20px !important;
+}
+#confirmBackdrop .modal, #alertBackdrop .modal {
+  width: 100% !important;
+  max-width: 340px !important;
+  height: auto !important;
+  max-height: 85vh !important;
+  margin: 0 !important;
+  border-radius: 22px !important;
+  border: 1px solid var(--nf-line) !important;
+  animation: nfIn .3s cubic-bezier(.16, 1, .3, 1) both;
+}
+#confirmBackdrop .modal-close, #alertBackdrop .modal-close { display: none !important; }
+#confirmBackdrop .modal-header, #alertBackdrop .modal-header {
+  position: static !important; display: block !important; background: none !important;
+  padding: 0 !important; margin: 0 !important; border: 0 !important;
+}
+#confirmBackdrop .modal-header h3, #alertBackdrop .modal-header h3 {
+  background: none !important; -webkit-text-fill-color: var(--nf-text) !important; color: var(--nf-text) !important;
+}
+.nf-modal-icon {
+  width: 52px; height: 52px; margin: 0 auto 14px;
+  display: grid; place-items: center; border-radius: 50%;
+  color: var(--c, var(--nf-info));
+  background: color-mix(in srgb, var(--c, var(--nf-info)) 15%, transparent);
+  box-shadow: 0 0 0 7px color-mix(in srgb, var(--c, var(--nf-info)) 7%, transparent);
+}
+.nf-modal-icon svg { width: 24px; height: 24px; display: block; }
+.nf-modal-icon > span { display: none; }
+.nf-modal-icon > .i-info { display: grid; }
+.modal:has(.btn.danger, .btn.danger-confirm) .nf-modal-icon > .i-info,
+.modal:has(.btn.success-confirm) .nf-modal-icon > .i-info { display: none; }
+.modal:has(.btn.danger, .btn.danger-confirm) .nf-modal-icon > .i-warn { display: grid; }
+.modal:has(.btn.success-confirm) .nf-modal-icon > .i-ok { display: grid; }
+
+@media (max-width: 380px) {
+  .nf-dialog { padding: 22px 16px 16px; }
+  .nf-actions { flex-direction: column-reverse; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nf-toast, .nf-toast.leaving, .nf-backdrop, .nf-dialog { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  .nf-toast.progress .nf-ico svg, .nf-toast.progress .nf-bar { animation: none; }
+}
