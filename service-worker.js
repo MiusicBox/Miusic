@@ -33,7 +33,7 @@
 // 🚀 (T062): ค้นหา/กรองฝั่ง server + keyset paging รองรับ 10,000+ เพลง
 // 🚀 (T063): หน้าแอดมินโหลดเพลงแบบแบ่งหน้า (cursor) แทนโหลดทั้งหมดครั้งเดียว
 // 🐛 (T064): แก้ popup ตัวกรองขั้นสูง (ย้ายออกจาก topbar) ให้เห็นครบทั้งมือถือและจอใหญ่
-const CACHE_VERSION = 'miusic-pwa-v1.0.5-sort-key';
+const CACHE_VERSION = 'miusic-pwa-v1.0.6-notify';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const FONT_CACHE    = `${CACHE_VERSION}-fonts`;
@@ -76,6 +76,8 @@ const PRECACHE_URLS = [
   '/index.html',
   '/manifest.json',
   '/style.css',
+  '/notify.css',
+  '/notify.js',
   '/app-user.js',
   '/app-cart.js',
   '/app-promotion.js',
