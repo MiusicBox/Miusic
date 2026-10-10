@@ -2175,12 +2175,18 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
     }
     // If popup blocked — show a clickable link instead of navigating away
     if (!opened) {
-      // Show a toast/modal with a link for the user to tap
-      const toastEl = document.createElement("div");
-      toastEl.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#25D366;color:white;padding:20px 30px;border-radius:12px;z-index:99999;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.3);";
-      toastEl.innerHTML = '<p style="margin:0 0 12px 0;font-size:16px;">บันทึกออเดอร์สำเร็จ! กดเพื่อส่งข้อความ WhatsApp</p><a href="' + whatsappUrl + '" target="_blank" rel="noopener" style="display:inline-block;background:white;color:#25D366;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">เปิด WhatsApp</a>';
-      document.body.appendChild(toastEl);
-      setTimeout(() => { try { toastEl.remove(); } catch (_) {} }, 30000);
+      // 🎨 (2026-10-11): แสดงการ์ดแจ้งเตือนแบบใหม่ พร้อมปุ่มเปิด WhatsApp (เบราว์เซอร์บล็อก popup)
+      if (window.__notify) {
+        window.__notify.dialog({
+          type: "success",
+          title: "บันทึกออเดอร์สำเร็จ",
+          message: "กดปุ่มด้านล่างเพื่อส่งข้อความหาร้านทาง WhatsApp",
+          okText: "เปิด WhatsApp",
+          cancelText: "ภายหลัง",
+          showCancel: true,
+          href: whatsappUrl
+        });
+      }
     }
   }
 
