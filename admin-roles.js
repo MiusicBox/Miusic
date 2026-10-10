@@ -29,6 +29,7 @@ function escapeHtml(str) {
 // ใช้ toast/confirm modal ตัวเดียวกับหน้า admin หลัก (ผูกไว้ที่ window โดย app-admin.js)
 // กันพังไว้ด้วย fallback เผื่อกรณีสคริปต์หลักยังโหลดไม่เสร็จ
 function showToast(message, type) {
+  if (window.__notify) { window.__notify.toast(message, type); return; } // 🎨 ระบบแจ้งเตือนใหม่ (notify.js)
   if (window.__showToast) { window.__showToast(message, type); return; }
   const el = document.getElementById("toast");
   if (!el) return;
