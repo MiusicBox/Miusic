@@ -10403,3 +10403,34 @@ html.admin-page body {
     gap: 8px !important;
   }
 }
+
+/* ==========================================================================
+   🎨 (2026-10-11) Popup รายละเอียดเพลง (ฝั่ง user) — แก้หัวข้อ sticky ให้ทึบ ไม่ให้เนื้อหาทะลุ
+   ปัญหาเดิม:
+     1) header ใช้ gradient จางเป็น transparent ด้านล่าง → ตอนเลื่อน เนื้อหา (ปกเพลง/ปุ่ม) ทะลุให้เห็นหลังตัวหนังสือ
+     2) .modal มี padding-top 22px แต่ header sticky ที่ top:0 → เกิดช่องว่างด้านบน เนื้อหาโผล่เหนือ header
+   วิธีแก้: ตัด padding-top ของ modal, ให้ header เต็มความกว้าง + พื้นหลังทึบ + เส้นแบ่งบาง ๆ
+   ========================================================================== */
+#songModalBackdrop .modal {
+  padding-top: 0 !important;
+  scroll-padding-top: 76px;
+}
+#songModalBackdrop .modal-header {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 50 !important;
+  margin: 0 -20px 14px !important;
+  padding: 18px 20px 12px !important;
+  background: #151a29 !important;           /* ทึบ 100% — ไม่ใช้ gradient/transparent */
+  border-bottom: 1px solid rgba(255, 255, 255, .07) !important;
+  box-shadow: 0 8px 14px -10px rgba(0, 0, 0, .65);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+@media (max-width: 600px) {
+  #songModalBackdrop .modal-header { padding-top: 16px !important; }
+}
+/* ปุ่มปิดให้เล็กลงนิดหน่อย ไม่ดันหัวข้อสูงเกินจำเป็น */
+#songModalBackdrop .modal-close {
+  width: 40px !important; height: 40px !important;
+  min-width: 40px !important; min-height: 40px !important;
+}
