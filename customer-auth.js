@@ -89,7 +89,7 @@ function syncCustomerAuthUI() {
       }
     });
     document.getElementById("customerLogoutBtn")?.addEventListener("click", async () => {
-      if (!confirm("ต้องการออกจากระบบใช่ไหม?")) return;
+      if (!(await window.customConfirm("คุณต้องการออกจากระบบใช่ไหม?", { title: "ออกจากระบบ", okText: "ออกจากระบบ" }))) return;
       await customerLogout();
     });
     // 🆕 (T057 → T-sync-bugs-fix-H1 2026-10-06): เพิ่มปุ่ม "ตั้งค่าบัญชี" ⚙️ PDPA
@@ -264,10 +264,12 @@ async function customerRegister() {
 // 🆕 (2026-10-02 v2): showDuplicateAccountModal — แจ้งว่าบัญชีซ้ำ + ปุ่มไป login / ลืมรหัสผ่าน
 //   เรียกเมื่อ register ได้ 409 + code = EMAIL_EXISTS | WHATSAPP_EXISTS
 //   ไม่แตะ modal เดิม — ใช้ confirm() + switch tab (UX เรียบง่าย ไม่สร้าง modal ใหม่)
-function showDuplicateAccountModal(loginValue, existingField) {
+async function showDuplicateAccountModal(loginValue, existingField) {
   const fieldLabel = existingField === "whatsapp" ? "เบอร์ WhatsApp" : "อีเมล";
-  const msg = `⚠️ ${fieldLabel} "${loginValue}" ถูกใช้สมัครแล้ว\n\nคุณต้อการทำอะไรต่อ?\n• ตกลง = เข้าสู่ระบบด้วยบัญชีนี้\n• ยกเลิก = ปิด (ถ้าลืมรหัสผ่าน → กด "ลืมรหัสผ่าน?" ใต้ช่อง login)`;
-  const goLogin = confirm(msg);
+  const goLogin = await window.customConfirm(
+    `${fieldLabel} "${loginValue}" ถูกใช้สมัครสมาชิกแล้ว\n\nต้องการเข้าสู่ระบบด้วยบัญชีนี้ไหม?\n(ถ้าลืมรหัสผ่าน กด "ลืมรหัสผ่าน?" ใต้ช่องเข้าสู่ระบบ)`,
+    { title: "มีบัญชีนี้อยู่แล้ว", type: "warning", okText: "เข้าสู่ระบบ", cancelText: "ปิด" }
+  );
   if (goLogin) {
     // switch ไป tab login + กรอก login ให้อัตโนมัติ
     switchCustomerAuthTab("login");
@@ -1119,7 +1121,7 @@ function openAccountSettingsModal() {
     const msg = currentOptOut
       ? "คุณเลือกปฏิเสธการรับข่าวสารอยู่แล้ว\n\nต้องการยินยอมรับข่าวสารอีกครั้งไหม?"
       : "คุณกำลังจะปฏิเสธการรับข่าวสาร marketing\n\n(คุณจะไม่ได้รับข้อความโปรโมชั่น แต่ยังได้รับการแจ้งเรื่องออเดอร์)\n\nยืนยัน?";
-    if (!confirm(msg)) return;
+    if (!(await window.customConfirm(msg, { title: "การรับข่าวสาร", okText: "ยืนยัน" }))) return;
     try {
       const res = await fetch("/api/customer/consent", {
         method: "POST",
@@ -1141,9 +1143,9 @@ function openAccountSettingsModal() {
   // ลบบัญชี
   document.getElementById("accountSettingsDeleteBtn")?.addEventListener("click", async () => {
     const feedback = document.getElementById("accountSettingsDeleteFeedback");
-    const confirmed1 = confirm("⚠️ คุณกำลังจะลบบัญชี\n\n• บัญชีจะถูกปิดทันที (login ไม่ได้)\n• ข้อมูลจะถูกลบถาวรหลัง 30 วัน\n• ระหว่าง 30 วัน สามารถติดต่อแอดมินขอกู้คืนได้\n\nต้องการดำเนินการต่อไหม?");
+    const confirmed1 = await window.customConfirm("⚠️ คุณกำลังจะลบบัญชี\n\n• บัญชีจะถูกปิดทันที (login ไม่ได้)\n• ข้อมูลจะถูกลบถาวรหลัง 30 วัน\n• ระหว่าง 30 วัน สามารถติดต่อแอดมินขอกู้คืนได้\n\nต้องการดำเนินการต่อไหม?", { title: "ลบบัญชี", type: "danger", okText: "ดำเนินการต่อ" });
     if (!confirmed1) return;
-    const password = prompt("กรุณาใส่รหัสผ่านเพื่อยืนยันการลบบัญชี:");
+    const password = await window.customPrompt("กรุณาใส่รหัสผ่านเพื่อยืนยันการลบบัญชี", { title: "ยืนยันรหัสผ่าน", type: "danger", inputType: "password", placeholder: "รหัสผ่านของคุณ", okText: "ลบบัญชี" });
     if (!password) return;
     try {
       const res = await fetch("/api/customer/me", {
@@ -1282,13 +1284,14 @@ async function tryRecoverAccount(login, password) {
     if (checkData.code !== "customer/recover-confirm-required") return false;
 
     // บัญชีถูกลบ + ยังอยู่ใน 30 วัน grace → แสดง modal ยืนยัน
-    const confirmed = confirm(
-      `⚠️ บัญชีนี้ถูกลบเมื่อ ${new Date(checkData.deleted_at).toLocaleDateString("th-TH")}\n\n` +
+    const confirmed = await window.customConfirm(
+      `บัญชีนี้ถูกลบเมื่อ ${new Date(checkData.deleted_at).toLocaleDateString("th-TH")}\n\n` +
       `ชื่อ: ${checkData.customer?.display_name || "-"}\n` +
       `อีเมล: ${checkData.customer?.email || "-"}\n\n` +
       `เหลือเวลากู้คืนอีก ${checkData.days_remaining} วัน\n` +
       `หลังจากนั้นบัญชีจะถูกลบถาวร\n\n` +
-      `ต้องการกู้คืนบัญชีนี้ไหม?`
+      `ต้องการกู้คืนบัญชีนี้ไหม?`,
+      { title: "กู้คืนบัญชี", type: "warning", okText: "กู้คืนบัญชี" }
     );
     if (!confirmed) return true; // ไม่กู้คืน → ไม่ throw error แค่ return (ไม่ show error)
 
