@@ -44,7 +44,7 @@ import {
   initMyOrdersView, cleanupMyOrdersView,
   // 🎁 (2026-09-20) เพิ่มใหม่: formatDateTime ใช้สำหรับแสดงวันที่ในหน้าโปรโมชั่นพรีวิว (เรียกจาก app-promotion.js ที่มีอยู่แล้ว)
   formatDateTime
-} from "./app-promotion.js?v=20261011-order-detail";
+} from "./app-promotion.js?v=20261011-orderbadge";
 // 🔧 (T116 2026-10-07 fix): ปรับ version จาก v10 → v11 ให้ตรงกับ app-cart.js + orders.js
 //   - Bug: cache-bust version ต่างกัน → ES module ถือว่าเป็น 2 instances คนละตัว
 //     app-user.js (v10) init() populate _discountsCache ใน v10 instance
@@ -245,6 +245,8 @@ const { loadCart, bindCartEvents, addToCart, getLastOrderRecord, showReceipt, up
 //   ให้ app-promotion.js ใช้ในปุ่ม "ชำระเงิน" ในรายละเอียดออเดอร์
 //   (showReceipt/openPaymentModal มาจาก initCart return → อยู่ใน module scope ของ app-user.js)
 window.showReceipt = showReceipt;
+// 🎨 (2026-10-11): expose getOrderPaymentState ให้ app-promotion.js แสดง badge สถานะการชำระเงินบนการ์ดออเดอร์
+window.getOrderPaymentState = getOrderPaymentState;
 window.openPaymentModal = openPaymentModal;
 // 🆕 (2026-10-02 v6 fix): expose addToCart + findSong ไป window
 //   ให้ customer-auth.js เรียกได้จากหน้าบัญชี (ปุ่ม 🛒 ในบันทึกซื้อทีหลัง)
