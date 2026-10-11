@@ -10434,3 +10434,14 @@ html.admin-page body {
   width: 40px !important; height: 40px !important;
   min-width: 40px !important; min-height: 40px !important;
 }
+
+/* 🎨 (2026-10-11) ติดตามออเดอร์ — ลูกค้าที่ล็อกอิน: แสดงบัญชีที่ใช้ค้นหาแทนช่องกรอกชื่อ/เบอร์ */
+.track-account-chip {
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 0 0 14px; padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(139, 92, 246, .10);
+  border: 1px solid rgba(139, 92, 246, .28);
+  font-size: 12px; color: var(--text-dim);
+}
+.track-account-chip strong { font-size: 14px; color: var(--text); font-weight: 600; word-break: break-all; }
