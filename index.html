@@ -813,6 +813,8 @@
     <div class="section-title-row">
       <h2 class="section-title">🎵 Playlist</h2>
     </div>
+    <!-- 🎨 (2026-10-11): เมนู DJ ในหน้า Playlist — กดชื่อ DJ แล้วแสดงเฉพาะเพลย์ลิสต์/เพลงของ DJ นั้น (render โดย renderDjRow) -->
+    <div class="dj-row" id="playlistDjRow" style="margin-bottom:10px;padding-left:0;padding-right:0;"></div>
     <div id="playlistsContainer" class="playlist-content-box" style="display:block !important;"></div>
   </div>
 
@@ -1350,7 +1352,7 @@
   <!-- เปลี่ยนเลข v ทุกครั้งที่อัปโหลดไฟล์ใหม่ เพื่อไม่ให้มือถือใช้ไฟล์ JS จาก cache -->
   <!-- 🔧 v=20260917-p0: P0 แก้ Bug 1 (ลูกค้าตั้ง status เองไม่ได้) + Sec 1 (change-password ต้อง verify เดิม) -->
   <!-- 🔧 v=20260917-polling-fix: Phase 0 ยกเลิก polling ทุก 4 วิ + Phase 1 จุด 5 (admin view cache) + Phase 2 จุด 1 (state ฝั่ง client) -->
-  <script type="module" src="app-user.js?v=20261011-backnav"></script>
+  <script type="module" src="app-user.js?v=20261011-pldj"></script>
   <!-- 🆕 (T045): PhoneInput country selector — โหลดก่อน customer-auth.js เพราะ customer-auth.js ใช้ PhoneInput.mount() -->
   <!--   ผลกระทบระบบเดิม: 0% — ไฟล์ใหม่ ไม่แตะ app-user.js/app-cart.js -->
   <script src="phone-input.js?v=20261007-T092-sync-bugs" defer></script>
