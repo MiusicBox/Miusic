@@ -4712,6 +4712,7 @@ async function loadCustomerOrders(reset = false) {
           const accountView = document.getElementById("myAccountView");
           if (accountView) accountView.style.display = "none";
           openTrackOrderAllDetail(order);
+          trackOpenedFromAccount = true; // 🎨 ปิด/ย้อนกลับ → กลับมาหน้าออเดอร์ของบัญชี
           const trackBackdrop = document.getElementById("trackOrderBackdrop");
           if (trackBackdrop) { trackBackdrop.classList.add("show"); trackBackdrop.setAttribute("aria-hidden", "false"); }
         }
@@ -5072,6 +5073,7 @@ function applyTrackOrderAccountMode() {
 }
 
 function openTrackOrder() {
+  trackOpenedFromAccount = false;
   const backdrop = document.getElementById("trackOrderBackdrop");
   if (backdrop) backdrop.classList.add("show");
   // เพิ่มใหม่: ถ้ามีออเดอร์ล่าสุดที่จำไว้ในเครื่องนี้ ให้เติมข้อมูลให้อัตโนมัติ + เสนอปุ่มดูใบเสร็จอีกครั้งแบบไม่ต้องค้นหา
@@ -5103,11 +5105,19 @@ function openTrackOrder() {
   // 🎨 (2026-10-11): ล็อกอินแล้ว → ใช้ชื่อ/เบอร์จากบัญชี (ทับค่าที่จำไว้) + ซ่อนช่องกรอก
   applyTrackOrderAccountMode();
 }
+// 🎨 (2026-10-11): จำว่าเปิดหน้ารายละเอียดมาจากหน้า "บัญชีของฉัน > ออเดอร์" หรือไม่
+//   ถ้าใช่ → ตอนปิด/กดย้อนกลับ ให้กลับไปที่หน้าออเดอร์ของบัญชี (ไม่เด้งไปหน้าแรก)
+let trackOpenedFromAccount = false;
 function closeTrackOrder() {
   const backdrop = document.getElementById("trackOrderBackdrop");
   if (backdrop) backdrop.classList.remove("show");
   // เพิ่มใหม่: ปิด listener เรียลไทม์ของโหมด "ออเดอร์ทั้งหมด" (ถ้ามี) กัน query ค้างหลังปิดโมดัล
   stopTrackOrderAllListener();
+  if (trackOpenedFromAccount) {
+    trackOpenedFromAccount = false;
+    const accountView = document.getElementById("myAccountView");
+    if (accountView) accountView.style.display = "block";
+  }
 }
 
 function setTrackOrderFeedback(message, type) {
@@ -5232,7 +5242,7 @@ function renderTrackOrderResult(order) {
           ? `<div style="margin-top:10px;font-size:12px;color:var(--text-dim);">⏳ รอแอดมินตรวจสอบการโอนเงิน — หลังยืนยันแล้วไฟล์จะถูกเตรียมให้</div>`
           : ""}
     <div class="track-order-actions">
-      <button class="btn" type="button" id="trackOrderReceiptBtn" style="background:linear-gradient(145deg, #38bdf8 0%, #2563eb 50%, #4338ca 100%);color:#fff;border:1px solid rgba(255,255,255,.25);box-shadow:0 4px 12px rgba(37,99,235,.45),inset 0 1px 0 rgba(255,255,255,.22);text-shadow:0 1px 2px rgba(0,0,0,.30);">📄 ดูใบเสร็จ</button>
+      <button class="btn" type="button" id="trackOrderReceiptBtn" style="background:linear-gradient(145deg, #38bdf8 0%, #2563eb 50%, #4338ca 100%);color:#fff;border:1px solid rgba(255,255,255,.25);box-shadow:0 4px 12px rgba(37,99,235,.45),inset 0 1px 0 rgba(255,255,255,.22);text-shadow:0 1px 2px rgba(0,0,0,.30);">📄 ดูรายละเอียดออเดอร์</button>
       ${/* 🛡️ (added 2026-09-26): ซ่อนปุ่ม "ชำระเงิน" เมื่อ state เป็น paid / pending_review / verified_awaiting_zip */ ""}
       ${/*   ปุ่มยังแสดงเมื่อ state เป็น unpaid / rejected / cancelled (ลูกค้ายังชำระ/ส่งสลิปใหม่ได้) */ ""}
       ${paymentState.showPayButton ? `<button class="btn" type="button" id="trackOrderPayBtn" style="background:var(--accent);color:#fff;">💳 ชำระเงิน</button>` : ""}
@@ -5247,11 +5257,8 @@ function renderTrackOrderResult(order) {
   if (receiptBtn) {
     receiptBtn.onclick = () => {
       const orderWithId = order._docId ? order : { ...order, _docId: order._docId || order.id };
-      // ปิด track order backdrop ก่อน แล้วเปิด receipt modal
-      const trackBackdrop = document.getElementById("trackOrderBackdrop");
-      if (trackBackdrop) trackBackdrop.classList.remove("show");
-      const trackAllBackdrop = document.getElementById("trackOrderAllBackdrop");
-      if (trackAllBackdrop) trackAllBackdrop.classList.remove("show");
+      // 🎨 (2026-10-11): ไม่ปิดหน้าติดตามออเดอร์อีกต่อไป — เปิดใบเสร็จซ้อนด้านบน
+      //   กดปิดใบเสร็จแล้วจะกลับมาที่หน้ารายละเอียดออเดอร์เดิม (ย้อนกลับตามลำดับขั้น)
       showReceipt(orderWithId, order.receipt_number, STATE.settings.whatsapp_number);
     };
   }
@@ -5491,6 +5498,7 @@ function switchTrackOrderMode(mode) {
 //   ไม่ต้องให้ลูกค้าพิมพ์ซ้ำ — reuse loadTrackOrderInfoForBadge()/startTrackOrderAllListener() ที่มีอยู่แล้ว
 //   (ไม่สร้างระบบดึงข้อมูลใหม่)
 function openPendingPaymentPicker() {
+  trackOpenedFromAccount = false;
   const backdrop = document.getElementById("trackOrderBackdrop");
   if (backdrop) backdrop.classList.add("show");
   switchTrackOrderMode("all");
@@ -5630,7 +5638,7 @@ function openTrackOrderAllDetail(order) {
           ? `<div style="margin-top:10px;font-size:12px;color:var(--text-dim);">⏳ รอแอดมินตรวจสอบการโอนเงิน — หลังยืนยันแล้วไฟล์จะถูกเตรียมให้</div>`
           : ""}
     <div class="track-order-actions">
-      <button class="btn" type="button" id="trackOrderAllReceiptBtn" style="background:linear-gradient(145deg, #38bdf8 0%, #2563eb 50%, #4338ca 100%);color:#fff;border:1px solid rgba(255,255,255,.25);box-shadow:0 4px 12px rgba(37,99,235,.45),inset 0 1px 0 rgba(255,255,255,.22);text-shadow:0 1px 2px rgba(0,0,0,.30);">📄 ดูใบเสร็จ</button>
+      <button class="btn" type="button" id="trackOrderAllReceiptBtn" style="background:linear-gradient(145deg, #38bdf8 0%, #2563eb 50%, #4338ca 100%);color:#fff;border:1px solid rgba(255,255,255,.25);box-shadow:0 4px 12px rgba(37,99,235,.45),inset 0 1px 0 rgba(255,255,255,.22);text-shadow:0 1px 2px rgba(0,0,0,.30);">📄 ดูรายละเอียดออเดอร์</button>
       ${/* 🛡️ (added 2026-09-26): ซ่อนปุ่ม "ชำระเงิน" เมื่อ state เป็น paid/pending_review/verified_awaiting_zip */ ""}
       ${paymentState.showPayButton ? `<button class="btn" type="button" id="trackOrderAllPayBtn" style="background:var(--accent);color:#fff;">💳 ชำระเงิน</button>` : ""}
       <button class="btn" type="button" id="trackOrderAllWhatsappBtn">ติดต่อแอดมินผ่าน WhatsApp</button>
@@ -5646,11 +5654,8 @@ function openTrackOrderAllDetail(order) {
   if (receiptBtn) {
     receiptBtn.onclick = () => {
       const orderWithId = order._docId ? order : { ...order, _docId: order._docId || order.id };
-      // ปิด track order backdrop ก่อน แล้วเปิด receipt modal
-      const trackBackdrop = document.getElementById("trackOrderBackdrop");
-      if (trackBackdrop) trackBackdrop.classList.remove("show");
-      const trackAllBackdrop = document.getElementById("trackOrderAllBackdrop");
-      if (trackAllBackdrop) trackAllBackdrop.classList.remove("show");
+      // 🎨 (2026-10-11): ไม่ปิดหน้าติดตามออเดอร์อีกต่อไป — เปิดใบเสร็จซ้อนด้านบน
+      //   กดปิดใบเสร็จแล้วจะกลับมาที่หน้ารายละเอียดออเดอร์เดิม (ย้อนกลับตามลำดับขั้น)
       showReceipt(orderWithId, order.receipt_number, STATE.settings.whatsapp_number);
     };
   }
@@ -5750,6 +5755,8 @@ function openTrackOrderAllDetail(order) {
 }
 
 function closeTrackOrderAllDetail() {
+  // 🎨 (2026-10-11): เปิดมาจากหน้าบัญชี → ปุ่ม "← กลับ" พากลับไปหน้าออเดอร์ของบัญชีเลย
+  if (trackOpenedFromAccount) { closeTrackOrder(); return; }
   const listEl = document.getElementById("trackOrderAllList");
   const detailEl = document.getElementById("trackOrderAllDetail");
   if (detailEl) detailEl.hidden = true;
