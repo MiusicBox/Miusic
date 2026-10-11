@@ -1748,19 +1748,26 @@ function renderCategoryGrid() {
 }
 
 function renderDjRow() {
-  const wrap = document.getElementById("djRow");
-  if (!wrap) return;
   // 🚀 (Sort-Fix): sort DJs ทุกครั้งก่อน render
   STATE.djs = sortByThaiName(STATE.djs, "dj_name");
   // 🎧 (2026-09-20) เพิ่ม class "selected" ให้ DJ ที่กำลังถูกเลือก (STATE.currentDj)
   //   - CSS จะแสดงวงกลมสีแดง + เปลี่ยนสีชื่อ + ขยายขอบ avatar อัตโนมัติ
   //   - ถ้า STATE.currentDj เป็น null → ไม่มี class selected → ไม่มีวงกลมแดง
-  wrap.innerHTML = STATE.djs.map(d =>
+  const djHtml = STATE.djs.map(d =>
     `<div class="dj-item${STATE.currentDj === d.id ? " selected" : ""}" data-dj="${d.id}">
       <img class="dj-avatar" src="${d.image_url || ""}" loading="lazy" alt="">
       <div class="dj-name">${escapeHtml(d.dj_name)}</div>
     </div>`
   ).join("");
+  // 🎨 (2026-10-11): แสดงเมนู DJ ทั้งในหน้าแรก (#djRow) และหน้า Playlist (#playlistDjRow)
+  //   ใช้ STATE.currentDj ร่วมกัน → กด DJ ในหน้า Playlist = แสดงเฉพาะเพลย์ลิสต์/เพลงของ DJ นั้น (เหมือนเลือก DJ ในตัวกรองขั้นสูง)
+  ["djRow", "playlistDjRow"].forEach(rowId => {
+  const wrap = document.getElementById(rowId);
+  if (!wrap) return;
+  const fromPlaylists = rowId === "playlistDjRow";
+  const prevScroll = wrap.scrollLeft; // กัน row เลื่อนกลับซ้ายสุดหลัง re-render
+  wrap.innerHTML = djHtml;
+  wrap.scrollLeft = prevScroll;
   wrap.querySelectorAll(".dj-item").forEach(el => {
     el.addEventListener("click", () => {
       const selectedDjId = el.getAttribute("data-dj");
@@ -1795,11 +1802,12 @@ function renderDjRow() {
       // 🎧 (2026-09-20 fix): scroll ไปที่ gridTitle เฉพาะตอน "เลือก DJ ใหม่"
       //   - ถ้าเป็นการยกเลิก (isCanceling=true) → ห้าม scroll ปล่อยให้ผู้ใช้อยู่ที่ตำแหน่งเดิม
       //   - ป้องกันปัญหา "เด้งลงข้างล่าง" ตอนที่ผู้ใช้แค่ต้องการยกเลิกการเลือก
-      if (!isCanceling) {
+      if (!isCanceling && !fromPlaylists) {
         const gridTitle = document.getElementById("gridTitle");
         if (gridTitle) gridTitle.scrollIntoView({ behavior: "smooth" });
       }
     });
+  });
   });
 }
 
