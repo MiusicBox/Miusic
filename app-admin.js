@@ -4840,6 +4840,8 @@ async function loadSettings() {
   document.getElementById("setAdminName").value = s.admin_name || "";
   document.getElementById("setWhatsapp").value = s.whatsapp_number || "";
   document.getElementById("setLogo").value = s.website_logo || "";
+  // 🆕 (T126): อัปเดต preview โลโก
+  updateLogoPreview(s.website_logo || "");
   // Payment settings (added in STEP 1 — backward compat: fields optional, fall back to "")
   document.getElementById("setBankName").value = s.bank_name || "";
   document.getElementById("setBankAccountName").value = s.bank_account_name || "";
@@ -4858,6 +4860,27 @@ async function loadSettings() {
 let pendingQrFile = null;       // เก็บ File ที่เลือก (ถ้ามี) → อัปโหลดตอนกด "บันทึกการตั้งค่า"
 let currentQrUrl = "";          // URL ของรูป QR ปัจจุบัน (จาก settings หรือที่อัปโหลดใหม่)
 let pendingQrDelete = false;   // flag ว่าผู้ใช้กดลบรูป QR (จะ clear qr_code_url ตอนบันทึก)
+
+// 🆕 (T126 2026-10-12): ตัวแปรสำหรับอัปโหลดโลโกเว็บ (เหมือน pattern QR Code)
+let pendingLogoFile = null;
+let currentLogoUrl = "";
+let pendingLogoDelete = false;
+
+// 🆕 (T126): อัปเดต preview รูปโลโกในหน้าตั้งค่า
+function updateLogoPreview(url) {
+  currentLogoUrl = url || "";
+  const previewWrap = document.getElementById("logoPreviewWrap");
+  const previewImg = document.getElementById("logoPreviewImg");
+  const filePickerLabel = document.getElementById("logoFilePickerLabel");
+  if (url) {
+    if (previewImg) previewImg.src = url;
+    if (previewWrap) { previewWrap.style.display = "block"; previewWrap.style.setProperty("display", "block", "important"); }
+    if (filePickerLabel) filePickerLabel.style.display = "none";
+  } else {
+    if (previewWrap) previewWrap.style.display = "none";
+    if (filePickerLabel) filePickerLabel.style.display = "block";
+  }
+}
 
 // อัปเดต preview รูป QR ในหน้าตั้งค่า — แสดง/ซ่อนตามมีรูปหรือไม่
 function updateQrPreview(url) {
@@ -5010,7 +5033,122 @@ function updateQrPreview(url) {
   }
 })();
 
-// 🎨 (2026-09-26): sync URL input → preview (ถ้าผู้ใช้กรอก URL เองแทนการอัปโหลดรูป)
+// 🆕 (T126 2026-10-12): setupLogoUpload — ผูก event listeners สำหรับอัปโหลดโลโกเว็บ
+//   Pattern เดียวกับ setupQrUpload — แต่ใช้ pendingLogoFile/currentLogoUrl/pendingLogoDelete
+//   รองรับ iPhone/iPad/PC/Mac ผ่าน <input type="file" accept="image/*">
+(function setupLogoUpload() {
+  const fileInput = document.getElementById("logoFileInput");
+  const changeBtn = document.getElementById("logoChangeBtn");
+  const deleteBtn = document.getElementById("logoDeleteBtn");
+
+  if (fileInput) {
+    fileInput.addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      // size check 5MB
+      if (file.size > 5 * 1024 * 1024) {
+        showToast("ไฟล์ใหญ่เกิน 5MB — กรุณาลดขนาดรูป", "error");
+        fileInput.value = "";
+        return;
+      }
+      // MIME check
+      const allowedMimes = ["image/jpeg", "image/png", "image/webp", "image/jpg", "image/svg+xml"];
+      if (!allowedMimes.includes((file.type || "").toLowerCase())) {
+        showToast("อนุญาตเฉพาะ JPEG, PNG, WEBP, SVG", "error");
+        fileInput.value = "";
+        return;
+      }
+      // แสดง preview ทันทีด้วย FileReader.readAsDataURL (เหมือน QR upload)
+      const previewWrap = document.getElementById("logoPreviewWrap");
+      const previewImg = document.getElementById("logoPreviewImg");
+      const filePickerLabel = document.getElementById("logoFilePickerLabel");
+      try {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error("อ่านไฟล์รูปไม่สำเร็จ"));
+          reader.readAsDataURL(file);
+        });
+        if (previewImg) {
+          previewImg.src = dataUrl;
+          previewImg.onload = () => {
+            if (previewWrap) previewWrap.style.display = "block";
+            if (filePickerLabel) filePickerLabel.style.display = "none";
+          };
+          previewImg.onerror = () => {
+            if (previewWrap) previewWrap.style.display = "block";
+            if (filePickerLabel) filePickerLabel.style.display = "none";
+          };
+          setTimeout(() => {
+            if (previewWrap) previewWrap.style.display = "block";
+            if (filePickerLabel) filePickerLabel.style.display = "none";
+          }, 100);
+        }
+      } catch (err) {
+        console.warn("Logo preview failed, but will still upload:", err);
+        try {
+          const objectUrl = URL.createObjectURL(file);
+          if (previewImg) previewImg.src = objectUrl;
+          if (previewWrap) previewWrap.style.display = "block";
+          if (filePickerLabel) filePickerLabel.style.display = "none";
+        } catch (err2) {
+          showToast("ไม่สามารถแสดง preview ได้ แต่ไฟล์ถูกเลือกแล้ว — กดบันทึกเพื่ออัปโหลด", "info");
+        }
+      }
+      // ย่อรูปใหญ่ก่อน (ยกเว้น SVG — ไม่ต้องย่อ)
+      let processedFile = file;
+      if (file.type !== "image/svg+xml") {
+        try {
+          processedFile = await compressImageFile(file, 400, 0.85); // โลโก เล็กกว่า QR (400px)
+        } catch (err) {
+          console.warn("Logo compress failed, using original:", err);
+        }
+      }
+      pendingLogoFile = processedFile;
+      pendingLogoDelete = false;
+      showToast("เลือกรูปแล้ว — กด \"บันทึกการตั้งค่า\" เพื่ออัปโหลด", "info");
+    });
+  }
+
+  // ปุ่ม "เปลี่ยนรูป" → เปิด file picker
+  if (changeBtn) {
+    changeBtn.addEventListener("click", () => {
+      if (fileInput) { fileInput.value = ""; fileInput.click(); }
+    });
+  }
+
+  // ปุ่ม "ลบรูป" → ล้าง pendingLogoFile + ตั้ง pendingLogoDelete = true
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", async () => {
+      const ok = await adminConfirm(
+        "ต้องการลบรูปโลโก้เว็บไซต์นี้ใช่หรือไม่?\n\nเว็บจะใช้ชื่อร้านเป็นโลโก้ตัวหนังสือแทนจนกว่าจะอัปโหลดรูปใหม่",
+        { title: "ลบรูปโลโก้", okText: "ลบ", danger: true }
+      );
+      if (!ok) return;
+      pendingLogoFile = null;
+      pendingLogoDelete = true;
+      const previewWrap = document.getElementById("logoPreviewWrap");
+      const filePickerLabel = document.getElementById("logoFilePickerLabel");
+      if (previewWrap) previewWrap.style.display = "none";
+      if (filePickerLabel) filePickerLabel.style.display = "block";
+      const urlInput = document.getElementById("setLogo");
+      if (urlInput) urlInput.value = "";
+      showToast("รูปโลโก้จะถูกลบเมื่อกด \"บันทึกการตั้งค่า\"", "info");
+    });
+  }
+})();
+
+// 🆕 (T126): sync URL input → preview โลโก (ถ้าผู้ใช้กรอก URL เอง)
+document.getElementById("setLogo")?.addEventListener("input", (e) => {
+  const url = e.target.value.trim();
+  if (url && url !== currentLogoUrl) {
+    updateLogoPreview(url);
+    pendingLogoFile = null;
+    pendingLogoDelete = false;
+  } else if (!url && currentLogoUrl && !pendingLogoFile) {
+    updateLogoPreview("");
+  }
+});
 document.getElementById("setQrCodeUrl")?.addEventListener("input", (e) => {
   const url = e.target.value.trim();
   if (url && url !== currentQrUrl) {
@@ -5060,6 +5198,33 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
       pendingQrDelete = false;
     }
 
+    // 🆕 (T126 2026-10-12): อัปโหลดรูปโลโกก่อน (ถ้าผู้ใช้เลือกรูมใหม่) — เหมือน pattern QR
+    let finalLogoUrl = document.getElementById("setLogo").value.trim();
+    if (pendingLogoFile) {
+      const progressEl = document.getElementById("logoUploadProgress");
+      const percentEl = document.getElementById("logoUploadPercent");
+      if (progressEl) progressEl.style.display = "block";
+      try {
+        btn.textContent = "กำลังอัปโหลดรูปโลโก้...";
+        const res = await uploadToCloudinary(pendingLogoFile, (pct) => {
+          if (percentEl) percentEl.textContent = pct + "%";
+        });
+        finalLogoUrl = res.url;
+        pendingLogoFile = null;
+        showToast("✅ อัปโหลดรูปโลโก้สำเร็จ", "success");
+      } catch (err) {
+        if (progressEl) progressEl.style.display = "none";
+        showToast("อัปโหลดรูปโลโก้ไม่สำเร็จ: " + (err.message || String(err)), "error");
+        btn.disabled = false;
+        btn.textContent = originalText;
+        return;
+      }
+      if (progressEl) progressEl.style.display = "none";
+    } else if (pendingLogoDelete) {
+      finalLogoUrl = "";
+      pendingLogoDelete = false;
+    }
+
     const payload = {
       website_name: document.getElementById("setWebsiteName").value.trim(),
       meta_description: document.getElementById("setMetaDesc").value.trim(),
@@ -5086,7 +5251,7 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
         // ไม่ตรงรูปแบบ → เก็บ raw (best effort)
         return raw;
       })(),
-      website_logo: document.getElementById("setLogo").value.trim(),
+      website_logo: finalLogoUrl, // 🆕 (T126): ใช้ URL ที่อัปโหลดแล้ว (หรือ URL ที่กรอกเอง)
       // Payment settings (added in STEP 1 — merge:true keeps everything backward compatible)
       bank_name: document.getElementById("setBankName").value.trim(),
       bank_account_name: document.getElementById("setBankAccountName").value.trim(),

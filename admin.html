@@ -604,7 +604,36 @@
         <div class="field"><label>คำอธิบายเว็บไซต์ (สำหรับ Google ค้นหา)</label><textarea id="setMetaDesc" placeholder="สำหรับค้นหา Google"></textarea></div>
         <div class="field"><label>ชื่อ Admin</label><input id="setAdminName" placeholder="ชื่อแอดมิน"></div>
         <div class="field"><label>เบอร์ WhatsApp ร้าน <span style="font-weight:400;color:var(--text-dim);font-size:11px;">(ลาว 85620XXXXXXXX / ไทย 668XXXXXXXXX)</span></label><input id="setWhatsapp" placeholder="ลาว: 8562012345678 · ไทย: 66812345678"></div>
-        <div class="field"><label>URL โลโก้เว็บไซต์</label><input id="setLogo"></div>
+        <!-- 🆕 (T126 2026-10-12): โลโกเว็บ — อัปโหลดจากเครื่อง (iPhone/iPad/PC/Mac) + คงช่อง URL ไว้ -->
+        <div class="field">
+          <label>โลโก้เว็บไซต์</label>
+          <!-- preview รูปโลโก (ถ้ามี) -->
+          <div id="logoPreviewWrap" style="display:none;margin-bottom:8px;">
+            <div style="display:inline-block;padding:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;">
+              <img id="logoPreviewImg" src="" alt="Logo preview" style="max-width:120px;max-height:60px;object-fit:contain;border-radius:4px;">
+            </div>
+            <div style="margin-top:6px;display:flex;gap:6px;">
+              <button class="btn secondary" id="logoChangeBtn" type="button" style="padding:6px 12px;font-size:12px;">เปลี่ยนรูป</button>
+              <button class="btn secondary" id="logoDeleteBtn" type="button" style="padding:6px 12px;font-size:12px;">🗑 ลบรูป</button>
+            </div>
+          </div>
+          <!-- file picker (ใช้ได้บน iPhone/iPad/PC/Mac) -->
+          <input type="file" id="logoFileInput" accept="image/jpeg,image/png,image/webp,image/jpg,image/svg+xml" style="display:none;">
+          <label for="logoFileInput" id="logoFilePickerLabel" class="file-picker" style="cursor:pointer;">
+            <div id="logoFilePickerText">
+              <div style="font-size:28px;">🖼️</div>
+              <div style="font-size:13px;margin-top:4px;">คลิกเพื่อเลือกรูปโลโก้</div>
+              <div style="font-size:11px;margin-top:2px;color:var(--text-dim);">JPEG / PNG / WEBP / SVG • สูงสุด 5MB</div>
+              <div style="font-size:11px;margin-top:2px;color:var(--text-dim);">รองรับ iPhone / iPad / Android / PC / Mac</div>
+            </div>
+          </label>
+          <!-- สถานะกำลังอัปโหลด -->
+          <div id="logoUploadProgress" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(139,92,246,.08);border:1px solid var(--accent);border-radius:8px;font-size:13px;color:var(--accent);">
+            กำลังอัปโหลดรูปโลโก้... <span id="logoUploadPercent">0%</span>
+          </div>
+        </div>
+        <!-- ช่อง URL (optional — สำหรับกรณีมี URL รูปอยู่แล้ว ไม่ต้องอัปโหลดใหม่) -->
+        <div class="field"><label>หรือ URL โลโก้เว็บไซต์ (optional)</label><input id="setLogo" placeholder="https://...logo.png (ถ้าอัปโหลดรูปด้านบนแล้ว ไม่ต้องกรอก)"></div>
 
         <div style="margin:18px 0 8px;font-weight:800;border-top:1px dashed var(--border);padding-top:14px;">💳 ตั้งค่าการชำระเงิน</div>
         <div class="field"><label>ชื่อธนาคาร</label><input id="setBankName" placeholder="เช่น BCEL, JDB, LDB, BBL"></div>
