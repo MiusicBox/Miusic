@@ -1951,7 +1951,7 @@ function renderMyOrdersList(orders) {
     listEl.innerHTML = `
       <div class="empty-state">
         ยังไม่พบออเดอร์ของคุณ<br>
-        <small style="color:var(--text-dim);">ตรวจสอบชื่อและเบอร์ WhatsApp ว่าถูกต้องตรงกับที่ใช้สั่งซื้อ</small>
+        <small style="color:var(--text-dim);">ตรวจสอบชื่อและเบอร์ WhatsApp ว่าถูกต้องตรงกับที่ใช้สั่งซื้อ<br>ถ้าเคยสั่งซื้อตอนเข้าสู่ระบบ กรุณาเข้าสู่ระบบก่อนแล้วค้นหาอีกครั้ง</small>
       </div>`;
     return;
   }
