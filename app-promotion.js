@@ -2069,6 +2069,21 @@ function renderOneOrderCard(order) {
 
   const isExpanded = MY_ORDERS_STATE.expandedOrderIds.has(orderId);
 
+  // 🎨 (2026-10-11): badge สถานะการชำระเงิน (ส่งสลิปแล้ว / ยืนยันแล้ว / ชำระแล้ว / สลิปถูกปฏิเสธ)
+  //   ใช้ logic เดียวกับหน้าบัญชีของลูกค้าที่ล็อกอิน (getOrderPaymentState จาก app-cart.js ผ่าน window)
+  //   การ์ดแบบย่อแสดงแค่ เลขออเดอร์ · วันเวลา · ราคา · สถานะ — ไม่แสดงชื่อเพลง (ดูในรายละเอียด)
+  let paymentBadgeHtml = "";
+  try {
+    const pState = typeof window.getOrderPaymentState === "function" ? window.getOrderPaymentState(order) : null;
+    const pb = (bg, color, text) => `<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:${bg};color:${color};font-weight:600;">${text}</span>`;
+    if (pState) {
+      if (pState.state === "paid") paymentBadgeHtml = pb("rgba(41,204,113,.15)", "var(--success)", "✅ ชำระแล้ว");
+      else if (pState.state === "verified_awaiting_zip") paymentBadgeHtml = pb("rgba(41,204,113,.15)", "var(--success)", "✅ ยืนยันแล้ว");
+      else if (pState.state === "pending_review") paymentBadgeHtml = pb("rgba(245,180,0,.15)", "#F5B400", "📸 ส่งสลิปแล้ว");
+      else if (pState.state === "rejected") paymentBadgeHtml = pb("rgba(239,68,68,.15)", "var(--danger)", "⚠️ สลิปถูกปฏิเสธ");
+    }
+  } catch (_) {}
+
   const itemSummary = items.length > 0
     ? items.slice(0, 3).map(i => myOrders_escapeHtml(i.title || "เพลง")).join(", ") + (items.length > 3 ? ` +${items.length - 3}` : "")
     : "-";
@@ -2178,9 +2193,9 @@ function renderOneOrderCard(order) {
         <div style="flex:1;min-width:0;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
             <span class="my-order-status-badge" style="background:${cfg.bg};color:${cfg.color};">${cfg.emoji} ${cfg.label}</span>
-            <span style="font-size:11px;color:var(--text-dim);">#${myOrders_escapeHtml(receiptNumber)}</span>
+            ${paymentBadgeHtml}
           </div>
-          <div style="font-size:14px;font-weight:600;margin-bottom:2px;">${itemSummary}</div>
+          <div style="font-size:14px;font-weight:700;margin-bottom:2px;word-break:break-all;">${myOrders_escapeHtml(receiptNumber)}</div>
           <div style="font-size:11px;color:var(--text-dim);">${dateStr}</div>
           ${discountBadge}
         </div>
