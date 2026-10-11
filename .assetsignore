@@ -14,3 +14,9 @@ README.md
 .DS_Store
 .env
 .env.*
+
+# 🔒 (2026-10-11) ไม่ให้เสิร์ฟสาธารณะ: SQL migration (โครงสร้างฐานข้อมูล), เอกสาร/งานทีมภายใน, หน้า preview ภายใน
+scripts
+ai-team
+banner-preview-v2.html
+predeploy-check.mjs
