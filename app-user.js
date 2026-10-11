@@ -44,7 +44,7 @@ import {
   initMyOrdersView, cleanupMyOrdersView,
   // 🎁 (2026-09-20) เพิ่มใหม่: formatDateTime ใช้สำหรับแสดงวันที่ในหน้าโปรโมชั่นพรีวิว (เรียกจาก app-promotion.js ที่มีอยู่แล้ว)
   formatDateTime
-} from "./app-promotion.js?v=20261003-login-guest-v11";
+} from "./app-promotion.js?v=20261011-order-detail";
 // 🔧 (T116 2026-10-07 fix): ปรับ version จาก v10 → v11 ให้ตรงกับ app-cart.js + orders.js
 //   - Bug: cache-bust version ต่างกัน → ES module ถือว่าเป็น 2 instances คนละตัว
 //     app-user.js (v10) init() populate _discountsCache ใน v10 instance
@@ -77,6 +77,7 @@ let audioUnlocked = false;
 //   icon อัตโนมัติตาม type: ✅ ❌ ℹ️ ⏳
 //   backward compat: ทุก caller เดิมยังทำงานเหมือนเดิม (message, type)
 function showToast(message, type) {
+  if (window.__notify) { window.__notify.toast(message, type); return; } // 🎨 ระบบแจ้งเตือนใหม่ (notify.js)
   const el = document.getElementById("toast");
   if (!el) return;
   // 🆕 (T105): icon ตาม type
@@ -3407,7 +3408,7 @@ function setupReviewHandlers() {
   // 3. Delete — ลบรีวิวของตัวเอง
   document.getElementById("modalDeleteReviewBtn")?.addEventListener("click", async () => {
     if (!currentSongIdForReview) return;
-    if (!confirm("ต้องการลบรีวิวนี้ใช่ไหม?")) return;
+    if (!(await window.customConfirm("รีวิวนี้จะถูกลบถาวร ต้องการดำเนินการต่อไหม?", { title: "ลบรีวิว", okText: "ลบรีวิว", danger: true }))) return;
     const btn = document.getElementById("modalDeleteReviewBtn");
     if (btn) { btn.disabled = true; btn.textContent = "กำลังลบ..."; }
     setReviewFeedback("", "");
@@ -4789,6 +4790,19 @@ function bindAccountOrderEvents(listEl, orders) {
       }
     });
   });
+  // 🎨 (2026-10-11): ปุ่มรายละเอียดออเดอร์ — เปิดหน้าใบเสร็จของออเดอร์นั้นทันที (ลูกค้าที่ล็อกอิน)
+  listEl.querySelectorAll("[data-order-detail]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute("data-order-detail");
+      const order = orders.find(o => (o._docId || o.id || "") === orderId);
+      if (!order) return;
+      const receiptNumber = order.receipt_number || orderId.slice(0, 8);
+      if (typeof window.showReceipt === "function") {
+        window.showReceipt(order, receiptNumber, order.store_name || "Music Store");
+      }
+    });
+  });
   // ปุ่มฟังเพลง
   listEl.querySelectorAll("[data-order-play]").forEach(btn => {
     btn.addEventListener("click", (e) => {
@@ -4866,7 +4880,7 @@ document.getElementById("accountTabSettings")?.addEventListener("click", () => s
 
 // 🆕 (2026-10-02): ปุ่มออกจากระบบในหน้าบัญชี
 document.getElementById("myAccountLogoutBtn")?.addEventListener("click", async () => {
-  if (!confirm("ต้องการออกจากระบบใช่ไหม?")) return;
+  if (!(await window.customConfirm("คุณต้องการออกจากระบบใช่ไหม?", { title: "ออกจากระบบ", okText: "ออกจากระบบ" }))) return;
   // ซ่อน account view
   const accountView = document.getElementById("myAccountView");
   if (accountView) accountView.style.display = "none";
@@ -4996,6 +5010,65 @@ function withTimeout(promise, ms) {
   ]);
 }
 
+// 🎨 (2026-10-11): ลูกค้าที่ล็อกอินแล้ว → ติดตามออเดอร์ได้เลย ไม่ต้องกรอกชื่อ/เบอร์ซ้ำ
+//   ใช้ข้อมูลบัญชีชุดเดียวกับตอนสั่งซื้อ (app-cart.js: display_name + whatsapp, ไม่มีเบอร์ใช้ email)
+function getTrackAccountInfo() {
+  let c = (window.getCurrentCustomer && window.getCurrentCustomer()) ? window.getCurrentCustomer() : null;
+  if (!c) {
+    try { const raw = localStorage.getItem("miusic_customer_session"); if (raw) c = JSON.parse(raw); } catch (_) {}
+  }
+  if (!c || !(c.display_name || c.email)) return null;
+  return { name: c.display_name || "", whatsapp: c.whatsapp || c.email || "" };
+}
+
+// ซ่อน/แสดงช่องชื่อ+เบอร์ใน modal ติดตามออเดอร์ ตามสถานะล็อกอิน (เรียกทุกครั้งที่เปิด modal/สลับโหมด)
+function applyTrackOrderAccountMode() {
+  const info = getTrackAccountInfo();
+  const loggedIn = !!info;
+  const q = (id) => document.getElementById(id);
+  const fieldOf = (id) => q(id)?.closest(".field");
+  ["trackOrderName", "trackOrderPhone", "trackOrderAllName", "trackOrderAllPhone"].forEach(id => {
+    const f = fieldOf(id);
+    if (f) f.style.display = loggedIn ? "none" : "";
+  });
+  const allBtn = q("trackOrderAllSubmitBtn");
+  if (allBtn) allBtn.style.display = loggedIn ? "none" : "";
+  if (loggedIn) {
+    // ใส่ค่าจากบัญชีลงช่อง (ซ่อนอยู่) เพื่อให้ handler เดิมใช้งานได้โดยไม่ต้องแก้
+    q("trackOrderName").value = info.name;
+    q("trackOrderPhone").value = info.whatsapp;
+    q("trackOrderAllName").value = info.name;
+    q("trackOrderAllPhone").value = info.whatsapp;
+  }
+  // chip แสดงบัญชีที่ใช้ค้นหา
+  [["trackOrderSingleView", "trackAccountChipSingle"], ["trackOrderAllView", "trackAccountChipAll"]].forEach(([viewId, chipId]) => {
+    const view = q(viewId);
+    if (!view) return;
+    let chip = q(chipId);
+    if (!loggedIn) { if (chip) chip.remove(); return; }
+    if (!chip) {
+      chip = document.createElement("div");
+      chip.id = chipId;
+      chip.className = "track-account-chip";
+      view.insertBefore(chip, view.firstChild);
+    }
+    chip.textContent = "";
+    const t = document.createElement("span");
+    t.textContent = "ค้นหาด้วยบัญชีของคุณ";
+    const n = document.createElement("strong");
+    n.textContent = info.name + (info.whatsapp ? " · " + info.whatsapp : "");
+    chip.append(t, n);
+  });
+  const intro = document.querySelector("#trackOrderBackdrop .track-order-intro");
+  if (intro) {
+    if (!intro.dataset.orig) intro.dataset.orig = intro.textContent;
+    intro.textContent = loggedIn
+      ? "คุณเข้าสู่ระบบแล้ว — กรอกเลข Order เพื่อค้นหา หรือดูออเดอร์ทั้งหมดของบัญชีนี้ได้ทันที"
+      : intro.dataset.orig;
+  }
+  return info;
+}
+
 function openTrackOrder() {
   const backdrop = document.getElementById("trackOrderBackdrop");
   if (backdrop) backdrop.classList.add("show");
@@ -5025,6 +5098,8 @@ function openTrackOrder() {
   const allPhoneInput = document.getElementById("trackOrderAllPhone");
   if (allNameInput && savedNameAll) allNameInput.value = savedNameAll;
   if (allPhoneInput && savedPhoneAll) allPhoneInput.value = savedPhoneAll;
+  // 🎨 (2026-10-11): ล็อกอินแล้ว → ใช้ชื่อ/เบอร์จากบัญชี (ทับค่าที่จำไว้) + ซ่อนช่องกรอก
+  applyTrackOrderAccountMode();
 }
 function closeTrackOrder() {
   const backdrop = document.getElementById("trackOrderBackdrop");
@@ -5398,6 +5473,14 @@ function switchTrackOrderMode(mode) {
 
   // ออกจากโหมด "ทั้งหมด" แล้ว ให้ปิด listener เรียลไทม์เพื่อไม่ให้ทำงานเปล่าๆ เบื้องหลัง
   if (!isAll) stopTrackOrderAllListener();
+
+  // 🎨 (2026-10-11): ล็อกอินแล้ว → เข้าโหมด "ทั้งหมด" แล้วโหลดออเดอร์ของบัญชีให้เลย ไม่ต้องกรอก/กดปุ่ม
+  const info = applyTrackOrderAccountMode();
+  if (isAll && info && info.name && info.whatsapp) {
+    // ถ้าบัญชีไม่มีเบอร์ (ใช้ email แทน) → ส่งค่าตรง ๆ ไม่ผ่าน normalizePhone
+    const ph = String(info.whatsapp).includes("@") ? info.whatsapp : normalizePhone(info.whatsapp);
+    startTrackOrderAllListener(info.name, ph);
+  }
 }
 
 // 🔧 (2026-09-26) เพิ่มใหม่: เปิด modal "ติดตามออเดอร์" ตรงไปที่โหมด "ออเดอร์ทั้งหมดของฉัน" ทันที
@@ -5409,7 +5492,7 @@ function openPendingPaymentPicker() {
   const backdrop = document.getElementById("trackOrderBackdrop");
   if (backdrop) backdrop.classList.add("show");
   switchTrackOrderMode("all");
-  const info = loadTrackOrderInfoForBadge();
+  const info = getTrackAccountInfo() || loadTrackOrderInfoForBadge(); // 🎨 ล็อกอินแล้วใช้ข้อมูลบัญชีก่อน
   if (info && info.name && info.whatsapp) {
     const nameInput = document.getElementById("trackOrderAllName");
     const phoneInput = document.getElementById("trackOrderAllPhone");
