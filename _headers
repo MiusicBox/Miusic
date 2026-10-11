@@ -20,3 +20,15 @@
   Cache-Control: no-cache
 /icon-*.png
   Cache-Control: public, max-age=31536000, immutable
+
+
+# 🔒 (2026-10-11) Security headers สำหรับหน้า HTML/ไฟล์ static (ฝั่ง API ตั้งไว้ใน worker แล้ว)
+#   - ไม่ตั้ง X-Frame-Options ทั้งเว็บ เพราะต้องทดสอบหน้าร้านผ่านเครื่องมือ preview แบบ iframe
+#   - หน้าแอดมินห้ามถูกฝังใน iframe (กัน clickjacking)
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), geolocation=()
+/admin.html
+  X-Frame-Options: DENY
+  Cache-Control: no-cache
