@@ -20,6 +20,12 @@
 // ⚠️ ไม่กระทบออเดอร์ที่มี customer_id เลย (ออเดอร์ Login ไม่มีวันหลุดเข้า Guest list)
 export const ALLOW_LEGACY_GUEST_ORDERS = true;
 
+// 🎨 (2026-10-11) ออเดอร์ guest ที่ "มี guest_id" แต่ลูกค้ากลับมาค้นจากเครื่อง/เบราว์เซอร์อื่น (หรือข้อมูลเว็บถูกล้าง / โหมดไม่ระบุตัวตน)
+//   → guest_id ใหม่ไม่ตรงกับตอนสั่งซื้อ → เดิมค้นไม่เจอ ("สั่งแล้วออกไป กลับมาค้นไม่เจอ")
+//   true  = ถ้า guest_id ไม่ตรง ให้ค้นเจอได้ด้วย "ชื่อตรงเป๊ะ + เบอร์ WhatsApp ตรง" (เหมือนออเดอร์เก่า) — ค่าเริ่มต้น
+//   false = เข้มสุด: ต้อง guest_id ตรงเท่านั้น (ลูกค้าที่เปลี่ยนเครื่องจะค้นผ่านรายการไม่ได้ — ยังเปิดทีละใบด้วยเลขใบเสร็จได้)
+export const ALLOW_GUEST_NAME_PHONE_LOOKUP = true;
+
 const GUEST_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // คืน guest_id (lowercase) ถ้ารูปแบบเป็น UUID v4 ที่ถูกต้อง ไม่งั้นคืน "" (ถือว่าไม่มี)
@@ -48,7 +54,12 @@ export function isOrderInGuestList(orderData, { guestId, queryName, normalizeNam
   if (isLoginOrder(orderData)) return false;
   const orderGuestId = normalizeGuestId(orderData.guest_id);
   if (orderGuestId) {
-    return !!guestId && orderGuestId === normalizeGuestId(guestId);
+    // เครื่องเดิม (guest_id ตรง) → เจอแน่นอน
+    if (guestId && orderGuestId === normalizeGuestId(guestId)) return true;
+    // 🎨 (2026-10-11) คนละเครื่อง/ล้างข้อมูลเว็บ → ใช้ ชื่อตรงเป๊ะ + เบอร์ (เบอร์เช็คที่ caller) แทน
+    if (!ALLOW_GUEST_NAME_PHONE_LOOKUP) return false;
+    const oName2 = typeof normalizeName === "function" ? normalizeName(orderData.customer_name || "") : "";
+    return !!oName2 && !!queryName && oName2 === queryName;
   }
   if (!allowLegacy) return false;
   const oName = typeof normalizeName === "function" ? normalizeName(orderData.customer_name || "") : "";
