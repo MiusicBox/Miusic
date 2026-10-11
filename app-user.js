@@ -778,6 +778,11 @@ function resetAdvancedFilterState(options = {}) {
     STATE.songs = [];
     STATE.songsPage = 0;
     STATE.songsHasMore = true;
+    // 🎨 (T123 2026-10-11 fix): ล้าง playlist cache เมื่อ songs ถูก cleared
+    //   Bug: _plLoadedOnce ไม่ถูก cleared → ensurePlaylistSongsLoaded เช็ค cache → early return
+    //   → playlist ไม่โหลดเพลงใหม่ → "กำลังโหลดเพลง..." ค้างตลอดกาล
+    //   Fix: clear cache ทุกครั้งที่ STATE.songs ถูก cleared
+    try { _plLoadedOnce.clear(); _plLoadingNow.clear(); } catch (_) {}
   }
 }
 
@@ -1376,6 +1381,8 @@ async function loadSongsWithAdvancedFilters(resetPagination = true) {
     STATE.currentCategory = "all";
     STATE.currentDj = null;
     STATE.search = "";
+    // 🎨 (T123 2026-10-11 fix): ล้าง playlist cache เมื่อ songs ถูก cleared
+    try { _plLoadedOnce.clear(); _plLoadingNow.clear(); } catch (_) {}
   }
   if (resetPagination) {
     try { renderSongSkeleton(12); } catch (_) {}
@@ -1456,6 +1463,8 @@ async function loadSongsWithFilters(resetPagination = true) {
       STATE.songsPage = 0;
       STATE.songsHasMore = true;
       STATE.songs = [];
+      // 🎨 (T123 2026-10-11 fix): ล้าง playlist cache เมื่อ songs ถูก cleared
+      try { _plLoadedOnce.clear(); _plLoadingNow.clear(); } catch (_) {}
       // ตัดสินใจ active flag จาก current filter state
       SONG_SEARCH_STATE.active = hasActiveAdvancedFilters();
       // ถ้า active → รีเซ็ต client-side filter state เพื่อกัน conflict
@@ -1689,9 +1698,11 @@ function renderCategoryGrid() {
         try {
           // resetAdvancedFilterState ล้าง state แต่ไม่ reload — เราต้อง reload เอง
           resetAdvancedFilterState({ reloadSongs: false });
-          // โหลด songs ใหม่ทั้งหมด (ไม่มี filter)
+          // โหลด songs ใหม่ทั้วหมด (ไม่มี filter)
           STATE.songs = [];
           STATE.songsPage = 0;
+          // 🎨 (T123 2026-10-11 fix): ล้าง playlist cache เมื่อ songs ถูก cleared
+          try { _plLoadedOnce.clear(); _plLoadingNow.clear(); } catch (_) {}
           STATE.songsHasMore = true;
           await loadSongsWithFilters(true);
         } catch (err) {
