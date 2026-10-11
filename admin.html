@@ -364,9 +364,25 @@
       #view-orders .history-search {
         display:flex; align-items:center; gap:8px; padding:0 16px; margin:14px 0 0;
       }
-      #view-orders .history-search .search-box { flex:1; }
+      /* 🎨 (2026-10-11): ช่องค้นหาประวัติออเดอร์ — แถวแรกเป็นช่องค้นหาเต็มความกว้าง, แถวสองเป็นปุ่ม ล้าง/ขั้นสูง
+         เดิมปุ่ม "ขั้นสูง" ยืดกินพื้นที่ที่เหลือ ทำให้ช่องค้นหาหดเหลือแค่วงกลมเล็ก ๆ */
+      #view-orders .history-search { flex-wrap:wrap; }
+      #view-orders .history-search .search-box {
+        flex:1 1 100%; width:100%; min-width:0; max-width:none; margin:0;
+        padding:11px 16px; border-radius:12px; order:0;
+      }
       #view-orders .history-search .search-box input {
-        width:100%;
+        width:100%; min-width:0; font-size:16px; padding:2px 0;
+      }
+      #view-orders .history-search .search-clear,
+      #view-orders .history-search #ordAdvancedSearchToggle {
+        flex:1 1 0; width:auto !important; min-width:0; min-height:42px; order:1; text-align:center;
+      }
+      @media (min-width: 700px) {
+        #view-orders .history-search { flex-wrap:nowrap; }
+        #view-orders .history-search .search-box { flex:1 1 auto; width:auto; order:0; }
+        #view-orders .history-search .search-clear,
+        #view-orders .history-search #ordAdvancedSearchToggle { flex:0 0 auto; padding-left:16px; padding-right:16px; }
       }
       #view-orders .history-search .search-clear {
         border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); color:var(--text-dim);
