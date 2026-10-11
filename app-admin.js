@@ -1823,7 +1823,34 @@ const AUDIT_IGNORED_FIELDS = new Set([
 // ส่งกลับ HTML string (มี <strong> ครอบชื่อ target)
 function generateHumanReadableSummary(log) {
   const collectionLabel = AUDIT_COLLECTION_LABELS[log.collection] || log.collection;
-  const targetName = log.target_name || log.target_id || "—";
+  
+  // 🆕 (T127 2026-10-12): ถ้า target_name ดูเป็น UUID → ลองดึงชื่อจริงจาก before_data หรือ after_data
+  //   Bug: audit log เก่า ๆ มี target_name = UUID (เพราะโค้ดเดิมไม่ได้เก็บชื่อ) → แสดงเป็นภาษาคนอ่านไม่ได้
+  //   Fix: ถ้า target_name ดูเป็น UUID → ค้นหาชื่อจาก before_data/after_data → ถ้าไม่เจอ → แสดง ID สั้น ๆ
+  let targetName = log.target_name || log.target_id || "—";
+  
+  // ตรวจว่า target_name ดูเป็น UUID ไหม (รูปแบบ xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx หรือยาว 32+ ตัวอักษร)
+  const looksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(String(targetName)) || String(targetName).length >= 32;
+  
+  if (looksLikeUuid) {
+    // ลองดึงชื่อจาก before_data (สำหรับลบ) หรือ after_data (สำหรับสร้าง/แก้ไข)
+    const dataSource = log.before_data || log.after_data || {};
+    targetName = dataSource.song_name || dataSource.playlist_name || dataSource.customer_name || 
+                 dataSource.dj_name || dataSource.category_name || dataSource.name || 
+                 dataSource.display_name || dataSource.title || dataSource.email || 
+                 dataSource.website_name || // สำหรับ settings
+                 targetName; // fallback ยังเป็น UUID
+  }
+  
+  // ถ้ายังเป็น UUID อยู่ → แสดงแค่ 8 ตัวแรก + # เพื่อให้อ่านง่ายขึ้น
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(String(targetName))) {
+    targetName = "#" + String(targetName).slice(0, 8);
+  }
+  // ถ้าเป็น "main" (settings ID) → แสดงเป็น "ตั้งค่าหลัก" แทน
+  if (targetName === "main" && log.collection === "settings") {
+    targetName = "ตั้งค่าหลัก";
+  }
+  
   const targetHtml = `<strong style="color:var(--text);">${escapeHtml(String(targetName).slice(0, 100))}</strong>`;
 
   // กระทำ "สร้าง"
