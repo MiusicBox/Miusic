@@ -5080,6 +5080,27 @@ function applyTrackOrderAccountMode() {
   return info;
 }
 
+// 🎨 (2026-10-11): ตรวจซ้ำกับเซิร์ฟเวอร์ว่า session ลูกค้ายังใช้ได้ไหม (กันกรณีคุกกี้หมดอายุแต่หน้าเว็บยังจำว่าล็อกอิน)
+//   - ใช้ initCustomerAuth() เดิม (เรียก /api/customer/me แล้วเคลียร์ state ถ้า 401) — ออฟไลน์ → คงสถานะเดิม
+//   - หมดอายุ → แจ้งเตือน + คืนช่องชื่อ/เบอร์ให้กรอกเองทันที
+//   - throttle 20 วินาที กันยิงซ้ำตอนสลับแท็บไปมา
+let _trackSessionCheckedAt = 0;
+async function revalidateTrackAccount() {
+  if (!getTrackAccountInfo()) return false;
+  if (Date.now() - _trackSessionCheckedAt < 20000) return true;
+  _trackSessionCheckedAt = Date.now();
+  try { if (typeof window.initCustomerAuth === "function") await window.initCustomerAuth(); } catch (_) {}
+  if (getTrackAccountInfo()) return true;
+  // session หมดอายุ → ล้างค่าที่เติมไว้ + แสดงช่องกรอกกลับมา
+  ["trackOrderName", "trackOrderPhone", "trackOrderAllName", "trackOrderAllPhone"].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = "";
+  });
+  stopTrackOrderAllListener();
+  applyTrackOrderAccountMode();
+  showToast("เซสชันหมดอายุ — กรุณาเข้าสู่ระบบใหม่ หรือกรอกชื่อและเบอร์เพื่อค้นหา", "warning");
+  return false;
+}
+
 function openTrackOrder() {
   trackOpenedFromAccount = false;
   const backdrop = document.getElementById("trackOrderBackdrop");
@@ -5112,6 +5133,7 @@ function openTrackOrder() {
   if (allPhoneInput && savedPhoneAll) allPhoneInput.value = savedPhoneAll;
   // 🎨 (2026-10-11): ล็อกอินแล้ว → ใช้ชื่อ/เบอร์จากบัญชี (ทับค่าที่จำไว้) + ซ่อนช่องกรอก
   applyTrackOrderAccountMode();
+  revalidateTrackAccount(); // ตรวจ session จริงเบื้องหลัง (ถ้าหมดอายุจะคืนช่องกรอกให้)
 }
 // 🎨 (2026-10-11): จำว่าเปิดหน้ารายละเอียดมาจากหน้า "บัญชีของฉัน > ออเดอร์" หรือไม่
 //   ถ้าใช่ → ตอนปิด/กดย้อนกลับ ให้กลับไปที่หน้าออเดอร์ของบัญชี (ไม่เด้งไปหน้าแรก)
@@ -5496,7 +5518,8 @@ function switchTrackOrderMode(mode) {
   if (isAll && info && info.name && info.whatsapp) {
     // ถ้าบัญชีไม่มีเบอร์ (ใช้ email แทน) → ส่งค่าตรง ๆ ไม่ผ่าน normalizePhone
     const ph = String(info.whatsapp).includes("@") ? info.whatsapp : normalizePhone(info.whatsapp);
-    startTrackOrderAllListener(info.name, ph);
+    // ตรวจ session ก่อนโหลด — ถ้าหมดอายุจะแจ้งเตือนและไม่โหลดรายการว่างให้สับสน
+    revalidateTrackAccount().then(ok => { if (ok) startTrackOrderAllListener(info.name, ph); });
   }
 }
 
