@@ -507,6 +507,8 @@ async function showAdmin() {
   //   วิธีแก้: เรียก refreshPaymentsBadge() ทันทีหลัง login เหมือนที่เรียก updateOrdersBadge()
   //   ผลกระทบระบบเดิม: 0% — เพิ่มบรรทัดเดียว ไม่แตะฟังก์ชันเดิม
   if (typeof refreshPaymentsBadge === "function") refreshPaymentsBadge();
+  // 🆕 (T124 2026-10-11): เรียก refreshPasswordResetBadge() หลัง login
+  if (typeof refreshPasswordResetBadge === "function") refreshPasswordResetBadge();
 }
 
 // ---------------- View switching ----------------
@@ -1228,6 +1230,7 @@ async function loadPasswordResetRequests(status = "pending") {
           if (res.ok) {
             showToast("ยกเลิกคำขาแล้ว", "success");
             loadPasswordResetRequests(document.getElementById("pwResetFilter")?.value || "pending");
+            if (typeof refreshPasswordResetBadge === "function") refreshPasswordResetBadge(); // 🆕 (T124): refresh badge หลัง dismiss
           } else {
             const err = await res.json().catch(() => ({}));
             showToast(err?.error || "ยกเลิกไม่สำเร็จ", "error");
@@ -1333,6 +1336,7 @@ async function confirmCustomerPwReset() {
       setTimeout(() => {
         closeCustomerPwResetModal();
         loadPasswordResetRequests(document.getElementById("pwResetFilter")?.value || "pending");
+        if (typeof refreshPasswordResetBadge === "function") refreshPasswordResetBadge(); // 🆕 (T124): refresh badge หลัง resolve
         openWhatsAppForPwReset(newPwd); // เปิด WhatsApp modal พร้อมข้อความ
       }, 800);
     } else {
@@ -2012,6 +2016,8 @@ async function loadDashboard() {
   //   วิธีแก้: เรียก refreshPaymentsBadge() ทุกครั้งที่ loadDashboard (กลับ dashboard จาก view อื่น)
   //   ผลกระทบระบบเดิม: 0% — เพิ่มบรรทัดเดียว
   if (typeof refreshPaymentsBadge === "function") refreshPaymentsBadge();
+  // 🆕 (T124 2026-10-11): refresh badge คำขารีเซ็ตรหัสผ่าน ทุกครั้งที่กลับ dashboard
+  if (typeof refreshPasswordResetBadge === "function") refreshPasswordResetBadge();
 }
 
 // 🔧 (2026-09-18 v6 Full System): Helper สำหรับยิง _count-all endpoint
@@ -5489,6 +5495,48 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 refreshPaymentsBadge();
+
+// 🆕 (T124 2026-10-11): refreshPasswordResetBadge — badge คำขารีเซ็ตรหัสผ่านบนปุ่ม "👥 ลูกค้า"
+//   Owner request: "เวลาลูกค้าขอเปลี่ยน/ลืมรหัด ให้มีตัวเลขบอกในปุ่มจัดการลูกค้าเหมือนตัวกรองสลิปและออเดอร์"
+//   Pattern เดียวกับ refreshPaymentsBadge — fetch pending count → update badge element
+//   ผลกระทบระบบเดิม: 0% — เพิ่มฟังก์ชันใหม่ + เรียกในจุดที่มีอยู่แล้ว (login + dashboard)
+async function refreshPasswordResetBadge() {
+  try {
+    const res = await fetch("/api/admin/password-reset-requests?status=pending", { credentials: "same-origin" });
+    if (!res.ok) return;
+    const data = await res.json();
+    const count = (data?.requests || []).length;
+    const badge = document.getElementById("pwResetBadgeNew");
+    if (badge) {
+      badge.textContent = String(count);
+      badge.style.display = count > 0 ? "" : "none";
+      badge.classList.remove("warn", "alert", "critical", "show");
+      if (count > 0) {
+        if (count <= 2) badge.classList.add("warn");
+        else if (count <= 5) badge.classList.add("alert");
+        else badge.classList.add("critical");
+        badge.classList.add("show");
+      }
+    }
+  } catch (e) {
+    console.warn("refreshPasswordResetBadge error:", e?.message);
+  }
+}
+let _pwResetPollIntervalId = null;
+function startPwResetPolling() {
+  if (_pwResetPollIntervalId) clearInterval(_pwResetPollIntervalId);
+  _pwResetPollIntervalId = setInterval(refreshPasswordResetBadge, 60_000);
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    if (_pwResetPollIntervalId) { clearInterval(_pwResetPollIntervalId); _pwResetPollIntervalId = null; }
+  } else {
+    refreshPasswordResetBadge();
+    startPwResetPolling();
+  }
+});
+refreshPasswordResetBadge();
+startPwResetPolling();
 
 // ================= Confirm modal =================
 // 🎨 (2026-09-26): อัปเกรดให้รองรับ options (title, okText, cancelText, danger, success)
