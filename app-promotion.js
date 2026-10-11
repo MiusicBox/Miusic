@@ -522,6 +522,7 @@ export function getDiscountStatus(item) {
 
 // ใช้ toast/confirm ตัวเดียวกับหน้า admin หลัก (window.__showToast / window.__openConfirm)
 function disc_showToast(msg, type) {
+  if (window.__notify) { window.__notify.toast(msg, type); return; } // 🎨 ระบบแจ้งเตือนใหม่ (notify.js)
   if (window.__showToast) { window.__showToast(msg, type); return; }
   const el = document.getElementById("toast");
   if (!el) return;
@@ -948,6 +949,7 @@ export function initDiscountsView() {
 // ============================================================================
 
 function promo_showToast(msg, type) {
+  if (window.__notify) { window.__notify.toast(msg, type); return; } // 🎨 ระบบแจ้งเตือนใหม่ (notify.js)
   if (window.__showToast) { window.__showToast(msg, type); return; }
   const el = document.getElementById("toast");
   if (!el) return;
@@ -1539,6 +1541,7 @@ function myOrders_normalizePhone(v) {
 function myOrders_normalizeName(v) { return String(v || "").trim().toLowerCase(); }
 
 function myOrders_showToast(message, type) {
+  if (window.__notify) { window.__notify.toast(message, type); return; } // 🎨 ระบบแจ้งเตือนใหม่ (notify.js)
   const el = document.getElementById("toast");
   if (!el) return;
   el.textContent = message;
@@ -2000,6 +2003,20 @@ function renderMyOrdersList(orders) {
     });
   });
 
+  // 🎨 (2026-10-11): ปุ่มรายละเอียดออเดอร์ — เปิดหน้าใบเสร็จของออเดอร์นั้นทันที
+  listEl.querySelectorAll("[data-order-detail]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const orderId = btn.getAttribute("data-order-detail");
+      const order = MY_ORDERS_STATE.myOrders.find(o => (o._docId || "") === orderId);
+      if (!order) return;
+      const receiptNumber = order.receipt_number || orderId.slice(0, 8);
+      if (typeof window.showReceipt === "function") {
+        window.showReceipt(order, receiptNumber, order.store_name || "Music Store");
+      }
+    });
+  });
+
   // 🆕 (2026-10-02): ปุ่มฟังเพลง — เรียก playSong (จาก app-user.js)
   listEl.querySelectorAll("[data-order-play]").forEach(btn => {
     btn.addEventListener("click", (e) => {
@@ -2136,20 +2153,11 @@ function renderOneOrderCard(order) {
     if (order.status === "pending_verify") {
       actionButtons += `<button type="button" class="btn" data-order-delete="${myOrders_escapeHtml(orderId)}" style="display:inline-block;padding:8px 14px;font-size:13px;background:rgba(239,68,68,.12);color:var(--danger);border:1px solid rgba(239,68,68,.25);border-radius:8px;cursor:pointer;margin-top:8px;">🗑 ลบออเดอร์</button>`;
     }
-    // ปุ่มฟังเพลง — แสดงเสมอสำหรับเพลงในออเดอร์ (ฟัง preview ได้)
-    if (items.length > 0) {
-      // ดึง song_id จาก items (item.song_id หรือ item.song_ids)
-      const songIds = [];
-      for (const item of items) {
-        if (item.song_id) songIds.push(item.song_id);
-        if (Array.isArray(item.song_ids)) songIds.push(...item.song_ids);
-      }
-      if (songIds.length > 0) {
-        const firstSongId = songIds[0];
-        actionButtons += `<button type="button" class="btn" data-order-play="${myOrders_escapeHtml(firstSongId)}" style="display:inline-block;padding:8px 14px;font-size:13px;background:rgba(139,92,246,.12);color:var(--accent);border:1px solid var(--accent);border-radius:8px;cursor:pointer;margin-top:8px;margin-left:6px;">🎵 ฟังเพลง</button>`;
-      }
-    }
-
+    // 🎨 (2026-10-11): เปลี่ยนจากปุ่ม "ฟังเพลง" → ปุ่ม "รายละเอียดออเดอร์"
+    //   กดแล้วเปิดหน้าใบเสร็จ (showReceipt) ของออเดอร์นั้นทันที — ไม่ต้องกรอกเลขออเดอร์/ชื่อ/เบอร์ซ้ำ
+    //   ใช้ร่วมกันทั้งลูกค้าที่ล็อกอิน (หน้าบัญชี) และไม่ล็อกอิน (แท็บออเดอร์)
+    actionButtons += `<button type="button" class="btn" data-order-detail="${myOrders_escapeHtml(orderId)}" style="display:inline-block;padding:8px 14px;font-size:13px;background:rgba(139,92,246,.12);color:var(--accent);border:1px solid var(--accent);border-radius:8px;cursor:pointer;margin-top:8px;">📄 รายละเอียดออเดอร์</button>`;
+  
     expandedHtml = `
       <div class="my-order-detail" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
         <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">รายการสินค้า (${items.length})</div>
