@@ -9706,6 +9706,26 @@ export default {
       } catch (attemptsErr) {
         console.warn("[cleanup] attempts tables cleanup failed:", attemptsErr?.message || attemptsErr);
       }
+
+      // 🆕 (T125 2026-10-11): ลบ password_reset_requests ที่ถูก "ยกเลิก" (dismissed) แล้วเกิน 3 วัน
+      //   Owner request: "เวลาแอดมินกดยกเลิกลูกค้าที่ขอเปลี่ยน/ลืมรหัสผ่าน ให้เก็บไว้ 3 วันแล้วล้างออกจาก Cloudflare อัตโนมัติ"
+      //   - status='dismissed' + resolved_at < (now - 3 days) → DELETE
+      //   - เก็บ 3 วันเพื่อให้แอดมินย้อนดูประวัติได้ก่อนลบ
+      //   - รันทุก 6 ชม. (เหมือน cleanup อื่น ๆ)
+      //   - ผลกระทบระบบเดิม: 0% — ลบเฉพาะ dismissed (ไม่ลบ pending/resolved)
+      try {
+        const pwResetCutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+        const pwResetResult = await env.DB.prepare(
+          "DELETE FROM password_reset_requests WHERE status = 'dismissed' AND resolved_at IS NOT NULL AND resolved_at < ?"
+        ).bind(pwResetCutoff).run();
+        const pwResetDeleted = pwResetResult?.meta?.changes || 0;
+        if (pwResetDeleted > 0) {
+          console.log(`[cleanup] Deleted ${pwResetDeleted} dismissed password_reset_requests (older than 3 days)`);
+        }
+      } catch (pwResetErr) {
+        // ถ้าตาราง password_reset_requests ไม่มี → log แล้วข้ามไป (ไม่ block cron)
+        console.warn("[cleanup] password_reset_requests cleanup failed:", pwResetErr?.message || pwResetErr);
+      }
     } catch (err) {
       // cron error ไม่ควรทำให้ Cloudflare ลบ trigger → log แล้วจบ
       console.error("[cleanup] Cron error:", err?.message || err);
