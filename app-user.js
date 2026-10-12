@@ -24,7 +24,7 @@ import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js?v=20261007-s
 //      - ไม่งั้นไม่พัง (เพราะไม่ได้ใช้) แต่เป็น code smell ถ้าเหลืออยู่ฝั่งเดียว
 // ────────────────────────────────────────────────────────────────────────────
 import {
-  collection, getDocs, doc, getDoc, query, where, deleteDoc, queryCustomerOrder,
+  collection, getDocs, getDocsAdmin, doc, getDoc, query, where, deleteDoc, queryCustomerOrder,
   // 🔧 (2026-09-17): เพิ่ม fetchCustomerOrdersOnce สำหรับ one-shot fetch (ไม่ polling) ลด D1 quota
   //    ↑ ↑ ↑ ฟังก์ชันนี้แหละที่ใช้จริงในไฟล์นี้ (แทน listenCustomerOrders เดิม)
   fetchCustomerOrdersOnce,
@@ -54,7 +54,7 @@ import {
 //   - ผลกระทบระบบเดิม: 0% — เปลี่ยน cache-bust string เท่านั้น ไม่แตะ logic
 
 const STATE = {
-  songs: [], categories: [], djs: [], playlists: [], settings: {},
+  songs: [], categories: [], categoriesLoaded: false, djs: [], playlists: [], settings: {},
   discounts: [],  // ← ลดราคาที่ active อยู่ตอนนี้ (โหลดครั้งเดียวตอน init)
   promotions: [], // 🎁 (2026-09-20) เพิ่มใหม่: โปรโมชั่นที่ active อยู่ตอนนี้ (โหลดครั้งเดียวตอน init — เชื่อมกับหน้า admin จัดการโปรโมชั่น)
   currentCategory: "all", currentDj: null, search: "",
@@ -291,6 +291,7 @@ async function init() {
     getDoc(doc(db, "settings", "main"))
   ]);
   STATE.categories = sortByThaiName(catSnap.docs.map(d => ({ id: d.id, ...d.data() })), "category_name");
+  STATE.categoriesLoaded = true;
   STATE.djs = sortByThaiName(djSnap.docs.map(d => ({ id: d.id, ...d.data() })), "dj_name");
   STATE.playlists = sortByThaiName(playlistSnap.docs.map(d => ({ id: d.id, ...d.data() })), "playlist_name");
   loadPlaylistCounts(); // 🆕 (Playlist-Scale) เบื้องหลัง ไม่รอ
@@ -1596,6 +1597,16 @@ function renderCategoryChips() {
 //   - ใช้ STATE.categories + STATE.songs (ที่โหลดแล้วใน init()) → ไม่ต้อง fetch เพิ่ม
 //   - ไม่กระทบระบบเดิม — ใช้ chip handler เดิม (renderCategoryChips + renderSongGrid)
 //   - lazy: ไม่มีรูป → ใช้ emoji icon → ไม่ต้อง lazy load (performance ดี)
+// 🐛 (fix 2026-10-12): ดึงหมวดหมู่ใหม่แบบข้าม cache (?nocache=timestamp)
+//   สาเหตุที่การ์ด "กำลังโหลดหมวดหมู่..." ค้าง: STATE.categories ว่าง (response ว่างถูก cache 5 นาทีที่ edge/browser
+//   หรือยังไม่มีหมวดหมู่ใน DB) แต่โค้ดเดิมแสดงข้อความ "กำลังโหลด" ตลอดไป ไม่แยก "กำลังโหลด" กับ "โหลดแล้วแต่ว่าง"
+async function refreshCategories() {
+  const snap = await getDocsAdmin(collection(db, "categories"));
+  STATE.categories = sortByThaiName(snap.docs.map(d => ({ id: d.id, ...d.data() })), "category_name");
+  STATE.categoriesLoaded = true;
+  return STATE.categories;
+}
+
 function renderCategoryGrid() {
   const grid = document.getElementById("categoryGrid");
   if (!grid) return;
@@ -1616,7 +1627,7 @@ function renderCategoryGrid() {
   };
 
   // 🛡️ guard: ถ้าไม่มี categories → แสดง empty state (กัน grid ว่างเปล่า)
-  if (!Array.isArray(STATE.categories) || STATE.categories.length === 0) {
+  if (!STATE.categoriesLoaded) {
     grid.innerHTML = `<div class="category-card" style="grid-column:1/-1;cursor:default;opacity:0.6;">
       <div class="cat-icon">🎵</div>
       <div class="cat-name">กำลังโหลดหมวดหมู่...</div>
