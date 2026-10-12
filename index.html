@@ -1257,29 +1257,44 @@
     })();
   </script>
 
-  <!-- 🐛 (fix 2026-10-12): หน้าเว็บที่เปิดจากปุ่ม "ดูหน้าร้าน" ในแอดมิน (target=_blank) บน iPad/iOS
-       บางครั้งคำนวณความสูงจอผิดตอนโหลด → องค์ประกอบ position:fixed (เมนูล่าง .bottom-nav + ปุ่ม WhatsApp)
-       ถูกวางต่ำกว่าขอบจอ มองไม่เห็น (วาง URL เองไม่เป็น)
-       แก้: บังคับให้เบราว์เซอร์คำนวณเลย์เอาต์ของ fixed elements ใหม่ตอนแท็บแสดงผล/โหลดเสร็จ/หลังโหลดช่วงสั้น ๆ -->
+  <!-- 🐛 (fix 2026-10-12): เปิดหน้าร้านจากปุ่ม "ดูหน้าร้าน" ในแอดมิน (แท็บใหม่) บน iPad/iOS
+       → เบราว์เซอร์คำนวณ layout viewport สูงเกินจอที่มองเห็นจริง → .bottom-nav / ปุ่ม WhatsApp / player-bar
+       (position:fixed; bottom) ถูกวางต่ำกว่าขอบจอ มองไม่เห็น (วาง URL เองไม่เป็น)
+       แก้: วัดว่าเมนูล่างหลุดขอบ visual viewport ไหม → ถ้าหลุด ยกองค์ประกอบ fixed ด้านล่างขึ้นด้วย CSS `translate`
+       (ไม่ยุ่งกับ transform เดิมของ player-bar) + ปรับความสูง html ให้เท่าจอที่เห็นจริง ปกติ shift=0 → ไม่มีผลอะไร -->
+  <style>
+    .bottom-nav, #whatsappFab, .player-bar { translate: 0 calc(-1 * var(--vv-shift, 0px)); }
+  </style>
   <script>
     (function () {
-      function heal() {
-        ['.bottom-nav', '#whatsappFab'].forEach(function (sel) {
-          var el = document.querySelector(sel);
-          if (!el) return;
-          var d = el.style.display;
-          el.style.display = 'none';
-          void el.offsetHeight; // force reflow
-          el.style.display = d;
-        });
-        window.dispatchEvent(new Event('resize')); // ให้สคริปต์วัดความสูงเมนูล่าง/แถบบนคำนวณใหม่
+      var root = document.documentElement;
+      function fixOffset() {
+        var vv = window.visualViewport, nav = document.querySelector('.bottom-nav');
+        if (!vv || !nav) return;
+        var ae = document.activeElement;
+        if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return; // คีย์บอร์ดเปิดอยู่ — ไม่ยุ่ง
+        root.style.setProperty('--vv-shift', '0px'); // รีเซ็ตก่อนวัด
+        var r = nav.getBoundingClientRect();
+        var shift = Math.round(r.bottom - (vv.offsetTop + vv.height));
+        if (shift > 24) {
+          root.style.setProperty('--vv-shift', shift + 'px');
+          root.style.height = Math.round(vv.height) + 'px';
+        } else {
+          root.style.removeProperty('height');
+        }
       }
-      window.addEventListener('pageshow', heal);
-      window.addEventListener('focus', heal);
+      var t;
+      function later() { clearTimeout(t); t = setTimeout(fixOffset, 120); }
+      window.addEventListener('load', later);
+      window.addEventListener('pageshow', later);
+      window.addEventListener('focus', later);
+      window.addEventListener('resize', later);
+      window.addEventListener('orientationchange', later);
+      if (window.visualViewport) window.visualViewport.addEventListener('resize', later);
       document.addEventListener('visibilitychange', function () {
-        if (document.visibilityState === 'visible') heal();
+        if (document.visibilityState === 'visible') later();
       });
-      [150, 600, 1500, 3000].forEach(function (t) { setTimeout(heal, t); });
+      [200, 700, 1500, 3000].forEach(function (ms) { setTimeout(fixOffset, ms); });
     })();
   </script>
 
