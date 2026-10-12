@@ -33,7 +33,7 @@
 // 🚀 (T062): ค้นหา/กรองฝั่ง server + keyset paging รองรับ 10,000+ เพลง
 // 🚀 (T063): หน้าแอดมินโหลดเพลงแบบแบ่งหน้า (cursor) แทนโหลดทั้งหมดครั้งเดียว
 // 🐛 (T064): แก้ popup ตัวกรองขั้นสูง (ย้ายออกจาก topbar) ให้เห็นครบทั้งมือถือและจอใหญ่
-const CACHE_VERSION = 'miusic-pwa-v1.0.12-pwdel';
+const CACHE_VERSION = 'miusic-pwa-v1.0.13-privacy-fix'; // 🆕 (T128 2026-10-12): fix /privacy.html → /privacy link
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const FONT_CACHE    = `${CACHE_VERSION}-fonts`;
@@ -94,8 +94,9 @@ const PRECACHE_URLS = [
   // 🆕 (T049-B): เพิ่มไฟล์ใหม่จาก T013 + T045 — ไม่ precache จะทำให้ offline mode ไม่ทำงาน
   '/shared-utils.js',          // T013-R3: shared helpers
   '/phone-input.js',           // T045: country selector dropdown
-  // 🆕 (T057): เพิ่ม privacy.html สำหรับ PDPA — ลูกค้าดู offline ได้
-  '/privacy.html',             // T057: Privacy Policy page
+  // 🆕 (T057+T128): เพิ่ม privacy สำหรับ PDPA — ลูกค้าดู offline ได้
+  //   T128 fix: เปลี่ยนจาก /privacy.html → /privacy เพราะ Cloudflare auto-strip .html → redirect ERR_FAILED
+  '/privacy',                   // T057+T128: Privacy Policy page
   // 🆕 (T059): เพิ่ม idb-store.js สำหรับ PWA offline mode
   '/idb-store.js',             // T059: IndexedDB wrapper
   '/vendor/html2canvas.min.js',
