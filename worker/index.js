@@ -1904,7 +1904,12 @@ async function handleDb(request, env, url) {
       const { results: playlistMatches } = await env.DB.prepare(
         "SELECT id FROM documents WHERE collection = 'playlists' AND json_extract(data, '$.cover_url') = ? LIMIT 1"
       ).bind(url).all();
-      return jsonResponse({ used: !!(playlistMatches && playlistMatches.length > 0) });
+      if (playlistMatches && playlistMatches.length > 0) return jsonResponse({ used: true });
+      // 🆕 ตรวจรูป DJ ด้วย — กันลบรูปที่ DJ คนอื่นใช้ร่วม (หรือรูปที่เพลง/เพลย์ลิสต์ใช้ซ้ำกับ DJ)
+      const { results: djMatches } = await env.DB.prepare(
+        "SELECT id FROM documents WHERE collection = 'djs' AND json_extract(data, '$.image_url') = ? LIMIT 1"
+      ).bind(url).all();
+      return jsonResponse({ used: !!(djMatches && djMatches.length > 0) });
     } catch (err) {
       return jsonResponse({ error: safeError("ตรวจสอบรูปปกไม่สำเร็จ กรุณาลองใหม่", err) }, 500);
     }
