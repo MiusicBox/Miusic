@@ -1042,7 +1042,7 @@ function openAccountSettingsModal() {
 
         <!-- Privacy Policy link -->
         <div style="text-align:center;font-size:12px;color:var(--text-dim,#94a3b8);">
-          📜 <a href="/privacy.html" target="_blank" style="color:var(--accent,#8b5cf6);text-decoration:underline;">นโยบายความเป็นส่วนตัว</a>
+          📜 <a href="/privacy" target="_blank" style="color:var(--accent,#8b5cf6);text-decoration:underline;">นโยบายความเป็นส่วนตัว</a> <!-- 🆕 (T128 2026-10-12): /privacy.html → /privacy (Cloudflare auto-strips .html → redirect ทำให้ ERR_FAILED) -->
         </div>
       </div>
     </div>
