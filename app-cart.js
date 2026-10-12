@@ -1,6 +1,6 @@
 // app-cart.js — ระบบตะกร้าสินค้า
 // ===================================================
-import { db } from "./firebase-init.js?v=20260905-fix1";
+import { db } from "./firebase-init.js?v=20261012-launch";
 import {
   collection, doc, query, where, getDoc, getDocs, setDoc, queryCustomerOrder,
   // 🆕 (2026-10-03 v10): guest_id ประจำ browser — แนบกับออเดอร์ของลูกค้าที่ไม่ได้ login
@@ -10,7 +10,7 @@ import {
   // 🚀 (2026-09-28 fix H7): เพิ่ม getDocsByIds สำหรับ batch fetch แทน N+1
   //   ลด HTTP requests จาก N+1 → 2 (songs + playlists) ใน resolveCartFromDatabase
   getDocsByIds
-} from "./db-client.js?v=20261003-login-guest-v11";
+} from "./db-client.js?v=20261012-launch";
 //
 // 🔧 แก้บั๊ก (2026-09-12): "ยังไม่ได้ login" ตอนกดสั่งซื้อ
 // -----------------------------------------------------------
@@ -35,7 +35,7 @@ import {
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่) — import มาจาก app-promotion.js กลาง (รวมไฟล์เดียว) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, computeCartPricing, clearPricingCache
-} from "./app-promotion.js?v=20261003-login-guest-v11";
+} from "./app-promotion.js?v=20261012-launch";
 
 const CART_STORAGE_KEY = "music_store_cart_v1";
 const CHECKOUT_ORDER_KEY = "music_store_checkout_order_v1";

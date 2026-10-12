@@ -1,8 +1,8 @@
 // app-user.js — หน้า User: ดึงข้อมูลจาก Cloudflare D1, เล่นเพลงจาก Cloudflare R2 โดยตรง
 // ===================================================
-import { db } from "./firebase-init.js?v=20260905-fix1";
+import { db } from "./firebase-init.js?v=20261012-launch";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
-import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js?v=20261007-sort-key";
+import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js?v=20261012-launch";
 // ────────────────────────────────────────────────────────────────────────────
 // ⚠️  สำหรับ Dev ใหม่: อ่านก่อนแก้ import block นี้  ────────────────────────
 // ────────────────────────────────────────────────────────────────────────────
@@ -36,15 +36,15 @@ import {
   //   วิธีแก้: ใช้ scopedStorageKey("music_store_last_order_v1") ที่จะให้ key ที่ถูกต้องตาม scope (guest/login:ID)
   scopedStorageKey
 // 🔧 (2026-09-17 v2): เพิ่ม ?v=20260917-polling-fix บังคับ browser โหลด db-client.js ใหม่ (กัน cache เก่า)
-} from "./db-client.js?v=20261005-T015-advanced-search";
-import { initCart } from "./app-cart.js?v=20261006-T049";
+} from "./db-client.js?v=20261012-launch";
+import { initCart } from "./app-cart.js?v=20261012-launch";
 // ===== ลดราคา + โปรโมชั่น + ออเดอร์ของฉัน (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, applyDiscountToPrice, findActiveDiscountFor,
   initMyOrdersView, cleanupMyOrdersView,
   // 🎁 (2026-09-20) เพิ่มใหม่: formatDateTime ใช้สำหรับแสดงวันที่ในหน้าโปรโมชั่นพรีวิว (เรียกจาก app-promotion.js ที่มีอยู่แล้ว)
   formatDateTime
-} from "./app-promotion.js?v=20261011-orderfind";
+} from "./app-promotion.js?v=20261012-launch";
 // 🔧 (T116 2026-10-07 fix): ปรับ version จาก v10 → v11 ให้ตรงกับ app-cart.js + orders.js
 //   - Bug: cache-bust version ต่างกัน → ES module ถือว่าเป็น 2 instances คนละตัว
 //     app-user.js (v10) init() populate _discountsCache ใน v10 instance

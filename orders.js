@@ -2,19 +2,19 @@
 // ใช้ collection "songs" ที่มีอยู่แล้วเป็นแหล่งข้อมูลเพลง/ราคา
 // และสร้าง collection ใหม่ชื่อ "orders" สำหรับเก็บออเดอร์
 // ===================================================
-import { db, auth } from "./firebase-init.js?v=20260905-fix1";
+import { db, auth } from "./firebase-init.js?v=20261012-launch";
 import {
   collection, getDocs, getDoc, setDoc, query, orderBy, where, doc, updateDoc, deleteDoc,
   // 🔧 (2026-09-17 Phase 2): เพิ่ม getDocsByIds สำหรับ batch fetch songs (ลด HTTP requests + Worker invocations)
   getDocsByIds
-} from "./db-client.js?v=20261003-login-guest-v11";
-import { uploadOrderZip, deleteFromStorage } from "./storage-adapter.js?v=20260904-rawzip";
+} from "./db-client.js?v=20261012-launch";
+import { uploadOrderZip, deleteFromStorage } from "./storage-adapter.js?v=20261012-launch";
 // 🎨 (2026-09-26): เพิ่ม import sortSongsByThaiName สำหรับ sort เพลงในฟอร์มสร้างออเดอร์
-import { sortSongsByThaiName } from "./thai-sort.js?v=20261007-sort-key";
+import { sortSongsByThaiName } from "./thai-sort.js?v=20261012-launch";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่) — import มาจาก app-promotion.js กลาง (รวมไฟล์เดียว) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, computeCartPricing
-} from "./app-promotion.js?v=20261003-login-guest-v11";
+} from "./app-promotion.js?v=20261012-launch";
 
 // 🚀 (2026-09-29 STACK): helper อ่าน promotions ที่ apply จาก order snapshot
 //   รองรับทั้ง:
