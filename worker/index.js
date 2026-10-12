@@ -6592,6 +6592,37 @@ async function handleCustomerAuth(request, env, url) {
     }
   }
 
+  // 🆕 (2026-10-12): POST /api/admin/password-reset-requests/_delete
+  //   body: { ids: [id, ...] } — ลบคำขาหลายรายการพร้อมกัน (แอดมินติ๊ก checkbox ในหน้าจัดการลูกค้า)
+  //   ลบได้เฉพาะสถานะ resolved (ดำเนินการแล้ว) / dismissed (ยกเลิก) — pending (รอดำเนินการ) จะไม่ถูกลบเด็ดขาด
+  //   แทนการสแกนลบอัตโนมัติใน cron (เอาออกเพื่อประหยัดโควตา D1)
+  if (url.pathname === "/api/admin/password-reset-requests/_delete" && request.method === "POST") {
+    if (!env.DB) return jsonResponse({ error: "D1 not configured" }, 500);
+    const admin = await getSessionAdmin(request, env);
+    if (!admin) return jsonResponse({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: "รูปแบบข้อมูลไม่ถูกต้อง" }, 400); }
+    const ids = Array.isArray(body?.ids)
+      ? [...new Set(body.ids.map((x) => String(x || "").trim()).filter(Boolean))].slice(0, 500)
+      : [];
+    if (ids.length === 0) return jsonResponse({ error: "ไม่ได้เลือกรายการที่จะลบ" }, 400);
+    try {
+      const stmts = [];
+      for (let i = 0; i < ids.length; i += 50) {
+        const chunk = ids.slice(i, i + 50);
+        const ph = chunk.map(() => "?").join(",");
+        stmts.push(
+          env.DB.prepare(`DELETE FROM password_reset_requests WHERE status IN ('resolved','dismissed') AND id IN (${ph})`).bind(...chunk)
+        );
+      }
+      const results = await env.DB.batch(stmts);
+      const deleted = results.reduce((n, r) => n + (r?.meta?.changes || 0), 0);
+      return jsonResponse({ ok: true, deleted, requested: ids.length });
+    } catch (err) {
+      return jsonResponse({ error: safeError("ลบคำขาไม่สำเร็จ", err) }, 500);
+    }
+  }
+
   // POST /api/admin/password-reset-requests/:id/dismiss
   //   body: { note? } — ยกเลิกคำขา (เช่น เบอร์ไม่ใช่ลูกค้าจริง)
   if (url.pathname.includes("/api/admin/password-reset-requests/") && url.pathname.endsWith("/dismiss") && request.method === "POST") {
@@ -9707,25 +9738,9 @@ export default {
         console.warn("[cleanup] attempts tables cleanup failed:", attemptsErr?.message || attemptsErr);
       }
 
-      // 🆕 (T125 2026-10-11): ลบ password_reset_requests ที่ถูก "ยกเลิก" (dismissed) แล้วเกิน 3 วัน
-      //   Owner request: "เวลาแอดมินกดยกเลิกลูกค้าที่ขอเปลี่ยน/ลืมรหัสผ่าน ให้เก็บไว้ 3 วันแล้วล้างออกจาก Cloudflare อัตโนมัติ"
-      //   - status='dismissed' + resolved_at < (now - 3 days) → DELETE
-      //   - เก็บ 3 วันเพื่อให้แอดมินย้อนดูประวัติได้ก่อนลบ
-      //   - รันทุก 6 ชม. (เหมือน cleanup อื่น ๆ)
-      //   - ผลกระทบระบบเดิม: 0% — ลบเฉพาะ dismissed (ไม่ลบ pending/resolved)
-      try {
-        const pwResetCutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
-        const pwResetResult = await env.DB.prepare(
-          "DELETE FROM password_reset_requests WHERE status = 'dismissed' AND resolved_at IS NOT NULL AND resolved_at < ?"
-        ).bind(pwResetCutoff).run();
-        const pwResetDeleted = pwResetResult?.meta?.changes || 0;
-        if (pwResetDeleted > 0) {
-          console.log(`[cleanup] Deleted ${pwResetDeleted} dismissed password_reset_requests (older than 3 days)`);
-        }
-      } catch (pwResetErr) {
-        // ถ้าตาราง password_reset_requests ไม่มี → log แล้วข้ามไป (ไม่ block cron)
-        console.warn("[cleanup] password_reset_requests cleanup failed:", pwResetErr?.message || pwResetErr);
-      }
+      // 🧹 (2026-10-12): เอาการสแกนลบ password_reset_requests อัตโนมัติ (T125) ออกจาก cron แล้ว — ประหยัดโควตา D1
+      //   Owner request: ให้แอดมินเลือกลบเองในหน้า "จัดการลูกค้า" (checkbox + ปุ่มลบ)
+      //   ดู POST /api/admin/password-reset-requests/_delete — ลบได้เฉพาะคำขาที่ "ดำเนินการแล้ว" หรือ "ยกเลิก"
     } catch (err) {
       // cron error ไม่ควรทำให้ Cloudflare ลบ trigger → log แล้วจบ
       console.error("[cleanup] Cron error:", err?.message || err);
