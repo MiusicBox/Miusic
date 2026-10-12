@@ -1157,7 +1157,8 @@ async function loadPasswordResetRequests(status = "pending") {
   if (!wrap) return;
   wrap.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-dim);font-size:12px;">⏳ กำลังโหลด...</div>';
   try {
-    const url = `/api/admin/password-reset-requests${status ? `?status=${encodeURIComponent(status)}` : ""}`;
+    // 🆕 (2026-10-12): limit=200 (สูงสุดที่ server รองรับ) ให้ "เลือกทั้งหมด" ครอบคลุมรายการที่แสดง
+    const url = `/api/admin/password-reset-requests?limit=200${status ? `&status=${encodeURIComponent(status)}` : ""}`;
     const res = await fetch(url, { credentials: "same-origin" });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -1177,6 +1178,7 @@ async function loadPasswordResetRequests(status = "pending") {
     const requests = data?.requests || [];
     if (requests.length === 0) {
       wrap.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-dim);font-size:12px;">ไม่มีคำขาในสถานะนี้</div>';
+      updatePwDeleteBar();
       return;
     }
     wrap.innerHTML = requests.map(r => {
@@ -1190,6 +1192,7 @@ async function loadPasswordResetRequests(status = "pending") {
       return `
         <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+            ${r.status !== "pending" ? `<input type="checkbox" class="pw-del-chk" data-id="${escapeHtml(r.id)}" style="width:18px;height:18px;margin-top:2px;flex-shrink:0;">` : ""}
             <div style="flex:1;min-width:0;">
               <div style="font-weight:700;font-size:13px;">${escapeHtml(r.contact || "—")}</div>
               <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${customerInfo}</div>
@@ -1206,6 +1209,10 @@ async function loadPasswordResetRequests(status = "pending") {
           ` : ""}
         </div>`;
     }).join("");
+
+    // 🆕 (2026-10-12): checkbox ลบคำขา
+    wrap.querySelectorAll(".pw-del-chk").forEach(chk => chk.addEventListener("change", updatePwDeleteBar));
+    updatePwDeleteBar();
 
     // ผูกปุ่มรีเซ็ต
     wrap.querySelectorAll("[data-pw-reset]").forEach(btn => {
@@ -1244,6 +1251,51 @@ async function loadPasswordResetRequests(status = "pending") {
     wrap.innerHTML = `<div style="color:var(--danger);font-size:12px;padding:10px;">โหลดไม่สำเร็จ: ${escapeHtml(err.message || String(err))}</div>`;
   }
 }
+
+// 🆕 (2026-10-12): ลบคำขารีเซ็ตรหัสผ่านหลายรายการ (แทนการสแกนลบอัตโนมัติใน cron)
+//   - แสดงแถบลบเมื่อมีรายการที่ลบได้ (ดำเนินการแล้ว/ยกเลิก) — pending ไม่มี checkbox
+function updatePwDeleteBar() {
+  const bar = document.getElementById("pwDeleteBar");
+  if (!bar) return;
+  const chks = Array.from(document.querySelectorAll("#passwordResetList .pw-del-chk"));
+  bar.style.display = chks.length ? "flex" : "none";
+  const n = chks.filter(c => c.checked).length;
+  const all = document.getElementById("pwSelectAll");
+  if (all) { all.checked = chks.length > 0 && n === chks.length; all.indeterminate = n > 0 && n < chks.length; }
+  const cnt = document.getElementById("pwSelectedCount");
+  if (cnt) cnt.textContent = n ? `(${n}/${chks.length})` : `(${chks.length} รายการ)`;
+  const btn = document.getElementById("pwDeleteBtn");
+  if (btn) { btn.disabled = n === 0; btn.style.opacity = n === 0 ? "0.5" : "1"; btn.textContent = n ? `🗑 ลบที่เลือก (${n})` : "🗑 ลบที่เลือก"; }
+}
+document.getElementById("pwSelectAll")?.addEventListener("change", (e) => {
+  document.querySelectorAll("#passwordResetList .pw-del-chk").forEach(c => { c.checked = e.target.checked; });
+  updatePwDeleteBar();
+});
+document.getElementById("pwDeleteBtn")?.addEventListener("click", async () => {
+  const ids = Array.from(document.querySelectorAll("#passwordResetList .pw-del-chk:checked")).map(c => c.getAttribute("data-id"));
+  if (ids.length === 0) return;
+  if (!(await window.__notify.confirm(`ลบคำขา ${ids.length} รายการออกจากระบบถาวร (ย้อนกลับไม่ได้)`, { title: "ลบคำขารีเซ็ตรหัสผ่าน", okText: "ลบ", danger: true }))) return;
+  const btn = document.getElementById("pwDeleteBtn");
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch("/api/admin/password-reset-requests/_delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ ids }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      showToast(`ลบคำขาแล้ว ${data.deleted ?? ids.length} รายการ`, "success");
+    } else {
+      showToast(data?.error || "ลบไม่สำเร็จ", "error");
+    }
+  } catch (err) {
+    showToast("ลบไม่สำเร็จ: " + (err.message || String(err)), "error");
+  }
+  loadPasswordResetRequests(document.getElementById("pwResetFilter")?.value || "pending");
+  if (typeof refreshPasswordResetBadge === "function") refreshPasswordResetBadge();
+});
 
 // 🆕 (2026-10-02 v2): เปิด modal รีเซ็ตรหัสผ่านลูกค้า — แอดมินพิมพ์รหัสเอง
 async function openCustomerPwResetModal(reqId) {
