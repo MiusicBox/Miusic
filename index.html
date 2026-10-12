@@ -1257,6 +1257,32 @@
     })();
   </script>
 
+  <!-- 🐛 (fix 2026-10-12): หน้าเว็บที่เปิดจากปุ่ม "ดูหน้าร้าน" ในแอดมิน (target=_blank) บน iPad/iOS
+       บางครั้งคำนวณความสูงจอผิดตอนโหลด → องค์ประกอบ position:fixed (เมนูล่าง .bottom-nav + ปุ่ม WhatsApp)
+       ถูกวางต่ำกว่าขอบจอ มองไม่เห็น (วาง URL เองไม่เป็น)
+       แก้: บังคับให้เบราว์เซอร์คำนวณเลย์เอาต์ของ fixed elements ใหม่ตอนแท็บแสดงผล/โหลดเสร็จ/หลังโหลดช่วงสั้น ๆ -->
+  <script>
+    (function () {
+      function heal() {
+        ['.bottom-nav', '#whatsappFab'].forEach(function (sel) {
+          var el = document.querySelector(sel);
+          if (!el) return;
+          var d = el.style.display;
+          el.style.display = 'none';
+          void el.offsetHeight; // force reflow
+          el.style.display = d;
+        });
+        window.dispatchEvent(new Event('resize')); // ให้สคริปต์วัดความสูงเมนูล่าง/แถบบนคำนวณใหม่
+      }
+      window.addEventListener('pageshow', heal);
+      window.addEventListener('focus', heal);
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') heal();
+      });
+      [150, 600, 1500, 3000].forEach(function (t) { setTimeout(heal, t); });
+    })();
+  </script>
+
   <!-- สคริปต์สลับการ เปิด-ปิด Dropdown -->
   <script>
     document.addEventListener('DOMContentLoaded', () => {
