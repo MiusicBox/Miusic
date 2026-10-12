@@ -2867,7 +2867,9 @@ document.getElementById("djBulkDeleteBtn")?.addEventListener("click", async () =
       try {
         const cascadeResult = await deleteSongsFromDj(djId);
         songsDeleted += cascadeResult.deleted;
+        const djImageUrl = (CACHE.djs || []).find(x => x.id === djId)?.image_url || "";
         await deleteDoc(doc(db, "djs", djId));
+        deleteImageIfUnused(djImageUrl); // 🆕 ลบรูป DJ ออกจาก R2
         djsDeleted += 1;
       } catch (err) {
         console.error(`[bulk delete DJs] failed for ${djId}:`, err?.message || err);
@@ -2903,7 +2905,9 @@ document.getElementById("playlistBulkDeleteBtn")?.addEventListener("click", asyn
       try {
         const cascadeResult = await deleteSongsFromPlaylist(playlistId);
         songsDeleted += cascadeResult.deleted;
+        const playlistCoverUrl = (CACHE.playlists || []).find(x => x.id === playlistId)?.cover_url || "";
         await deleteDoc(doc(db, "playlists", playlistId));
+        deleteImageIfUnused(playlistCoverUrl); // 🆕 ลบรูปปกเพลย์ลิสต์ออกจาก R2
         playlistsDeleted += 1;
       } catch (err) {
         console.error(`[bulk delete playlists] failed for ${playlistId}:`, err?.message || err);
@@ -3467,6 +3471,29 @@ async function deleteSongFilesFromStorage(song) {
   });
 }
 
+// 🆕 ลบรูป (รูปปกเพลย์ลิสต์ / รูป DJ) ออกจาก R2 — เรียกหลังลบ doc เจ้าของรูปสำเร็จแล้วเท่านั้น
+//   ลบเฉพาะเมื่อไม่มีเพลง/เพลย์ลิสต์/DJ อื่นใช้ URL เดียวกัน (เช็คสดผ่าน _check-cover-used)
+//   ถ้าเช็คไม่สำเร็จ → ข้ามการลบเพื่อความปลอดภัย (ดีกว่าลบรูปที่คนอื่นยังใช้)
+//   ไม่ throw — ล้มเหลวแค่ log ไม่กระทบการลบ doc ที่สำเร็จไปแล้ว
+async function deleteImageIfUnused(url) {
+  try {
+    if (!url || !/^https?:\/\//i.test(String(url))) return; // ข้ามรูป default (.svg ในเว็บ) / ค่าว่าง
+    const res = await fetch("/api/db/_meta/_check-cover-used", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data && data.used) return; // ยังมีคนใช้รูปนี้อยู่ — ไม่ลบ
+    const r = await deleteFromStorage({ url });
+    if (r && r.ok === false && !r.skipped) console.error("ลบรูปออกจาก Cloud ไม่สำเร็จ:", r.error);
+  } catch (err) {
+    console.error("ตรวจสอบ/ลบรูปออกจาก Cloud ไม่สำเร็จ ข้ามการลบรูป:", err?.message || err);
+  }
+}
+
 async function confirmDeleteSong(id) {
   const hasOrders = await songHasOrders(id);
   if (hasOrders) {
@@ -3666,7 +3693,9 @@ async function loadDjs() {
         }
       }
       // ลบ row DJ ใน D1 (เดิม — ไม่แก้)
+      const djImageUrl = dj?.image_url || "";
       await deleteDoc(doc(db, "djs", djId));
+      deleteImageIfUnused(djImageUrl); // 🆕 ลบรูป DJ ออกจาก R2 (background, ถ้าไม่มีใครใช้ร่วม)
       // แสดงผลรวม
       if (cascadeResult.deleted > 0 || cascadeResult.failed > 0) {
         showToast(`ลบ DJ แล้ว + ลบเพลง ${cascadeResult.deleted} เพลง${cascadeResult.failed > 0 ? ` (ล้มเหลว ${cascadeResult.failed})` : ""}`, cascadeResult.failed > 0 ? "error" : "success");
@@ -3801,7 +3830,9 @@ async function loadPlaylists() {
         }
       }
       // ลบ row เพลย์ลิสต์ใน D1 (เดิม — ไม่แก้)
+      const playlistCoverUrl = playlist?.cover_url || "";
       await deleteDoc(doc(db, "playlists", playlistId));
+      deleteImageIfUnused(playlistCoverUrl); // 🆕 ลบรูปปกเพลย์ลิสต์ออกจาก R2 (background, ถ้าไม่มีใครใช้ร่วม)
       // แสดงผลรวม
       if (cascadeResult.deleted > 0 || cascadeResult.failed > 0) {
         showToast(`ลบเพลย์ลิสต์แล้ว + ลบเพลง ${cascadeResult.deleted} เพลง${cascadeResult.failed > 0 ? ` (ล้มเหลว ${cascadeResult.failed})` : ""}`, cascadeResult.failed > 0 ? "error" : "success");
