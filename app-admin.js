@@ -2684,6 +2684,7 @@ document.getElementById("songBulkDeleteBtn").addEventListener("click", () => {
   if (ids.length === 0) return;
   openConfirm(`ต้องการลบเพลงที่เลือกไว้ ${ids.length} เพลงหรือไม่? (เพลงที่มี Order เก่าอยู่แล้วจะถูกปิดการขายแทนการลบ เพื่อไม่ให้ไฟล์เต็มหาย)`, async () => {
     let deletedCount = 0, hiddenCount = 0;
+    const deletedIds = [], hiddenIds = [];
     // 🔧 แก้บั๊ก (2026-09-17) Bug #4: ใช้ batch endpoint แทนการลูป songHasOrders() N ครั้ง
     //   เดิม: for (const id of ids) { const hasOrders = await songHasOrders(id); ... }
     //   → 50 เพลง × 10,000 orders = 500,000 D1 reads
@@ -2694,6 +2695,7 @@ document.getElementById("songBulkDeleteBtn").addEventListener("click", () => {
       if (hasOrders) {
         await updateDoc(doc(db, "songs", id), { status: "hidden", updated_at: new Date().toISOString() });
         hiddenCount++;
+        hiddenIds.push(id);
       } else {
         const songSnap = await getDoc(doc(db, "songs", id));
         const songData = songSnap.exists() ? songSnap.data() : null;
@@ -2701,6 +2703,7 @@ document.getElementById("songBulkDeleteBtn").addEventListener("click", () => {
         // ลบไฟล์ cloud แบบ background เช่นเดียวกับ confirmDeleteSong (logic เดียวกันทุกประการ)
         deleteSongFilesFromStorage(songData);
         deletedCount++;
+        deletedIds.push(id);
       }
     }
     selectedSongIds.clear();
@@ -2709,9 +2712,13 @@ document.getElementById("songBulkDeleteBtn").addEventListener("click", () => {
     document.getElementById("songSelectModeBtn").style.background = "";
     document.getElementById("songSelectModeBtn").style.color = "";
     showToast(`ลบแล้ว ${deletedCount} เพลง${hiddenCount > 0 ? ` · ปิดการขาย ${hiddenCount} เพลง (มี Order เก่า)` : ""}`, "success");
-    invalidateAdminCache("songs");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
-    loadSongs();
-    loadDashboard();
+    if (applySongCachePatch({ removeIds: deletedIds, upserts: hiddenIds.map((hid) => ({ id: hid, status: "hidden" })) })) {
+      renderSongsFromCache();
+      bumpSongStat(-deletedCount);
+    } else {
+      loadSongs();
+      loadDashboard();
+    }
   });
 });
 
@@ -3308,19 +3315,27 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
       payload.preview_duration_sec = pendingPreviewData.duration_sec ?? null;
     }
 
+    const wasEditingSong = !!editingSongId;
+    let savedSongId = editingSongId;
     if (editingSongId) {
       await updateDoc(doc(db, "songs", editingSongId), payload);
     } else {
       payload.created_at = new Date().toISOString();
-      await addDoc(collection(db, "songs"), payload);
+      const newRef = await addDoc(collection(db, "songs"), payload);
+      savedSongId = newRef.id;
     }
     hideCancelButton("songUploadProgressWrap");
     hideCancelButton("fullSongUploadProgressWrap");
     showToast("บันทึกเพลงสำเร็จ", "success");
     document.getElementById("songFormBackdrop").classList.remove("show");
-    invalidateAdminCache("songs");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
-    loadSongs();
-    loadDashboard();
+    // 🆕 อัปเดตแคชในเครื่องแทนโหลดเพลงทั้งตารางใหม่ (ถ้าแคชหมดอายุ → โหลดใหม่ตามเดิม)
+    if (applySongCachePatch({ upserts: [{ id: savedSongId, ...payload }] })) {
+      renderSongsFromCache();
+      if (!wasEditingSong) bumpSongStat(1);
+    } else {
+      loadSongs();
+      loadDashboard();
+    }
   } catch (err) {
     if (isAbortError(err)) {
       // ผู้ใช้กดยกเลิกอัปโหลดเอง — ซ่อนแถบ progress/ปุ่มยกเลิก แต่คงฟอร์มไว้ให้แก้ไข/อัปโหลดใหม่ได้ตามที่สั่ง
@@ -3494,6 +3509,45 @@ async function deleteImageIfUnused(url) {
   }
 }
 
+// 🆕 (ลดโควต้า Cloudflare) อัปเดต CACHE.songs ในเครื่องหลังเพิ่ม/แก้/ลบเพลงสำเร็จ
+//   แทนการโหลดเพลงทั้งตารางจาก D1 ใหม่ทุกครั้ง (เดิม 1 การกด = ดึงเพลงทั้งหมด + นับจำนวนอีกรอบ)
+//   - ยังเรียก invalidateAdminCache("songs") เพื่อ purge CDN + ล้างแคชของ orders.js เหมือนเดิม
+//   - ทำเฉพาะเมื่อแคชเพลงยังสดอยู่ (คืน true) — ถ้าแคชหมดอายุ/ไม่เคยโหลด คืน false → caller โหลดใหม่ตามเดิม
+//   - แคชที่ถูกแพตช์ยืดอายุได้อีก ~9 นาที (รวม ~10 นาที) แล้วโหลดใหม่เต็มตามปกติ กันข้อมูลจากแอดมินคนอื่นค้างนาน
+const SONGS_PATCH_EXTRA_TTL_MS = 9 * 60 * 1000;
+function applySongCachePatch({ upserts = [], removeIds = [] } = {}) {
+  const wasFresh = isAdminCacheFresh("songs");
+  const prevAt = CACHE_AT.songs || 0;
+  invalidateAdminCache("songs");
+  if (!wasFresh) return false;
+  let list = CACHE.songs || [];
+  if (removeIds.length) {
+    const rm = new Set(removeIds.map(String));
+    list = list.filter((x) => !rm.has(String(x.id)));
+  }
+  for (const u of upserts) {
+    if (!u || !u.id) continue;
+    const idx = list.findIndex((x) => x.id === u.id);
+    if (idx >= 0) list = list.map((x, i) => (i === idx ? { ...x, ...u } : x));
+    else list = [...list, u];
+  }
+  CACHE.songs = sortSongsByThaiName(list);
+  CACHE_AT.songs = prevAt > Date.now() ? prevAt : Date.now() + SONGS_PATCH_EXTRA_TTL_MS;
+  return true;
+}
+function renderSongsFromCache() {
+  selectedSongIds.clear();
+  updateSongBulkBar();
+  renderSongList(applyDateFilter(CACHE.songs, "songs"));
+}
+// ปรับตัวเลข "เพลงทั้งหมด" บน dashboard ในเครื่อง แทนการยิง _count-all อีก 4 ครั้ง + badge 3 ครั้ง
+function bumpSongStat(delta) {
+  const el = document.getElementById("statSongs");
+  if (!el) return;
+  const n = Number(el.textContent);
+  if (Number.isFinite(n)) el.textContent = String(Math.max(0, n + delta));
+}
+
 async function confirmDeleteSong(id) {
   const hasOrders = await songHasOrders(id);
   if (hasOrders) {
@@ -3502,9 +3556,12 @@ async function confirmDeleteSong(id) {
       async () => {
         await updateDoc(doc(db, "songs", id), { status: "hidden", updated_at: new Date().toISOString() });
         showToast("ปิดการขายเพลงนี้แล้ว (ไม่ได้ลบไฟล์)", "success");
-        invalidateAdminCache("songs");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
-        loadSongs();
-        loadDashboard();
+        if (applySongCachePatch({ upserts: [{ id, status: "hidden" }] })) {
+          renderSongsFromCache();
+        } else {
+          loadSongs();
+          loadDashboard();
+        }
       }
     );
     return;
@@ -3516,9 +3573,13 @@ async function confirmDeleteSong(id) {
     // ลบไฟล์ cloud แบบ background — ไม่รอ/ไม่ block UI และไม่ทำให้การลบเพลงล้มเหลวถ้าไฟล์ cloud ลบไม่สำเร็จ
     deleteSongFilesFromStorage(songData);
     showToast("ลบเพลงแล้ว", "success");
-    invalidateAdminCache("songs");  // 🔧 (2026-09-17 Phase 1) ล้าง cache เพื่อบังคับ fetch ใหม่
-    loadSongs();
-    loadDashboard();
+    if (applySongCachePatch({ removeIds: [id] })) {
+      renderSongsFromCache();
+      bumpSongStat(-1);
+    } else {
+      loadSongs();
+      loadDashboard();
+    }
   });
 }
 
