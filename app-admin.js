@@ -1,24 +1,24 @@
 // app-admin.js — หน้า Admin: Login (ระบบยืนยันตัวตนของเว็บเองผ่าน Worker) + CRUD (Cloudflare D1) + อัปโหลดไฟล์ (Cloudflare R2)
 // ===================================================
-import { db, auth, uploadToCloudinary } from "./firebase-init.js?v=20260905-fix1";
-import { uploadFullSong, deleteFromStorage } from "./storage-adapter.js?v=20260904-rawzip";
+import { db, auth, uploadToCloudinary } from "./firebase-init.js?v=20261012-launch";
+import { uploadFullSong, deleteFromStorage } from "./storage-adapter.js?v=20261012-launch";
 import {
   collection, addDoc, updateDoc, deleteDoc, doc, getDocs, getDoc, setDoc, getDocsAdmin
-} from "./db-client.js?v=20261003-login-guest-v11";
+} from "./db-client.js?v=20261012-launch";
 import {
   signInWithEmailAndPassword, onAuthStateChanged, signOut,
   reauthenticateWithCredential, EmailAuthProvider, updatePassword,
   checkHasAdmin, bootstrapFirstAdmin
 } from "./auth-client.js";
-import { initOrdersView } from "./orders.js?v=20261007-T063";
-import { resolveCurrentAdminRole, initAdminsView } from "./admin-roles.js?v=20261004-T044";
+import { initOrdersView } from "./orders.js?v=20261012-launch";
+import { resolveCurrentAdminRole, initAdminsView } from "./admin-roles.js?v=20261012-launch";
 import {
   analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS
-} from "./song-analyzer.js?v=20260908-previewrange1";
+} from "./song-analyzer.js?v=20261012-launch";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
-import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261006-T049";
+import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261012-launch";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
-import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js?v=20261007-sort-key";
+import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js?v=20261012-launch";
 
 const CACHE = { songs: [], categories: [], djs: [], playlists: [] };
 // 🔧 (2026-09-17 Phase 1): TTL cache สำหรับ admin views — ลด D1 reads ตอนเข้า view ซ้ำ ๆ

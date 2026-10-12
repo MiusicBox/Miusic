@@ -17,7 +17,7 @@
 //   - order.total ยังคงไว้ (ตั้งเท่ากับ final_total) ให้โค้ดเดิมใน orders.js ที่อ่าน order.total ยังทำงานได้
 //   - field ใหม่: subtotal, discount_amount, promotion_applied (object หรือ null), final_total
 // ===================================================
-import { db, auth } from "./firebase-init.js?v=20260905-fix1";
+import { db, auth } from "./firebase-init.js?v=20261012-launch";
 // ────────────────────────────────────────────────────────────────────────────
 // 🧹 (Bug-Fix #6): Dead imports ถูกลบแล้ว — เหลือแค่ comment อ้างอิง
 //   ประวัติ: เดิมใช้ onSnapshot/listenCustomerOrders สำหรับ polling → ย้ายไป fetchCustomerOrdersOnce
@@ -32,7 +32,7 @@ import {
   //    ใช้ร่วมกับ window.showReceipt เพื่อแสดงรายละเอียดออเดอร์เดียว (เหมือน renderMyOrdersList ปุ่ม "ดูใบเสร็จ")
   queryCustomerOrder
 // 🔧 (2026-09-17 v2): เพิ่ม ?v=20260917-polling-fix บังคับ browser โหลด db-client.js ใหม่ (กัน cache เก่า)
-} from "./db-client.js?v=20261003-login-guest-v10";
+} from "./db-client.js?v=20261012-launch";
 
 // ============================================================================
 // PART 1: PRICING HELPERS (คำนวณส่วนลด + โปรโมชั่น)
