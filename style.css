@@ -3373,51 +3373,109 @@ button:active {
   white-space: nowrap;
 }
 
-/* 🆕 (T133 2026-10-13): .bpm-badge — แสดง BPM ใน song card (admin + user)
-   3 ช่วงสี:
-   - .bpm-150 (150-154): เขียวอ่อน chill — gradient มิ้นต์-เขียวสว่าง
-   - .bpm-155 (155-159): ฟ้า medium — gradient ฟ้า-ม่วงอ่อน
-   - .bpm-160 (160-165): ชมพู/แดง energetic — gradient ชมพู-แดงเข้ม
-   ทั้ง admin (.n2) และ user (.song-meta-row) ใช้ style เดียวกัน — ไม่ต้อง duplicate */
+/* 🆕 (T137 2026-10-13): เปลี่ยนดีไซน์ BPM badge เป็นแบบ #5 Minimal Text + Dot
+   - ไม่มีกล่อง ใช้จุดสีเล็กๆ + ตัวเลข + หน่วย "BPM"
+   - ดูเรียบ elegant สะอาดตา ไม่กวนกับ element อื่น
+   - ใช้ทั้ง admin (.n2) และ user (.song-meta-row / playlist) ใช้ style เดียวกัน */
 .bpm-badge,
 .bpm-badge-wrap .bpm-badge {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 1.4;
-  letter-spacing: 0.2px;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-dim);
   white-space: nowrap;
   vertical-align: middle;
   margin-left: 4px;
-  border: 1px solid transparent;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
   user-select: none;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  padding: 0;
+  box-shadow: none;
+  text-shadow: none;
 }
 
-/* ช่วง 150-154: เขียวอ่อน chill (default) */
-.bpm-badge.bpm-150 {
-  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
-  color: #fff;
-  border-color: rgba(16, 185, 129, 0.4);
+.bpm-badge .bpm-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: box-shadow 0.15s;
+}
+
+.bpm-badge .bpm-num {
+  color: var(--text);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+}
+
+.bpm-badge .bpm-unit {
+  color: var(--text-dim);
+  font-size: 9px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+/* ช่วง 150-154: เขียว chill */
+.bpm-badge.bpm-150 .bpm-dot {
+  background: #34d399;
+  box-shadow: 0 0 4px rgba(52, 211, 153, 0.6);
 }
 
 /* ช่วง 155-159: ฟ้า medium */
-.bpm-badge.bpm-155 {
-  background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
-  color: #fff;
-  border-color: rgba(59, 130, 246, 0.4);
+.bpm-badge.bpm-155 .bpm-dot {
+  background: #60a5fa;
+  box-shadow: 0 0 4px rgba(96, 165, 250, 0.6);
 }
 
 /* ช่วง 160-165: ชมพู/แดง energetic */
-.bpm-badge.bpm-160 {
-  background: linear-gradient(135deg, #f472b6 0%, #ef4444 100%);
-  color: #fff;
-  border-color: rgba(239, 68, 68, 0.4);
+.bpm-badge.bpm-160 .bpm-dot {
+  background: #f472b6;
+  box-shadow: 0 0 4px rgba(244, 114, 182, 0.6);
+}
+
+/* Hover state — ขยาย glow ของ dot */
+.bpm-badge:hover .bpm-dot {
+  filter: brightness(1.15);
+}
+
+/* Mobile responsive — ลดขนาด badge บนจอแคบ */
+@media (max-width: 480px) {
+  .bpm-badge,
+  .bpm-badge-wrap .bpm-badge {
+    font-size: 10px;
+    gap: 3px;
+    margin-left: 3px;
+  }
+  .bpm-badge .bpm-dot {
+    width: 5px;
+    height: 5px;
+  }
+  .bpm-badge .bpm-num {
+    font-size: 10.5px;
+  }
+  .bpm-badge .bpm-unit {
+    font-size: 8.5px;
+  }
+}
+
+/* Dark theme tweaks — สีจัดขึ้นเล็กน้อย */
+@media (prefers-color-scheme: dark) {
+  .bpm-badge.bpm-150 .bpm-dot {
+    background: #6ee7b7;
+    box-shadow: 0 0 5px rgba(110, 231, 183, 0.7);
+  }
+  .bpm-badge.bpm-155 .bpm-dot {
+    background: #93c5fd;
+    box-shadow: 0 0 5px rgba(147, 197, 253, 0.7);
+  }
+  .bpm-badge.bpm-160 .bpm-dot {
+    background: #f9a8d4;
+    box-shadow: 0 0 5px rgba(249, 168, 212, 0.7);
+  }
 }
 
 /* 🆕 (T134 2026-10-13): .bpm-stepper — ปุ่ม +/- stepper สำหรับ input BPM
@@ -3514,28 +3572,23 @@ button:active {
   }
 }
 
-/* Mobile responsive — ลดขนาด badge บนจอแคบ */
+/* Mobile responsive — ลดขนาด badge บนจอแคบ (legacy — ถูกแทนที่ด้วย block ใหม่ด้านบน T137) */
 @media (max-width: 480px) {
   .bpm-badge,
   .bpm-badge-wrap .bpm-badge {
-    font-size: 9.5px;
-    padding: 2px 6px;
+    font-size: 10px;
+    padding: 0;
   }
 }
 
-/* Dark theme tweaks — เพิ่มความสดใน dark mode */
+/* Dark theme tweaks — legacy จาก T133 gradient pill — ถูกแทนที่ด้วย block ใหม่ด้านบน T137
+   เก็บไว้เพื่อ backward compat (กัน specificity conflict) — แต่ไม่มีผลเพราะ background: transparent อยู่ใน block ใหม่ */
 @media (prefers-color-scheme: dark) {
-  .bpm-badge.bpm-150 {
-    background: linear-gradient(135deg, #6ee7b7 0%, #10b981 100%);
-    box-shadow: 0 1px 4px rgba(52, 211, 153, 0.25);
-  }
-  .bpm-badge.bpm-155 {
-    background: linear-gradient(135deg, #93c5fd 0%, #3b82f6 100%);
-    box-shadow: 0 1px 4px rgba(59, 130, 246, 0.25);
-  }
+  .bpm-badge.bpm-150,
+  .bpm-badge.bpm-155,
   .bpm-badge.bpm-160 {
-    background: linear-gradient(135deg, #f9a8d4 0%, #ef4444 100%);
-    box-shadow: 0 1px 4px rgba(239, 68, 68, 0.3);
+    background: transparent;
+    box-shadow: none;
   }
 }
 

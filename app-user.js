@@ -2123,13 +2123,14 @@ function renderSongGrid() {
               ${s.dj_name ? `<span class="song-dj-tag">🎧 ${escapeHtml(s.dj_name)}</span>` : ""}
               ${s.artist ? `<span class="song-meta-text">${escapeHtml(s.artist)}</span>` : ""}
               ${(() => {
-                // 🆕 (T133 2026-10-13): แสดง BPM badge ในหน้า user — ใช้ CSS class เดียวกับ admin
+                // 🆕 (T137 2026-10-13): เปลี่ยนดีไซน์ BPM badge เป็นแบบ #5 Minimal Text + Dot
+                //   <span class="bpm-badge bpm-XXX"><span class="bpm-dot"></span><span class="bpm-num">XXX</span><span class="bpm-unit">BPM</span></span>
                 const rawBpm = Number(s.bpm);
                 const bpmInt = (!Number.isFinite(rawBpm) || rawBpm < 150 || rawBpm > 165) ? 150 : Math.round(rawBpm);
                 let cls = "bpm-150";
                 if (bpmInt >= 160) cls = "bpm-160";
                 else if (bpmInt >= 155) cls = "bpm-155";
-                return `<span class="bpm-badge ${cls}" title="BPM ${bpmInt}">🎵 ${bpmInt}</span>`;
+                return `<span class="bpm-badge ${cls}" title="BPM ${bpmInt}"><span class="bpm-dot"></span><span class="bpm-num">${bpmInt}</span><span class="bpm-unit">BPM</span></span>`;
               })()}
             </div>
             <div class="song-footer">
@@ -2507,6 +2508,15 @@ function renderPlaylists() {
                   <div class="song-meta-row">
                     ${s.dj_name ? `<span class="song-dj-tag">🎧 ${escapeHtml(s.dj_name)}</span>` : ""}
                     ${s.artist ? `<span class="song-meta-text">${escapeHtml(s.artist)}</span>` : ""}
+                    ${(() => {
+                      // 🆕 (T137 2026-10-13): เพิ่ม BPM badge ใน playlist song row — ใช้โครงสร้าง #5 เดียวกับ song grid หลัก
+                      const rawBpm = Number(s.bpm);
+                      const bpmInt = (!Number.isFinite(rawBpm) || rawBpm < 150 || rawBpm > 165) ? 150 : Math.round(rawBpm);
+                      let cls = "bpm-150";
+                      if (bpmInt >= 160) cls = "bpm-160";
+                      else if (bpmInt >= 155) cls = "bpm-155";
+                      return `<span class="bpm-badge ${cls}" title="BPM ${bpmInt}"><span class="bpm-dot"></span><span class="bpm-num">${bpmInt}</span><span class="bpm-unit">BPM</span></span>`;
+                    })()}
                   </div>
                   <div class="song-footer">
                     <div class="song-price-block">

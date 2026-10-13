@@ -2441,23 +2441,24 @@ function populateSelect(id, items, valueKey, labelKey, placeholderLabel) {
 const SONG_LIST_PAGE_SIZE = 100;
 let songListVisibleCount = SONG_LIST_PAGE_SIZE;
 
-// 🆕 (T133 2026-10-13): renderBpmBadge — แสดง BPM เป็น badge สีตามช่วงค่า
-//   - 150-154: เขียวอ่อน (chill สุด)
-//   - 155-159: ฟ้า (medium)
-//   - 160-165: ชมพู/แดง (energetic สุด)
-//   - ค่าผิด/ไม่มี → ไม่แสดง badge
+// 🆕 (T137 2026-10-13): เปลี่ยนดีไซน์ BPM badge เป็นแบบ #5 Minimal Text + Dot
+//   โครงสร้าง HTML:
+//     <span class="bpm-badge bpm-XXX">
+//       <span class="bpm-dot"></span>
+//       <span class="bpm-num">XXX</span>
+//       <span class="bpm-unit">BPM</span>
+//     </span>
+//   - ไม่มีกล่อง ใช้จุดสีเล็กๆ + ตัวเลข + หน่วย "BPM"
+//   - สี dot ตามช่วง: 150-154 เขียว, 155-159 ฟ้า, 160-165 ชมพู
+//   - default 150 ถ้าค่าผิด/ว่าง
 function renderBpmBadge(bpm) {
   const raw = Number(bpm);
-  if (!Number.isFinite(raw) || raw < 150 || raw > 165) {
-    // default 150 ถ้าไม่มี → แสดงเป็นสีเขียวอ่อน (chill)
-    return `<span class="bpm-badge bpm-150" title="BPM 150 (default)">🎵 150</span>`;
-  }
-  const bpmInt = Math.round(raw);
+  const bpmInt = (!Number.isFinite(raw) || raw < 150 || raw > 165) ? 150 : Math.round(raw);
   let cls = "bpm-150";
   if (bpmInt >= 160) cls = "bpm-160";        // 160-165: ชมพู/แดง
   else if (bpmInt >= 155) cls = "bpm-155";   // 155-159: ฟ้า
-  // 150-154: เขียวอ่อน (bpm-150 default)
-  return `<span class="bpm-badge ${cls}" title="BPM ${bpmInt}">🎵 ${bpmInt}</span>`;
+  // 150-154: เขียว (bpm-150 default)
+  return `<span class="bpm-badge ${cls}" title="BPM ${bpmInt}"><span class="bpm-dot"></span><span class="bpm-num">${bpmInt}</span><span class="bpm-unit">BPM</span></span>`;
 }
 
 // 🆕 (T134 2026-10-13): BPM Stepper — ปุ่ม +/- สำหรับ input BPM
