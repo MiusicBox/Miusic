@@ -3420,6 +3420,100 @@ button:active {
   border-color: rgba(239, 68, 68, 0.4);
 }
 
+/* 🆕 (T134 2026-10-13): .bpm-stepper — ปุ่ม +/- stepper สำหรับ input BPM
+   - ใช้กับทั้ง single form (fBpm) และ bulk form (bulkBpm)
+   - ปุ่มอยู่ซ้าย-ขวาของ input → กด +/- ทีละ 1
+   - Input ยังพิมพ์เองได้ (type=number) */
+.bpm-stepper {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
+  background: rgba(255, 255, 255, 0.04);
+  width: 100%;
+  max-width: 220px;
+  height: 48px;
+}
+
+.bpm-stepper .bpm-step-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  min-width: 48px;
+  height: 100%;
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--accent);
+  border: none;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease, transform 0.05s ease;
+}
+
+.bpm-stepper .bpm-step-btn:hover {
+  background: rgba(139, 92, 246, 0.3);
+}
+
+.bpm-stepper .bpm-step-btn:active {
+  transform: scale(0.95);
+  background: rgba(139, 92, 246, 0.4);
+}
+
+.bpm-stepper .bpm-step-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.bpm-stepper .bpm-step-input {
+  flex: 1;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 800;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border, rgba(255, 255, 255, 0.15));
+  border-right: 1px solid var(--border, rgba(255, 255, 255, 0.15));
+  color: var(--text);
+  outline: none;
+  min-width: 0;
+  width: 100%;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* ซ่อน spinner เริ่มต้นของ input type=number (เราใช้ปุ่ม +/- ของเราเอง) */
+.bpm-stepper .bpm-step-input::-webkit-outer-spin-button,
+.bpm-stepper .bpm-step-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.bpm-stepper .bpm-step-input:focus {
+  background: rgba(139, 92, 246, 0.08);
+  box-shadow: inset 0 0 0 2px rgba(139, 92, 246, 0.4);
+}
+
+/* Mobile responsive */
+@media (max-width: 480px) {
+  .bpm-stepper {
+    height: 44px;
+    max-width: 100%;
+  }
+  .bpm-stepper .bpm-step-btn {
+    width: 44px;
+    min-width: 44px;
+    font-size: 22px;
+  }
+  .bpm-stepper .bpm-step-input {
+    font-size: 16px;
+  }
+}
+
 /* Mobile responsive — ลดขนาด badge บนจอแคบ */
 @media (max-width: 480px) {
   .bpm-badge,
