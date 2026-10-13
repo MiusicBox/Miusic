@@ -2531,8 +2531,10 @@ function applyMusicKeySelectColor(selectId) {
   // ใช้ setTimeout เพื่อให้แน่ใจว่า DOM พร้อม
   setTimeout(apply, 0);
 }
-// 🆕 (T140): apply ให้ทุก music key selects ตอน page load
-["fMusicKey", "bulkMusicKey", "songDetailMusicKey"].forEach(applyMusicKeySelectColor);
+// 🆕 (T140): apply ให้ music key selects ตอน page load
+//   🆕 (T142): ลบ "bulkMusicKey" ออกเพราะย้ายไปเป็น per-song select ใน bulkSongListPreview แล้ว
+//   ยังคง apply ให้ fMusicKey + songDetailMusicKey (single form + popup)
+["fMusicKey", "songDetailMusicKey"].forEach(applyMusicKeySelectColor);
 
 // 🆕 (T134 2026-10-13): BPM Stepper — ปุ่ม +/- สำหรับ input BPM
 //   ผูก event กับทุกปุ่ม .bpm-step-btn ที่มี data-bpm-target + data-bpm-delta
@@ -4900,16 +4902,51 @@ function renderBulkSongListPreview() {
   }
   if (bulkFiles.length === 0) { container.innerHTML = ""; return; }
   const defaultPrice = Number(document.getElementById("bulkPrice").value || 0);
+  // 🆕 (T142 2026-10-13): สร้าง Music Key options HTML ครั้งเดียว + reuse ในแต่ละ row
+  //   ใช้ Camelot wheel colors (เหมือน dropdown ใน form)
+  //   ตัวเลือก: "" + 1A-12A + 1B-12B (24 ค่า)
+  //   compact: เอาชื่อโน้ตออก (เช่น "8B" ไม่ใช่ "8B (C major)") เพื่อประหยัดพื้นที่
+  const MUSIC_KEY_OPTIONS_HTML = [
+    '<option value="">—</option>',
+    '<option value="1A" style="color:#94A3B8;">1A</option>',
+    '<option value="2A" style="color:#818CF8;">2A</option>',
+    '<option value="3A" style="color:#60A5FA;">3A</option>',
+    '<option value="4A" style="color:#22D3EE;">4A</option>',
+    '<option value="5A" style="color:#2DD4BF;">5A</option>',
+    '<option value="6A" style="color:#4ADE80;">6A</option>',
+    '<option value="7A" style="color:#A3E635;">7A</option>',
+    '<option value="8A" style="color:#FACC15;">8A</option>',
+    '<option value="9A" style="color:#FBBF24;">9A</option>',
+    '<option value="10A" style="color:#FB923C;">10A</option>',
+    '<option value="11A" style="color:#F87171;">11A</option>',
+    '<option value="12A" style="color:#F472B6;">12A</option>',
+    '<option value="1B" style="color:#A0AEC0;">1B</option>',
+    '<option value="2B" style="color:#A5B4FC;">2B</option>',
+    '<option value="3B" style="color:#93C5FD;">3B</option>',
+    '<option value="4B" style="color:#67E8F9;">4B</option>',
+    '<option value="5B" style="color:#5EEAD4;">5B</option>',
+    '<option value="6B" style="color:#86EFAC;">6B</option>',
+    '<option value="7B" style="color:#BEF264;">7B</option>',
+    '<option value="8B" style="color:#FDE047;">8B</option>',
+    '<option value="9B" style="color:#FCD34D;">9B</option>',
+    '<option value="10B" style="color:#FDBA74;">10B</option>',
+    '<option value="11B" style="color:#FCA5A5;">11B</option>',
+    '<option value="12B" style="color:#F9A8D4;">12B</option>'
+  ].join("");
   container.innerHTML = `
-    <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text);">📋 รายการเพลง (${bulkFiles.length} เพลง) — ตั้งราคาแต่ละเพลงได้ด้านล่าง</div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text);">📋 รายการเพลง (${bulkFiles.length} เพลง) — ตั้ง Key + ราคาแต่ละเพลงแยกกันได้ด้านล่าง</div>
     <div style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px;">
       ${bulkFiles.map((file, i) => {
         const songName = cleanFileNameToSongName(file.name);
         return `
-          <div style="display:flex;align-items:center;gap:8px;padding:8px 6px;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;gap:6px;padding:8px 6px;border-bottom:1px solid var(--border);">
             <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(songName)}">${i + 1}. ${escapeHtml(songName)}</span>
+            <select data-bulk-song-key="${i}" aria-label="Music Key สำหรับเพลง ${i + 1}"
+                    style="width:60px;padding:4px 4px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:rgba(255,255,255,0.04);color:var(--text);flex-shrink:0;">
+              ${MUSIC_KEY_OPTIONS_HTML}
+            </select>
             <input type="number" min="0" value="${defaultPrice}" data-bulk-song-price="${i}"
-                   style="width:100px;padding:4px 8px;font-size:13px;text-align:right;border:1px solid var(--border);border-radius:4px;"
+                   style="width:80px;padding:4px 6px;font-size:12px;text-align:right;border:1px solid var(--border);border-radius:4px;"
                    placeholder="0">
             <span style="font-size:11px;color:var(--text-dim);white-space:nowrap;">LAK</span>
           </div>
@@ -4917,6 +4954,22 @@ function renderBulkSongListPreview() {
       }).join("")}
     </div>
   `;
+  // 🆕 (T142): ผูก change event ให้แต่ละ select — ปรับสีตัว select เองตามค่าที่เลือก
+  //   เหมือน fMusicKey (consistent UX)
+  container.querySelectorAll("[data-bulk-song-key]").forEach(sel => {
+    const apply = () => {
+      const val = String(sel.value || "").trim().toUpperCase();
+      if (val && MUSIC_KEY_COLORS[val]) {
+        sel.style.color = MUSIC_KEY_COLORS[val];
+        sel.style.fontWeight = "700";
+      } else {
+        sel.style.color = "";
+        sel.style.fontWeight = "";
+      }
+    };
+    sel.addEventListener("change", apply);
+    apply(); // initial
+  });
 }
 
 // 🔧 (2026-09-19): เมื่อ bulkPrice เปลี่ยน → อัปเดตราคาทุกเพลงใน list (เป็น default)
@@ -5298,8 +5351,11 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
           return Math.round(rawBpm);
         })(),
         // 🆕 (T139 2026-10-13): Music Key จากช่อง bulkMusicKey — ใช้กับทุกเพลงในชุด (validate, default "")
+        //   🆕 (T142 2026-10-13): เปลี่ยนเป็นอ่านจาก per-song select (data-bulk-song-key) แทน
+        //   แต่ละเพลงมีคีย์ต่างกันได้ → ต้องอ่านทีละ row (เหมือน data-bulk-song-price)
         music_key: (() => {
-          const rawKey = String(document.getElementById("bulkMusicKey")?.value || "").trim().toUpperCase();
+          const keyInput = document.querySelector(`[data-bulk-song-key="${i}"]`);
+          const rawKey = String(keyInput?.value || "").trim().toUpperCase();
           return isValidMusicKey(rawKey) ? rawKey : "";
         })(),
         created_at: new Date().toISOString(),
