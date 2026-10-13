@@ -67,14 +67,29 @@
   <!-- Cloudflare Web Analytics -->
   <script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "f01ac9d2536a40b7b635059e75981a47"}'></script>
   <!-- End Cloudflare Web Analytics -->
-  <!-- Google tag (gtag.js) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-JDW4KYSGN0"></script>
+  <!-- Google tag (gtag.js) — 🔧 (perf 2026-10-13): โหลดสคริปต์หลังหน้าโหลดเสร็จ + ว่าง (ไม่แย่ง bandwidth/CPU กับการแสดงหน้าแรก)
+       dataLayer + gtag('config') ตั้งไว้ทันทีเหมือนเดิม → Google Analytics ยังนับ pageview ครบ -->
   <script>
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
     gtag('js', new Date());
 
     gtag('config', 'G-JDW4KYSGN0');
+
+    (function () {
+      function loadGtag() {
+        var s = document.createElement('script');
+        s.async = true;
+        s.src = 'https://www.googletagmanager.com/gtag/js?id=G-JDW4KYSGN0';
+        document.head.appendChild(s);
+      }
+      function schedule() {
+        if ('requestIdleCallback' in window) requestIdleCallback(loadGtag, { timeout: 4000 });
+        else setTimeout(loadGtag, 2000);
+      }
+      if (document.readyState === 'complete') schedule();
+      else window.addEventListener('load', schedule);
+    })();
   </script>
   <!-- End Google tag -->
 <!-- 🔧 (2026-09-24 SEO/perf): เปลี่ยนจาก <link rel="stylesheet"> ปกติ (บล็อกการแสดงผลหน้าเว็บ ~1,780ms ตาม
@@ -87,7 +102,7 @@
 <!-- 🔧 (2026-09-24 CLS fix): style.css กลับมาเป็น <link rel="stylesheet"> ปกติ (บล็อกการแสดงผลสั้น ๆ)
      สาเหตุ: เทคนิค media="print"+onload ทำให้หน้าเว็บวาดแบบ "ไม่มีสไตล์" ก่อน แล้วสไตล์มาทีหลัง → ทุกอย่างกระโดด
      (CLS 0.649 = ตัวที่ทำให้คะแนนตก 76) ไฟล์/เวอร์ชันเดิมทุกอย่าง แค่เอาการโหลดแบบหน่วงออก -->
-<link rel="stylesheet" href="style.css?v=20261012-launch">
+<link rel="stylesheet" href="style.css?v=20261013-perf">
 <!-- 🎨 (2026-10-11) ระบบแจ้งเตือนใหม่ (toast + dialog) — ต้องโหลดก่อน app-*.js -->
 <link rel="stylesheet" href="notify.css?v=20261012-launch">
 <script src="notify.js?v=20261012-launch"></script>
