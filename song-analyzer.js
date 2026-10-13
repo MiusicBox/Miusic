@@ -328,26 +328,72 @@ export async function analyzeSongFile(file, onProgress) {
 
 // วิเคราะห์จาก URL ที่อัปโหลดไปแล้ว (ใช้ตอนกด "วิเคราะห์ใหม่ทั้งหมด" หรือใน backfill script)
 export async function analyzeSongUrl(url, onProgress) {
-  // 🔒 (Audit Fix H-15): ดึงแค่ 5MB แรก (ก่อน decode) — กัน memory crash
-  //   เดิม: fetch(url) → res.arrayBuffer() → โหลดไฟล์ทั้งหมด → heap spike
-  //   ใหม่: fetch(url, { headers: { Range: 'bytes=0-5242879' } }) → ดึงแค่ 5MB แรก
-  //   ถ้า server ไม่รองรับ Range → fallback ดึงทั้งหมด (เหมือนเดิม)
-  //   ผลกระทบระบบเดิม: 0% — ถ้า server ไม่รองรับ Range → res.arrayBuffer() เหมือนเดิม
-  //   ถ้า server รองรับ → ดึงแค่ 5MB (memory ลดลง)
+  // 🔧 (T134 2026-10-13): แก้ "Load failed" — เดิม fetch ตรงจาก R2 public URL (pub-xxx.r2.dev) ซึ่งคนละ origin กับหน้าแอดมิน
+  //   Safari บล็อกเพราะ bucket ไม่ได้ตั้ง CORS (และ header Range ทำให้เกิด preflight ที่ถูกปฏิเสธ) → fetch ล้มทั้งสองรอบ
+  //   ใหม่: ไฟล์คนละ origin → ดึงผ่าน proxy ของระบบเอง /api/file/<key> (same-origin, ใช้ session แอดมิน, ไม่โดน CORS)
+  //         ถ้า proxy ใช้ไม่ได้ (เช่น ไฟล์เก่าไม่ได้อยู่ใน R2 bucket นี้) → ลองดึงตรงเหมือนเดิม
+  //   อ่านเฉพาะ N ไบต์แรกด้วย stream (กันแรมเต็มบนมือถือ) โดยไม่ต้องพึ่ง Range header
   const MAX_ANALYZE_BYTES = maxAnalyzeBytesFor(url);
-  let arrayBuffer;
-  try {
-    const res = await fetch(url, { headers: { Range: `bytes=0-${MAX_ANALYZE_BYTES - 1}` } });
+  const errors = [];
+  const tryFetch = async (target, init) => {
+    const res = await fetch(target, init);
     if (!res.ok && res.status !== 206) throw new Error("HTTP " + res.status);
-    arrayBuffer = await res.arrayBuffer();
-  } catch (rangeErr) {
-    // Fallback: ดึงทั้งหมด (เหมือนเดิม) ถ้า Range request fail
-    console.warn("[H-15] Range request failed, falling back to full fetch:", rangeErr?.message || rangeErr);
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("ดึงไฟล์เพลงไม่สำเร็จสำหรับวิเคราะห์ (HTTP " + res.status + ")");
-    arrayBuffer = await res.arrayBuffer();
+    return readLimited(res, MAX_ANALYZE_BYTES);
+  };
+
+  let arrayBuffer = null;
+  const proxyUrl = buildSameOriginProxyUrl(url);
+  if (proxyUrl) {
+    try { arrayBuffer = await tryFetch(proxyUrl, { credentials: "same-origin" }); }
+    catch (e) { errors.push("proxy: " + (e?.message || e)); }
+  }
+  if (!arrayBuffer) {
+    try { arrayBuffer = await tryFetch(url); }
+    catch (e) { errors.push("direct: " + (e?.message || e)); }
+  }
+  if (!arrayBuffer) {
+    throw new Error("ดึงไฟล์เพลงมาวิเคราะห์ไม่ได้ (" + errors.join(" | ") + ")");
   }
   return analyzeArrayBuffer(arrayBuffer, onProgress);
+}
+
+// อ่าน body ไม่เกิน maxBytes แล้วหยุด (ตัดการดาวน์โหลดที่เหลือทิ้ง)
+async function readLimited(res, maxBytes) {
+  if (!res.body || !res.body.getReader) {
+    const buf = await res.arrayBuffer();
+    return buf.byteLength > maxBytes ? buf.slice(0, maxBytes) : buf;
+  }
+  const reader = res.body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (total < maxBytes) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    total += value.byteLength;
+  }
+  try { await reader.cancel(); } catch (_) { /* ignore */ }
+  const out = new Uint8Array(Math.min(total, maxBytes));
+  let off = 0;
+  for (const c of chunks) {
+    const take = Math.min(c.byteLength, out.length - off);
+    if (take <= 0) break;
+    out.set(c.subarray(0, take), off);
+    off += take;
+  }
+  return out.buffer;
+}
+
+// URL ของไฟล์คนละ origin → แปลงเป็น /api/file/<key> (same-origin) ; ถ้าเป็น origin เดียวกันอยู่แล้วคืน null
+export function buildSameOriginProxyUrl(url) {
+  try {
+    const u = new URL(url, typeof location !== "undefined" ? location.href : undefined);
+    if (typeof location !== "undefined" && u.origin === location.origin) return null;
+    const key = u.pathname.replace(/^\/+/, "").split("/").map(decodeURIComponent).map(encodeURIComponent).join("/");
+    return key ? "/api/file/" + key : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 // 🆕 (T133): อ่านไฟล์ WAV (PCM 8/16/24/32-bit, float32) ตรงๆ โดยไม่ผ่าน decodeAudioData
