@@ -113,6 +113,9 @@ async function writeAuditLog(env, request, admin, action, collection, targetId, 
 //     note: หมายเหตุภาษาไทย (เช่น "แอดมินยืนยันสลิป", "Worker atomic update")
 //     byId: admin_id หรือ "system" หรือ "customer"
 //     byName: display_name ของผู้บันทึก (เช่น "Main Admin", "Miusic Worker")
+// 🆕 (2026-10-13) จำนวนวันที่ออเดอร์ "ยังไม่มีสลิปเลย" จะถูกยกเลิกอัตโนมัติ (ปรับเลขนี้ได้ที่เดียว)
+const UNPAID_ORDER_AUTO_CANCEL_DAYS = 3;
+
 async function insertOrderStatusHistory(env, orderId, status, note, byId, byName) {
   if (!env || !env.DB || !orderId) return;
   const ctx = env.__ctx;
@@ -9110,6 +9113,13 @@ export default {
       orderData.payment_proof_status = "pending";
       orderData.payment_proof_uploaded_at = uploadedAt;
       orderData.updated_at = uploadedAt;
+      // 🆕 (2026-10-13) ออเดอร์ที่ "ระบบยกเลิกอัตโนมัติ" (ไม่ใช่แอดมินกดยกเลิกเอง) แต่ลูกค้าโอนเงินมาทีหลัง
+      //   → เปิดกลับเป็น pending_verify ให้แอดมินตรวจสลิปตามปกติ (กันเงินลูกค้าตกหล่น)
+      if (orderData.status === "cancelled" && orderData.auto_cancelled === true) {
+        orderData.status = "pending_verify";
+        orderData.auto_cancelled = false;
+        orderData.reopened_by_slip_at = uploadedAt;
+      }
       // push status_history entry (ถ้า order มี status_history อยู่แล้ว)
       if (Array.isArray(orderData.status_history)) {
         orderData.status_history.push({
@@ -9555,8 +9565,11 @@ export default {
       const expiredCount = results?.length || 0;
       console.log(`[cleanup] Found ${expiredCount} ZIPs to expire (limit ${cleanupLimit})`);
 
+      // 🔧 (2026-10-13) แก้บั๊ก: เดิม `return` ตรงนี้เมื่อไม่มี ZIP หมดอายุ → งานล้างข้อมูลด้านล่างทั้งหมด
+      //   (audit_log, PDPA hard delete, download_tokens, stuck ZIP jobs, attempts tables) ถูกข้ามไปด้วย
+      //   ตอนนี้แค่ข้ามลูป ZIP แล้วทำงานส่วนที่เหลือต่อ
       if (expiredCount === 0) {
-        return; // ไม่มี ZIP ต้อง cleanup → จบการทำงาน
+        console.log("[cleanup] no ZIPs to expire — continuing with remaining cleanup tasks");
       }
 
       // วนลูปลบทีละ order
@@ -9610,6 +9623,54 @@ export default {
       }
 
       console.log(`[cleanup] Done: ${successCount} expired, ${errorCount} failed`);
+
+      // 🆕 (2026-10-13) ยกเลิกออเดอร์ที่ค้างจ่ายอัตโนมัติ
+      //   เงื่อนไข: status = pending_verify + ยังไม่มีสลิปเลย (ไม่มี payment_proof_id / payment_proof_status)
+      //            + สร้างมานานกว่า UNPAID_ORDER_AUTO_CANCEL_DAYS วัน
+      //   ออเดอร์ที่ลูกค้าอัปสลิปแล้ว (รอแอดมินตรวจ) จะ "ไม่ถูกแตะ" เด็ดขาด
+      //   ถ้าลูกค้าอัปสลิปมาทีหลัง → endpoint อัปสลิปจะเปิดออเดอร์กลับเป็น pending_verify ให้เอง (ดู auto_cancelled)
+      try {
+        const unpaidCutoff = new Date(Date.now() - UNPAID_ORDER_AUTO_CANCEL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+        const { results: unpaidRows } = await env.DB.prepare(
+          "SELECT id, data FROM documents WHERE collection = 'orders' " +
+          "AND json_extract(data, '$.status') = 'pending_verify' " +
+          "AND COALESCE(json_extract(data, '$.payment_proof_id'), '') = '' " +
+          "AND COALESCE(json_extract(data, '$.payment_proof_status'), '') = '' " +
+          "AND json_extract(data, '$.created_at') IS NOT NULL " +
+          "AND json_extract(data, '$.created_at') < ? " +
+          "LIMIT 100"
+        ).bind(unpaidCutoff).all();
+        let cancelledCount = 0;
+        for (const row of (unpaidRows || [])) {
+          try {
+            const od = JSON.parse(row.data);
+            const nowIso2 = new Date().toISOString();
+            const note = `ยกเลิกอัตโนมัติ: ไม่ชำระเงินภายใน ${UNPAID_ORDER_AUTO_CANCEL_DAYS} วัน`;
+            od.status = "cancelled";
+            od.auto_cancelled = true;
+            od.auto_cancelled_at = nowIso2;
+            od.updated_at = nowIso2;
+            if (Array.isArray(od.status_history)) {
+              od.status_history.push({ status: "cancelled", at: nowIso2, note, by: "system" });
+            }
+            // WHERE ซ้ำเงื่อนไข "ยังไม่มีสลิป" กัน race กับลูกค้าที่เพิ่งอัปสลิปในจังหวะเดียวกัน
+            const r = await env.DB.prepare(
+              "UPDATE documents SET data = ?, updated_at = ? WHERE collection = 'orders' AND id = ? " +
+              "AND json_extract(data, '$.status') = 'pending_verify' " +
+              "AND COALESCE(json_extract(data, '$.payment_proof_id'), '') = ''"
+            ).bind(JSON.stringify(od), nowIso2, row.id).run();
+            if ((r?.meta?.changes || 0) > 0) {
+              cancelledCount += 1;
+              await insertOrderStatusHistory(env, row.id, "cancelled", note, "system", "ระบบ");
+            }
+          } catch (oneErr) {
+            console.warn(`[cleanup] auto-cancel failed for order ${row.id}:`, oneErr?.message || oneErr);
+          }
+        }
+        if (cancelledCount > 0) console.log(`[cleanup] Auto-cancelled ${cancelledCount} unpaid orders (older than ${UNPAID_ORDER_AUTO_CANCEL_DAYS} days)`);
+      } catch (autoCancelErr) {
+        console.warn("[cleanup] unpaid order auto-cancel failed:", autoCancelErr?.message || autoCancelErr);
+      }
 
       // 🔧 (2026-09-22 fix Bug #2 UI v3): ลบ audit_log เก่าเกิน 10 วัน อัตโนมัติ
       //   - รันทุก 6 ชม. (เหมือน ZIP cleanup)
