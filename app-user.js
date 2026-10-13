@@ -2134,12 +2134,14 @@ function renderSongGrid() {
               })()}
               ${(() => {
                 // 🆕 (T139 2026-10-13): เพิ่ม Music Key badge ใน user song grid — ใช้โครงสร้างเดียวกับ admin
+                //   🆕 (T140): ใช้สีตาม Camelot wheel — class k-{N}{L} เช่น k-8b, k-5a, k-12a
                 //   ถ้าไม่มี key หรือ format ผิด → ไม่แสดง badge
                 const k = String(s.music_key || "").trim().toUpperCase();
                 const m = k.match(/^([1-9]|1[0-2])([AB])$/);
                 if (!m) return "";
+                const num = m[1];
                 const letter = m[2];
-                const mkCls = letter === "A" ? "mk-minor" : "mk-major";
+                const mkCls = `k-${num}${letter.toLowerCase()}`;
                 return `<span class="music-key-badge ${mkCls}" title="Key ${k}"><span class="mk-symbol">🎹</span><span class="mk-key">${escapeHtml(k)}</span><span class="mk-label">Key</span></span>`;
               })()}
             </div>
@@ -2529,11 +2531,13 @@ function renderPlaylists() {
                     })()}
                     ${(() => {
                       // 🆕 (T139 2026-10-13): เพิ่ม Music Key badge ใน playlist song row — ใช้โครงสร้างเดียวกับ song grid
+                      //   🆕 (T140): ใช้สีตาม Camelot wheel — class k-{N}{L}
                       const k = String(s.music_key || "").trim().toUpperCase();
                       const m = k.match(/^([1-9]|1[0-2])([AB])$/);
                       if (!m) return "";
+                      const num = m[1];
                       const letter = m[2];
-                      const mkCls = letter === "A" ? "mk-minor" : "mk-major";
+                      const mkCls = `k-${num}${letter.toLowerCase()}`;
                       return `<span class="music-key-badge ${mkCls}" title="Key ${k}"><span class="mk-symbol">🎹</span><span class="mk-key">${escapeHtml(k)}</span><span class="mk-label">Key</span></span>`;
                     })()}
                   </div>
@@ -3206,12 +3210,14 @@ function openSongModal(songId) {
       badges.push(`<span class="bpm-badge ${cls}" title="BPM ${bpmInt}"><span class="bpm-dot"></span><span class="bpm-num">${bpmInt}</span><span class="bpm-unit">BPM</span></span>`);
     }
     // 🆕 (T139 2026-10-13): เพิ่ม Music Key badge ใน user song modal — เหมือนกับ song grid + playlist
+    //   🆕 (T140): ใช้สีตาม Camelot wheel — class k-{N}{L}
     {
       const k = String(song.music_key || "").trim().toUpperCase();
       const m = k.match(/^([1-9]|1[0-2])([AB])$/);
       if (m) {
+        const num = m[1];
         const letter = m[2];
-        const mkCls = letter === "A" ? "mk-minor" : "mk-major";
+        const mkCls = `k-${num}${letter.toLowerCase()}`;
         badges.push(`<span class="music-key-badge ${mkCls}" title="Key ${k}"><span class="mk-symbol">🎹</span><span class="mk-key">${escapeHtml(k)}</span><span class="mk-label">Key</span></span>`);
       }
     }
