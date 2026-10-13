@@ -14,7 +14,7 @@ import { initOrdersView } from "./orders.js?v=20261012-launch";
 import { resolveCurrentAdminRole, initAdminsView } from "./admin-roles.js?v=20261012-launch";
 import {
   analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS
-} from "./song-analyzer.js?v=20261013-dance-fix";
+} from "./song-analyzer.js?v=20261013-wav-fix";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261012-launch";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
@@ -160,7 +160,7 @@ function renderPreviewData(data) {
   }
   if (data.status === "needs_review") {
     setPreviewBadge("⚠️ NEEDS_REVIEW", "#ff9f43");
-    info.textContent = "ระบบหาช่วง Dance ที่มั่นใจไม่ได้ — กรุณากรอก Dance Start Bar เองแล้วกด \"แก้ไข / คำนวณ Preview ใหม่\"";
+    info.textContent = "ระบบหาช่วง Dance ที่มั่นใจไม่ได้" + (data.dance_start_bar != null ? " (ระบบเดาไว้ห้อง " + data.dance_start_bar + ")" : "") + (data.reason ? " — เหตุผล: " + data.reason : "") + " — กรุณากรอก Dance Start Bar เองแล้วกด \"แก้ไข / คำนวณ Preview ใหม่\"";
     if (data.dance_start_bar != null) barField.value = data.dance_start_bar;
     return;
   }
@@ -3151,7 +3151,7 @@ async function runAnalysisOnFile(file) {
     }
   } catch (err) {
     if (mySession !== songUploadSession) return;
-    renderPreviewData({ status: "needs_review", dance_start_bar: null });
+    renderPreviewData({ status: "needs_review", dance_start_bar: null, reason: "วิเคราะห์ไฟล์ไม่สำเร็จ: " + (err.message || err) });
     showToast("วิเคราะห์เสียงไม่สำเร็จ: " + (err.message || err) + " — กรอก Dance Start Bar เองได้", "error");
   }
 }
@@ -6521,7 +6521,7 @@ function renderDetailPreviewData(data) {
   }
   if (data.status === "needs_review") {
     setDetailPreviewBadge("⚠️ NEEDS_REVIEW", "#ff9f43");
-    if (info) info.textContent = "ระบบหาช่วง Dance ที่มั่นใจไม่ได้ — กรุณากรอก Dance Start Bar เองแล้วกด \"คำนวณ\"";
+    if (info) info.textContent = "ระบบหาช่วง Dance ที่มั่นใจไม่ได้" + (data.dance_start_bar != null ? " (ระบบเดาไว้ห้อง " + data.dance_start_bar + ")" : "") + (data.reason ? " — เหตุผล: " + data.reason : "") + " — กรุณากรอก Dance Start Bar เองแล้วกด \"คำนวณ\"";
     if (data.dance_start_bar != null && danceField) danceField.value = data.dance_start_bar;
     return;
   }
@@ -6603,7 +6603,7 @@ document.getElementById("songDetailReanalyzeBtn").addEventListener("click", asyn
     renderDetailPreviewData(result);
     showToast(result.status === "ok" ? "วิเคราะห์ใหม่สำเร็จ" : "วิเคราะห์ไม่พบช่วง Dance ที่มั่นใจพอ — กรอกเองได้", result.status === "ok" ? "success" : "error");
   } catch (err) {
-    renderDetailPreviewData({ status: "needs_review", dance_start_bar: null });
+    renderDetailPreviewData({ status: "needs_review", dance_start_bar: null, reason: "วิเคราะห์ไฟล์ไม่สำเร็จ: " + (err.message || err) });
     showToast("วิเคราะห์ไม่สำเร็จ: " + (err.message || err), "error");
   }
   btn.disabled = false; btn.textContent = "🔄 วิเคราะห์เสียงใหม่ทั้งหมด (AI)";
