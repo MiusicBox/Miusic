@@ -42,9 +42,9 @@ export const BPM = 150;
 export const BEATS_PER_BAR = 4;
 export const BAR_SECONDS = (60 / BPM) * BEATS_PER_BAR; // = 1.6 วินาทีต่อห้อง (คงที่ทั้งระบบ)
 
-export const DANCE_BARS = 16;                // ความยาวช่วงที่ใช้ "ค้นหา" Dance Section (อัลกอริทึมตรวจจับ — ไม่เปลี่ยน)
+export const DANCE_BARS = 24;                // ความยาวช่วงที่ใช้ "ค้นหา" Dance Section (อัลกอริทึมตรวจจับ — ไม่เปลี่ยน)
 export const PREVIEW_START_BAR = 5;          // Preview ทุกเพลงเริ่มที่ห้องที่ 6 (index 5) เสมอ ตามกติกาล่าสุด
-export const DANCE_STOP_OFFSET_BARS = 8;     // เล่นต่อเนื่องไปจนถึงห้องที่ 8 ของช่วง Dance ที่เจอ แล้วหยุด
+export const DANCE_STOP_OFFSET_BARS = 16;    // 🔧 (T135) เล่นต่อเนื่องไปจนจบห้องที่ 16 ของท่อนแดนแรก (Dance Start Bar + 16) แล้วหยุด (เดิม +8)
 export const DANCE_SEARCH_RANGE_RATIO = 0.5; // จำกัดขอบเขตค้นหา Dance ไว้แค่ "ครึ่งแรกของเพลง" เพื่อจับท่อนแดนแรกเสมอ
 
 // ---------------- แปลงห้อง <-> วินาที ----------------
@@ -52,14 +52,14 @@ export function barToSec(bar) { return bar * BAR_SECONDS; }
 export function secToBar(sec) { return sec / BAR_SECONDS; }
 
 // จาก "ห้องเริ่ม Dance" คำนวณช่วง Preview ตามกติกาใหม่:
-//   เริ่มเสมอที่ห้องที่ 1 (index 0) ของเพลง → หยุดที่ห้องที่ 8 ของ Dance (danceStartBar + 8)
+//   เริ่มที่ห้องที่ 6 (index 5) → หยุดที่จบห้องที่ 16 ของท่อนแดนแรก (danceStartBar + 16)  [T135]
 // คลิปตามความยาวเพลงจริงเสมอ (กันค่าเกินความยาวเพลง)
 export function computePreviewWindow(danceStartBar, songDurationSec, gridOffsetSec = 0) {
   // 🆕 (T132): gridOffsetSec = เวลาที่ "ห้อง 0" เริ่มจริงในไฟล์ (เพลงที่มีช่วงเงียบ/lead-in ก่อนจังหวะแรก)
   //   ค่าเริ่มต้น 0 → ทำงานเหมือนเดิมทุกประการ
   const off = Number(gridOffsetSec) || 0;
   const rawStartBar = PREVIEW_START_BAR; // = 5 เสมอ ทุกเพลง (ห้องที่ 6)
-  // ห้องที่ 8 ของช่วง Dance — กันเคสขอบ (Dance ถูกจับได้เร็วมากจนน้อยกว่าห้องเริ่ม Preview)
+  // จบห้องที่ 16 ของช่วง Dance (T135: เดิมห้องที่ 8) — กันเคสขอบ (Dance ถูกจับได้เร็วมากจนน้อยกว่าห้องเริ่ม Preview)
   const rawEndBar = Math.max(rawStartBar + 1, danceStartBar + DANCE_STOP_OFFSET_BARS);
   const startSec = off + barToSec(rawStartBar);
   const endSec = Math.min(
@@ -233,6 +233,50 @@ function aggregateIntoBars(frames, songDurationSec, gridOffsetSec = 0) {
   }));
 }
 
+const LOUD_RUN_MIN_BARS = 12;     // ท่อนแดนต้องต่อเนื่องอย่างน้อยกี่ห้องถึงนับ (แดนจริง 24 ห้อง)
+const LOUD_LEVEL_RATIO = 0.8;     // ถือว่า "ดังระดับแดน" เมื่อ ≥ 80% ของระดับดังสุดของเพลง
+function median3(arr) {
+  return arr.map((_, i) => {
+    const a = arr[Math.max(0, i - 1)], b = arr[i], c = arr[Math.min(arr.length - 1, i + 1)];
+    return Math.max(Math.min(a, b), Math.min(Math.max(a, b), c));
+  });
+}
+function findFirstLoudRun(E, O) {
+  const n = E.length;
+  if (n < LOUD_RUN_MIN_BARS + 2) return null;
+  const sm = median3(E);
+  const sorted = sm.slice().sort((x, y) => x - y);
+  const loud = sorted[Math.floor(sorted.length * 0.9)];
+  if (!(loud > 0.3)) return null;
+  const thr = loud * LOUD_LEVEL_RATIO;
+  let i = 0, runStart = -1, runEnd = -1;
+  while (i < n) {
+    if (sm[i] >= thr) {
+      let j = i;
+      while (j < n && sm[j] >= thr) j++;
+      if (j - i >= LOUD_RUN_MIN_BARS) { runStart = i; runEnd = j; break; }
+      i = j;
+    } else i++;
+  }
+  if (runStart < 0) return null;
+  // จุดเริ่มแดน = ห้องแรกของช่วงที่ดังต่อเนื่อง (ใช้ค่าที่ผ่าน median แล้ว จึงไม่ถูกหลอกด้วยห้องกลองฟิลล์/เสียงเด้งเดี่ยวๆ ก่อนดรอป)
+  let start = runStart;
+  // median อาจดึงขอบเข้ามา 1 ห้องเมื่อมีห้องเด้งก่อนดรอป → ขยับไปห้องแรกที่ค่าจริง (ก่อนทำเรียบ) ดังระดับแดน 2 ห้องติดกัน
+  while (start < runEnd - 2 && !(E[start] >= thr && E[start + 1] >= thr)) start++;
+  const len = Math.min(DANCE_BARS, runEnd - start);
+  const seg = E.slice(start, start + len);
+  const meanEnergy = seg.reduce((a, b) => a + b, 0) / len;
+  const meanOnset = O.slice(start, start + len).reduce((a, b) => a + b, 0) / len;
+  const stdDev = Math.sqrt(seg.reduce((a, e) => a + (e - meanEnergy) ** 2, 0) / len);
+  const passesThreshold = meanEnergy >= 0.4 && meanOnset >= 0.3 && stdDev <= 0.35;
+  return {
+    danceStartBar: start,
+    confidence: Math.min(1, meanEnergy / Math.max(loud, 1e-9)) * 0.6 + Math.min(1, (runEnd - runStart) / DANCE_BARS) * 0.4,
+    passesThreshold,
+    reason: passesThreshold ? "" : `ท่อนที่เจอไม่ชัดพอ (พลังงาน ${meanEnergy.toFixed(2)}, จังหวะ ${meanOnset.toFixed(2)})`
+  };
+}
+
 // เลื่อนหาต่อเนื่อง 16 ห้องที่ "พลังงานสูงและสม่ำเสมอตลอดช่วง" — ไม่ใช่แค่ห้องที่ดังที่สุดห้องเดียว
 // 🔧 (T132) ปรับปรุงความแม่นยำ (สูตรหลัก RMS/Onset/sustained ยังอยู่ครบ):
 //   1) แก้บั๊กขอบเขตค้นหา: เดิมบังคับให้ "ทั้งหน้าต่าง 16 ห้อง" อยู่ในครึ่งแรกของเพลง ทำให้เพลงที่แดนเริ่มช้ากว่า
@@ -245,9 +289,9 @@ function findDanceWindow(bars) {
   const n = bars.length;
   if (n < DANCE_BARS) return { danceStartBar: null, confidence: 0, passesThreshold: false, reason: `เพลงสั้นเกินไป (${n} ห้อง < ${DANCE_BARS})` };
 
-  const maxStart = Math.max(0, Math.floor(n * DANCE_SEARCH_RANGE_RATIO));
-  const lastValidStart = n - DANCE_BARS;
-  const searchEnd = Math.min(lastValidStart, maxStart);
+  // 🔧 (T135): สแกนทั้งเพลง (เดิมจำกัดจุดเริ่มไว้ครึ่งแรก → เพลงที่แดนแรกอยู่ห้อง ~70 ของเพลง ~130 ห้องหาไม่เจอ)
+  //   กันไปเจอแดนท่อนที่ 2 ด้วยกฎ "เลือกท่อนแรกสุดที่คะแนนไม่ต่ำกว่า 90% ของท่อนที่ดีที่สุด" แทน
+  const searchEnd = n - DANCE_BARS;
 
   const maxRms = Math.max(...bars.map(b => b.avgRms), 1e-9);
   const maxLow = Math.max(...bars.map(b => b.avgLow || 0), 1e-9);
@@ -257,6 +301,14 @@ function findDanceWindow(bars) {
   const O = bars.map(b => b.onsetCount / maxOnset);
 
   const mean = (arr, from, to) => { let t = 0, c = 0; for (let i = Math.max(0, from); i < Math.min(arr.length, to); i++) { t += arr[i]; c++; } return c ? t / c : 0; };
+
+  // 🆕 (T136) วิธีหลัก "หาท่อนดังสุดท่อนแรกแบบเป็นช่วง": เพลงชุดนี้มีโครงสร้างคงที่ — ร้อง/บิลด์ (พลังงานกลาง) → แดน 24 ห้อง (พลังงานสูงสุด)
+  //   → เบรก → วนซ้ำ จบด้วยแดน 24 ห้องอีกท่อน  (ดูจากไฟล์จริง: แดนแรกกระโดดจาก E~0.6 เป็น ~0.85 ทันที)
+  //   วิธี: ทำให้เรียบด้วย median 3 ห้อง (ตัดห้องเด้ง/ห้องเบรกสั้นๆ) → ระดับ "ดังสุด" = เปอร์เซ็นไทล์ 90 → หาช่วงแรกสุดที่ต่อเนื่อง
+  //   ≥ 12 ห้องและอยู่ใกล้ระดับดังสุด (≥ 80%) → ห้องแรกของช่วงนั้นคือ Dance Start (ขยับ ±2 ห้องไปที่ขอบขาขึ้นที่ชันสุด)
+  //   ถ้าหาไม่เจอ → ใช้การให้คะแนนหน้าต่างแบบเดิมด้านล่างต่อ
+  const runResult = findFirstLoudRun(E, O);
+  if (runResult) return runResult;
 
   const cands = [];
   for (let start = 0; start <= searchEnd; start++) {
@@ -275,13 +327,13 @@ function findDanceWindow(bars) {
 
   const topScore = Math.max(...cands.map(c => c.score));
   // (4) ถ้าสูสี เลือกตำแหน่งแรกสุด
-  let best = cands.find(c => c.score >= topScore * 0.97);
+  let best = cands.find(c => c.score >= topScore * 0.90);
 
   // (5) ขยับไปที่ขอบขาขึ้นที่ชันที่สุดภายใน ±3 ห้อง (เฉพาะที่คะแนนไม่ตกจากเดิมมาก)
   let bestRise = -Infinity, refined = best;
   for (let d = -3; d <= 3; d++) {
     const c = cands[best.start + d];
-    if (!c || c.score < topScore * 0.93) continue;
+    if (!c || c.score < topScore * 0.90) continue;
     const rise = mean(E, c.start, c.start + 2) - mean(E, c.start - 2, c.start);
     if (rise > bestRise + 1e-9) { bestRise = rise; refined = c; }
   }
@@ -297,11 +349,11 @@ function findDanceWindow(bars) {
 
 // 🆕 (T132): เพดานขนาดไฟล์ที่ใช้วิเคราะห์ แยกตามชนิดไฟล์
 //   เดิมตัดที่ 5MB เสมอ → ไฟล์ WAV (ไม่บีบอัด) 5MB = แค่ ~30 วินาทีแรก ทำให้หาแดนที่อยู่หลังจากนั้นไม่เจอเลย
-//   ใหม่: WAV ให้ถึง 24MB (~2 นาที) / ไฟล์บีบอัด (MP3/M4A ฯลฯ) ยัง 5MB (≈ 2-5 นาที) เพื่อกัน mobile Safari พัง
+//   ใหม่: WAV ให้ถึง 24MB (~2 นาที) / ไฟล์บีบอัด (MP3/M4A ฯลฯ) 10MB (≈ 3-8 นาที) เพื่อกัน mobile Safari พัง
 function maxAnalyzeBytesFor(nameOrUrl, mimeType) {
   const n = String(nameOrUrl || "").split("?")[0].toLowerCase();
   const isWav = /\.(wav|wave)$/.test(n) || /wav/.test(String(mimeType || "").toLowerCase());
-  return isWav ? 24 * 1024 * 1024 : 5 * 1024 * 1024;
+  return isWav ? 24 * 1024 * 1024 : 10 * 1024 * 1024;
 }
 
 // ==================== ฟังก์ชันหลักที่ไฟล์อื่นเรียกใช้ ====================
