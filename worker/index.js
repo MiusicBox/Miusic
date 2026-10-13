@@ -1340,7 +1340,10 @@ const SONG_SLIM_FIELDS = new Set([
   "category_name", "category_id", "categoryIds",
   "preview_status", "preview_start_sec", "preview_end_sec",
   "preview_start_bar", "preview_end_bar",
-  "created_at"
+  "created_at",
+  // 🆕 (T133 2026-10-13): bpm แสดงใน song card ทั้ง admin + user
+  //   range: 150-165 (default 150 ถ้าไม่มี) — ใช้สำหรับ badge สีตามช่วง BPM
+  "bpm"
 ]);
 
 function slimSongForList(songData) {

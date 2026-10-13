@@ -3373,6 +3373,78 @@ button:active {
   white-space: nowrap;
 }
 
+/* 🆕 (T133 2026-10-13): .bpm-badge — แสดง BPM ใน song card (admin + user)
+   3 ช่วงสี:
+   - .bpm-150 (150-154): เขียวอ่อน chill — gradient มิ้นต์-เขียวสว่าง
+   - .bpm-155 (155-159): ฟ้า medium — gradient ฟ้า-ม่วงอ่อน
+   - .bpm-160 (160-165): ชมพู/แดง energetic — gradient ชมพู-แดงเข้ม
+   ทั้ง admin (.n2) และ user (.song-meta-row) ใช้ style เดียวกัน — ไม่ต้อง duplicate */
+.bpm-badge,
+.bpm-badge-wrap .bpm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  vertical-align: middle;
+  margin-left: 4px;
+  border: 1px solid transparent;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+  user-select: none;
+}
+
+/* ช่วง 150-154: เขียวอ่อน chill (default) */
+.bpm-badge.bpm-150 {
+  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+  color: #fff;
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+/* ช่วง 155-159: ฟ้า medium */
+.bpm-badge.bpm-155 {
+  background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+  color: #fff;
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+/* ช่วง 160-165: ชมพู/แดง energetic */
+.bpm-badge.bpm-160 {
+  background: linear-gradient(135deg, #f472b6 0%, #ef4444 100%);
+  color: #fff;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+/* Mobile responsive — ลดขนาด badge บนจอแคบ */
+@media (max-width: 480px) {
+  .bpm-badge,
+  .bpm-badge-wrap .bpm-badge {
+    font-size: 9.5px;
+    padding: 2px 6px;
+  }
+}
+
+/* Dark theme tweaks — เพิ่มความสดใน dark mode */
+@media (prefers-color-scheme: dark) {
+  .bpm-badge.bpm-150 {
+    background: linear-gradient(135deg, #6ee7b7 0%, #10b981 100%);
+    box-shadow: 0 1px 4px rgba(52, 211, 153, 0.25);
+  }
+  .bpm-badge.bpm-155 {
+    background: linear-gradient(135deg, #93c5fd 0%, #3b82f6 100%);
+    box-shadow: 0 1px 4px rgba(59, 130, 246, 0.25);
+  }
+  .bpm-badge.bpm-160 {
+    background: linear-gradient(135deg, #f9a8d4 0%, #ef4444 100%);
+    box-shadow: 0 1px 4px rgba(239, 68, 68, 0.3);
+  }
+}
+
 .song-card-row .song-meta-text {
   font-size: 11.5px;
   color: var(--text-dim);
