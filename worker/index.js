@@ -3346,10 +3346,12 @@ async function handleDb(request, env, url) {
               //    songPriceMap / plPriceMap ที่ประกาศใน block ด้านล่าง (lines ~1424)
               const dbSongPriceMap = new Map();
               const dbSongCategoryMap = new Map();
+              const dbHiddenSongIds = new Set(); // 🆕 เพลงที่ปิดการขาย (status=hidden)
               if (songIds.length > 0) {
                 const songDocsForDiscount = await getDocumentsByIds(env, "songs", songIds);
                 for (const sd of songDocsForDiscount) {
                   if (sd && sd.data) {
+                    if (sd.data.status === "hidden") dbHiddenSongIds.add(sd.id);
                     dbSongPriceMap.set(sd.id, Number(sd.data.price) || 0);
                     dbSongCategoryMap.set(sd.id, sd.data.category_id || sd.data.categoryId || null);
                   }
@@ -3366,6 +3368,32 @@ async function handleDb(request, env, url) {
               }
 
               // 3. Resolve DB price ของแต่ละ item (กันลูกค้าส่ง price=0)
+              // 🆕 (ตรวจก่อนรับออเดอร์) เพลง/เพลย์ลิสต์ในตะกร้าต้องยังมีอยู่และเปิดขาย
+              //   เดิม: ถ้าแอดมินลบ/ปิดการขายเพลงไปแล้ว แต่ลูกค้ายังมีเพลงนั้นในตะกร้า ระบบรับออเดอร์ต่อ
+              //         โดยใช้ราคาที่ลูกค้าส่งมา → ได้ออเดอร์ที่ไม่มีไฟล์ส่งมอบ
+              //   ใหม่: ปฏิเสธด้วย 409 พร้อมรายชื่อรายการที่ใช้ไม่ได้ ให้ลูกค้าลบออกจากตะกร้าแล้วสั่งใหม่
+              const unavailableItems = [];
+              for (const it of filteredData.items) {
+                const label = String(it.song_name || it.name || it.title || it.playlist_name || it.song_id || it.playlist_id || "").slice(0, 120);
+                if (it.kind === "playlist" && it.playlist_id) {
+                  if (!dbPlPriceMap.has(it.playlist_id)) unavailableItems.push({ kind: "playlist", label });
+                } else if (it.song_id) {
+                  if (!dbSongPriceMap.has(it.song_id) || dbHiddenSongIds.has(it.song_id)) unavailableItems.push({ kind: "song", label });
+                } else if (it.playlist_id) {
+                  if (!dbPlPriceMap.has(it.playlist_id)) unavailableItems.push({ kind: "playlist", label });
+                }
+              }
+              if (unavailableItems.length > 0) {
+                // ใช้รูปแบบข้อความเดียวกับที่ฝั่งตะกร้า (app-cart.js) รู้จักอยู่แล้ว:
+                //   เพลง "ชื่อ" ปิดการขายแล้ว → ตะกร้าจะลบเพลงนั้นออกให้อัตโนมัติ + แจ้งลูกค้า
+                const first = unavailableItems[0];
+                const more = unavailableItems.length > 1 ? ` (และอีก ${unavailableItems.length - 1} รายการ)` : "";
+                return jsonResponse({
+                  error: `${first.kind === "playlist" ? "เพลย์ลิสต์" : "เพลง"} "${first.label}" ปิดการขายแล้ว${more}`,
+                  unavailable_items: unavailableItems.map(x => x.label),
+                }, 409);
+              }
+
               const resolveItemDbPrice = (it) => {
                 if (it.kind === "playlist" && it.playlist_id) {
                   return dbPlPriceMap.get(it.playlist_id) ?? Number(it.price) ?? 0;
@@ -3654,9 +3682,10 @@ async function handleDb(request, env, url) {
                 }
               }
             } catch (priceErr) {
-              // ถ้า fetch ราคาไม่ได้ (เช่น DB error) → ใช้ราคาที่ลูกค้าส่งมา (fallback)
-              // ไม่ block การสั่งซื้อ เพราะแอดมินจะตรวจสอบอีกที
-              console.warn("Server price re-calc failed, using customer prices:", priceErr?.message || priceErr);
+              // 🔧 (fail-closed) เดิม: คำนวณราคาฝั่งเซิร์ฟเวอร์ล้มเหลว → ใช้ราคาที่ลูกค้าส่งมา (ลูกค้าแก้ราคาเองได้)
+              //   ใหม่: ปฏิเสธออเดอร์ให้ลูกค้าลองใหม่ แทนการเชื่อราคาจากฝั่งลูกค้า
+              console.error("Server price re-calc failed — rejecting order:", priceErr?.message || priceErr);
+              return jsonResponse({ error: "ตรวจสอบราคาไม่สำเร็จชั่วคราว กรุณาลองสั่งซื้ออีกครั้ง" }, 503);
             }
           }
 
