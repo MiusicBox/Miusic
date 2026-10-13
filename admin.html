@@ -6,10 +6,10 @@
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): noindex meta — กัน Google index หน้า admin -->
 <meta name="robots" content="noindex, nofollow">
 <title>Admin - Music Store</title>
-<link rel="stylesheet" href="style.css?v=20261013-t134">
+<link rel="stylesheet" href="style.css?v=20261013-t135">
 <!-- 🎨 (2026-10-11) ระบบแจ้งเตือนใหม่ (toast + dialog) — ต้องโหลดก่อน app-*.js -->
-<link rel="stylesheet" href="notify.css?v=20261013-t134">
-<script src="notify.js?v=20261013-t134"></script>
+<link rel="stylesheet" href="notify.css?v=20261013-t135">
+<script src="notify.js?v=20261013-t135"></script>
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1) + 🔒 (Audit Fix H-13): Self-host html2canvas
      เดิม: orders.js ใช้ dynamic import ทุกครั้ง → ช้า + พังถ้า CDN ล่ม
@@ -1431,6 +1431,21 @@
           <button type="button" id="songDetailSavePreviewBtn" class="btn" style="width:100%;font-size:13px;padding:10px;">💾 บันทึก Preview ลงเพลงนี้</button>
         </div>
       </div>
+
+      <!-- ===== 🆕 (T135 2026-10-13): BPM Adjust Section — ปรับ BPM ได้จาก popup เลย ===== -->
+      <div id="songDetailBpmEditor" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <span style="font-size:13px;font-weight:700;">🎵 BPM (ความเร็วจังหวะเพลง)</span>
+          <span id="songDetailBpmBadge"></span>
+        </div>
+        <div class="bpm-stepper" style="max-width:100%;margin-bottom:8px;">
+          <button type="button" class="bpm-step-btn" data-bpm-target="songDetailBpm" data-bpm-delta="-1" aria-label="ลด BPM ลง 1" title="ลด BPM ลง 1">−</button>
+          <input id="songDetailBpm" type="number" min="150" max="165" step="1" value="150" inputmode="numeric" pattern="[0-9]*" class="bpm-step-input" aria-label="ค่า BPM">
+          <button type="button" class="bpm-step-btn" data-bpm-target="songDetailBpm" data-bpm-delta="1" aria-label="เพิ่ม BPM ขึ้น 1" title="เพิ่ม BPM ขึ้น 1">+</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">ค่าเริ่มต้น 150 — กด +/- หรือพิมพ์เองได้ ใส่ได้ 150-165 เท่านั้น</div>
+        <button type="button" id="songDetailSaveBpmBtn" class="btn" style="width:100%;font-size:13px;padding:10px;">💾 บันทึก BPM ลงเพลงนี้</button>
+      </div>
     </div>
   </div>
 
@@ -1756,7 +1771,7 @@
     <div class="toast-progress"></div>
   </div>
 
-  <script src="phone-input.js?v=20261013-t134" defer></script>
-  <script type="module" src="app-admin.js?v=20261013-t134"></script>
+  <script src="phone-input.js?v=20261013-t135" defer></script>
+  <script type="module" src="app-admin.js?v=20261013-t135"></script>
 </body>
 </html>

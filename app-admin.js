@@ -6384,6 +6384,20 @@ function openSongDetailPopup(songId) {
   document.getElementById("songDetailDesc").textContent = s.description || "";
   document.getElementById("songDetailPrice").textContent = formatPrice(s.price);
 
+  // 🆕 (T135 2026-10-13): โหลด BPM เข้า stepper ใน popup + แสดง badge
+  const bpmInput = document.getElementById("songDetailBpm");
+  const bpmBadge = document.getElementById("songDetailBpmBadge");
+  if (bpmInput) {
+    const rawBpm = Number(s.bpm);
+    const clampedBpm = (!Number.isFinite(rawBpm) || rawBpm < 150) ? 150
+                     : (rawBpm > 165) ? 165
+                     : Math.round(rawBpm);
+    bpmInput.value = String(clampedBpm);
+  }
+  if (bpmBadge) {
+    bpmBadge.innerHTML = renderBpmBadge(s.bpm);
+  }
+
   // meta line: แสดงข้อมูล preview ถ้ามี
   const metaLine = document.getElementById("songDetailMetaLine");
   if (detailPopupPreview) {
@@ -6858,6 +6872,59 @@ document.getElementById("songDetailSavePreviewBtn").addEventListener("click", as
     showToast("บันทึกไม่สำเร็จ: " + (err.message || err), "error");
   }
   btn.disabled = false; btn.textContent = "💾 บันทึก Preview ลงเพลงนี้";
+});
+
+// 🆕 (T135 2026-10-13): ปุ่ม "บันทึก BPM" ใน song detail popup
+//   - อ่านค่าจาก #songDetailBpm (clamp 150-165 + fallback 150)
+//   - updateDoc ลง Firestore + อัปเดต CACHE
+//   - อัปเดต badge ใน popup + re-render list (ถ้าเปิดอยู่)
+document.getElementById("songDetailSaveBpmBtn").addEventListener("click", async function () {
+  if (!detailPopupSong) { showToast("ไม่พบข้อมูลเพลงนี้", "error"); return; }
+  const btn = this;
+  const inputEl = document.getElementById("songDetailBpm");
+  if (!inputEl) { showToast("ไม่พบช่องกรอก BPM", "error"); return; }
+  // Validate + clamp 150-165
+  const rawBpm = Number(inputEl.value);
+  if (!Number.isFinite(rawBpm) || rawBpm < 150 || rawBpm > 165) {
+    showToast(`❌ BPM "${inputEl.value}" ไม่ถูกต้อง — ต้องอยู่ระหว่าง 150-165 เท่านั้น`, "error");
+    // reset input กลับเป็นค่าเดิม
+    const originalBpm = Number(detailPopupSong.bpm);
+    const fallback = (!Number.isFinite(originalBpm) || originalBpm < 150) ? 150
+                   : (originalBpm > 165) ? 165
+                   : Math.round(originalBpm);
+    inputEl.value = String(fallback);
+    return;
+  }
+  const targetBpm = Math.round(rawBpm);
+  // ถ้าค่าเท่ากับของเดิม → ไม่ต้องอัปเดต
+  const currentBpm = Number(detailPopupSong.bpm);
+  if (Number.isFinite(currentBpm) && Math.round(currentBpm) === targetBpm) {
+    showToast("ℹ️ BPM ไม่เปลี่ยนแปลง — ไม่ต้องบันทึก", "info");
+    return;
+  }
+  btn.disabled = true; btn.textContent = `กำลังบันทึก BPM ${targetBpm}...`;
+  try {
+    const updated_at = new Date().toISOString();
+    await updateDoc(doc(db, "songs", detailPopupSong.id), { bpm: targetBpm, updated_at });
+    // อัปเดตใน CACHE
+    detailPopupSong.bpm = targetBpm;
+    detailPopupSong.updated_at = updated_at;
+    const cached = CACHE.songs.find(x => x.id === detailPopupSong.id);
+    if (cached) { cached.bpm = targetBpm; cached.updated_at = updated_at; }
+    // อัปเดต badge ใน popup
+    const bpmBadge = document.getElementById("songDetailBpmBadge");
+    if (bpmBadge) bpmBadge.innerHTML = renderBpmBadge(targetBpm);
+    // Re-render list (ถ้าเปิดอยู่) + invalidate cache
+    if (typeof currentSongListView !== "undefined" && currentSongListView.length > 0) {
+      renderSongList(currentSongListView);
+    }
+    invalidateAdminCache("songs");
+    showToast(`✅ บันทึก BPM ${targetBpm} ลงเพลง "${detailPopupSong.song_name}" เรียบร้อย`, "success");
+  } catch (err) {
+    showToast("บันทึก BPM ไม่สำเร็จ: " + (err.message || err), "error");
+  } finally {
+    btn.disabled = false; btn.textContent = "💾 บันทึก BPM ลงเพลงนี้";
+  }
 });
 
 // ============================================================
