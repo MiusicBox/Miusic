@@ -2196,15 +2196,28 @@ let _songsPagedInflight = null;
 //   ฝั่งลูกค้าเรียงเพลงทั่วทั้งคลังด้วยกุญแจนี้ (รองรับ 10,000+ เพลง) → เพลงที่ไม่มีกุญแจจะอยู่หัวแถว
 //   เรียกซ้ำจนกว่า remaining = 0 (ครั้งละ 100 เพลง) — ถ้าเพลงครบแล้วจะจบในคำขอเดียว ไม่กินโควตาเพิ่ม
 let _sortKeyBackfillStarted = false;
+// 🔧 (ลดโควตา) เดิมยิงทุกครั้งที่เปิดหน้าแอดมิน (แม้เพลงครบแล้ว ก็ยังสแกนเพลงทั้งตาราง 1 รอบ)
+//   ตอนนี้เซิร์ฟเวอร์คำนวณ sort_key ให้เองทุกครั้งที่บันทึก/แก้ไขเพลงอยู่แล้ว (withSongSortKey)
+//   backfill จึงมีไว้เติมเพลงเก่าเท่านั้น → ถ้าเพิ่งทำเสร็จ (remaining = 0) ภายใน 24 ชม. ข้ามได้
+const SORT_KEY_BACKFILL_DONE_KEY = "miusic_sortkey_backfill_done_at";
+const SORT_KEY_BACKFILL_SKIP_MS = 24 * 60 * 60 * 1000;
 async function ensureSongSortKeys() {
   if (_sortKeyBackfillStarted) return;
   _sortKeyBackfillStarted = true;
   try {
+    const last = Number(localStorage.getItem(SORT_KEY_BACKFILL_DONE_KEY) || 0);
+    if (last && Date.now() - last < SORT_KEY_BACKFILL_SKIP_MS) return;
+  } catch (_) { /* storage ใช้ไม่ได้ → ทำงานตามปกติ */ }
+  try {
+    let finished = false;
     for (let i = 0; i < 500; i++) {
       const res = await fetch("/api/admin/backfill-sort-keys", { method: "POST", credentials: "same-origin" });
       if (!res.ok) break;
       const body = await res.json();
-      if (!body || !body.remaining) break;
+      if (!body || !body.remaining) { finished = true; break; }
+    }
+    if (finished) {
+      try { localStorage.setItem(SORT_KEY_BACKFILL_DONE_KEY, String(Date.now())); } catch (_) {}
     }
   } catch (err) {
     console.warn("ensureSongSortKeys failed:", err?.message || err);
