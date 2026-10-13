@@ -2967,6 +2967,83 @@ searchInputEl.addEventListener("keydown", (e) => {
   }
 });
 
+// 🆕 (T130 2026-10-13): เพิ่ม search box สำหรับ view-categories, view-djs, view-playlists
+//   Pattern เดียวกับ songSearch — debounce 200ms + filter CACHE ฝั่ง client + render
+//   ผลกระทบระบบเดิม: 0% — เพิ่ม input listener ใหม่ ไม่แตะฟังก์ชันเดิม
+(function setupAdminSearchBoxes() {
+  // หมวดหมู่
+  const catSearchEl = document.getElementById("catSearch");
+  if (catSearchEl) {
+    catSearchEl.addEventListener("input", debounce((e) => {
+      const q = e.target.value.trim().toLowerCase();
+      const wrap = document.getElementById("catList");
+      if (!wrap) return;
+      const filtered = applyDateFilter(CACHE.categories, "categories").filter(c =>
+        [c.category_name, c.description, c.id].join(" ").toLowerCase().includes(q)
+      );
+      if (filtered.length === 0) { wrap.innerHTML = '<div class="empty-state">ไม่พบหมวดหมู่ที่ค้นหา</div>'; return; }
+      wrap.innerHTML = filtered.map(c => `
+        <div class="list-row" data-open="${c.id}" style="cursor:pointer;">
+        ${catSelectMode ? `<input type="checkbox" class="cat-select-chk" data-id="${c.id}" ${selectedCatIds.has(c.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;margin-right:8px;">` : ""}
+        <div class="info"><div class="n1">${escapeHtml(c.category_name)}</div>
+        <div class="n2">${escapeHtml(c.description || "")}</div></div>
+        </div>
+      `).join("");
+    }, 200));
+    catSearchEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp") catSearchEl.blur();
+    });
+  }
+
+  // DJ
+  const djSearchEl = document.getElementById("djSearch");
+  if (djSearchEl) {
+    djSearchEl.addEventListener("input", debounce((e) => {
+      const q = e.target.value.trim().toLowerCase();
+      const wrap = document.getElementById("djList");
+      if (!wrap) return;
+      const filtered = applyDateFilter(CACHE.djs, "djs").filter(d =>
+        [d.dj_name, d.description, d.id].join(" ").toLowerCase().includes(q)
+      );
+      if (filtered.length === 0) { wrap.innerHTML = '<div class="empty-state">ไม่พบ DJ ที่ค้นหา</div>'; return; }
+      wrap.innerHTML = filtered.map(d => `
+        <div class="list-row" data-open="${d.id}" style="cursor:pointer;">
+        ${djSelectMode ? `<input type="checkbox" class="dj-select-chk" data-id="${d.id}" ${selectedDjIds.has(d.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;margin-right:8px;">` : ""}
+        <div class="info"><div class="n1">${escapeHtml(d.dj_name)}</div>
+        <div class="n2">${escapeHtml(d.description || "")}</div></div>
+        </div>
+      `).join("");
+    }, 200));
+    djSearchEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp") djSearchEl.blur();
+    });
+  }
+
+  // เพลย์ลิสต์
+  const plSearchEl = document.getElementById("playlistSearch");
+  if (plSearchEl) {
+    plSearchEl.addEventListener("input", debounce((e) => {
+      const q = e.target.value.trim().toLowerCase();
+      const wrap = document.getElementById("playlistList");
+      if (!wrap) return;
+      const filtered = applyDateFilter(CACHE.playlists, "playlists").filter(p =>
+        [p.playlist_name, p.description, p.id].join(" ").toLowerCase().includes(q)
+      );
+      if (filtered.length === 0) { wrap.innerHTML = '<div class="empty-state">ไม่พบเพลย์ลิสต์ที่ค้นหา</div>'; return; }
+      wrap.innerHTML = filtered.map(p => `
+        <div class="list-row" data-open="${p.id}" style="cursor:pointer;">
+        ${playlistSelectMode ? `<input type="checkbox" class="playlist-select-chk" data-id="${p.id}" ${selectedPlaylistIds.has(p.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;margin-right:8px;">` : ""}
+        <div class="info"><div class="n1">${escapeHtml(p.playlist_name)}</div>
+        <div class="n2">${escapeHtml(p.description || "")}</div></div>
+        </div>
+      `).join("");
+    }, 200));
+    plSearchEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp") plSearchEl.blur();
+    });
+  }
+})();
+
 function resetSongForm() {
   songUploadSession++; // ยกเลิก progress callback ของรอบอัปโหลดก่อนหน้า (ถ้ายังค้างอยู่เบื้องหลัง)
   editingSongId = null; pendingSongFile = null; pendingCoverFile = null;
