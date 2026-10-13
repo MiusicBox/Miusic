@@ -7341,6 +7341,15 @@ html.admin-page body {
   max-width: 560px;
   line-height: 1.65;
   letter-spacing: 0.1px;
+  /* 🔧 (perf 2026-10-13 CLS fix): ข้อความตั้งต้นใน HTML สั้น แต่ตอน init() เปลี่ยนเป็น meta_description (ยาวกว่า)
+     → แบนเนอร์สูงขึ้นหลังโหลดเสร็จ → หน้ากระตุก (CLS 0.431 ใน PageSpeed)
+     แก้: จองความสูงไว้ 2 บรรทัด + ตัดที่ 2 บรรทัด (มือถือ 3 บรรทัด ดูใน media query ด้านล่าง) */
+  min-height: 3.3em;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 .hero-actions {
   display: flex;
@@ -7693,6 +7702,10 @@ html.admin-page body {
     font-size: 12px;
     line-height: 1.6;
     max-width: 100%;
+    /* 🔧 (perf 2026-10-13 CLS fix): มือถือจอแคบ → จอง/ตัดที่ 3 บรรทัด */
+    min-height: 4.8em;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
   }
   .hero-cta {
     /* 🎨 (T114): ขยาย CTA บนมือถือ 13→14px + padding 8px→12px 28px */
