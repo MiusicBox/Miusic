@@ -2967,77 +2967,30 @@ searchInputEl.addEventListener("keydown", (e) => {
   }
 });
 
-// 🆕 (T130 2026-10-13): เพิ่ม search box สำหรับ view-categories, view-djs, view-playlists
-//   Pattern เดียวกับ songSearch — debounce 200ms + filter CACHE ฝั่ง client + render
-//   ผลกระทบระบบเดิม: 0% — เพิ่ม input listener ใหม่ ไม่แตะฟังก์ชันเดิม
+// 🆕 (T130 → T131 refactor 2026-10-13): search box สำหรับ view-categories, view-djs, view-playlists
+//   เดิม T130 เขียน HTML + binding ซ้ำใน search handler → ผล search ไม่เหมือน list ปกติ
+//   (ไม่มีรูปปก, ไม่มีปุ่ม edit/delete, ไม่มี click handler)
+//   แก้ T131: ปรับ loadCategories/loadDjs/loadPlaylists ให้อ่านค่า search input เอง →
+//   search ใช้ render path เดียวกับ list ปกติ ผล search เหมือนกันทุกประการ
+//   ผลกระทบระบบเดิม: 0% — loadX() ทำงานเหมือนเดิมถ้า search input ว่าง
 (function setupAdminSearchBoxes() {
-  // หมวดหมู่
   const catSearchEl = document.getElementById("catSearch");
   if (catSearchEl) {
-    catSearchEl.addEventListener("input", debounce((e) => {
-      const q = e.target.value.trim().toLowerCase();
-      const wrap = document.getElementById("catList");
-      if (!wrap) return;
-      const filtered = applyDateFilter(CACHE.categories, "categories").filter(c =>
-        [c.category_name, c.description, c.id].join(" ").toLowerCase().includes(q)
-      );
-      if (filtered.length === 0) { wrap.innerHTML = '<div class="empty-state">ไม่พบหมวดหมู่ที่ค้นหา</div>'; return; }
-      wrap.innerHTML = filtered.map(c => `
-        <div class="list-row" data-open="${c.id}" style="cursor:pointer;">
-        ${catSelectMode ? `<input type="checkbox" class="cat-select-chk" data-id="${c.id}" ${selectedCatIds.has(c.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;margin-right:8px;">` : ""}
-        <div class="info"><div class="n1">${escapeHtml(c.category_name)}</div>
-        <div class="n2">${escapeHtml(c.description || "")}</div></div>
-        </div>
-      `).join("");
-    }, 200));
+    catSearchEl.addEventListener("input", debounce(() => { loadCategories(); }, 200));
     catSearchEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp") catSearchEl.blur();
     });
   }
-
-  // DJ
   const djSearchEl = document.getElementById("djSearch");
   if (djSearchEl) {
-    djSearchEl.addEventListener("input", debounce((e) => {
-      const q = e.target.value.trim().toLowerCase();
-      const wrap = document.getElementById("djList");
-      if (!wrap) return;
-      const filtered = applyDateFilter(CACHE.djs, "djs").filter(d =>
-        [d.dj_name, d.description, d.id].join(" ").toLowerCase().includes(q)
-      );
-      if (filtered.length === 0) { wrap.innerHTML = '<div class="empty-state">ไม่พบ DJ ที่ค้นหา</div>'; return; }
-      wrap.innerHTML = filtered.map(d => `
-        <div class="list-row" data-open="${d.id}" style="cursor:pointer;">
-        ${djSelectMode ? `<input type="checkbox" class="dj-select-chk" data-id="${d.id}" ${selectedDjIds.has(d.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;margin-right:8px;">` : ""}
-        <div class="info"><div class="n1">${escapeHtml(d.dj_name)}</div>
-        <div class="n2">${escapeHtml(d.description || "")}</div></div>
-        </div>
-      `).join("");
-    }, 200));
+    djSearchEl.addEventListener("input", debounce(() => { loadDjs(); }, 200));
     djSearchEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp") djSearchEl.blur();
     });
   }
-
-  // เพลย์ลิสต์
   const plSearchEl = document.getElementById("playlistSearch");
   if (plSearchEl) {
-    plSearchEl.addEventListener("input", debounce((e) => {
-      const q = e.target.value.trim().toLowerCase();
-      const wrap = document.getElementById("playlistList");
-      if (!wrap) return;
-      const filtered = applyDateFilter(CACHE.playlists, "playlists").filter(p =>
-        [p.playlist_name, p.description, p.id].join(" ").toLowerCase().includes(q)
-      );
-      if (filtered.length === 0) { wrap.innerHTML = '<div class="empty-state">ไม่พบเพลย์ลิสต์ที่ค้นหา</div>'; return; }
-      wrap.innerHTML = filtered.map(p => `
-        <div class="list-row" data-open="${p.id}" style="cursor:pointer;">
-        ${playlistSelectMode ? `<input type="checkbox" class="playlist-select-chk" data-id="${p.id}" ${selectedPlaylistIds.has(p.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;margin-right:8px;">` : ""}
-        <div class="info"><div class="n1">${escapeHtml(p.playlist_name)}</div>
-        <div class="n2">${escapeHtml(p.description || "")}</div></div>
-        </div>
-      `).join("");
-    }, 200));
+    plSearchEl.addEventListener("input", debounce(() => { loadPlaylists(); }, 200));
     plSearchEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp") plSearchEl.blur();
     });
@@ -3686,8 +3639,20 @@ async function loadCategories() {
   const wrap = document.getElementById("catList");
   if (CACHE.categories.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีหมวดหมู่</div>'; return; }
   // 🆕 (2026-10-01 date filter): apply filter + sort ล่าสุดก่อน (มติ "ข้อ 3=ข") — เหมือน loadSongs
-  const catList = applyDateFilter(CACHE.categories, "categories");
-  if (catList.length === 0) { wrap.innerHTML = '<div class="empty-state">ไม่มีหมวดหมู่ตรงวันที่เลือก</div>'; return; }
+  let catList = applyDateFilter(CACHE.categories, "categories");
+  // 🆕 (T131 2026-10-13): apply search filter ถ้า catSearch input มีค่า
+  //   เหตุผล: เดิม T130 เขียน HTML + binding แยกใน search handler → ผล search ไม่มีรูป/ปุ่ม edit/delete
+  //   แก้: อ่านค่า search input ตรงๆใน loadCategories → render path เดียว ผลเหมือนกันทุกประการ
+  //   ผลกระทบระบบเดิม: 0% — ถ้าไม่มี catSearch input หรือว่าง → ทำงานเหมือนเดิม
+  const catSearchInput = document.getElementById("catSearch");
+  const catSearchQuery = catSearchInput ? catSearchInput.value.trim().toLowerCase() : "";
+  if (catSearchQuery) {
+    catList = catList.filter(c => [c.category_name, c.description, c.id].join(" ").toLowerCase().includes(catSearchQuery));
+    if (catList.length === 0) { wrap.innerHTML = '<div class="empty-state">ไม่พบหมวดหมู่ที่ค้นหา</div>'; return; }
+  } else if (catList.length === 0) {
+    wrap.innerHTML = '<div class="empty-state">ไม่มีหมวดหมู่ตรงวันที่เลือก</div>';
+    return;
+  }
   // 🆕 (2026-10-01 bulk): ใส่ checkbox ด้านหน้า row ถ้า catSelectMode เปิด (ลอก pattern จาก song บรรทัด 1485)
   wrap.innerHTML = catList.map(c => `
     <div class="list-row" data-open="${c.id}" style="cursor:pointer;">
@@ -3788,8 +3753,17 @@ async function loadDjs() {
   const wrap = document.getElementById("djList");
   if (CACHE.djs.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มี DJ</div>'; return; }
   // 🆕 (2026-10-01 date filter): apply filter + sort ล่าสุดก่อน (มติ "ข้อ 3=ข") — เหมือน loadSongs
-  const djList = applyDateFilter(CACHE.djs, "djs");
-  if (djList.length === 0) { wrap.innerHTML = '<div class="empty-state">ไม่มี DJ ตรงวันที่เลือก</div>'; return; }
+  let djList = applyDateFilter(CACHE.djs, "djs");
+  // 🆕 (T131 2026-10-13): apply search filter ถ้า djSearch input มีค่า — ใช้ render path เดียวกัน
+  const djSearchInput = document.getElementById("djSearch");
+  const djSearchQuery = djSearchInput ? djSearchInput.value.trim().toLowerCase() : "";
+  if (djSearchQuery) {
+    djList = djList.filter(d => [d.dj_name, d.description, d.id].join(" ").toLowerCase().includes(djSearchQuery));
+    if (djList.length === 0) { wrap.innerHTML = '<div class="empty-state">ไม่พบ DJ ที่ค้นหา</div>'; return; }
+  } else if (djList.length === 0) {
+    wrap.innerHTML = '<div class="empty-state">ไม่มี DJ ตรงวันที่เลือก</div>';
+    return;
+  }
   // 🆕 (2026-10-01 bulk): ใส่ checkbox ด้านหน้า row ถ้า djSelectMode เปิด
   wrap.innerHTML = djList.map(d => `
     <div class="list-row" data-open="${d.id}" style="cursor:pointer;">
@@ -3925,8 +3899,17 @@ async function loadPlaylists() {
   const wrap = document.getElementById("playlistList");
   if (CACHE.playlists.length === 0) { wrap.innerHTML = '<div class="empty-state">ยังไม่มีเพลย์ลิสต์</div>'; return; }
   // 🆕 (2026-10-01 date filter): apply filter + sort ล่าสุดก่อน (มติ "ข้อ 3=ข") — เหมือน loadSongs
-  const playlistList = applyDateFilter(CACHE.playlists, "playlists");
-  if (playlistList.length === 0) { wrap.innerHTML = '<div class="empty-state">ไม่มีเพลย์ลิสต์ตรงวันที่เลือก</div>'; return; }
+  let playlistList = applyDateFilter(CACHE.playlists, "playlists");
+  // 🆕 (T131 2026-10-13): apply search filter ถ้า playlistSearch input มีค่า — ใช้ render path เดียวกัน
+  const plSearchInput = document.getElementById("playlistSearch");
+  const plSearchQuery = plSearchInput ? plSearchInput.value.trim().toLowerCase() : "";
+  if (plSearchQuery) {
+    playlistList = playlistList.filter(p => [p.playlist_name, p.description, p.id].join(" ").toLowerCase().includes(plSearchQuery));
+    if (playlistList.length === 0) { wrap.innerHTML = '<div class="empty-state">ไม่พบเพลย์ลิสต์ที่ค้นหา</div>'; return; }
+  } else if (playlistList.length === 0) {
+    wrap.innerHTML = '<div class="empty-state">ไม่มีเพลย์ลิสต์ตรงวันที่เลือก</div>';
+    return;
+  }
   // 🆕 (2026-10-01 bulk): ใส่ checkbox ด้านหน้า row ถ้า playlistSelectMode เปิด
   wrap.innerHTML = playlistList.map(p => `
     <div class="list-row" data-open="${p.id}" style="cursor:pointer;">
