@@ -2079,6 +2079,29 @@ function renderSongGrid() {
     });
   }
 
+  // 🆕 (perf 2026-10-13): โหลด like count + สถานะ like + rating ของทั้ง batch ในคำขอเดียว (/api/songs/stats)
+  //   เดิม: ยิง /likes + /reviews/summary ทีละเพลง (60 เพลง = 120 requests ต่อ batch) → ช้า + กิน quota Workers
+  //   คืน true เมื่อสำเร็จ / false เมื่อล้มเหลว → caller ใช้วิธีเดิมทีละเพลงเป็น fallback (ไม่ทำให้ระบบเดิมพัง)
+  async function loadStatsBatchForSongs(songIds) {
+    if (typeof window.loadSongStatsBatch !== 'function') return false;
+    const ids = (songIds || []).filter(Boolean);
+    if (ids.length === 0) return true;
+    const stats = await window.loadSongStatsBatch(ids);
+    if (!stats) return false;
+    for (const id of ids) {
+      const st = stats[id];
+      if (!st) continue;
+      document.querySelectorAll('[data-like-btn="' + id + '"]').forEach(btn => {
+        const countEl = btn.querySelector('[data-like-count]');
+        if (countEl) countEl.textContent = st.like_count || 0;
+        if (st.is_liked) btn.classList.add('is-liked');
+      });
+      _ratingCache.set(id, st.rating_count > 0 ? { avg: st.avg_rating || 0, count: st.rating_count } : null);
+      renderRatingInCard(id);
+    }
+    return true;
+  }
+
   function buildBatchHTML(startIdx) {
     const endIdx = Math.min(startIdx + RENDER_BATCH_SIZE, totalSongs);
     const batch = list.slice(startIdx, endIdx);
@@ -2127,9 +2150,14 @@ function renderSongGrid() {
     // 🆕 (Feature #8): โหลด ratings สำหรับเพลงใน batch นี้ (lazy, async — ไม่บล็อก render)
     const batchEndIdx = Math.min(startIdx + RENDER_BATCH_SIZE, totalSongs);
     const batchIds = list.slice(startIdx, batchEndIdx).map(s => s.id).filter(Boolean);
+    // 🆕 (perf 2026-10-13): ลองโหลด likes + ratings ทั้ง batch ในคำขอเดียวก่อน
+    //   ถ้าล้มเหลว (endpoint ยังไม่ถูก deploy / network error) → fallback ไปวิธีเดิมทีละเพลง
+    let statsBatchPromise = null;
     if (batchIds.length > 0) {
-      // ใช้ setTimeout 0 เพื่อให้ render เสร็จก่อน แล้วค่อยโหลด ratings
-      setTimeout(() => loadRatingsForVisibleSongs(batchIds), 0);
+      statsBatchPromise = loadStatsBatchForSongs(batchIds).catch(() => false);
+      statsBatchPromise.then(ok => {
+        if (!ok) setTimeout(() => loadRatingsForVisibleSongs(batchIds), 0);
+      });
     }
     const endIdx = Math.min(startIdx + RENDER_BATCH_SIZE, totalSongs);
     // ใช้ querySelector กับ elements ที่อยู่ในช่วง index นี้
@@ -2163,13 +2191,21 @@ function renderSongGrid() {
         }
       });
       // 🆕 โหลดจำนวน like + สถานะเริ่มต้น
+      //   (perf 2026-10-13): ปกติค่านี้มาจาก batch ด้านบนแล้ว — ยิงทีละเพลงเฉพาะตอน batch ล้มเหลว
       const songId = el.getAttribute("data-like-btn");
-      if (typeof window.loadLikeStatus === "function") {
-        window.loadLikeStatus(songId).then(({ like_count, is_liked }) => {
-          const countEl = el.querySelector("[data-like-count]");
-          if (countEl) countEl.textContent = like_count;
-          if (is_liked) el.classList.add("is-liked");
-        });
+      const legacyLoadLike = () => {
+        if (typeof window.loadLikeStatus === "function") {
+          window.loadLikeStatus(songId).then(({ like_count, is_liked }) => {
+            const countEl = el.querySelector("[data-like-count]");
+            if (countEl) countEl.textContent = like_count;
+            if (is_liked) el.classList.add("is-liked");
+          });
+        }
+      };
+      if (statsBatchPromise) {
+        statsBatchPromise.then(ok => { if (!ok) legacyLoadLike(); });
+      } else {
+        legacyLoadLike();
       }
     });
     // 🆕 (2026-10-02 v7): ปุ่ม 📌 บันทึกซื้อทีหลัง (favorites) — เดิมเป็น ❤️ เปลี่ยนเป็น bookmark icon
