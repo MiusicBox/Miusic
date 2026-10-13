@@ -744,6 +744,27 @@ async function loadLikeStatus(songId) {
   return { like_count: 0, is_liked: false };
 }
 
+// 🆕 (perf 2026-10-13): โหลด like count + สถานะ like + rating ของหลายเพลงในคำขอเดียว
+//   คืน object { [songId]: {like_count, is_liked, rating_count, avg_rating} } หรือ null ถ้าล้มเหลว
+//   (caller ต้อง fallback ไปใช้ loadLikeStatus / reviews/summary ทีละเพลงแบบเดิมเมื่อได้ null)
+async function loadSongStatsBatch(songIds) {
+  const ids = (Array.isArray(songIds) ? songIds : []).filter(Boolean);
+  if (ids.length === 0) return {};
+  const fingerprint = isCustomerLoggedIn() ? null : getAnonymousFingerprintSync();
+  const query = `?ids=${encodeURIComponent(ids.join(","))}` + (fingerprint ? `&fingerprint=${encodeURIComponent(fingerprint)}` : "");
+  try {
+    const res = await fetch(`/api/songs/stats${query}`, { credentials: "same-origin" });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    if (!data || !data.ok || !data.stats) return null;
+    return data.stats;
+  } catch (err) {
+    console.warn("[stats] loadSongStatsBatch failed:", err);
+    return null;
+  }
+}
+window.loadSongStatsBatch = loadSongStatsBatch;
+
 // 🆕 expose ให้ app-user.js / app-cart.js เรียกใช้
 window.isCustomerLoggedIn = isCustomerLoggedIn;
 window.getCurrentCustomer = getCurrentCustomer;
