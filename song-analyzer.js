@@ -54,14 +54,17 @@ export function secToBar(sec) { return sec / BAR_SECONDS; }
 // จาก "ห้องเริ่ม Dance" คำนวณช่วง Preview ตามกติกาใหม่:
 //   เริ่มเสมอที่ห้องที่ 1 (index 0) ของเพลง → หยุดที่ห้องที่ 8 ของ Dance (danceStartBar + 8)
 // คลิปตามความยาวเพลงจริงเสมอ (กันค่าเกินความยาวเพลง)
-export function computePreviewWindow(danceStartBar, songDurationSec) {
+export function computePreviewWindow(danceStartBar, songDurationSec, gridOffsetSec = 0) {
+  // 🆕 (T132): gridOffsetSec = เวลาที่ "ห้อง 0" เริ่มจริงในไฟล์ (เพลงที่มีช่วงเงียบ/lead-in ก่อนจังหวะแรก)
+  //   ค่าเริ่มต้น 0 → ทำงานเหมือนเดิมทุกประการ
+  const off = Number(gridOffsetSec) || 0;
   const rawStartBar = PREVIEW_START_BAR; // = 5 เสมอ ทุกเพลง (ห้องที่ 6)
   // ห้องที่ 8 ของช่วง Dance — กันเคสขอบ (Dance ถูกจับได้เร็วมากจนน้อยกว่าห้องเริ่ม Preview)
   const rawEndBar = Math.max(rawStartBar + 1, danceStartBar + DANCE_STOP_OFFSET_BARS);
-  const startSec = barToSec(rawStartBar);
+  const startSec = off + barToSec(rawStartBar);
   const endSec = Math.min(
     songDurationSec != null ? songDurationSec : Infinity,
-    barToSec(rawEndBar)
+    off + barToSec(rawEndBar)
   );
   return {
     dance_start_bar: danceStartBar,
@@ -181,8 +184,14 @@ function analyzeFrames(channelData, sampleRate) {
     const rms = Math.sqrt(sumSq / frame.length);
 
     const spectrum = magnitudeSpectrum(frame);
+    // 🆕 (T132): พลังงานย่านต่ำ (~20-200Hz = กระเดื่อง/เบส) — ตัวบอกว่า "แดนเริ่ม" แม่นกว่าความดังรวม
+    const lowBins = Math.max(2, Math.min(spectrum.length - 1, Math.round(200 / (sampleRate / frameSize))));
+    let low = 0;
+    for (let i = 1; i <= lowBins; i++) low += spectrum[i];
+    let lowFlux = 0;
     let flux = 0;
     if (prevSpectrum) {
+      for (let i = 1; i <= lowBins; i++) { const d = spectrum[i] - prevSpectrum[i]; if (d > 0) lowFlux += d; }
       // Spectral Flux: รวมเฉพาะพลังงานที่ "เพิ่มขึ้น" จากเฟรมก่อนหน้า (นิยามมาตรฐานสำหรับจับ Onset)
       for (let i = 0; i < spectrum.length; i++) {
         const diff = spectrum[i] - prevSpectrum[i];
@@ -190,23 +199,26 @@ function analyzeFrames(channelData, sampleRate) {
       }
     }
     prevSpectrum = spectrum;
-    frames.push({ timeSec: start / sampleRate, rms, flux });
+    frames.push({ timeSec: start / sampleRate, rms, flux, low, lowFlux });
   }
   return frames;
 }
 
 // รวมเฟรมเป็นค่าเฉลี่ยรายห้อง (บาร์ละ 1.6 วิ) + นับ Onset ต่อห้อง
-function aggregateIntoBars(frames, songDurationSec) {
-  const totalBars = Math.max(1, Math.ceil(songDurationSec / BAR_SECONDS));
-  const bars = Array.from({ length: totalBars }, () => ({ rmsSum: 0, fluxSum: 0, count: 0, onsetCount: 0 }));
+function aggregateIntoBars(frames, songDurationSec, gridOffsetSec = 0) {
+  const totalBars = Math.max(1, Math.ceil((songDurationSec - gridOffsetSec) / BAR_SECONDS));
+  const bars = Array.from({ length: totalBars }, () => ({ rmsSum: 0, fluxSum: 0, lowSum: 0, count: 0, onsetCount: 0 }));
 
   const sortedFlux = frames.map(f => f.flux).slice().sort((a, b) => a - b);
   // ถือว่าเฟรมที่ flux อยู่ใน 25% สูงสุดของทั้งเพลง คือจุด Onset (จังหวะ/กลองเข้า)
   const fluxThreshold = sortedFlux.length ? sortedFlux[Math.floor(sortedFlux.length * 0.75)] : 0;
 
   frames.forEach(f => {
-    const barIdx = Math.min(totalBars - 1, Math.floor(f.timeSec / BAR_SECONDS));
+    const rel = f.timeSec - gridOffsetSec;
+    if (rel < 0) return; // ก่อนห้องแรกของ grid
+    const barIdx = Math.min(totalBars - 1, Math.floor(rel / BAR_SECONDS));
     const bar = bars[barIdx];
+    bar.lowSum += f.low || 0;
     bar.rmsSum += f.rms;
     bar.fluxSum += f.flux;
     bar.count += 1;
@@ -216,45 +228,76 @@ function aggregateIntoBars(frames, songDurationSec) {
   return bars.map(b => ({
     avgRms: b.count ? b.rmsSum / b.count : 0,
     avgFlux: b.count ? b.fluxSum / b.count : 0,
+    avgLow: b.count ? b.lowSum / b.count : 0,
     onsetCount: b.onsetCount
   }));
 }
 
 // เลื่อนหาต่อเนื่อง 16 ห้องที่ "พลังงานสูงและสม่ำเสมอตลอดช่วง" — ไม่ใช่แค่ห้องที่ดังที่สุดห้องเดียว
+// 🔧 (T132) ปรับปรุงความแม่นยำ (สูตรหลัก RMS/Onset/sustained ยังอยู่ครบ):
+//   1) แก้บั๊กขอบเขตค้นหา: เดิมบังคับให้ "ทั้งหน้าต่าง 16 ห้อง" อยู่ในครึ่งแรกของเพลง ทำให้เพลงที่แดนเริ่มช้ากว่า
+//      ~ครึ่งหนึ่งของครึ่งแรก (เช่น ห้อง 20+ ในเพลง 70 ห้อง) ถูกตัดทิ้งเลย → ตอนนี้จำกัดแค่ "จุดเริ่ม" ต้องอยู่ในครึ่งแรก
+//   2) เพิ่มคะแนน "Drop Contrast": ท่อนแดนจริงต้องดัง/มีกลองกว่าห้องก่อนหน้า (เบรก/ร้อง → ดรอป)
+//   3) ใช้พลังงานย่านต่ำ (กลอง/เบส) ร่วมกับความดังรวม
+//   4) ถ้าคะแนนสูสี (ต่างกัน <3%) เลือกตำแหน่ง "แรกสุด" (ท่อนแดนแรก) แทนการเลือกกลางๆ ของพื้นที่ราบ
+//   5) ขยับจุดเริ่ม ±3 ห้อง ไปที่ "ขอบขาขึ้น" ที่ชันที่สุด (จุดที่ดรอปเข้าจริง)
 function findDanceWindow(bars) {
   const n = bars.length;
   if (n < DANCE_BARS) return { danceStartBar: null, confidence: 0, passesThreshold: false };
 
-  // จำกัดขอบเขตค้นหาไว้แค่ "ครึ่งแรกของเพลง" เท่านั้น เพื่อให้จับ "ท่อนแดนแรก" เสมอ
-  // (เพลงที่มีโครงสร้าง ร้อง-แดน-ร้อง-แดน จะได้ไม่ไปเจอแดนท่อนที่ 2 ที่อาจคะแนนสูงกว่า)
-  // ถ้าเพลงสั้นเกินกว่าจะแบ่งครึ่งได้ (ครึ่งแรกไม่พอ 16 ห้อง) ให้กลับไปสแกนทั้งเพลงแทน
-  let searchLimit = Math.floor(n * DANCE_SEARCH_RANGE_RATIO);
-  if (searchLimit < DANCE_BARS) searchLimit = n;
+  const maxStart = Math.max(0, Math.floor(n * DANCE_SEARCH_RANGE_RATIO));
+  const lastValidStart = n - DANCE_BARS;
+  const searchEnd = Math.min(lastValidStart, maxStart);
 
   const maxRms = Math.max(...bars.map(b => b.avgRms), 1e-9);
+  const maxLow = Math.max(...bars.map(b => b.avgLow || 0), 1e-9);
   const maxOnset = Math.max(...bars.map(b => b.onsetCount), 1);
+  // พลังงานรวมต่อห้อง = ความดังรวม 60% + ย่านกลอง/เบส 40%
+  const E = bars.map(b => (b.avgRms / maxRms) * 0.6 + ((b.avgLow || 0) / maxLow) * 0.4);
+  const O = bars.map(b => b.onsetCount / maxOnset);
 
-  let best = { score: -Infinity, startBar: null, meanEnergy: 0, meanOnset: 0, stdDev: 1 };
+  const mean = (arr, from, to) => { let t = 0, c = 0; for (let i = Math.max(0, from); i < Math.min(arr.length, to); i++) { t += arr[i]; c++; } return c ? t / c : 0; };
 
-  for (let start = 0; start <= searchLimit - DANCE_BARS; start++) {
-    const win = bars.slice(start, start + DANCE_BARS);
-    const energies = win.map(b => b.avgRms / maxRms);
-    const onsets = win.map(b => b.onsetCount / maxOnset);
-
-    const meanEnergy = energies.reduce((a, b) => a + b, 0) / DANCE_BARS;
-    const meanOnset = onsets.reduce((a, b) => a + b, 0) / DANCE_BARS;
+  const cands = [];
+  for (let start = 0; start <= searchEnd; start++) {
+    const energies = E.slice(start, start + DANCE_BARS);
+    const meanEnergy = mean(E, start, start + DANCE_BARS);
+    const meanOnset = mean(O, start, start + DANCE_BARS);
     const variance = energies.reduce((a, e) => a + (e - meanEnergy) ** 2, 0) / DANCE_BARS;
     const stdDev = Math.sqrt(variance);
-    const sustainedBonus = Math.max(0, 1 - stdDev * 2); // เบี่ยงเบนน้อย = พลังงานคงที่ตลอดช่วง = ได้คะแนนเสริม
-
-    const score = meanEnergy * 0.45 + meanOnset * 0.35 + sustainedBonus * 0.2;
-    if (score > best.score) best = { score, startBar: start, meanEnergy, meanOnset, stdDev };
+    const sustainedBonus = Math.max(0, 1 - stdDev * 2);
+    const prevMean = start >= 2 ? mean(E, start - 8, start) : meanEnergy; // 8 ห้องก่อนหน้า
+    const contrast = Math.max(0, Math.min(1, (meanEnergy - prevMean) * 2));
+    const score = meanEnergy * 0.35 + meanOnset * 0.30 + sustainedBonus * 0.15 + contrast * 0.20;
+    cands.push({ start, score, meanEnergy, meanOnset, stdDev });
   }
+  if (!cands.length) return { danceStartBar: null, confidence: 0, passesThreshold: false };
 
-  // เกณฑ์ขั้นต่ำก่อนยอมรับผลอัตโนมัติ — ถ้าไม่ผ่าน ให้ระบบขึ้น NEEDS_REVIEW แทนการเดามั่ว
+  const topScore = Math.max(...cands.map(c => c.score));
+  // (4) ถ้าสูสี เลือกตำแหน่งแรกสุด
+  let best = cands.find(c => c.score >= topScore * 0.97);
+
+  // (5) ขยับไปที่ขอบขาขึ้นที่ชันที่สุดภายใน ±3 ห้อง (เฉพาะที่คะแนนไม่ตกจากเดิมมาก)
+  let bestRise = -Infinity, refined = best;
+  for (let d = -3; d <= 3; d++) {
+    const c = cands[best.start + d];
+    if (!c || c.score < topScore * 0.93) continue;
+    const rise = mean(E, c.start, c.start + 2) - mean(E, c.start - 2, c.start);
+    if (rise > bestRise + 1e-9) { bestRise = rise; refined = c; }
+  }
+  if (bestRise > 0.08) best = refined;
+
   const passesThreshold = best.meanEnergy >= 0.4 && best.meanOnset >= 0.3 && best.stdDev <= 0.35;
+  return { danceStartBar: best.start, confidence: best.score, passesThreshold };
+}
 
-  return { danceStartBar: best.startBar, confidence: best.score, passesThreshold };
+// 🆕 (T132): เพดานขนาดไฟล์ที่ใช้วิเคราะห์ แยกตามชนิดไฟล์
+//   เดิมตัดที่ 5MB เสมอ → ไฟล์ WAV (ไม่บีบอัด) 5MB = แค่ ~30 วินาทีแรก ทำให้หาแดนที่อยู่หลังจากนั้นไม่เจอเลย
+//   ใหม่: WAV ให้ถึง 24MB (~2 นาที) / ไฟล์บีบอัด (MP3/M4A ฯลฯ) ยัง 5MB (≈ 2-5 นาที) เพื่อกัน mobile Safari พัง
+function maxAnalyzeBytesFor(nameOrUrl, mimeType) {
+  const n = String(nameOrUrl || "").split("?")[0].toLowerCase();
+  const isWav = /\.(wav|wave)$/.test(n) || /wav/.test(String(mimeType || "").toLowerCase());
+  return isWav ? 24 * 1024 * 1024 : 5 * 1024 * 1024;
 }
 
 // ==================== ฟังก์ชันหลักที่ไฟล์อื่นเรียกใช้ ====================
@@ -268,7 +311,7 @@ export async function analyzeSongFile(file, onProgress) {
   //   dance window detection ใช้แค่ ~30 วินาทีแรก จึงไม่กระทบผลลัพธ์
   //   ผลกระทบระบบเดิม: 0% — ถ้าไฟล์ < 5MB → ใช้ทั้งหมดเหมือนเดิม
   //   ถ้าไฟล์ > 5MB → ใช้แค่ 5MB แรก (analysis อาจเห็นแค่ 30-60 วินาทีแรก แต่เพียงพอ)
-  const MAX_ANALYZE_BYTES = 5 * 1024 * 1024; // 5 MB
+  const MAX_ANALYZE_BYTES = maxAnalyzeBytesFor(file.name, file.type);
   let arrayBuffer;
   if (file.size > MAX_ANALYZE_BYTES) {
     console.log(`[H-15] File ${file.size} bytes > 5MB limit — analyzing first 5MB only (saves memory on mobile)`);
@@ -287,7 +330,7 @@ export async function analyzeSongUrl(url, onProgress) {
   //   ถ้า server ไม่รองรับ Range → fallback ดึงทั้งหมด (เหมือนเดิม)
   //   ผลกระทบระบบเดิม: 0% — ถ้า server ไม่รองรับ Range → res.arrayBuffer() เหมือนเดิม
   //   ถ้า server รองรับ → ดึงแค่ 5MB (memory ลดลง)
-  const MAX_ANALYZE_BYTES = 5 * 1024 * 1024; // 5 MB
+  const MAX_ANALYZE_BYTES = maxAnalyzeBytesFor(url);
   let arrayBuffer;
   try {
     const res = await fetch(url, { headers: { Range: `bytes=0-${MAX_ANALYZE_BYTES - 1}` } });
@@ -319,14 +362,17 @@ async function analyzeArrayBuffer(arrayBuffer, onProgress) {
 
   if (onProgress) onProgress(20);
   const channelData = mixToMono(audioBuffer);
-  const sampleRate = audioBuffer.sampleRate;
-  const durationSec = audioBuffer.duration;
+  return analyzeChannelData(channelData, audioBuffer.sampleRate, audioBuffer.duration, onProgress);
+}
 
+// 🆕 (T132): แยกส่วน DSP ออกมาเป็นฟังก์ชันที่ไม่พึ่ง Web Audio — ใช้ทดสอบอัตโนมัติได้
+export function analyzeChannelData(channelData, sampleRate, durationSec, onProgress) {
   if (onProgress) onProgress(45);
   const frames = analyzeFrames(channelData, sampleRate);
-  if (onProgress) onProgress(80);
-  const bars = aggregateIntoBars(frames, durationSec);
-  const result = findDanceWindow(bars);
+  if (onProgress) onProgress(70);
+  // หมายเหตุ (T132): เคยทดลองหา beat-grid offset อัตโนมัติ แต่ "จังหวะที่ 1 ของห้อง" แยกจากเสียงอย่างเดียวไม่นิ่งพอ
+  //   (เพลงแดนกระเดื่องทุกจังหวะ) จึงไม่เปิดใช้ — ยึด grid เริ่มที่ 0 ตามสเปกระบบเดิม (BPM 150 คงที่)
+  const result = findDanceWindow(aggregateIntoBars(frames, durationSec, 0));
   if (onProgress) onProgress(100);
 
   if (result.danceStartBar == null || !result.passesThreshold) {
