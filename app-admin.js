@@ -2510,7 +2510,7 @@ const MUSIC_KEY_COLORS = {
 
 // 🆕 (T140): applyMusicKeySelectColor(selectId) — ปรับสี text ของ select ตามค่าที่เลือก
 //   - ถ้าเลือก "8B" → select text เป็นสีเหลือง (#FDE047)
-//   - ถ้าเลือก "—" (ไม่ระบุ) → ใช้สี var(--text-dim) (สว่าง อ่านง่ายบน dark theme)
+//   - ถ้าเลือก "—" (ไม่ระบุ) → ใช้สี var(--text) (ขาวบน dark theme — เด่นชัด)
 //   - ผูก change event อัตโนมัติ + apply ครั้งแรกทันที
 //   ใช้กับ: fMusicKey, songDetailMusicKey (และ per-song bulkSongListPreview selects)
 function applyMusicKeySelectColor(selectId) {
@@ -2522,10 +2522,9 @@ function applyMusicKeySelectColor(selectId) {
       select.style.color = MUSIC_KEY_COLORS[val];
       select.style.fontWeight = "700";
     } else {
-      // 🆕 (T143 2026-10-13): เมื่อไม่ได้เลือก key → ตั้งเป็น var(--text-dim) (light gray)
-      //   แทนที่จะล้างสี (clear) — เพื่อให้ตัว "—" / "— ไม่ระบุ —" อ่านง่ายบน dark theme
-      //   ก่อนหน้านี้เคย clear style ทำให้ browser fallback เป็นสีดำ → มองไม่เห็นบน dark bg
-      select.style.color = "var(--text-dim)";
+      // 🆕 (T143→T144 2026-10-13): เมื่อไม่ได้เลือก key → ตั้งเป็น var(--text) (ขาว)
+      //   เดิมใช้ var(--text-dim) (เทา) → ดูไม่เด่นพอ → เปลี่ยนเป็นขาว (var(--text)) แทน
+      select.style.color = "var(--text)";
       select.style.fontWeight = "";
     }
   };
@@ -4910,7 +4909,7 @@ function renderBulkSongListPreview() {
   //   ตัวเลือก: "" + 1A-12A + 1B-12B (24 ค่า)
   //   compact: เอาชื่อโน้ตออก (เช่น "8B" ไม่ใช่ "8B (C major)") เพื่อประหยัดพื้นที่
   const MUSIC_KEY_OPTIONS_HTML = [
-    '<option value="" style="color: var(--text-dim);">—</option>',
+    '<option value="" style="color: var(--text);">—</option>',
     '<option value="1A" style="color:#94A3B8;">1A</option>',
     '<option value="2A" style="color:#818CF8;">2A</option>',
     '<option value="3A" style="color:#60A5FA;">3A</option>',
@@ -4959,8 +4958,7 @@ function renderBulkSongListPreview() {
   `;
   // 🆕 (T142): ผูก change event ให้แต่ละ select — ปรับสีตัว select เองตามค่าที่เลือก
   //   เหมือน fMusicKey (consistent UX)
-  //   🆕 (T143): เมื่อ value ว่าง → ตั้ง color var(--text-dim) (light gray อ่านง่ายบน dark theme)
-  //   แทนการล้างสี (clear) ที่ทำให้ browser fallback เป็นสีดำ
+  //   🆕 (T143→T144): เมื่อ value ว่าง → ตั้ง color var(--text) (ขาว) แทน var(--text-dim) (เทา)
   container.querySelectorAll("[data-bulk-song-key]").forEach(sel => {
     const apply = () => {
       const val = String(sel.value || "").trim().toUpperCase();
@@ -4968,7 +4966,7 @@ function renderBulkSongListPreview() {
         sel.style.color = MUSIC_KEY_COLORS[val];
         sel.style.fontWeight = "700";
       } else {
-        sel.style.color = "var(--text-dim)";
+        sel.style.color = "var(--text)";
         sel.style.fontWeight = "";
       }
     };
