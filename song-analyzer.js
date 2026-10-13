@@ -243,7 +243,7 @@ function aggregateIntoBars(frames, songDurationSec, gridOffsetSec = 0) {
 //   5) ขยับจุดเริ่ม ±3 ห้อง ไปที่ "ขอบขาขึ้น" ที่ชันที่สุด (จุดที่ดรอปเข้าจริง)
 function findDanceWindow(bars) {
   const n = bars.length;
-  if (n < DANCE_BARS) return { danceStartBar: null, confidence: 0, passesThreshold: false };
+  if (n < DANCE_BARS) return { danceStartBar: null, confidence: 0, passesThreshold: false, reason: `เพลงสั้นเกินไป (${n} ห้อง < ${DANCE_BARS})` };
 
   const maxStart = Math.max(0, Math.floor(n * DANCE_SEARCH_RANGE_RATIO));
   const lastValidStart = n - DANCE_BARS;
@@ -271,7 +271,7 @@ function findDanceWindow(bars) {
     const score = meanEnergy * 0.35 + meanOnset * 0.30 + sustainedBonus * 0.15 + contrast * 0.20;
     cands.push({ start, score, meanEnergy, meanOnset, stdDev });
   }
-  if (!cands.length) return { danceStartBar: null, confidence: 0, passesThreshold: false };
+  if (!cands.length) return { danceStartBar: null, confidence: 0, passesThreshold: false, reason: "ไม่พบช่วงที่ค้นหาได้" };
 
   const topScore = Math.max(...cands.map(c => c.score));
   // (4) ถ้าสูสี เลือกตำแหน่งแรกสุด
@@ -288,7 +288,11 @@ function findDanceWindow(bars) {
   if (bestRise > 0.08) best = refined;
 
   const passesThreshold = best.meanEnergy >= 0.4 && best.meanOnset >= 0.3 && best.stdDev <= 0.35;
-  return { danceStartBar: best.start, confidence: best.score, passesThreshold };
+  const reasons = [];
+  if (best.meanEnergy < 0.4) reasons.push(`พลังงานเฉลี่ยต่ำ (${best.meanEnergy.toFixed(2)} < 0.40)`);
+  if (best.meanOnset < 0.3) reasons.push(`จังหวะกลองไม่ชัด (${best.meanOnset.toFixed(2)} < 0.30)`);
+  if (best.stdDev > 0.35) reasons.push(`พลังงานไม่สม่ำเสมอ (${best.stdDev.toFixed(2)} > 0.35)`);
+  return { danceStartBar: best.start, confidence: best.score, passesThreshold, reason: reasons.join(", ") };
 }
 
 // 🆕 (T132): เพดานขนาดไฟล์ที่ใช้วิเคราะห์ แยกตามชนิดไฟล์
@@ -346,7 +350,67 @@ export async function analyzeSongUrl(url, onProgress) {
   return analyzeArrayBuffer(arrayBuffer, onProgress);
 }
 
+// 🆕 (T133): อ่านไฟล์ WAV (PCM 8/16/24/32-bit, float32) ตรงๆ โดยไม่ผ่าน decodeAudioData
+//   เหตุผล: decodeAudioData บน Safari/iPad พังหรือกินแรมมากกับ WAV ใหญ่/ไฟล์ที่ถูกตัดท้าย (Range 24MB)
+//   ผล: ผสมเป็น mono + ลดความถี่ตัวอย่างลง 2 เท่า (เหลือ ~22kHz เพียงพอสำหรับวิเคราะห์) → กินแรมน้อยลง ~8 เท่า
+//   คืน null ถ้าไม่ใช่ WAV ที่รองรับ → ไปใช้ decodeAudioData ตามเดิม
+export function parseWavToMono(arrayBuffer) {
+  const dv = new DataView(arrayBuffer);
+  if (dv.byteLength < 44) return null;
+  const tag = (o) => String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3));
+  if (tag(0) !== "RIFF" || tag(8) !== "WAVE") return null;
+  let pos = 12, fmt = null, dataStart = -1, dataLen = 0;
+  while (pos + 8 <= dv.byteLength) {
+    const id = tag(pos);
+    const size = dv.getUint32(pos + 4, true);
+    if (id === "fmt ") {
+      fmt = { format: dv.getUint16(pos + 8, true), channels: dv.getUint16(pos + 10, true), sampleRate: dv.getUint32(pos + 12, true), bits: dv.getUint16(pos + 22, true) };
+      if (fmt.format === 0xFFFE && size >= 26) fmt.format = dv.getUint16(pos + 8 + 24, true); // WAVE_FORMAT_EXTENSIBLE
+    } else if (id === "data") {
+      dataStart = pos + 8;
+      // ไฟล์ที่ถูกตัดท้าย/ขนาดใน header เกินจริง → ใช้เท่าที่มี
+      dataLen = Math.min(size === 0 || size === 0xFFFFFFFF ? Infinity : size, dv.byteLength - dataStart);
+      break;
+    }
+    pos += 8 + size + (size % 2);
+  }
+  if (!fmt || dataStart < 0 || !fmt.channels) return null;
+  const isInt = fmt.format === 1, isFloat = fmt.format === 3;
+  if (!(isInt && [8, 16, 24, 32].includes(fmt.bits)) && !(isFloat && fmt.bits === 32)) return null;
+  const bytesPer = fmt.bits / 8, frameBytes = bytesPer * fmt.channels;
+  const totalFrames = Math.floor(dataLen / frameBytes);
+  const DECIM = fmt.sampleRate >= 32000 ? 2 : 1;
+  const outLen = Math.floor(totalFrames / DECIM);
+  const out = new Float32Array(outLen);
+  const readSample = (off) => {
+    if (isFloat) return dv.getFloat32(off, true);
+    if (fmt.bits === 16) return dv.getInt16(off, true) / 32768;
+    if (fmt.bits === 8) return (dv.getUint8(off) - 128) / 128;
+    if (fmt.bits === 24) { let v = dv.getUint8(off) | (dv.getUint8(off + 1) << 8) | (dv.getUint8(off + 2) << 16); if (v & 0x800000) v |= ~0xFFFFFF; return v / 8388608; }
+    return dv.getInt32(off, true) / 2147483648;
+  };
+  for (let i = 0; i < outLen; i++) {
+    let acc = 0;
+    for (let d = 0; d < DECIM; d++) {
+      const base = dataStart + (i * DECIM + d) * frameBytes;
+      for (let c = 0; c < fmt.channels; c++) acc += readSample(base + c * bytesPer);
+    }
+    out[i] = acc / (DECIM * fmt.channels);
+  }
+  return { channelData: out, sampleRate: fmt.sampleRate / DECIM, durationSec: totalFrames / fmt.sampleRate };
+}
+
 async function analyzeArrayBuffer(arrayBuffer, onProgress) {
+  // 🆕 (T133): WAV อ่านตรงๆ ก่อน (เร็ว/กินแรมน้อย/ไม่พังกับไฟล์ถูกตัด) — ถ้าอ่านไม่ได้ค่อยใช้ decodeAudioData
+  try {
+    const wav = parseWavToMono(arrayBuffer);
+    if (wav && wav.durationSec > 1) {
+      if (onProgress) onProgress(20);
+      return analyzeChannelData(wav.channelData, wav.sampleRate, wav.durationSec, onProgress);
+    }
+  } catch (wavErr) {
+    console.warn("[T133] อ่าน WAV ตรงๆ ไม่สำเร็จ ใช้ decodeAudioData แทน:", wavErr?.message || wavErr);
+  }
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   const ctx = new AudioCtx();
   let audioBuffer;
@@ -379,6 +443,7 @@ export function analyzeChannelData(channelData, sampleRate, durationSec, onProgr
     return {
       status: "needs_review",
       dance_start_bar: result.danceStartBar,
+      reason: result.reason || "",
       confidence: Number((result.confidence || 0).toFixed(3)),
       duration_sec: Number(durationSec.toFixed(3))
     };
