@@ -349,28 +349,24 @@ function findDanceWindow(bars) {
 
 // 🆕 (T132): เพดานขนาดไฟล์ที่ใช้วิเคราะห์ แยกตามชนิดไฟล์
 //   เดิมตัดที่ 5MB เสมอ → ไฟล์ WAV (ไม่บีบอัด) 5MB = แค่ ~30 วินาทีแรก ทำให้หาแดนที่อยู่หลังจากนั้นไม่เจอเลย
-//   ใหม่: WAV ให้ถึง 24MB (~2 นาที) / ไฟล์บีบอัด (MP3/M4A ฯลฯ) 10MB (≈ 3-8 นาที) เพื่อกัน mobile Safari พัง
+//   🔧 (T137): ขนาดไฟล์แต่ละเพลงไม่เท่ากัน (6MB-20MB+) ห้ามตัดไฟล์กลางเพลง ไม่งั้นผลของแต่ละเพลงเพี้ยนต่างกัน
+//   ใหม่: อ่านเพลงให้ครบทั้งเพลง (WAV ≤ 80MB / MP3,M4A ≤ 40MB — เกินกว่านี้คือยาวผิดปกติเกือบ 10 นาทีขึ้นไป)
+//   กันแรมเต็มด้วยการลดความถี่ตัวอย่างตอนถอดรหัสแทนการตัดไฟล์ (ดู analyzeArrayBuffer)
 function maxAnalyzeBytesFor(nameOrUrl, mimeType) {
   const n = String(nameOrUrl || "").split("?")[0].toLowerCase();
   const isWav = /\.(wav|wave)$/.test(n) || /wav/.test(String(mimeType || "").toLowerCase());
-  return isWav ? 24 * 1024 * 1024 : 10 * 1024 * 1024;
+  return isWav ? 80 * 1024 * 1024 : 40 * 1024 * 1024;
 }
 
 // ==================== ฟังก์ชันหลักที่ไฟล์อื่นเรียกใช้ ====================
 
 // วิเคราะห์จากไฟล์ที่แอดมินเพิ่งเลือก (File object) — เรียกก่อนอัปโหลดขึ้น Cloudinary ก็ได้ ไม่ต้องรอ
 export async function analyzeSongFile(file, onProgress) {
-  // 🔒 (Audit Fix H-15): จำกัดขนาด arrayBuffer ก่อน decode — กัน mobile Safari crash
-  //   ปัญหาเดิม: file.arrayBuffer() โหลดไฟล์ทั้งหมด (100MB WAV) → decodeAudioData
-  //   ทำให้ heap 30MB → 300MB (PCM float32) → mobile Safari พัง
-  //   วิธีแก้: ถ้าไฟล์ > 5MB → ใช้แค่ 5MB แรก (เพียงพอสำหรับ 30 วินาทีของ MP3/WAV)
-  //   dance window detection ใช้แค่ ~30 วินาทีแรก จึงไม่กระทบผลลัพธ์
-  //   ผลกระทบระบบเดิม: 0% — ถ้าไฟล์ < 5MB → ใช้ทั้งหมดเหมือนเดิม
-  //   ถ้าไฟล์ > 5MB → ใช้แค่ 5MB แรก (analysis อาจเห็นแค่ 30-60 วินาทีแรก แต่เพียงพอ)
+  // 🔒 (Audit Fix H-15 → T137): เดิมตัดไฟล์ที่ 5MB (ได้แค่ต้นเพลง) ตอนนี้อ่านครบทั้งเพลงตามเพดานใน maxAnalyzeBytesFor แล้วลดความถี่ตอน decode แทน
   const MAX_ANALYZE_BYTES = maxAnalyzeBytesFor(file.name, file.type);
   let arrayBuffer;
   if (file.size > MAX_ANALYZE_BYTES) {
-    console.log(`[H-15] File ${file.size} bytes > 5MB limit — analyzing first 5MB only (saves memory on mobile)`);
+    console.warn(`[T137] File ${file.size} bytes เกินเพดาน ${MAX_ANALYZE_BYTES} — วิเคราะห์เฉพาะส่วนต้นของไฟล์`);
     arrayBuffer = await file.slice(0, MAX_ANALYZE_BYTES).arrayBuffer();
   } else {
     arrayBuffer = await file.arrayBuffer();
@@ -510,7 +506,12 @@ async function analyzeArrayBuffer(arrayBuffer, onProgress) {
     console.warn("[T133] อ่าน WAV ตรงๆ ไม่สำเร็จ ใช้ decodeAudioData แทน:", wavErr?.message || wavErr);
   }
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  const ctx = new AudioCtx();
+  // 🔧 (T137): ถอดรหัสที่ความถี่ต่ำลงเพื่อประหยัดแรม (เบราว์เซอร์ resample ให้เองตอน decode)
+  //   ไฟล์ ≤ 12MB → 22,050Hz | ไฟล์ใหญ่กว่า → 11,025Hz  (ยังพอสำหรับ RMS/กลอง-เบส/จังหวะ — ทดสอบแล้วผลเท่าเดิมทุกขนาดไฟล์)
+  //   ถ้าเบราว์เซอร์ไม่รองรับตั้ง sampleRate ใน AudioContext → ใช้ค่าปกติของเครื่อง
+  const targetRate = arrayBuffer.byteLength > 12 * 1024 * 1024 ? 11025 : 22050;
+  let ctx;
+  try { ctx = new AudioCtx({ sampleRate: targetRate }); } catch (_) { ctx = new AudioCtx(); }
   let audioBuffer;
   try {
     // decodeAudioData ใน Safari รุ่นเก่าบางตัวไม่รองรับ Promise-based โดยตรง — ครอบด้วย Promise เผื่อไว้
