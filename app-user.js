@@ -3170,12 +3170,22 @@ function openSongModal(songId) {
   // DJ — เก็บไว้ใน badge ด้วยเหมือนฝั่ง admin (เดิมแสดงบรรทัด DJ: ... คงไว้ตามโครงเดิม)
   if (djEl) djEl.textContent = song.dj_name ? "🎧 DJ: " + song.dj_name : "";
 
-  // badges — เหมือนฝั่ง admin: DJ / หมวดหมู่ / เพลย์ลิสต์ (ถ้ามีข้อมูล)
+  // badges — เหมือนฝั่ง admin: DJ / หมวดหมู่ / เพลย์ลิสต์ (ถ้ามีข้อมูล) + BPM badge (T138)
   if (badgesEl) {
     const badges = [];
     if (song.dj_name) badges.push(`<span class="badge dj">🎧 ${escapeHtml(song.dj_name)}</span>`);
     if (song.category_name) badges.push(`<span class="badge cat">🗂️ ${escapeHtml(song.category_name)}</span>`);
     if (song.playlist_name) badges.push(`<span class="badge pl">🎶 ${escapeHtml(song.playlist_name)}</span>`);
+    // 🆕 (T138 2026-10-13): เพิ่ม BPM badge ใน user-side song modal — ใช้ดีไซน์ #5 Minimal Text + Dot
+    //   เหมือนกับ song grid + playlist rows (consistent UI ทุกที่)
+    {
+      const rawBpm = Number(song.bpm);
+      const bpmInt = (!Number.isFinite(rawBpm) || rawBpm < 150 || rawBpm > 165) ? 150 : Math.round(rawBpm);
+      let cls = "bpm-150";
+      if (bpmInt >= 160) cls = "bpm-160";
+      else if (bpmInt >= 155) cls = "bpm-155";
+      badges.push(`<span class="bpm-badge ${cls}" title="BPM ${bpmInt}"><span class="bpm-dot"></span><span class="bpm-num">${bpmInt}</span><span class="bpm-unit">BPM</span></span>`);
+    }
     badgesEl.innerHTML = badges.join("");
   }
 
