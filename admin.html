@@ -6,10 +6,10 @@
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): noindex meta — กัน Google index หน้า admin -->
 <meta name="robots" content="noindex, nofollow">
 <title>Admin - Music Store</title>
-<link rel="stylesheet" href="style.css?v=20261013-t133">
+<link rel="stylesheet" href="style.css?v=20261013-t134">
 <!-- 🎨 (2026-10-11) ระบบแจ้งเตือนใหม่ (toast + dialog) — ต้องโหลดก่อน app-*.js -->
-<link rel="stylesheet" href="notify.css?v=20261013-t133">
-<script src="notify.js?v=20261013-t133"></script>
+<link rel="stylesheet" href="notify.css?v=20261013-t134">
+<script src="notify.js?v=20261013-t134"></script>
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1) + 🔒 (Audit Fix H-13): Self-host html2canvas
      เดิม: orders.js ใช้ dynamic import ทุกครั้ง → ช้า + พังถ้า CDN ล่ม
@@ -1009,8 +1009,12 @@
       <div class="field"><label>ราคา (LAK)</label><input id="fPrice" type="number" min="0"></div>
       <div class="field">
         <label>BPM (ระหว่าง 150-165 — ค่าความเร็วจังหวะเพลง)</label>
-        <input id="fBpm" type="number" min="150" max="165" step="1" value="150" inputmode="numeric" pattern="[0-9]*">
-        <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">ค่าเริ่มต้น 150 — ใส่ได้ 150-165 เท่านั้น</div>
+        <div class="bpm-stepper">
+          <button type="button" class="bpm-step-btn" data-bpm-target="fBpm" data-bpm-delta="-1" aria-label="ลด BPM ลง 1" title="ลด BPM ลง 1">−</button>
+          <input id="fBpm" type="number" min="150" max="165" step="1" value="150" inputmode="numeric" pattern="[0-9]*" class="bpm-step-input" aria-label="ค่า BPM">
+          <button type="button" class="bpm-step-btn" data-bpm-target="fBpm" data-bpm-delta="1" aria-label="เพิ่ม BPM ขึ้น 1" title="เพิ่ม BPM ขึ้น 1">+</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">ค่าเริ่มต้น 150 — กด +/- หรือพิมพ์เองได้ ใส่ได้ 150-165 เท่านั้น</div>
       </div>
       <div class="field"><label>รายละเอียด</label><textarea id="fDesc"></textarea></div>
       <div class="field"><label>สถานะ</label><select id="fStatus"><option value="active">เผยแพร่ (active)</option><option value="hidden">ซ่อน (hidden)</option></select></div>
@@ -1503,8 +1507,12 @@
       <div class="field"><label>ราคาต่อเพลง (LAK — ใช้กับทุกเพลงในชุดนี้)</label><input id="bulkPrice" type="number" min="0"></div>
       <div class="field">
         <label>BPM สำหรับทุกเพลงในชุดนี้ (150-165 — ค่าเริ่มต้น 150)</label>
-        <input id="bulkBpm" type="number" min="150" max="165" step="1" value="150" inputmode="numeric" pattern="[0-9]*">
-        <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">ใช้กับทุกเพลงในชุดนี้ — ใส่ได้ 150-165 เท่านั้น (default 150)</div>
+        <div class="bpm-stepper">
+          <button type="button" class="bpm-step-btn" data-bpm-target="bulkBpm" data-bpm-delta="-1" aria-label="ลด BPM ลง 1" title="ลด BPM ลง 1">−</button>
+          <input id="bulkBpm" type="number" min="150" max="165" step="1" value="150" inputmode="numeric" pattern="[0-9]*" class="bpm-step-input" aria-label="ค่า BPM สำหรับทุกเพลง">
+          <button type="button" class="bpm-step-btn" data-bpm-target="bulkBpm" data-bpm-delta="1" aria-label="เพิ่ม BPM ขึ้น 1" title="เพิ่ม BPM ขึ้น 1">+</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">กด +/- หรือพิมพ์เองได้ — ใช้กับทุกเพลงในชุดนี้ (default 150, ใส่ได้ 150-165)</div>
       </div>
       <div class="field">
         <label>รูปปก (ใช้กับทุกเพลงในชุดนี้ — ไม่บังคับ)</label>
@@ -1748,7 +1756,7 @@
     <div class="toast-progress"></div>
   </div>
 
-  <script src="phone-input.js?v=20261013-t133" defer></script>
-  <script type="module" src="app-admin.js?v=20261013-t133"></script>
+  <script src="phone-input.js?v=20261013-t134" defer></script>
+  <script type="module" src="app-admin.js?v=20261013-t134"></script>
 </body>
 </html>

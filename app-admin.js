@@ -2458,6 +2458,46 @@ function renderBpmBadge(bpm) {
   return `<span class="bpm-badge ${cls}" title="BPM ${bpmInt}">🎵 ${bpmInt}</span>`;
 }
 
+// 🆕 (T134 2026-10-13): BPM Stepper — ปุ่ม +/- สำหรับ input BPM
+//   ผูก event กับทุกปุ่ม .bpm-step-btn ที่มี data-bpm-target + data-bpm-delta
+//   - กด +/- → ปรับค่า BPM ทีละ 1 ใน input ที่กำหนด
+//   - Clamp ค่าระหว่าง 150-165 (range ที่ยอมรับ)
+//   - ถ้าค่าเดิมเป็น NaN/ว่าง → ถือว่าเป็น 150 ก่อนปรับ
+//   - หลังปรับ → trigger 'input' event เพื่อให้ logic อื่นที่ฟัง input ทำงานต่อ
+//   ใช้กับทั้ง fBpm (single form) และ bulkBpm (bulk upload form)
+(function setupBpmStepper() {
+  const BPM_MIN = 150;
+  const BPM_MAX = 165;
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".bpm-step-btn");
+    if (!btn) return;
+    const targetId = btn.getAttribute("data-bpm-target");
+    const deltaRaw = Number(btn.getAttribute("data-bpm-delta"));
+    if (!targetId || !Number.isFinite(deltaRaw)) return;
+    const input = document.getElementById(targetId);
+    if (!input || input.tagName !== "INPUT") return;
+    e.preventDefault();
+    // อ่านค่าเดิม — ถ้าผิดใช้ 150 เป็น base
+    const currentRaw = Number(input.value);
+    const base = Number.isFinite(currentRaw) ? currentRaw : 150;
+    // ปรับค่า delta แล้ว clamp เข้า range 150-165
+    const next = Math.max(BPM_MIN, Math.min(BPM_MAX, base + deltaRaw));
+    input.value = String(Math.round(next));
+    // trigger event ให้ listener อื่น (เช่น validation) ทำงาน
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  // ตรวจ input ที่พิมพ์เอง → clamp ค่าเมื่อ blur (ถ้าค่าเกิน range ให้ตัดกลับ)
+  document.addEventListener("blur", (e) => {
+    const el = e.target;
+    if (!el || !el.classList || !el.classList.contains("bpm-step-input")) return;
+    const raw = Number(el.value);
+    if (!Number.isFinite(raw)) { el.value = "150"; return; }
+    const clamped = Math.max(BPM_MIN, Math.min(BPM_MAX, Math.round(raw)));
+    el.value = String(clamped);
+  }, true);
+})();
+
 function renderSongList(list) {
   currentSongListView = list;
   const wrap = document.getElementById("songList");
