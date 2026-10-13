@@ -6,10 +6,10 @@
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): noindex meta — กัน Google index หน้า admin -->
 <meta name="robots" content="noindex, nofollow">
 <title>Admin - Music Store</title>
-<link rel="stylesheet" href="style.css?v=20261012-launch">
+<link rel="stylesheet" href="style.css?v=20261013-t132">
 <!-- 🎨 (2026-10-11) ระบบแจ้งเตือนใหม่ (toast + dialog) — ต้องโหลดก่อน app-*.js -->
-<link rel="stylesheet" href="notify.css?v=20261012-launch">
-<script src="notify.js?v=20261012-launch"></script>
+<link rel="stylesheet" href="notify.css?v=20261013-t132">
+<script src="notify.js?v=20261013-t132"></script>
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1) + 🔒 (Audit Fix H-13): Self-host html2canvas
      เดิม: orders.js ใช้ dynamic import ทุกครั้ง → ช้า + พังถ้า CDN ล่ม
@@ -18,6 +18,21 @@
        กัน supply-chain risk: ถ้า CDN ถูกแฮ็ก หรือ package ถูก hijack → โค้ดรันในแอดมิน context
        ผลกระทบระบบเดิม: 0% — window.html2canvas ยังเหมือนเดิม, app-admin.js ใช้เหมือนเดิม -->
 <script src="/vendor/html2canvas.min.js" defer></script>
+
+<!-- 🆕 (T132 2026-10-13): Google Analytics 4 — Measurement ID G-JDW4KYSGN0
+     - anonymize_ip: ปกปิด IP ตาม PDPA/GDPR
+     - cookie_flags SameSite=None;Secure: ป้องกัน cross-site issue
+     - ใช้บนหน้า admin.html เพื่อรวบรวมสถิติการใช้งานของ admin (แยกจาก user) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-JDW4KYSGN0"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-JDW4KYSGN0', {
+    anonymize_ip: true,
+    cookie_flags: 'SameSite=None;Secure'
+  });
+</script>
 </head>
 <body>
 
@@ -1721,7 +1736,7 @@
     <div class="toast-progress"></div>
   </div>
 
-  <script src="phone-input.js?v=20261012-launch" defer></script>
-  <script type="module" src="app-admin.js?v=20261013-t131"></script>
+  <script src="phone-input.js?v=20261013-t132" defer></script>
+  <script type="module" src="app-admin.js?v=20261013-t132"></script>
 </body>
 </html>
