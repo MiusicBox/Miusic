@@ -13,7 +13,9 @@ import {
 import { initOrdersView } from "./orders.js?v=20261012-launch";
 import { resolveCurrentAdminRole, initAdminsView } from "./admin-roles.js?v=20261012-launch";
 import {
-  analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS
+  analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS,
+  // 🆕 (T136): import barSecondsFor + clampBpm สำหรับคำนวณ BAR_SECONDS ตาม BPM จริงของแต่ละเพลง
+  barSecondsFor, clampBpm
 } from "./song-analyzer.js?v=20261013-fullfile";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261012-launch";
@@ -3273,7 +3275,10 @@ async function runAnalysisOnFile(file) {
   const mySession = songUploadSession;
   renderPreviewData({ status: "analyzing" });
   try {
-    const result = await analyzeSongFile(file);
+    // 🆕 (T136): อ่าน BPM จาก fBpm input ส่งเข้า analyzeSongFile เพื่อคำนวณ BAR_SECONDS ตาม BPM จริง
+    const bpmInputEl = document.getElementById("fBpm");
+    const bpmVal = bpmInputEl ? clampBpm(Number(bpmInputEl.value)) : 150;
+    const result = await analyzeSongFile(file, undefined, bpmVal);
     if (mySession !== songUploadSession) return; // ฟอร์มถูกรีเซ็ต/ปิดไปแล้วระหว่างวิเคราะห์
     renderPreviewData(result);
     if (result.status === "needs_review") {
@@ -3296,7 +3301,13 @@ document.getElementById("recalcPreviewBtn").addEventListener("click", () => {
     (pendingPreviewData && pendingPreviewData.duration_sec) ||
     (existingSong && existingSong.preview_duration_sec) ||
     null;
-  const result = recalculateFromManualBar(barVal, durationSec);
+  const result = recalculateFromManualBar(barVal, durationSec, /* bpm */ (() => {
+    // 🆕 (T136): ส่ง BPM จาก fBpm input (หรือ existingSong.bpm) เข้า recalculateFromManualBar
+    const bpmInputEl = document.getElementById("fBpm");
+    if (bpmInputEl) return clampBpm(Number(bpmInputEl.value));
+    if (existingSong && existingSong.bpm) return clampBpm(Number(existingSong.bpm));
+    return 150;
+  })());
   renderPreviewData(result);
   showToast("คำนวณ Preview ใหม่จากเลขห้องที่กรอกแล้ว", "success");
 });
@@ -3319,7 +3330,13 @@ if (recalcManualRangeBtnEl) recalcManualRangeBtnEl.addEventListener("click", () 
     (pendingPreviewData && pendingPreviewData.duration_sec) ||
     (existingSong && existingSong.preview_duration_sec) ||
     null;
-  const result = manualPreviewWindow(startVal, endVal, durationSec);
+  const result = manualPreviewWindow(startVal, endVal, durationSec, /* bpm */ (() => {
+    // 🆕 (T136): ส่ง BPM จาก fBpm input (หรือ existingSong.bpm) เข้า manualPreviewWindow
+    const bpmInputEl = document.getElementById("fBpm");
+    if (bpmInputEl) return clampBpm(Number(bpmInputEl.value));
+    if (existingSong && existingSong.bpm) return clampBpm(Number(existingSong.bpm));
+    return 150;
+  })());
   renderPreviewData(result);
   showToast("ใช้ช่วง Preview ที่กำหนดเองแล้ว", "success");
 });
@@ -3337,8 +3354,19 @@ document.getElementById("reanalyzePreviewBtn").addEventListener("click", async (
   const mySession = songUploadSession;
   try {
     const result = pendingSongFile
-      ? await analyzeSongFile(pendingSongFile)
-      : await analyzeSongUrl(existingSong.file_url);
+      ? await analyzeSongFile(pendingSongFile, undefined, /* bpm */ (() => {
+        // 🆕 (T136): ส่ง BPM เข้า analyzeSongFile เพื่อใช้ BAR_SECONDS ตาม BPM จริง
+        const bpmInputEl = document.getElementById("fBpm");
+        if (bpmInputEl) return clampBpm(Number(bpmInputEl.value));
+        if (existingSong && existingSong.bpm) return clampBpm(Number(existingSong.bpm));
+        return 150;
+      })())
+      : await analyzeSongUrl(existingSong.file_url, undefined, /* bpm */ (() => {
+        const bpmInputEl = document.getElementById("fBpm");
+        if (bpmInputEl) return clampBpm(Number(bpmInputEl.value));
+        if (existingSong && existingSong.bpm) return clampBpm(Number(existingSong.bpm));
+        return 150;
+      })());
     if (mySession !== songUploadSession) return;
     renderPreviewData(result);
     showToast(result.status === "ok" ? "วิเคราะห์ใหม่สำเร็จ" : "วิเคราะห์ไม่พบช่วง Dance ที่มั่นใจพอ — กรอกเองได้", result.status === "ok" ? "success" : "error");
@@ -5123,7 +5151,11 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
       if (shouldAnalyzePreview) {
         document.getElementById("bulkStatusText").textContent = `กำลังวิเคราะห์เสียง ${i + 1}/${bulkFiles.length}: ${file.name}`;
         try {
-          const previewResult = await analyzeSongFile(file);
+          const previewResult = await analyzeSongFile(file, undefined, /* bpm */ (() => {
+            // 🆕 (T136): ส่ง BPM จาก bulkBpm input เข้า analyzeSongFile สำหรับ bulk upload
+            const bulkBpmEl = document.getElementById("bulkBpm");
+            return bulkBpmEl ? clampBpm(Number(bulkBpmEl.value)) : 150;
+          })());
           if (previewResult && previewResult.status === "ok") {
             songPayload.preview_status = previewResult.status;
             songPayload.dance_start_bar = previewResult.dance_start_bar ?? null;
@@ -6762,7 +6794,13 @@ document.getElementById("songDetailReanalyzeBtn").addEventListener("click", asyn
   btn.disabled = true; btn.textContent = "กำลังวิเคราะห์...";
   renderDetailPreviewData({ status: "analyzing" });
   try {
-    const result = await analyzeSongUrl(detailPopupSong.file_url);
+    const result = await analyzeSongUrl(detailPopupSong.file_url, undefined, /* bpm */ (() => {
+      // 🆕 (T136): ส่ง BPM ของเพลงใน popup เข้า analyzeSongUrl
+      if (detailPopupSong && detailPopupSong.bpm) return clampBpm(Number(detailPopupSong.bpm));
+      const bpmInputEl = document.getElementById("songDetailBpm");
+      if (bpmInputEl) return clampBpm(Number(bpmInputEl.value));
+      return 150;
+    })());
     renderDetailPreviewData(result);
     showToast(result.status === "ok" ? "วิเคราะห์ใหม่สำเร็จ" : "วิเคราะห์ไม่พบช่วง Dance ที่มั่นใจพอ — กรอกเองได้", result.status === "ok" ? "success" : "error");
   } catch (err) {
@@ -6785,7 +6823,11 @@ document.getElementById("songDetailRecalcBtn").addEventListener("click", () => {
     (detailPendingPreviewData && detailPendingPreviewData.duration_sec) ||
     (existingSong && existingSong.preview_duration_sec) ||
     null;
-  const result = recalculateFromManualBar(barVal, durationSec);
+  const result = recalculateFromManualBar(barVal, durationSec, /* bpm */ (() => {
+    // 🆕 (T136): ใช้ BPM ของเพลงใน popup ถ้ามี ไม่งั้น default 150
+    if (detailPopupSong && detailPopupSong.bpm) return clampBpm(Number(detailPopupSong.bpm));
+    return 150;
+  })());
   renderDetailPreviewData(result);
   showToast("คำนวณ Preview ใหม่จากเลขห้องที่กรอกแล้ว — กด \"บันทึก Preview\" เพื่อใช้", "success");
 });
@@ -6803,7 +6845,13 @@ document.getElementById("songDetailManualBtn").addEventListener("click", () => {
     (detailPendingPreviewData && detailPendingPreviewData.duration_sec) ||
     (existingSong && existingSong.preview_duration_sec) ||
     null;
-  const result = manualPreviewWindow(startVal, endVal, durationSec);
+  const result = manualPreviewWindow(startVal, endVal, durationSec, /* bpm */ (() => {
+    // 🆕 (T136): ส่ง BPM ของเพลงใน popup เข้า manualPreviewWindow
+    if (detailPopupSong && detailPopupSong.bpm) return clampBpm(Number(detailPopupSong.bpm));
+    const bpmInputEl = document.getElementById("songDetailBpm");
+    if (bpmInputEl) return clampBpm(Number(bpmInputEl.value));
+    return 150;
+  })());
   renderDetailPreviewData(result);
   showToast("ใช้ช่วง Preview ที่กำหนดเองแล้ว — กด \"บันทึก Preview\" เพื่อใช้", "success");
 });
