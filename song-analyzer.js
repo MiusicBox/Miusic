@@ -42,29 +42,64 @@ export const BPM = 150;
 export const BEATS_PER_BAR = 4;
 export const BAR_SECONDS = (60 / BPM) * BEATS_PER_BAR; // = 1.6 วินาทีต่อห้อง (คงที่ทั้งระบบ)
 
+// 🆕 (T136 2026-10-13): barSecondsFor(bpm) — คำนวณ BAR_SECONDS ตาม BPM จริงของแต่ละเพลง
+//   สูตร: 4 × (60 / BPM) = 240 / BPM วินาทีต่อห้อง
+//   ตาราง ms/beat ที่ระบบใช้ (ตรงกับแอป DJ 100%):
+//     BPM 150 → 400.00 ms/beat → BAR_SECONDS 1.60000
+//     BPM 155 → 387.10 ms/beat → BAR_SECONDS 1.54839
+//     BPM 160 → 375.00 ms/beat → BAR_SECONDS 1.50000
+//     BPM 165 → 363.64 ms/beat → BAR_SECONDS 1.45455
+//   ถ้า bpm ผิด/ว่าง/เกิน range → fallback 150 (BAR_SECONDS = 1.6)
+export function barSecondsFor(bpm) {
+  const raw = Number(bpm);
+  if (!Number.isFinite(raw) || raw < 30 || raw > 300) return BAR_SECONDS; // default 1.6
+  return (60 / raw) * BEATS_PER_BAR;
+}
+
+// 🆕 (T136): clampBpm(bpm) — clamp ค่า BPM เข้า range 150-165 (ตามสเปกระบบ)
+//   ถ้า bpm ผิด → 150
+//   ถ้า < 150 → 150
+//   ถ้า > 165 → 165
+export function clampBpm(bpm) {
+  const raw = Number(bpm);
+  if (!Number.isFinite(raw) || raw < 150) return 150;
+  if (raw > 165) return 165;
+  return Math.round(raw);
+}
+
 export const DANCE_BARS = 24;                // ความยาวช่วงที่ใช้ "ค้นหา" Dance Section (อัลกอริทึมตรวจจับ — ไม่เปลี่ยน)
 export const PREVIEW_START_BAR = 5;          // Preview ทุกเพลงเริ่มที่ห้องที่ 6 (index 5) เสมอ ตามกติกาล่าสุด
 export const DANCE_STOP_OFFSET_BARS = 16;    // 🔧 (T135) เล่นต่อเนื่องไปจนจบห้องที่ 16 ของท่อนแดนแรก (Dance Start Bar + 16) แล้วหยุด (เดิม +8)
 export const DANCE_SEARCH_RANGE_RATIO = 0.5; // จำกัดขอบเขตค้นหา Dance ไว้แค่ "ครึ่งแรกของเพลง" เพื่อจับท่อนแดนแรกเสมอ
 
 // ---------------- แปลงห้อง <-> วินาที ----------------
-export function barToSec(bar) { return bar * BAR_SECONDS; }
-export function secToBar(sec) { return sec / BAR_SECONDS; }
+// 🆕 (T136): รับ optional bpm parameter — ถ้าไม่ส่ง ใช้ default 150 (BAR_SECONDS = 1.6)
+//   ถ้าส่ง bpm เข้ามา จะใช้ barSecondsFor(bpm) แทน BAR_SECONDS คงที่
+export function barToSec(bar, bpm) {
+  const bs = (bpm != null) ? barSecondsFor(bpm) : BAR_SECONDS;
+  return bar * bs;
+}
+export function secToBar(sec, bpm) {
+  const bs = (bpm != null) ? barSecondsFor(bpm) : BAR_SECONDS;
+  return sec / bs;
+}
 
 // จาก "ห้องเริ่ม Dance" คำนวณช่วง Preview ตามกติกาใหม่:
 //   เริ่มที่ห้องที่ 6 (index 5) → หยุดที่จบห้องที่ 16 ของท่อนแดนแรก (danceStartBar + 16)  [T135]
 // คลิปตามความยาวเพลงจริงเสมอ (กันค่าเกินความยาวเพลง)
-export function computePreviewWindow(danceStartBar, songDurationSec, gridOffsetSec = 0) {
+// 🆕 (T136): รับ optional bpm parameter — ใช้คำนวณ BAR_SECONDS ตาม BPM จริงของเพลง
+//   ถ้าไม่ส่ง bpm → ใช้ default 150 (BAR_SECONDS = 1.6) — backward compatible
+export function computePreviewWindow(danceStartBar, songDurationSec, gridOffsetSec = 0, bpm = null) {
   // 🆕 (T132): gridOffsetSec = เวลาที่ "ห้อง 0" เริ่มจริงในไฟล์ (เพลงที่มีช่วงเงียบ/lead-in ก่อนจังหวะแรก)
   //   ค่าเริ่มต้น 0 → ทำงานเหมือนเดิมทุกประการ
   const off = Number(gridOffsetSec) || 0;
   const rawStartBar = PREVIEW_START_BAR; // = 5 เสมอ ทุกเพลง (ห้องที่ 6)
   // จบห้องที่ 16 ของช่วง Dance (T135: เดิมห้องที่ 8) — กันเคสขอบ (Dance ถูกจับได้เร็วมากจนน้อยกว่าห้องเริ่ม Preview)
   const rawEndBar = Math.max(rawStartBar + 1, danceStartBar + DANCE_STOP_OFFSET_BARS);
-  const startSec = off + barToSec(rawStartBar);
+  const startSec = off + barToSec(rawStartBar, bpm);
   const endSec = Math.min(
     songDurationSec != null ? songDurationSec : Infinity,
-    off + barToSec(rawEndBar)
+    off + barToSec(rawEndBar, bpm)
   );
   return {
     dance_start_bar: danceStartBar,
@@ -78,14 +113,15 @@ export function computePreviewWindow(danceStartBar, songDurationSec, gridOffsetS
 // ---------------- กำหนดห้องเริ่ม/หยุดของ Preview เองแบบอิสระ (ใหม่) ----------------
 // ไม่อิงสูตร Dance ด้านบนเลย — แอดมินระบุ "ห้องเริ่มเล่น" และ "ห้องหยุดเล่น" เองได้ตามต้องการ
 // ใช้เมื่อกติกาอัตโนมัติ (เริ่มห้อง 1 → หยุดห้อง Dance+8) ไม่ตรงกับที่ต้องการสำหรับเพลงนั้นๆ
-export function manualPreviewWindow(startBar, endBar, songDurationSec) {
+// 🆕 (T136): รับ optional bpm parameter — ใช้คำนวณ BAR_SECONDS ตาม BPM จริงของเพลง
+export function manualPreviewWindow(startBar, endBar, songDurationSec, bpm = null) {
   const sBar = Math.max(0, Math.floor(Number(startBar) || 0));
   const eBarRaw = Math.floor(Number(endBar) || 0);
   const eBar = Math.max(sBar + 1, eBarRaw); // ห้องหยุดต้องอยู่หลังห้องเริ่มเสมอ อย่างน้อย 1 ห้อง
-  const startSec = barToSec(sBar);
+  const startSec = barToSec(sBar, bpm);
   const endSec = Math.min(
     songDurationSec != null ? songDurationSec : Infinity,
-    barToSec(eBar)
+    barToSec(eBar, bpm)
   );
   return {
     status: "ok",
@@ -205,8 +241,11 @@ function analyzeFrames(channelData, sampleRate) {
 }
 
 // รวมเฟรมเป็นค่าเฉลี่ยรายห้อง (บาร์ละ 1.6 วิ) + นับ Onset ต่อห้อง
-function aggregateIntoBars(frames, songDurationSec, gridOffsetSec = 0) {
-  const totalBars = Math.max(1, Math.ceil((songDurationSec - gridOffsetSec) / BAR_SECONDS));
+// 🆕 (T136): รับ optional bpm parameter — ใช้ barSecondsFor(bpm) แทน BAR_SECONDS คงที่
+//   ทำให้แต่ละเพลงมีความยาวห้องต่างกันตาม BPM จริง (150 = 1.6s, 165 = 1.4545s, ฯลฯ)
+function aggregateIntoBars(frames, songDurationSec, gridOffsetSec = 0, bpm = null) {
+  const bs = (bpm != null) ? barSecondsFor(bpm) : BAR_SECONDS;
+  const totalBars = Math.max(1, Math.ceil((songDurationSec - gridOffsetSec) / bs));
   const bars = Array.from({ length: totalBars }, () => ({ rmsSum: 0, fluxSum: 0, lowSum: 0, count: 0, onsetCount: 0 }));
 
   const sortedFlux = frames.map(f => f.flux).slice().sort((a, b) => a - b);
@@ -216,7 +255,7 @@ function aggregateIntoBars(frames, songDurationSec, gridOffsetSec = 0) {
   frames.forEach(f => {
     const rel = f.timeSec - gridOffsetSec;
     if (rel < 0) return; // ก่อนห้องแรกของ grid
-    const barIdx = Math.min(totalBars - 1, Math.floor(rel / BAR_SECONDS));
+    const barIdx = Math.min(totalBars - 1, Math.floor(rel / bs));
     const bar = bars[barIdx];
     bar.lowSum += f.low || 0;
     bar.rmsSum += f.rms;
@@ -361,7 +400,7 @@ function maxAnalyzeBytesFor(nameOrUrl, mimeType) {
 // ==================== ฟังก์ชันหลักที่ไฟล์อื่นเรียกใช้ ====================
 
 // วิเคราะห์จากไฟล์ที่แอดมินเพิ่งเลือก (File object) — เรียกก่อนอัปโหลดขึ้น Cloudinary ก็ได้ ไม่ต้องรอ
-export async function analyzeSongFile(file, onProgress) {
+export async function analyzeSongFile(file, onProgress, bpm = null) {
   // 🔒 (Audit Fix H-15 → T137): เดิมตัดไฟล์ที่ 5MB (ได้แค่ต้นเพลง) ตอนนี้อ่านครบทั้งเพลงตามเพดานใน maxAnalyzeBytesFor แล้วลดความถี่ตอน decode แทน
   const MAX_ANALYZE_BYTES = maxAnalyzeBytesFor(file.name, file.type);
   let arrayBuffer;
@@ -371,11 +410,12 @@ export async function analyzeSongFile(file, onProgress) {
   } else {
     arrayBuffer = await file.arrayBuffer();
   }
-  return analyzeArrayBuffer(arrayBuffer, onProgress);
+  return analyzeArrayBuffer(arrayBuffer, onProgress, bpm);
 }
 
 // วิเคราะห์จาก URL ที่อัปโหลดไปแล้ว (ใช้ตอนกด "วิเคราะห์ใหม่ทั้งหมด" หรือใน backfill script)
-export async function analyzeSongUrl(url, onProgress) {
+// 🆕 (T136): รับ optional bpm parameter — ใช้ BPM จริงของเพลงในการคำนวณ BAR_SECONDS
+export async function analyzeSongUrl(url, onProgress, bpm = null) {
   // 🔧 (T134 2026-10-13): แก้ "Load failed" — เดิม fetch ตรงจาก R2 public URL (pub-xxx.r2.dev) ซึ่งคนละ origin กับหน้าแอดมิน
   //   Safari บล็อกเพราะ bucket ไม่ได้ตั้ง CORS (และ header Range ทำให้เกิด preflight ที่ถูกปฏิเสธ) → fetch ล้มทั้งสองรอบ
   //   ใหม่: ไฟล์คนละ origin → ดึงผ่าน proxy ของระบบเอง /api/file/<key> (same-origin, ใช้ session แอดมิน, ไม่โดน CORS)
@@ -402,7 +442,7 @@ export async function analyzeSongUrl(url, onProgress) {
   if (!arrayBuffer) {
     throw new Error("ดึงไฟล์เพลงมาวิเคราะห์ไม่ได้ (" + errors.join(" | ") + ")");
   }
-  return analyzeArrayBuffer(arrayBuffer, onProgress);
+  return analyzeArrayBuffer(arrayBuffer, onProgress, bpm);
 }
 
 // อ่าน body ไม่เกิน maxBytes แล้วหยุด (ตัดการดาวน์โหลดที่เหลือทิ้ง)
@@ -494,13 +534,13 @@ export function parseWavToMono(arrayBuffer) {
   return { channelData: out, sampleRate: fmt.sampleRate / DECIM, durationSec: totalFrames / fmt.sampleRate };
 }
 
-async function analyzeArrayBuffer(arrayBuffer, onProgress) {
+async function analyzeArrayBuffer(arrayBuffer, onProgress, bpm = null) {
   // 🆕 (T133): WAV อ่านตรงๆ ก่อน (เร็ว/กินแรมน้อย/ไม่พังกับไฟล์ถูกตัด) — ถ้าอ่านไม่ได้ค่อยใช้ decodeAudioData
   try {
     const wav = parseWavToMono(arrayBuffer);
     if (wav && wav.durationSec > 1) {
       if (onProgress) onProgress(20);
-      return analyzeChannelData(wav.channelData, wav.sampleRate, wav.durationSec, onProgress);
+      return analyzeChannelData(wav.channelData, wav.sampleRate, wav.durationSec, onProgress, bpm);
     }
   } catch (wavErr) {
     console.warn("[T133] อ่าน WAV ตรงๆ ไม่สำเร็จ ใช้ decodeAudioData แทน:", wavErr?.message || wavErr);
@@ -525,17 +565,19 @@ async function analyzeArrayBuffer(arrayBuffer, onProgress) {
 
   if (onProgress) onProgress(20);
   const channelData = mixToMono(audioBuffer);
-  return analyzeChannelData(channelData, audioBuffer.sampleRate, audioBuffer.duration, onProgress);
+  return analyzeChannelData(channelData, audioBuffer.sampleRate, audioBuffer.duration, onProgress, bpm);
 }
 
 // 🆕 (T132): แยกส่วน DSP ออกมาเป็นฟังก์ชันที่ไม่พึ่ง Web Audio — ใช้ทดสอบอัตโนมัติได้
-export function analyzeChannelData(channelData, sampleRate, durationSec, onProgress) {
+// 🆕 (T136): รับ optional bpm parameter — ใช้ barSecondsFor(bpm) ใน aggregateIntoBars + computePreviewWindow
+export function analyzeChannelData(channelData, sampleRate, durationSec, onProgress, bpm = null) {
   if (onProgress) onProgress(45);
   const frames = analyzeFrames(channelData, sampleRate);
   if (onProgress) onProgress(70);
   // หมายเหตุ (T132): เคยทดลองหา beat-grid offset อัตโนมัติ แต่ "จังหวะที่ 1 ของห้อง" แยกจากเสียงอย่างเดียวไม่นิ่งพอ
-  //   (เพลงแดนกระเดื่องทุกจังหวะ) จึงไม่เปิดใช้ — ยึด grid เริ่มที่ 0 ตามสเปกระบบเดิม (BPM 150 คงที่)
-  const result = findDanceWindow(aggregateIntoBars(frames, durationSec, 0));
+  //   (เพลงแดนกระเดื่องทุกจังหวะ) จึงไม่เปิดใช้ — ยึด grid เริ่มที่ 0 ตามสเปกระบบเดิม
+  // 🆕 (T136): ส่ง bpm เข้า aggregateIntoBars + computePreviewWindow เพื่อใช้ BAR_SECONDS ตาม BPM จริงของเพลง
+  const result = findDanceWindow(aggregateIntoBars(frames, durationSec, 0, bpm));
   if (onProgress) onProgress(100);
 
   if (result.danceStartBar == null || !result.passesThreshold) {
@@ -552,19 +594,20 @@ export function analyzeChannelData(channelData, sampleRate, durationSec, onProgr
     status: "ok",
     confidence: Number(result.confidence.toFixed(3)),
     duration_sec: Number(durationSec.toFixed(3)),
-    ...computePreviewWindow(result.danceStartBar, durationSec)
+    ...computePreviewWindow(result.danceStartBar, durationSec, 0, bpm)
   };
 }
 
 // ---------------- ให้แอดมินแก้ Dance Start Bar เองแล้วกด "Recalculate" ----------------
 // ไม่ต้องวิเคราะห์เสียงใหม่ทั้งเพลง แค่คำนวณช่วง Preview ใหม่จากเลขห้องที่แอดมินกรอกเอง — เร็วทันที
 // (ใช้สูตรใหม่เหมือนกัน: เริ่มห้อง 1 เสมอ → หยุดห้อง Dance+8)
-export function recalculateFromManualBar(danceStartBar, durationSec) {
+// 🆕 (T136): รับ optional bpm parameter — ใช้ BAR_SECONDS ตาม BPM จริงของเพลง
+export function recalculateFromManualBar(danceStartBar, durationSec, bpm = null) {
   const bar = Math.max(0, Math.floor(Number(danceStartBar) || 0));
   return {
     status: "ok",
     confidence: null, // ค่ามือ ไม่ใช่ผลจาก AI จึงไม่มี confidence score
     duration_sec: durationSec != null ? Number(durationSec.toFixed(3)) : null,
-    ...computePreviewWindow(bar, durationSec)
+    ...computePreviewWindow(bar, durationSec, 0, bpm)
   };
 }
