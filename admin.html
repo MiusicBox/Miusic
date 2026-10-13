@@ -6,10 +6,10 @@
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): noindex meta — กัน Google index หน้า admin -->
 <meta name="robots" content="noindex, nofollow">
 <title>Admin - Music Store</title>
-<link rel="stylesheet" href="style.css?v=20261013-t138">
+<link rel="stylesheet" href="style.css?v=20261013-t139">
 <!-- 🎨 (2026-10-11) ระบบแจ้งเตือนใหม่ (toast + dialog) — ต้องโหลดก่อน app-*.js -->
-<link rel="stylesheet" href="notify.css?v=20261013-t138">
-<script src="notify.js?v=20261013-t138"></script>
+<link rel="stylesheet" href="notify.css?v=20261013-t139">
+<script src="notify.js?v=20261013-t139"></script>
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1) + 🔒 (Audit Fix H-13): Self-host html2canvas
      เดิม: orders.js ใช้ dynamic import ทุกครั้ง → ช้า + พังถ้า CDN ล่ม
@@ -224,6 +224,8 @@
           <button class="btn" id="songBulkAssignBtn" style="padding:8px 14px;font-size:13px;" disabled>📌 จัดหมวดหมู่</button>
           <!-- 🆕 (T133 2026-10-13): ปุ่มตั้ง BPM ให้เพลงหลายเพลงที่เลือกพร้อมกัน (range 150-165) -->
           <button class="btn" id="songBulkBpmBtn" style="padding:8px 14px;font-size:13px;" disabled>🎵 ตั้ง BPM</button>
+          <!-- 🆕 (T139 2026-10-13): ปุ่มตั้ง Music Key ให้เพลงหลายเพลงที่เลือกพร้อมกัน (Camelot 1A-12B) -->
+          <button class="btn" id="songBulkMusicKeyBtn" style="padding:8px 14px;font-size:13px;" disabled>🎹 ตั้ง Key</button>
           <button class="btn danger" id="songBulkDeleteBtn" style="padding:8px 14px;font-size:13px;" disabled>ลบที่เลือก</button>
         </div>
       </div>
@@ -1016,6 +1018,37 @@
         </div>
         <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">ค่าเริ่มต้น 150 — กด +/- หรือพิมพ์เองได้ ใส่ได้ 150-165 เท่านั้น</div>
       </div>
+      <div class="field">
+        <label>Music Key (Camelot wheel — สำหรับ DJs harmonic mix)</label>
+        <select id="fMusicKey" aria-label="เลือก Music Key">
+          <option value="">— ไม่ระบุ —</option>
+          <option value="1A">1A (Ab minor)</option>
+          <option value="2A">2A (Eb minor)</option>
+          <option value="3A">3A (Bb minor)</option>
+          <option value="4A">4A (F minor)</option>
+          <option value="5A">5A (C minor)</option>
+          <option value="6A">6A (G minor)</option>
+          <option value="7A">7A (D minor)</option>
+          <option value="8A">8A (A minor)</option>
+          <option value="9A">9A (E minor)</option>
+          <option value="10A">10A (B minor)</option>
+          <option value="11A">11A (F# minor)</option>
+          <option value="12A">12A (C# minor)</option>
+          <option value="1B">1B (B major)</option>
+          <option value="2B">2B (F# major)</option>
+          <option value="3B">3B (C# major)</option>
+          <option value="4B">4B (G# major)</option>
+          <option value="5B">5B (D# major)</option>
+          <option value="6B">6B (A# major)</option>
+          <option value="7B">7B (F major)</option>
+          <option value="8B">8B (C major)</option>
+          <option value="9B">9B (G major)</option>
+          <option value="10B">10B (D major)</option>
+          <option value="11B">11B (A major)</option>
+          <option value="12B">12B (E major)</option>
+        </select>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">อ่านจากแอป DJ — A = minor (เศร้า) / B = major (สดใส)</div>
+      </div>
       <div class="field"><label>รายละเอียด</label><textarea id="fDesc"></textarea></div>
       <div class="field"><label>สถานะ</label><select id="fStatus"><option value="active">เผยแพร่ (active)</option><option value="hidden">ซ่อน (hidden)</option></select></div>
       <button class="btn" id="songSaveBtn">บันทึกเพลง</button>
@@ -1446,6 +1479,31 @@
         <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">ค่าเริ่มต้น 150 — กด +/- หรือพิมพ์เองได้ ใส่ได้ 150-165 เท่านั้น</div>
         <button type="button" id="songDetailSaveBpmBtn" class="btn" style="width:100%;font-size:13px;padding:10px;">💾 บันทึก BPM ลงเพลงนี้</button>
       </div>
+
+      <!-- ===== 🆕 (T139 2026-10-13): Music Key Section — ตั้ง Camelot Key ได้จาก popup เลย ===== -->
+      <div id="songDetailMusicKeyEditor" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <span style="font-size:13px;font-weight:700;">🎹 Music Key (Camelot — DJs harmonic mix)</span>
+          <span id="songDetailMusicKeyBadge"></span>
+        </div>
+        <select id="songDetailMusicKey" aria-label="เลือก Music Key" style="width:100%;padding:10px 12px;font-size:14px;background:rgba(255,255,255,0.04);border:1px solid var(--border,rgba(255,255,255,0.15));border-radius:8px;color:var(--text);margin-bottom:8px;">
+          <option value="">— ไม่ระบุ —</option>
+          <option value="1A">1A (Ab minor)</option><option value="2A">2A (Eb minor)</option>
+          <option value="3A">3A (Bb minor)</option><option value="4A">4A (F minor)</option>
+          <option value="5A">5A (C minor)</option><option value="6A">6A (G minor)</option>
+          <option value="7A">7A (D minor)</option><option value="8A">8A (A minor)</option>
+          <option value="9A">9A (E minor)</option><option value="10A">10A (B minor)</option>
+          <option value="11A">11A (F# minor)</option><option value="12A">12A (C# minor)</option>
+          <option value="1B">1B (B major)</option><option value="2B">2B (F# major)</option>
+          <option value="3B">3B (C# major)</option><option value="4B">4B (G# major)</option>
+          <option value="5B">5B (D# major)</option><option value="6B">6B (A# major)</option>
+          <option value="7B">7B (F major)</option><option value="8B">8B (C major)</option>
+          <option value="9B">9B (G major)</option><option value="10B">10B (D major)</option>
+          <option value="11B">11B (A major)</option><option value="12B">12B (E major)</option>
+        </select>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">อ่านจากแอป DJ — A = minor / B = major — เว้นว่างได้ถ้าไม่ระบุ</div>
+        <button type="button" id="songDetailSaveMusicKeyBtn" class="btn" style="width:100%;font-size:13px;padding:10px;">💾 บันทึก Key ลงเพลงนี้</button>
+      </div>
     </div>
   </div>
 
@@ -1528,6 +1586,25 @@
           <button type="button" class="bpm-step-btn" data-bpm-target="bulkBpm" data-bpm-delta="1" aria-label="เพิ่ม BPM ขึ้น 1" title="เพิ่ม BPM ขึ้น 1">+</button>
         </div>
         <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">กด +/- หรือพิมพ์เองได้ — ใช้กับทุกเพลงในชุดนี้ (default 150, ใส่ได้ 150-165)</div>
+      </div>
+      <div class="field">
+        <label>Music Key สำหรับทุกเพลงในชุดนี้ (Camelot — ไม่บังคับ)</label>
+        <select id="bulkMusicKey" aria-label="เลือก Music Key สำหรับทุกเพลง">
+          <option value="">— ไม่ระบุ —</option>
+          <option value="1A">1A (Ab minor)</option><option value="2A">2A (Eb minor)</option>
+          <option value="3A">3A (Bb minor)</option><option value="4A">4A (F minor)</option>
+          <option value="5A">5A (C minor)</option><option value="6A">6A (G minor)</option>
+          <option value="7A">7A (D minor)</option><option value="8A">8A (A minor)</option>
+          <option value="9A">9A (E minor)</option><option value="10A">10A (B minor)</option>
+          <option value="11A">11A (F# minor)</option><option value="12A">12A (C# minor)</option>
+          <option value="1B">1B (B major)</option><option value="2B">2B (F# major)</option>
+          <option value="3B">3B (C# major)</option><option value="4B">4B (G# major)</option>
+          <option value="5B">5B (D# major)</option><option value="6B">6B (A# major)</option>
+          <option value="7B">7B (F major)</option><option value="8B">8B (C major)</option>
+          <option value="9B">9B (G major)</option><option value="10B">10B (D major)</option>
+          <option value="11B">11B (A major)</option><option value="12B">12B (E major)</option>
+        </select>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">อ่านจากแอป DJ — ใช้กับทุกเพลงในชุดนี้ (ถ้าตั้งเป็นค่าเดียวกันทั้งหมด)</div>
       </div>
       <div class="field">
         <label>รูปปก (ใช้กับทุกเพลงในชุดนี้ — ไม่บังคับ)</label>
@@ -1771,7 +1848,7 @@
     <div class="toast-progress"></div>
   </div>
 
-  <script src="phone-input.js?v=20261013-t138" defer></script>
-  <script type="module" src="app-admin.js?v=20261013-t138"></script>
+  <script src="phone-input.js?v=20261013-t139" defer></script>
+  <script type="module" src="app-admin.js?v=20261013-t139"></script>
 </body>
 </html>

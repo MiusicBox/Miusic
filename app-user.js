@@ -2132,6 +2132,16 @@ function renderSongGrid() {
                 else if (bpmInt >= 155) cls = "bpm-155";
                 return `<span class="bpm-badge ${cls}" title="BPM ${bpmInt}"><span class="bpm-dot"></span><span class="bpm-num">${bpmInt}</span><span class="bpm-unit">BPM</span></span>`;
               })()}
+              ${(() => {
+                // 🆕 (T139 2026-10-13): เพิ่ม Music Key badge ใน user song grid — ใช้โครงสร้างเดียวกับ admin
+                //   ถ้าไม่มี key หรือ format ผิด → ไม่แสดง badge
+                const k = String(s.music_key || "").trim().toUpperCase();
+                const m = k.match(/^([1-9]|1[0-2])([AB])$/);
+                if (!m) return "";
+                const letter = m[2];
+                const mkCls = letter === "A" ? "mk-minor" : "mk-major";
+                return `<span class="music-key-badge ${mkCls}" title="Key ${k}"><span class="mk-symbol">🎹</span><span class="mk-key">${escapeHtml(k)}</span><span class="mk-label">Key</span></span>`;
+              })()}
             </div>
             <div class="song-footer">
               <div class="song-price-block">
@@ -2516,6 +2526,15 @@ function renderPlaylists() {
                       if (bpmInt >= 160) cls = "bpm-160";
                       else if (bpmInt >= 155) cls = "bpm-155";
                       return `<span class="bpm-badge ${cls}" title="BPM ${bpmInt}"><span class="bpm-dot"></span><span class="bpm-num">${bpmInt}</span><span class="bpm-unit">BPM</span></span>`;
+                    })()}
+                    ${(() => {
+                      // 🆕 (T139 2026-10-13): เพิ่ม Music Key badge ใน playlist song row — ใช้โครงสร้างเดียวกับ song grid
+                      const k = String(s.music_key || "").trim().toUpperCase();
+                      const m = k.match(/^([1-9]|1[0-2])([AB])$/);
+                      if (!m) return "";
+                      const letter = m[2];
+                      const mkCls = letter === "A" ? "mk-minor" : "mk-major";
+                      return `<span class="music-key-badge ${mkCls}" title="Key ${k}"><span class="mk-symbol">🎹</span><span class="mk-key">${escapeHtml(k)}</span><span class="mk-label">Key</span></span>`;
                     })()}
                   </div>
                   <div class="song-footer">
@@ -3185,6 +3204,16 @@ function openSongModal(songId) {
       if (bpmInt >= 160) cls = "bpm-160";
       else if (bpmInt >= 155) cls = "bpm-155";
       badges.push(`<span class="bpm-badge ${cls}" title="BPM ${bpmInt}"><span class="bpm-dot"></span><span class="bpm-num">${bpmInt}</span><span class="bpm-unit">BPM</span></span>`);
+    }
+    // 🆕 (T139 2026-10-13): เพิ่ม Music Key badge ใน user song modal — เหมือนกับ song grid + playlist
+    {
+      const k = String(song.music_key || "").trim().toUpperCase();
+      const m = k.match(/^([1-9]|1[0-2])([AB])$/);
+      if (m) {
+        const letter = m[2];
+        const mkCls = letter === "A" ? "mk-minor" : "mk-major";
+        badges.push(`<span class="music-key-badge ${mkCls}" title="Key ${k}"><span class="mk-symbol">🎹</span><span class="mk-key">${escapeHtml(k)}</span><span class="mk-label">Key</span></span>`);
+      }
     }
     badgesEl.innerHTML = badges.join("");
   }
