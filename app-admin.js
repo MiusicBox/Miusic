@@ -2490,6 +2490,50 @@ function isValidMusicKey(key) {
   return /^([1-9]|1[0-2])[AB]$/.test(k);
 }
 
+// 🆕 (T140 2026-10-13): MUSIC_KEY_COLORS — 24 สี Camelot wheel (brightened versions for readability)
+//   ใช้สำหรับ: option inline style (HTML) + select.color (JS dynamic)
+//   A (minor) ใช้สีสว่างขึ้นเพื่อให้อ่านง่ายบน dark background
+const MUSIC_KEY_COLORS = {
+  "1A": "#94A3B8", "1B": "#A0AEC0",
+  "2A": "#818CF8", "2B": "#A5B4FC",
+  "3A": "#60A5FA", "3B": "#93C5FD",
+  "4A": "#22D3EE", "4B": "#67E8F9",
+  "5A": "#2DD4BF", "5B": "#5EEAD4",
+  "6A": "#4ADE80", "6B": "#86EFAC",
+  "7A": "#A3E635", "7B": "#BEF264",
+  "8A": "#FACC15", "8B": "#FDE047",
+  "9A": "#FBBF24", "9B": "#FCD34D",
+  "10A": "#FB923C", "10B": "#FDBA74",
+  "11A": "#F87171", "11B": "#FCA5A5",
+  "12A": "#F472B6", "12B": "#F9A8D4"
+};
+
+// 🆕 (T140): applyMusicKeySelectColor(selectId) — ปรับสี text ของ select ตามค่าที่เลือก
+//   - ถ้าเลือก "8B" → select text เป็นสีเหลือง (#FDE047)
+//   - ถ้าเลือก "—" (ไม่ระบุ) → ใช้สี default ของ theme
+//   - ผูก change event อัตโนมัติ + apply ครั้งแรกทันที
+//   ใช้กับ: fMusicKey, bulkMusicKey, songDetailMusicKey
+function applyMusicKeySelectColor(selectId) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+  const apply = () => {
+    const val = String(select.value || "").trim().toUpperCase();
+    if (val && MUSIC_KEY_COLORS[val]) {
+      select.style.color = MUSIC_KEY_COLORS[val];
+      select.style.fontWeight = "700";
+    } else {
+      select.style.color = "";
+      select.style.fontWeight = "";
+    }
+  };
+  select.addEventListener("change", apply);
+  // ถ้ามี value อยู่แล้ว (เช่น โหลดจาก existing song) — apply ทันที
+  // ใช้ setTimeout เพื่อให้แน่ใจว่า DOM พร้อม
+  setTimeout(apply, 0);
+}
+// 🆕 (T140): apply ให้ทุก music key selects ตอน page load
+["fMusicKey", "bulkMusicKey", "songDetailMusicKey"].forEach(applyMusicKeySelectColor);
+
 // 🆕 (T134 2026-10-13): BPM Stepper — ปุ่ม +/- สำหรับ input BPM
 //   ผูก event กับทุกปุ่ม .bpm-step-btn ที่มี data-bpm-target + data-bpm-delta
 //   - กด +/- → ปรับค่า BPM ทีละ 1 ใน input ที่กำหนด
@@ -3289,6 +3333,8 @@ function openEditSong(id) {
   if (fMusicKeyEditEl) {
     const rawKey = String(s.music_key || "").trim().toUpperCase();
     fMusicKeyEditEl.value = isValidMusicKey(rawKey) ? rawKey : "";
+    // 🆕 (T140): apply color ใหม่หลัง set value (เพราะ change event ไม่ได้ trigger ตอนโปรแกรมตั้งค่า)
+    applyMusicKeySelectColor("fMusicKey");
   }
   document.getElementById("fStatus").value = s.status || "active";
   const dj = CACHE.djs.find(d => d.dj_name === s.dj_name);
@@ -6560,6 +6606,8 @@ function openSongDetailPopup(songId) {
   if (musicKeySelect) {
     const rawKey = String(s.music_key || "").trim().toUpperCase();
     musicKeySelect.value = isValidMusicKey(rawKey) ? rawKey : "";
+    // 🆕 (T140): apply color ใหม่หลัง set value (sync สีของ select กับค่าที่เลือก)
+    applyMusicKeySelectColor("songDetailMusicKey");
   }
   if (musicKeyBadge) {
     musicKeyBadge.innerHTML = renderMusicKeyBadge(s.music_key);
