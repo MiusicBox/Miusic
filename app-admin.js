@@ -14,7 +14,7 @@ import { initOrdersView } from "./orders.js?v=20261012-launch";
 import { resolveCurrentAdminRole, initAdminsView } from "./admin-roles.js?v=20261012-launch";
 import {
   analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS
-} from "./song-analyzer.js?v=20261012-launch";
+} from "./song-analyzer.js?v=20261013-dance-fix";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261012-launch";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
