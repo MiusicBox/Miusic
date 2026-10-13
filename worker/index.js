@@ -1343,7 +1343,11 @@ const SONG_SLIM_FIELDS = new Set([
   "created_at",
   // 🆕 (T133 2026-10-13): bpm แสดงใน song card ทั้ง admin + user
   //   range: 150-165 (default 150 ถ้าไม่มี) — ใช้สำหรับ badge สีตามช่วง BPM
-  "bpm"
+  "bpm",
+  // 🆕 (T139 2026-10-13): music_key — Camelot wheel notation (1A-12A, 1B-12B)
+  //   ใช้สำหรับ DJs หาเพลง harmonic mix — ค่า string เช่น "8B", "5A"
+  //   default ว่าง ถ้าไม่มี (ไม่แสดง badge)
+  "music_key"
 ]);
 
 function slimSongForList(songData) {

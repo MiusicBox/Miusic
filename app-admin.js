@@ -2461,6 +2461,27 @@ function renderBpmBadge(bpm) {
   return `<span class="bpm-badge ${cls}" title="BPM ${bpmInt}"><span class="bpm-dot"></span><span class="bpm-num">${bpmInt}</span><span class="bpm-unit">BPM</span></span>`;
 }
 
+// 🆕 (T139 2026-10-13): renderMusicKeyBadge — แสดง Music Key (Camelot) เป็น badge
+//   Camelot notation: 1A-12A (minor), 1B-12B (major) — DJs ใช้หา harmonic mix
+//   ถ้าไม่มี key (ว่าง/ผิด format) → ไม่แสดง badge (คืน empty string)
+//   สี badge: A (minor) → indigo/violet / B (major) → amber/orange
+function renderMusicKeyBadge(musicKey) {
+  const k = String(musicKey || "").trim().toUpperCase();
+  // validate format: 1-12 ตามด้วย A หรือ B
+  const m = k.match(/^([1-9]|1[0-2])([AB])$/);
+  if (!m) return ""; // ไม่แสดง badge ถ้าไม่มี key
+  const letter = m[2]; // "A" หรือ "B"
+  const cls = letter === "A" ? "mk-minor" : "mk-major";
+  const label = letter === "A" ? "minor" : "major";
+  return `<span class="music-key-badge ${cls}" title="Key ${k} (${label})"><span class="mk-symbol">🎹</span><span class="mk-key">${escapeHtml(k)}</span><span class="mk-label">Key</span></span>`;
+}
+
+// 🆕 (T139): isValidMusicKey(key) — validate Camelot notation
+function isValidMusicKey(key) {
+  const k = String(key || "").trim().toUpperCase();
+  return /^([1-9]|1[0-2])[AB]$/.test(k);
+}
+
 // 🆕 (T134 2026-10-13): BPM Stepper — ปุ่ม +/- สำหรับ input BPM
 //   ผูก event กับทุกปุ่ม .bpm-step-btn ที่มี data-bpm-target + data-bpm-delta
 //   - กด +/- → ปรับค่า BPM ทีละ 1 ใน input ที่กำหนด
@@ -2513,7 +2534,7 @@ function renderSongList(list) {
       ${songSelectMode ? `<input type="checkbox" class="song-select-chk" data-id="${s.id}" ${selectedSongIds.has(s.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;">` : ""}
       <img src="${escapeHtml(s.cover_url || "")}" loading="lazy" alt="">
       <div class="info"><div class="n1">${escapeHtml(s.song_name)}</div>
-      <div class="n2">${escapeHtml(s.dj_name || "-")} · ${escapeHtml(s.category_name || "-")} · ${formatPrice(s.price)} <span class="bpm-badge-wrap">${renderBpmBadge(s.bpm)}</span></div>
+      <div class="n2">${escapeHtml(s.dj_name || "-")} · ${escapeHtml(s.category_name || "-")} · ${formatPrice(s.price)} <span class="bpm-badge-wrap">${renderBpmBadge(s.bpm)}${renderMusicKeyBadge(s.music_key)}</span></div>
       ${!s.full_file_url && !s.file_url ? `<div class="n2" style="color:var(--danger);">⚠️ ยังไม่มีไฟล์เต็ม (WAV) บน Cloud</div>` : ""}
       ${!s.full_file_url && s.file_url ? `<div class="n2" style="color:var(--text-dim);">🔗 ใช้ไฟล์ร่วม (file_url = full_file_url)</div>` : ""}</div>
       <div class="row-actions">
@@ -2742,6 +2763,9 @@ function updateSongBulkBar() {
   // 🆕 (T133 2026-10-13): ปุ่ม "ตั้ง BPM" ก็ disable เมื่อไม่มีเพลงเลือก
   const bulkBpmBtn = document.getElementById("songBulkBpmBtn");
   if (bulkBpmBtn) bulkBpmBtn.disabled = selectedSongIds.size === 0;
+  // 🆕 (T139 2026-10-13): ปุ่ม "ตั้ง Key" ก็ disable เมื่อไม่มีเพลงเลือก
+  const bulkMusicKeyBtn = document.getElementById("songBulkMusicKeyBtn");
+  if (bulkMusicKeyBtn) bulkMusicKeyBtn.disabled = selectedSongIds.size === 0;
   const allSelected = currentSongListView.length > 0 && currentSongListView.every(s => selectedSongIds.has(s.id));
   document.getElementById("songSelectAllChk").checked = allSelected;
 }
@@ -2818,6 +2842,78 @@ document.getElementById("songBulkBpmBtn").addEventListener("click", async () => 
     invalidateAdminCache("songs"); // บังคับโหลดใหม่ครั้งถัดไป (กัน cache drift)
   } catch (err) {
     showToast("ตั้ง BPM ไม่สำเร็จ: " + (err.message || String(err)), "error");
+  } finally {
+    btn.disabled = false; btn.textContent = origText;
+  }
+});
+// 🆕 (T139 2026-10-13): ปุ่ม "ตั้ง Music Key ให้เพลงที่เลือก" — เปิด prompt ให้แอดมินกรอก Camelot Key
+//   - validate format (1A-12A, 1B-12B)
+//   - ถ้าผิด format → แจ้ง error + return
+//   - ถ้าว่าง → ล้างค่า music_key (set เป็น "")
+//   - อัปเดต music_key ให้ทุกเพลงที่เลือกใน DB + cache
+document.getElementById("songBulkMusicKeyBtn").addEventListener("click", async () => {
+  const ids = Array.from(selectedSongIds);
+  if (ids.length === 0) return;
+  // หา music_key ปัจจุบันของเพลงที่เลือกตัวแรก (เพื่อ default ใน prompt)
+  const firstSong = CACHE.songs.find(x => x.id === ids[0]);
+  const currentKey = firstSong?.music_key ? String(firstSong.music_key).toUpperCase() : "";
+  const inputKey = window.prompt(
+    `🎹 ตั้ง Music Key (Camelot) สำหรับ ${ids.length} เพลงที่เลือก\n\nรูปแบบ: 1A-12A (minor) หรือ 1B-12B (major)\nเช่น 8B, 5A, 12A\n\nเว้นว่าง = ล้างค่า Key:`,
+    currentKey
+  );
+  if (inputKey === null || inputKey === undefined) return; // ผู้ใช้กด cancel
+  const trimmedKey = String(inputKey).trim().toUpperCase();
+  // ถ้าว่าง → ล้างค่า (set เป็น "")
+  if (trimmedKey === "") {
+    const btn = document.getElementById("songBulkMusicKeyBtn");
+    const origText = btn.textContent;
+    btn.disabled = true; btn.textContent = `กำลังล้าง Key...`;
+    try {
+      const updated_at = new Date().toISOString();
+      let successCount = 0, failCount = 0;
+      for (const id of ids) {
+        try {
+          await updateDoc(doc(db, "songs", id), { music_key: "", updated_at });
+          const cached = CACHE.songs.find(x => x.id === id);
+          if (cached) { cached.music_key = ""; cached.updated_at = updated_at; }
+          successCount++;
+        } catch (err) { console.error(`[bulk Key] ล้าง Key ล้มเหลวสำหรับ song ${id}:`, err?.message || err); failCount++; }
+      }
+      showToast(`✅ ล้าง Key ให้ ${successCount} เพลงเรียบร้อย${failCount ? ` (ล้มเหลว ${failCount})` : ""}`, failCount > 0 ? "error" : "success");
+      renderSongList(currentSongListView);
+      invalidateAdminCache("songs");
+    } catch (err) { showToast("ล้าง Key ไม่สำเร็จ: " + (err.message || String(err)), "error"); }
+    finally { btn.disabled = false; btn.textContent = origText; }
+    return;
+  }
+  // validate format
+  if (!isValidMusicKey(trimmedKey)) {
+    showToast(`❌ Key "${inputKey}" ไม่ถูกต้อง — ต้องเป็น 1A-12A หรือ 1B-12B เท่านั้น`, "error");
+    return;
+  }
+  const btn = document.getElementById("songBulkMusicKeyBtn");
+  const origText = btn.textContent;
+  btn.disabled = true; btn.textContent = `กำลังตั้ง Key ${trimmedKey}...`;
+  try {
+    const updated_at = new Date().toISOString();
+    let successCount = 0, failCount = 0;
+    for (const id of ids) {
+      try {
+        await updateDoc(doc(db, "songs", id), { music_key: trimmedKey, updated_at });
+        const cached = CACHE.songs.find(x => x.id === id);
+        if (cached) { cached.music_key = trimmedKey; cached.updated_at = updated_at; }
+        successCount++;
+      } catch (err) { console.error(`[bulk Key] อัปเดต Key ล้มเหลวสำหรับ song ${id}:`, err?.message || err); failCount++; }
+    }
+    if (failCount > 0) {
+      showToast(`ตั้ง Key ${trimmedKey} สำเร็จ ${successCount} เพลง (ล้มเหลว ${failCount} เพลง)`, "error");
+    } else {
+      showToast(`✅ ตั้ง Key ${trimmedKey} ให้ ${successCount} เพลงเรียบร้อย`, "success");
+    }
+    renderSongList(currentSongListView);
+    invalidateAdminCache("songs");
+  } catch (err) {
+    showToast("ตั้ง Key ไม่สำเร็จ: " + (err.message || String(err)), "error");
   } finally {
     btn.disabled = false; btn.textContent = origText;
   }
@@ -3136,6 +3232,9 @@ function resetSongForm() {
   // 🆕 (T133 2026-10-13): reset BPM กลับเป็น 150 (default)
   const fBpmEl = document.getElementById("fBpm");
   if (fBpmEl) fBpmEl.value = "150";
+  // 🆕 (T139 2026-10-13): reset Music Key กลับเป็น "" (ไม่ระบุ)
+  const fMusicKeyEl = document.getElementById("fMusicKey");
+  if (fMusicKeyEl) fMusicKeyEl.value = "";
   document.getElementById("songFileInput").value = ""; document.getElementById("coverFileInput").value = "";
   document.getElementById("songFilePicker").textContent = "📁 แตะเพื่อเลือกไฟล์เพลงจาก iPhone/iPad";
   document.getElementById("songFilePicker").className = "file-picker";
@@ -3176,6 +3275,12 @@ function openEditSong(id) {
                      : (rawBpm > 165) ? 165
                      : rawBpm;
     fBpmEditEl.value = String(clampedBpm);
+  }
+  // 🆕 (T139 2026-10-13): โหลด Music Key เดิม (validate format — ถ้าผิด → ว่าง)
+  const fMusicKeyEditEl = document.getElementById("fMusicKey");
+  if (fMusicKeyEditEl) {
+    const rawKey = String(s.music_key || "").trim().toUpperCase();
+    fMusicKeyEditEl.value = isValidMusicKey(rawKey) ? rawKey : "";
   }
   document.getElementById("fStatus").value = s.status || "active";
   const dj = CACHE.djs.find(d => d.dj_name === s.dj_name);
@@ -3505,6 +3610,12 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
           return 150;
         }
         return Math.round(rawBpm);
+      })(),
+      // 🆕 (T139 2026-10-13): Music Key (Camelot) — validate + sanitize
+      //   ถ้ากรอกผิด format → เว้นว่าง (null ไม่ใช้ เพราะ Firestore ไม่ support null ในบางกรณี)
+      music_key: (() => {
+        const rawKey = String(document.getElementById("fMusicKey")?.value || "").trim().toUpperCase();
+        return isValidMusicKey(rawKey) ? rawKey : "";
       })(),
       updated_at: new Date().toISOString()
     };
@@ -4176,7 +4287,7 @@ function renderDetailSongsList() {
     <div class="list-row" data-detail-song-row="${s.id}" style="cursor:pointer;">
       <img src="${escapeHtml(s.cover_url || "")}" loading="lazy" alt="">
       <div class="info"><div class="n1">${escapeHtml(s.song_name)}</div>
-      <div class="n2">${escapeHtml(s.dj_name || "-")} · ${escapeHtml(s.category_name || "-")} · ${formatPrice(s.price)} <span class="bpm-badge-wrap">${renderBpmBadge(s.bpm)}</span></div></div>
+      <div class="n2">${escapeHtml(s.dj_name || "-")} · ${escapeHtml(s.category_name || "-")} · ${formatPrice(s.price)} <span class="bpm-badge-wrap">${renderBpmBadge(s.bpm)}${renderMusicKeyBadge(s.music_key)}</span></div></div>
       <div class="row-actions">
         <button class="icon-btn" data-detail-menu="${s.id}" title="เมนู">⋮</button>
       </div>
@@ -5131,6 +5242,11 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
             return 150;
           }
           return Math.round(rawBpm);
+        })(),
+        // 🆕 (T139 2026-10-13): Music Key จากช่อง bulkMusicKey — ใช้กับทุกเพลงในชุด (validate, default "")
+        music_key: (() => {
+          const rawKey = String(document.getElementById("bulkMusicKey")?.value || "").trim().toUpperCase();
+          return isValidMusicKey(rawKey) ? rawKey : "";
         })(),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -6430,6 +6546,16 @@ function openSongDetailPopup(songId) {
   if (bpmBadge) {
     bpmBadge.innerHTML = renderBpmBadge(s.bpm);
   }
+  // 🆕 (T139 2026-10-13): โหลด Music Key เข้า select ใน popup + แสดง badge
+  const musicKeySelect = document.getElementById("songDetailMusicKey");
+  const musicKeyBadge = document.getElementById("songDetailMusicKeyBadge");
+  if (musicKeySelect) {
+    const rawKey = String(s.music_key || "").trim().toUpperCase();
+    musicKeySelect.value = isValidMusicKey(rawKey) ? rawKey : "";
+  }
+  if (musicKeyBadge) {
+    musicKeyBadge.innerHTML = renderMusicKeyBadge(s.music_key);
+  }
 
   // meta line: แสดงข้อมูล preview ถ้ามี
   const metaLine = document.getElementById("songDetailMetaLine");
@@ -6973,6 +7099,52 @@ document.getElementById("songDetailSaveBpmBtn").addEventListener("click", async 
     showToast("บันทึก BPM ไม่สำเร็จ: " + (err.message || err), "error");
   } finally {
     btn.disabled = false; btn.textContent = "💾 บันทึก BPM ลงเพลงนี้";
+  }
+});
+
+// 🆕 (T139 2026-10-13): ปุ่ม "บันทึก Music Key" ใน song detail popup
+//   - อ่านค่าจาก #songDetailMusicKey select (validate แล้วเพราะเป็น option list)
+//   - ถ้าค่าเท่าเดิม → บอก "ไม่ต้องบันทึก"
+//   - ถ้าเปลี่ยน → updateDoc ลง Firestore + อัปเดต CACHE + badge + re-render list
+document.getElementById("songDetailSaveMusicKeyBtn").addEventListener("click", async function () {
+  if (!detailPopupSong) { showToast("ไม่พบข้อมูลเพลงนี้", "error"); return; }
+  const btn = this;
+  const selectEl = document.getElementById("songDetailMusicKey");
+  if (!selectEl) { showToast("ไม่พบช่องเลือก Music Key", "error"); return; }
+  const newKey = String(selectEl.value || "").trim().toUpperCase();
+  // validate (defensive — เป็น option list อยู่แล้ว แต่เช็คอีกรอบ)
+  if (newKey !== "" && !isValidMusicKey(newKey)) {
+    showToast(`❌ Key "${newKey}" ไม่ถูกต้อง`, "error");
+    return;
+  }
+  // เปรียบเทียบกับค่าเดิม
+  const currentKey = String(detailPopupSong.music_key || "").trim().toUpperCase();
+  if (newKey === currentKey) {
+    showToast("ℹ️ Key ไม่เปลี่ยนแปลง — ไม่ต้องบันทึก", "info");
+    return;
+  }
+  btn.disabled = true; btn.textContent = newKey ? `กำลังบันทึก Key ${newKey}...` : `กำลังล้าง Key...`;
+  try {
+    const updated_at = new Date().toISOString();
+    await updateDoc(doc(db, "songs", detailPopupSong.id), { music_key: newKey, updated_at });
+    // อัปเดตใน CACHE + detailPopupSong
+    detailPopupSong.music_key = newKey;
+    detailPopupSong.updated_at = updated_at;
+    const cached = CACHE.songs.find(x => x.id === detailPopupSong.id);
+    if (cached) { cached.music_key = newKey; cached.updated_at = updated_at; }
+    // อัปเดต badge ใน popup
+    const mkBadge = document.getElementById("songDetailMusicKeyBadge");
+    if (mkBadge) mkBadge.innerHTML = renderMusicKeyBadge(newKey);
+    // Re-render list + invalidate cache
+    if (typeof currentSongListView !== "undefined" && currentSongListView.length > 0) {
+      renderSongList(currentSongListView);
+    }
+    invalidateAdminCache("songs");
+    showToast(newKey ? `✅ บันทึก Key ${newKey} ลงเพลง "${detailPopupSong.song_name}" เรียบร้อย` : `✅ ล้าง Key ของเพลง "${detailPopupSong.song_name}" เรียบร้อย`, "success");
+  } catch (err) {
+    showToast("บันทึก Key ไม่สำเร็จ: " + (err.message || err), "error");
+  } finally {
+    btn.disabled = false; btn.textContent = "💾 บันทึก Key ลงเพลงนี้";
   }
 });
 
