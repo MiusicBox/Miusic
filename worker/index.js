@@ -7311,6 +7311,55 @@ async function handleCustomerAuth(request, env, url) {
   //   - GET  /api/songs/:id/likes — ดูจำนวน like + สถานะของลูกค้า (public)
   //   ผลกระทบระบบเดิม: 0% — endpoints ใหม่ (แทนที่ระบบรีวิวเดิม)
   // ============================================================
+  // 🆕 (perf 2026-10-13): GET /api/songs/stats?ids=a,b,c&fingerprint=... — รวม like count + สถานะ like + rating
+  //   ของหลายเพลงในคำขอเดียว (เดิมหน้าแรกยิง /likes + /reviews/summary ทีละเพลง ≈ 250 requests ต่อการเปิดหน้า)
+  //   - public, อ่านอย่างเดียว, ตรรกะ is_liked เหมือน GET /likes เดิมทุกประการ (login → customer.id, guest → "anon:"+fingerprint)
+  //   - จำกัด 80 ids ต่อคำขอ (D1 bind limit 100 พารามิเตอร์)
+  //   - endpoint เดิม (/likes, /reviews/summary) ยังอยู่ครบ — ใช้ใน modal และเป็น fallback ของ client
+  //   ผลกระทบระบบเดิม: 0% — path ใหม่ ไม่แก้ handler เดิม
+  if (path === "songs/stats" && request.method === "GET") {
+    if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
+    const ids = Array.from(new Set(
+      String(url.searchParams.get("ids") || "").split(",").map(x => x.trim()).filter(Boolean)
+    )).slice(0, 80);
+    if (ids.length === 0) return jsonResponse({ ok: true, stats: {} });
+    const marks = ids.map(() => "?").join(",");
+    const stats = {};
+    for (const id of ids) stats[id] = { like_count: 0, is_liked: false, rating_count: 0, avg_rating: 0 };
+    try {
+      // identity ของคนที่ดูอยู่ (เหมือน GET /likes เดิม)
+      let likerId = null;
+      const customer = await getCustomerSession(request, env);
+      if (customer) {
+        likerId = customer.id;
+      } else {
+        const fingerprint = String(url.searchParams.get("fingerprint") || "").trim();
+        if (fingerprint && fingerprint.length >= 8) likerId = "anon:" + fingerprint;
+      }
+      const safe = (p) => p.catch(err => {
+        if (String(err?.message || "").includes("no such table")) return { results: [] }; // graceful เหมือนเดิม
+        throw err;
+      });
+      const [likeRows, mineRows, ratingRows] = await Promise.all([
+        safe(env.DB.prepare(`SELECT song_id, COUNT(*) AS cnt FROM song_likes WHERE song_id IN (${marks}) GROUP BY song_id`).bind(...ids).all()),
+        likerId
+          ? safe(env.DB.prepare(`SELECT song_id FROM song_likes WHERE customer_id = ? AND song_id IN (${marks})`).bind(likerId, ...ids).all())
+          : Promise.resolve({ results: [] }),
+        safe(env.DB.prepare(`SELECT song_id, COUNT(*) AS cnt, AVG(rating) AS avg_rating FROM song_reviews WHERE song_id IN (${marks}) GROUP BY song_id`).bind(...ids).all()),
+      ]);
+      for (const r of (likeRows.results || [])) if (stats[r.song_id]) stats[r.song_id].like_count = r.cnt || 0;
+      for (const r of (mineRows.results || [])) if (stats[r.song_id]) stats[r.song_id].is_liked = true;
+      for (const r of (ratingRows.results || [])) {
+        if (!stats[r.song_id]) continue;
+        stats[r.song_id].rating_count = r.cnt || 0;
+        stats[r.song_id].avg_rating = r.avg_rating ? Math.round(r.avg_rating * 10) / 10 : 0;
+      }
+      return jsonResponse({ ok: true, stats });
+    } catch (err) {
+      return jsonResponse({ error: safeError("โหลดสถิติเพลงไม่สำเร็จ", err) }, 500);
+    }
+  }
+
   // POST /api/songs/:id/like — toggle like
   if (path.startsWith("songs/") && path.endsWith("/like") && request.method === "POST") {
     if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database" }, 500);
@@ -9466,6 +9515,10 @@ export default {
 
     // 🆕 (2026-10-02 v7 — ฟีเจอร์ #12 ใหม่): /api/songs/:id/like + /likes — public endpoint ถูกใจเพลงแบบ TikTok
     //   ไม่ต้อง login → route เข้า handleCustomerAuth (มี logic ข้างในสำหรับ path นี้)
+    if (url.pathname === "/api/songs/stats") {
+      if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
+      return handleCustomerAuth(request, env, url);
+    }
     if (url.pathname.startsWith("/api/songs/") && (url.pathname.endsWith("/like") || url.pathname.endsWith("/likes"))) {
       if (!env.DB) return jsonResponse({ error: "ยังไม่ได้ผูก D1 database (binding: DB) ใน wrangler.jsonc" }, 500);
       return handleCustomerAuth(request, env, url);
