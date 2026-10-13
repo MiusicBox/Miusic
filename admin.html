@@ -6,10 +6,10 @@
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): noindex meta — กัน Google index หน้า admin -->
 <meta name="robots" content="noindex, nofollow">
 <title>Admin - Music Store</title>
-<link rel="stylesheet" href="style.css?v=20261013-t142">
+<link rel="stylesheet" href="style.css?v=20261013-t143">
 <!-- 🎨 (2026-10-11) ระบบแจ้งเตือนใหม่ (toast + dialog) — ต้องโหลดก่อน app-*.js -->
-<link rel="stylesheet" href="notify.css?v=20261013-t142">
-<script src="notify.js?v=20261013-t142"></script>
+<link rel="stylesheet" href="notify.css?v=20261013-t143">
+<script src="notify.js?v=20261013-t143"></script>
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1) + 🔒 (Audit Fix H-13): Self-host html2canvas
      เดิม: orders.js ใช้ dynamic import ทุกครั้ง → ช้า + พังถ้า CDN ล่ม
@@ -1021,7 +1021,7 @@
       <div class="field">
         <label>Music Key (Camelot wheel — สำหรับ DJs harmonic mix)</label>
         <select id="fMusicKey" aria-label="เลือก Music Key">
-          <option value="">— ไม่ระบุ —</option>
+          <option value="" style="color: var(--text-dim);">— ไม่ระบุ —</option>
           <option value="1A" style="color:#94A3B8;">1A (Ab minor)</option>
           <option value="2A" style="color:#818CF8;">2A (Eb minor)</option>
           <option value="3A" style="color:#60A5FA;">3A (Bb minor)</option>
@@ -1487,7 +1487,7 @@
           <span id="songDetailMusicKeyBadge"></span>
         </div>
         <select id="songDetailMusicKey" aria-label="เลือก Music Key" style="width:100%;padding:10px 12px;font-size:14px;background:rgba(255,255,255,0.04);border:1px solid var(--border,rgba(255,255,255,0.15));border-radius:8px;color:var(--text);margin-bottom:8px;">
-          <option value="">— ไม่ระบุ —</option>
+          <option value="" style="color: var(--text-dim);">— ไม่ระบุ —</option>
           <option value="1A" style="color:#94A3B8;">1A (Ab minor)</option><option value="2A" style="color:#818CF8;">2A (Eb minor)</option>
           <option value="3A" style="color:#60A5FA;">3A (Bb minor)</option><option value="4A" style="color:#22D3EE;">4A (F minor)</option>
           <option value="5A" style="color:#2DD4BF;">5A (C minor)</option><option value="6A" style="color:#4ADE80;">6A (G minor)</option>
@@ -1832,7 +1832,7 @@
     <div class="toast-progress"></div>
   </div>
 
-  <script src="phone-input.js?v=20261013-t142" defer></script>
-  <script type="module" src="app-admin.js?v=20261013-t142"></script>
+  <script src="phone-input.js?v=20261013-t143" defer></script>
+  <script type="module" src="app-admin.js?v=20261013-t143"></script>
 </body>
 </html>
