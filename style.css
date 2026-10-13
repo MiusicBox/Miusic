@@ -3635,17 +3635,45 @@ button:active {
   opacity: 0.7;
 }
 
-/* Minor key (A) — indigo/violet */
+/* Minor key (A) — legacy: indigo/violet (ถูกแทนที่ด้วย 24 classes เฉพาะคีย์ด้านล่าง T140) */
 .music-key-badge.mk-minor .mk-symbol {
   color: #818cf8;
   text-shadow: 0 0 4px rgba(129, 140, 248, 0.6);
 }
 
-/* Major key (B) — amber/orange */
+/* Major key (B) — legacy: amber/orange (ถูกแทนที่ด้วย 24 classes เฉพาะคีย์ด้านล่าง T140) */
 .music-key-badge.mk-major .mk-symbol {
   color: #fbbf24;
   text-shadow: 0 0 4px rgba(251, 191, 36, 0.6);
 }
+
+/* 🆕 (T140 2026-10-13): Camelot wheel 24 สี — แต่ละคีย์มีสีตรงตามตำแหน่งบนวงล้อ
+   โครงสร้าง: .music-key-badge.k-{N}{A|B} เช่น .k-8b, .k-5a, .k-12a
+   สี A (minor) เข้มกว่า B (major) — ตามมาตรฐาน Mixed In Key Camelot wheel */
+.music-key-badge.k-1a .mk-symbol, .music-key-badge.k-1a .mk-key { color: #4A5568; text-shadow: 0 0 4px rgba(74, 85, 104, 0.6); }
+.music-key-badge.k-1b .mk-symbol, .music-key-badge.k-1b .mk-key { color: #A0AEC0; text-shadow: 0 0 4px rgba(160, 174, 192, 0.7); }
+.music-key-badge.k-2a .mk-symbol, .music-key-badge.k-2a .mk-key { color: #4338CA; text-shadow: 0 0 4px rgba(67, 56, 202, 0.7); }
+.music-key-badge.k-2b .mk-symbol, .music-key-badge.k-2b .mk-key { color: #818CF8; text-shadow: 0 0 4px rgba(129, 140, 248, 0.7); }
+.music-key-badge.k-3a .mk-symbol, .music-key-badge.k-3a .mk-key { color: #1E40AF; text-shadow: 0 0 4px rgba(30, 64, 175, 0.7); }
+.music-key-badge.k-3b .mk-symbol, .music-key-badge.k-3b .mk-key { color: #60A5FA; text-shadow: 0 0 4px rgba(96, 165, 250, 0.7); }
+.music-key-badge.k-4a .mk-symbol, .music-key-badge.k-4a .mk-key { color: #0E7490; text-shadow: 0 0 4px rgba(14, 116, 144, 0.7); }
+.music-key-badge.k-4b .mk-symbol, .music-key-badge.k-4b .mk-key { color: #22D3EE; text-shadow: 0 0 4px rgba(34, 211, 238, 0.7); }
+.music-key-badge.k-5a .mk-symbol, .music-key-badge.k-5a .mk-key { color: #0F766E; text-shadow: 0 0 4px rgba(15, 118, 110, 0.7); }
+.music-key-badge.k-5b .mk-symbol, .music-key-badge.k-5b .mk-key { color: #2DD4BF; text-shadow: 0 0 4px rgba(45, 212, 191, 0.7); }
+.music-key-badge.k-6a .mk-symbol, .music-key-badge.k-6a .mk-key { color: #166534; text-shadow: 0 0 4px rgba(22, 101, 52, 0.7); }
+.music-key-badge.k-6b .mk-symbol, .music-key-badge.k-6b .mk-key { color: #4ADE80; text-shadow: 0 0 4px rgba(74, 222, 128, 0.7); }
+.music-key-badge.k-7a .mk-symbol, .music-key-badge.k-7a .mk-key { color: #3F6212; text-shadow: 0 0 4px rgba(63, 98, 18, 0.7); }
+.music-key-badge.k-7b .mk-symbol, .music-key-badge.k-7b .mk-key { color: #A3E635; text-shadow: 0 0 4px rgba(163, 230, 53, 0.7); }
+.music-key-badge.k-8a .mk-symbol, .music-key-badge.k-8a .mk-key { color: #854D0E; text-shadow: 0 0 4px rgba(133, 77, 14, 0.7); }
+.music-key-badge.k-8b .mk-symbol, .music-key-badge.k-8b .mk-key { color: #FACC15; text-shadow: 0 0 4px rgba(250, 204, 21, 0.7); }
+.music-key-badge.k-9a .mk-symbol, .music-key-badge.k-9a .mk-key { color: #92400E; text-shadow: 0 0 4px rgba(146, 64, 14, 0.7); }
+.music-key-badge.k-9b .mk-symbol, .music-key-badge.k-9b .mk-key { color: #FBBF24; text-shadow: 0 0 4px rgba(251, 191, 36, 0.7); }
+.music-key-badge.k-10a .mk-symbol, .music-key-badge.k-10a .mk-key { color: #7C2D12; text-shadow: 0 0 4px rgba(124, 45, 18, 0.7); }
+.music-key-badge.k-10b .mk-symbol, .music-key-badge.k-10b .mk-key { color: #FB923C; text-shadow: 0 0 4px rgba(251, 146, 60, 0.7); }
+.music-key-badge.k-11a .mk-symbol, .music-key-badge.k-11a .mk-key { color: #7F1D1D; text-shadow: 0 0 4px rgba(127, 29, 29, 0.7); }
+.music-key-badge.k-11b .mk-symbol, .music-key-badge.k-11b .mk-key { color: #F87171; text-shadow: 0 0 4px rgba(248, 113, 113, 0.7); }
+.music-key-badge.k-12a .mk-symbol, .music-key-badge.k-12a .mk-key { color: #831843; text-shadow: 0 0 4px rgba(131, 24, 67, 0.7); }
+.music-key-badge.k-12b .mk-symbol, .music-key-badge.k-12b .mk-key { color: #F472B6; text-shadow: 0 0 4px rgba(244, 114, 182, 0.7); }
 
 /* Hover state */
 .music-key-badge:hover .mk-symbol {
@@ -3672,6 +3700,7 @@ button:active {
 
 /* Dark theme tweaks — สีจัดขึ้นเล็กน้อย */
 @media (prefers-color-scheme: dark) {
+  /* Legacy mk-minor/mk-major — ไม่ใช้แล้ว แต่เก็บไว้กัน specificity conflict */
   .music-key-badge.mk-minor .mk-symbol {
     color: #a5b4fc;
     text-shadow: 0 0 5px rgba(165, 180, 252, 0.7);
@@ -3680,6 +3709,19 @@ button:active {
     color: #fcd34d;
     text-shadow: 0 0 5px rgba(252, 211, 77, 0.7);
   }
+  /* T140: เพิ่ม brightness ให้สี A (minor) ที่เข้ม ใน dark mode — ให้อ่านง่าย */
+  .music-key-badge.k-1a .mk-symbol, .music-key-badge.k-1a .mk-key { color: #94A3B8; text-shadow: 0 0 5px rgba(148, 163, 184, 0.8); }
+  .music-key-badge.k-2a .mk-symbol, .music-key-badge.k-2a .mk-key { color: #818CF8; text-shadow: 0 0 5px rgba(129, 140, 248, 0.85); }
+  .music-key-badge.k-3a .mk-symbol, .music-key-badge.k-3a .mk-key { color: #60A5FA; text-shadow: 0 0 5px rgba(96, 165, 250, 0.85); }
+  .music-key-badge.k-4a .mk-symbol, .music-key-badge.k-4a .mk-key { color: #22D3EE; text-shadow: 0 0 5px rgba(34, 211, 238, 0.85); }
+  .music-key-badge.k-5a .mk-symbol, .music-key-badge.k-5a .mk-key { color: #2DD4BF; text-shadow: 0 0 5px rgba(45, 212, 191, 0.85); }
+  .music-key-badge.k-6a .mk-symbol, .music-key-badge.k-6a .mk-key { color: #4ADE80; text-shadow: 0 0 5px rgba(74, 222, 128, 0.85); }
+  .music-key-badge.k-7a .mk-symbol, .music-key-badge.k-7a .mk-key { color: #A3E635; text-shadow: 0 0 5px rgba(163, 230, 53, 0.85); }
+  .music-key-badge.k-8a .mk-symbol, .music-key-badge.k-8a .mk-key { color: #FACC15; text-shadow: 0 0 5px rgba(250, 204, 21, 0.85); }
+  .music-key-badge.k-9a .mk-symbol, .music-key-badge.k-9a .mk-key { color: #FBBF24; text-shadow: 0 0 5px rgba(251, 191, 36, 0.85); }
+  .music-key-badge.k-10a .mk-symbol, .music-key-badge.k-10a .mk-key { color: #FB923C; text-shadow: 0 0 5px rgba(251, 146, 60, 0.85); }
+  .music-key-badge.k-11a .mk-symbol, .music-key-badge.k-11a .mk-key { color: #F87171; text-shadow: 0 0 5px rgba(248, 113, 113, 0.85); }
+  .music-key-badge.k-12a .mk-symbol, .music-key-badge.k-12a .mk-key { color: #F472B6; text-shadow: 0 0 5px rgba(244, 114, 182, 0.85); }
 }
 
 .song-card-row .song-meta-text {

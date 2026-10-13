@@ -2464,14 +2464,22 @@ function renderBpmBadge(bpm) {
 // 🆕 (T139 2026-10-13): renderMusicKeyBadge — แสดง Music Key (Camelot) เป็น badge
 //   Camelot notation: 1A-12A (minor), 1B-12B (major) — DJs ใช้หา harmonic mix
 //   ถ้าไม่มี key (ว่าง/ผิด format) → ไม่แสดง badge (คืน empty string)
-//   สี badge: A (minor) → indigo/violet / B (major) → amber/orange
+//   🆕 (T140 2026-10-13): ใช้สีตาม Camelot wheel — แต่ละคีย์มีสีเฉพาะ (24 สี)
+//   โครงสร้าง: <span class="music-key-badge k-{N}{A|B}">
+//                <span class="mk-symbol">🎹</span>
+//                <span class="mk-key">8B</span>
+//                <span class="mk-label">Key</span>
+//              </span>
 function renderMusicKeyBadge(musicKey) {
   const k = String(musicKey || "").trim().toUpperCase();
   // validate format: 1-12 ตามด้วย A หรือ B
   const m = k.match(/^([1-9]|1[0-2])([AB])$/);
   if (!m) return ""; // ไม่แสดง badge ถ้าไม่มี key
-  const letter = m[2]; // "A" หรือ "B"
-  const cls = letter === "A" ? "mk-minor" : "mk-major";
+  const num = m[1];
+  const letter = m[2];
+  // 🆕 (T140): ใช้ class k-{N}{L} แทน mk-minor/mk-major (เพราะมี 24 สีเฉพาะ)
+  // เช่น k-8b, k-5a, k-12a, k-1b ฯลฯ — สีตรงตาม Camelot wheel
+  const cls = `k-${num}${letter.toLowerCase()}`;
   const label = letter === "A" ? "minor" : "major";
   return `<span class="music-key-badge ${cls}" title="Key ${k} (${label})"><span class="mk-symbol">🎹</span><span class="mk-key">${escapeHtml(k)}</span><span class="mk-label">Key</span></span>`;
 }
