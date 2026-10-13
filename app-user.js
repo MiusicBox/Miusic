@@ -2122,6 +2122,15 @@ function renderSongGrid() {
             <div class="song-meta-row">
               ${s.dj_name ? `<span class="song-dj-tag">🎧 ${escapeHtml(s.dj_name)}</span>` : ""}
               ${s.artist ? `<span class="song-meta-text">${escapeHtml(s.artist)}</span>` : ""}
+              ${(() => {
+                // 🆕 (T133 2026-10-13): แสดง BPM badge ในหน้า user — ใช้ CSS class เดียวกับ admin
+                const rawBpm = Number(s.bpm);
+                const bpmInt = (!Number.isFinite(rawBpm) || rawBpm < 150 || rawBpm > 165) ? 150 : Math.round(rawBpm);
+                let cls = "bpm-150";
+                if (bpmInt >= 160) cls = "bpm-160";
+                else if (bpmInt >= 155) cls = "bpm-155";
+                return `<span class="bpm-badge ${cls}" title="BPM ${bpmInt}">🎵 ${bpmInt}</span>`;
+              })()}
             </div>
             <div class="song-footer">
               <div class="song-price-block">

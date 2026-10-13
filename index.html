@@ -67,31 +67,6 @@
   <!-- Cloudflare Web Analytics -->
   <script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "f01ac9d2536a40b7b635059e75981a47"}'></script>
   <!-- End Cloudflare Web Analytics -->
-  <!-- Google tag (gtag.js) — 🔧 (perf 2026-10-13): โหลดสคริปต์หลังหน้าโหลดเสร็จ + ว่าง (ไม่แย่ง bandwidth/CPU กับการแสดงหน้าแรก)
-       dataLayer + gtag('config') ตั้งไว้ทันทีเหมือนเดิม → Google Analytics ยังนับ pageview ครบ -->
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-
-    gtag('config', 'G-JDW4KYSGN0');
-
-    (function () {
-      function loadGtag() {
-        var s = document.createElement('script');
-        s.async = true;
-        s.src = 'https://www.googletagmanager.com/gtag/js?id=G-JDW4KYSGN0';
-        document.head.appendChild(s);
-      }
-      function schedule() {
-        if ('requestIdleCallback' in window) requestIdleCallback(loadGtag, { timeout: 4000 });
-        else setTimeout(loadGtag, 2000);
-      }
-      if (document.readyState === 'complete') schedule();
-      else window.addEventListener('load', schedule);
-    })();
-  </script>
-  <!-- End Google tag -->
 <!-- 🔧 (2026-09-24 SEO/perf): เปลี่ยนจาก <link rel="stylesheet"> ปกติ (บล็อกการแสดงผลหน้าเว็บ ~1,780ms ตาม
      PageSpeed) เป็นเทคนิค media="print" + onload — เบราว์เซอร์โหลดไฟล์แบบไม่บล็อก แล้วค่อยสลับเป็น "all" ตอนโหลด
      เสร็จ ไฟล์/URL เดิมทุกอย่าง ไม่มีไฟล์ไหนถูกตัดออก มี <noscript> รองรับกรณีปิด JavaScript ไว้ด้วย -->
@@ -102,13 +77,13 @@
 <!-- 🔧 (2026-09-24 CLS fix): style.css กลับมาเป็น <link rel="stylesheet"> ปกติ (บล็อกการแสดงผลสั้น ๆ)
      สาเหตุ: เทคนิค media="print"+onload ทำให้หน้าเว็บวาดแบบ "ไม่มีสไตล์" ก่อน แล้วสไตล์มาทีหลัง → ทุกอย่างกระโดด
      (CLS 0.649 = ตัวที่ทำให้คะแนนตก 76) ไฟล์/เวอร์ชันเดิมทุกอย่าง แค่เอาการโหลดแบบหน่วงออก -->
-<link rel="stylesheet" href="style.css?v=20261013-perf">
+<link rel="stylesheet" href="style.css?v=20261013-t133">
 <!-- 🎨 (2026-10-11) ระบบแจ้งเตือนใหม่ (toast + dialog) — ต้องโหลดก่อน app-*.js -->
-<link rel="stylesheet" href="notify.css?v=20261012-launch">
-<script src="notify.js?v=20261012-launch"></script>
+<link rel="stylesheet" href="notify.css?v=20261013-t133">
+<script src="notify.js?v=20261013-t133"></script>
 
 <!-- 🆕 (T059): idb-store.js — IndexedDB wrapper สำหรับ PWA offline mode (โหลดก่อน app-user.js) -->
-<script src="idb-store.js?v=20261012-launch" defer></script>
+<script src="idb-store.js?v=20261013-t133" defer></script>
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): เพิ่ม .visually-hidden class สำหรับ h1 SEO -->
 <style>
@@ -584,6 +559,21 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Miusic">
 <meta name="mobile-web-app-capable" content="yes">
+
+<!-- 🆕 (T132 2026-10-13): Google Analytics 4 — Measurement ID G-JDW4KYSGN0
+     - anonymize_ip: ปกปิด IP ตาม PDPA/GDPR
+     - cookie_flags SameSite=None;Secure: ป้องกัน cross-site issue
+     - ใช้บนหน้า index.html เพื่อรวบรวมสถิติผู้ใช้ (หน้าหลัก) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-JDW4KYSGN0"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-JDW4KYSGN0', {
+    anonymize_ip: true,
+    cookie_flags: 'SameSite=None;Secure'
+  });
+</script>
 </head>
 <body>
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #14): h1 สำหรับ SEO (hidden visually, visible to crawlers) -->
@@ -1418,13 +1408,13 @@
   <!-- เปลี่ยนเลข v ทุกครั้งที่อัปโหลดไฟล์ใหม่ เพื่อไม่ให้มือถือใช้ไฟล์ JS จาก cache -->
   <!-- 🔧 v=20260917-p0: P0 แก้ Bug 1 (ลูกค้าตั้ง status เองไม่ได้) + Sec 1 (change-password ต้อง verify เดิม) -->
   <!-- 🔧 v=20260917-polling-fix: Phase 0 ยกเลิก polling ทุก 4 วิ + Phase 1 จุด 5 (admin view cache) + Phase 2 จุด 1 (state ฝั่ง client) -->
-  <script type="module" src="app-user.js?v=20261012-launch"></script>
+  <script type="module" src="app-user.js?v=20261013-t133"></script>
   <!-- 🆕 (T045): PhoneInput country selector — โหลดก่อน customer-auth.js เพราะ customer-auth.js ใช้ PhoneInput.mount() -->
   <!--   ผลกระทบระบบเดิม: 0% — ไฟล์ใหม่ ไม่แตะ app-user.js/app-cart.js -->
-  <script src="phone-input.js?v=20261012-launch" defer></script>
+  <script src="phone-input.js?v=20261013-t133" defer></script>
   <!-- 🆕 (2026-10-01): ระบบสมาชิกลูกค้า — โหลดทีหลัง app-user.js เพื่อให้ showToast พร้อมใช้ -->
   <!--   ผลกระทบระบบเดิม: 0% — ไฟล์ใหม่ ไม่แตะ app-user.js/app-cart.js -->
-  <script type="module" src="customer-auth.js?v=20261012-launch"></script>
+  <script type="module" src="customer-auth.js?v=20261013-t133"></script>
 
   <!-- 🆕 (2026-10-01): Modal สมัคร/เข้าสู่ระบบลูกค้า -->
   <div class="modal-backdrop" id="customerAuthBackdrop" role="dialog" aria-modal="true" aria-hidden="true">

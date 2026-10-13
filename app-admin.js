@@ -2439,6 +2439,25 @@ function populateSelect(id, items, valueKey, labelKey, placeholderLabel) {
 const SONG_LIST_PAGE_SIZE = 100;
 let songListVisibleCount = SONG_LIST_PAGE_SIZE;
 
+// 🆕 (T133 2026-10-13): renderBpmBadge — แสดง BPM เป็น badge สีตามช่วงค่า
+//   - 150-154: เขียวอ่อน (chill สุด)
+//   - 155-159: ฟ้า (medium)
+//   - 160-165: ชมพู/แดง (energetic สุด)
+//   - ค่าผิด/ไม่มี → ไม่แสดง badge
+function renderBpmBadge(bpm) {
+  const raw = Number(bpm);
+  if (!Number.isFinite(raw) || raw < 150 || raw > 165) {
+    // default 150 ถ้าไม่มี → แสดงเป็นสีเขียวอ่อน (chill)
+    return `<span class="bpm-badge bpm-150" title="BPM 150 (default)">🎵 150</span>`;
+  }
+  const bpmInt = Math.round(raw);
+  let cls = "bpm-150";
+  if (bpmInt >= 160) cls = "bpm-160";        // 160-165: ชมพู/แดง
+  else if (bpmInt >= 155) cls = "bpm-155";   // 155-159: ฟ้า
+  // 150-154: เขียวอ่อน (bpm-150 default)
+  return `<span class="bpm-badge ${cls}" title="BPM ${bpmInt}">🎵 ${bpmInt}</span>`;
+}
+
 function renderSongList(list) {
   currentSongListView = list;
   const wrap = document.getElementById("songList");
@@ -2451,7 +2470,7 @@ function renderSongList(list) {
       ${songSelectMode ? `<input type="checkbox" class="song-select-chk" data-id="${s.id}" ${selectedSongIds.has(s.id) ? "checked" : ""} style="width:20px;height:20px;flex-shrink:0;">` : ""}
       <img src="${escapeHtml(s.cover_url || "")}" loading="lazy" alt="">
       <div class="info"><div class="n1">${escapeHtml(s.song_name)}</div>
-      <div class="n2">${escapeHtml(s.dj_name || "-")} · ${escapeHtml(s.category_name || "-")} · ${formatPrice(s.price)}</div>
+      <div class="n2">${escapeHtml(s.dj_name || "-")} · ${escapeHtml(s.category_name || "-")} · ${formatPrice(s.price)} <span class="bpm-badge-wrap">${renderBpmBadge(s.bpm)}</span></div>
       ${!s.full_file_url && !s.file_url ? `<div class="n2" style="color:var(--danger);">⚠️ ยังไม่มีไฟล์เต็ม (WAV) บน Cloud</div>` : ""}
       ${!s.full_file_url && s.file_url ? `<div class="n2" style="color:var(--text-dim);">🔗 ใช้ไฟล์ร่วม (file_url = full_file_url)</div>` : ""}</div>
       <div class="row-actions">
@@ -2677,6 +2696,9 @@ function updateSongBulkBar() {
   document.getElementById("songSelectedCount").textContent = `เลือกแล้ว ${selectedSongIds.size} เพลง`;
   document.getElementById("songBulkDeleteBtn").disabled = selectedSongIds.size === 0;
   document.getElementById("songBulkAssignBtn").disabled = selectedSongIds.size === 0;
+  // 🆕 (T133 2026-10-13): ปุ่ม "ตั้ง BPM" ก็ disable เมื่อไม่มีเพลงเลือก
+  const bulkBpmBtn = document.getElementById("songBulkBpmBtn");
+  if (bulkBpmBtn) bulkBpmBtn.disabled = selectedSongIds.size === 0;
   const allSelected = currentSongListView.length > 0 && currentSongListView.every(s => selectedSongIds.has(s.id));
   document.getElementById("songSelectAllChk").checked = allSelected;
 }
@@ -2700,6 +2722,62 @@ document.getElementById("songBulkAssignBtn").addEventListener("click", () => {
   const ids = Array.from(selectedSongIds);
   if (ids.length === 0) return;
   openQuickAssignBulk(ids);
+});
+// 🆕 (T133 2026-10-13): ปุ่ม "ตั้ง BPM ให้เพลงที่เลือก" — ใช้ window.prompt สำหรับใส่ BPM
+//   - range 150-165 (clamp + validate)
+//   - อัปเดต BPM ให้ทุกเพลงที่เลือกใน DB + cache
+//   - หลังอัปเดตเสร็จ → re-render + showToast
+document.getElementById("songBulkBpmBtn").addEventListener("click", async () => {
+  const ids = Array.from(selectedSongIds);
+  if (ids.length === 0) return;
+  // หา BPM ปัจจุบันของเพลงที่เลือกตัวแรก (เพื่อใช้เป็นค่า default ใน prompt)
+  const firstSong = CACHE.songs.find(x => x.id === ids[0]);
+  const currentBpm = firstSong?.bpm && Number.isFinite(Number(firstSong.bpm))
+    ? Math.min(165, Math.max(150, Number(firstSong.bpm)))
+    : 150;
+  const inputBpm = window.prompt(
+    `🎵 ตั้ง BPM สำหรับ ${ids.length} เพลงที่เลือก\n\nใส่ค่า BPM (150-165 เท่านั้น):`,
+    String(currentBpm)
+  );
+  if (inputBpm === null || inputBpm === undefined) return; // ผู้ใช้กด cancel
+  const rawBpm = Number(inputBpm);
+  if (!Number.isFinite(rawBpm) || rawBpm < 150 || rawBpm > 165) {
+    showToast(`❌ BPM "${inputBpm}" ไม่ถูกต้อง — ต้องอยู่ระหว่าง 150-165 เท่านั้น`, "error");
+    return;
+  }
+  const targetBpm = Math.round(rawBpm);
+  const btn = document.getElementById("songBulkBpmBtn");
+  const origText = btn.textContent;
+  btn.disabled = true; btn.textContent = `กำลังตั้ง BPM ${targetBpm}...`;
+  try {
+    const updated_at = new Date().toISOString();
+    // วนลูปอัปเดต BPM ให้ทุกเพลงที่เลือก
+    let successCount = 0, failCount = 0;
+    for (const id of ids) {
+      try {
+        await updateDoc(doc(db, "songs", id), { bpm: targetBpm, updated_at });
+        // อัปเดตใน CACHE ด้วย
+        const cached = CACHE.songs.find(x => x.id === id);
+        if (cached) { cached.bpm = targetBpm; cached.updated_at = updated_at; }
+        successCount++;
+      } catch (err) {
+        console.error(`[bulk BPM] อัปเดต BPM ล้มเหลวสำหรับ song ${id}:`, err?.message || err);
+        failCount++;
+      }
+    }
+    if (failCount > 0) {
+      showToast(`ตั้ง BPM ${targetBpm} สำเร็จ ${successCount} เพลง (ล้มเหลว ${failCount} เพลง)`, "error");
+    } else {
+      showToast(`✅ ตั้ง BPM ${targetBpm} ให้ ${successCount} เพลงเรียบร้อย`, "success");
+    }
+    // Re-render หน้าจอ + ล้าง selection
+    renderSongList(currentSongListView);
+    invalidateAdminCache("songs"); // บังคับโหลดใหม่ครั้งถัดไป (กัน cache drift)
+  } catch (err) {
+    showToast("ตั้ง BPM ไม่สำเร็จ: " + (err.message || String(err)), "error");
+  } finally {
+    btn.disabled = false; btn.textContent = origText;
+  }
 });
 document.getElementById("songBulkDeleteBtn").addEventListener("click", () => {
   const ids = Array.from(selectedSongIds);
@@ -3012,6 +3090,9 @@ function resetSongForm() {
   ["fSongName", "fArtist", "fPrice", "fDesc"].forEach(id => document.getElementById(id).value = "");
   document.getElementById("fDj").value = ""; document.getElementById("fCategory").value = ""; document.getElementById("fStatus").value = "active";
   document.getElementById("fPlaylist").value = "";
+  // 🆕 (T133 2026-10-13): reset BPM กลับเป็น 150 (default)
+  const fBpmEl = document.getElementById("fBpm");
+  if (fBpmEl) fBpmEl.value = "150";
   document.getElementById("songFileInput").value = ""; document.getElementById("coverFileInput").value = "";
   document.getElementById("songFilePicker").textContent = "📁 แตะเพื่อเลือกไฟล์เพลงจาก iPhone/iPad";
   document.getElementById("songFilePicker").className = "file-picker";
@@ -3044,6 +3125,15 @@ function openEditSong(id) {
   document.getElementById("fArtist").value = s.artist || "";
   document.getElementById("fPrice").value = s.price || 0;
   document.getElementById("fDesc").value = s.description || "";
+  // 🆕 (T133 2026-10-13): โหลด BPM เดิม (default 150 ถ้าไม่มี + clamp 150-165 กันค่าเกิน)
+  const fBpmEditEl = document.getElementById("fBpm");
+  if (fBpmEditEl) {
+    const rawBpm = Number(s.bpm);
+    const clampedBpm = (!Number.isFinite(rawBpm) || rawBpm < 150) ? 150
+                     : (rawBpm > 165) ? 165
+                     : rawBpm;
+    fBpmEditEl.value = String(clampedBpm);
+  }
   document.getElementById("fStatus").value = s.status || "active";
   const dj = CACHE.djs.find(d => d.dj_name === s.dj_name);
   document.getElementById("fDj").value = dj ? dj.id : "";
@@ -3337,6 +3427,16 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
       })(),
       description: document.getElementById("fDesc").value.trim(),
       status: document.getElementById("fStatus").value,
+      // 🆕 (T133 2026-10-13): BPM 150-165 (clamp + validate)
+      //   ถ้ากรอกค่าผิด (ว่าง, NaN, < 150, > 165) → fallback เป็น 150 (default)
+      bpm: (() => {
+        const rawBpm = Number(document.getElementById("fBpm")?.value);
+        if (!Number.isFinite(rawBpm) || rawBpm < 150 || rawBpm > 165) {
+          console.warn(`BPM "${document.getElementById("fBpm")?.value}" ไม่ถูกต้อง (ต้อง 150-165) → ใช้ 150`);
+          return 150;
+        }
+        return Math.round(rawBpm);
+      })(),
       updated_at: new Date().toISOString()
     };
     if (fileUrl) payload.file_url = fileUrl;
@@ -4007,7 +4107,7 @@ function renderDetailSongsList() {
     <div class="list-row" data-detail-song-row="${s.id}" style="cursor:pointer;">
       <img src="${escapeHtml(s.cover_url || "")}" loading="lazy" alt="">
       <div class="info"><div class="n1">${escapeHtml(s.song_name)}</div>
-      <div class="n2">${escapeHtml(s.dj_name || "-")} · ${escapeHtml(s.category_name || "-")} · ${formatPrice(s.price)}</div></div>
+      <div class="n2">${escapeHtml(s.dj_name || "-")} · ${escapeHtml(s.category_name || "-")} · ${formatPrice(s.price)} <span class="bpm-badge-wrap">${renderBpmBadge(s.bpm)}</span></div></div>
       <div class="row-actions">
         <button class="icon-btn" data-detail-menu="${s.id}" title="เมนู">⋮</button>
       </div>
@@ -4954,6 +5054,15 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
         })(),
         description: "",
         status: "active",
+        // 🆕 (T133 2026-10-13): BPM จากช่อง bulkBpm — ใช้กับทุกเพลงในชุด (clamp 150-165, default 150)
+        bpm: (() => {
+          const rawBpm = Number(document.getElementById("bulkBpm")?.value);
+          if (!Number.isFinite(rawBpm) || rawBpm < 150 || rawBpm > 165) {
+            console.warn(`Bulk BPM "${document.getElementById("bulkBpm")?.value}" ไม่ถูกต้อง → ใช้ 150`);
+            return 150;
+          }
+          return Math.round(rawBpm);
+        })(),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
