@@ -10820,3 +10820,55 @@ html.admin-page body {
 }
 .bpm-readout b { color: var(--text); font-weight: 700; }
 .bpm-readout .bpm-readout-up { color: var(--accent); font-weight: 700; }
+
+
+/* 🆕 (BG-JOB): แถบลอยแสดงความคืบหน้าอัปโหลดเพลงตอนปิด popup — แตะเพื่อเปิดกลับ */
+.bg-job-chips {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
+  z-index: 150; /* เหนือ modal-backdrop (100) แต่ต่ำกว่า toast (200) */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.bg-job-chip {
+  position: relative;
+  overflow: hidden;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 420px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(139, 92, 246, 0.5);
+  border-radius: 999px;
+  background: rgba(20, 22, 34, 0.96);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+.bg-job-chip .bg-job-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 0;
+  background: rgba(139, 92, 246, 0.28);
+  transition: width 0.35s ease;
+}
+.bg-job-chip .bg-job-text {
+  position: relative;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bg-job-chip.done { border-color: rgba(34, 197, 94, 0.6); }
+.bg-job-chip.done .bg-job-fill { background: rgba(34, 197, 94, 0.22); }
+.bg-job-chip.failed { border-color: rgba(239, 68, 68, 0.6); }
+.bg-job-chip.failed .bg-job-fill { background: rgba(239, 68, 68, 0.2); }
