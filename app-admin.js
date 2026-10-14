@@ -3410,6 +3410,7 @@ function resetSongForm() {
   hideCancelButton("songUploadProgressWrap");
   hideCancelButton("fullSongUploadProgressWrap");
   if (songUploadController) { songUploadController.abort(); songUploadController = null; } // เผื่อยังมีอัปโหลดค้างจากรอบก่อนหน้า ให้ยกเลิกจริงไปด้วยเลย
+  setSongFormStatus(""); refreshSongDraftUI(); // 🆕 (SONG-DRAFT)
 }
 // 🆕 (BG-JOB): ถ้ามีงานเพลงเดี่ยวค้างอยู่ (กำลังบันทึก/วิเคราะห์ หรือเพิ่งจบแบบมีปัญหาตอน popup ปิด) → โชว์ฟอร์มเดิมแทนการล้าง
 function reopenSongFormIfBusy() {
@@ -3421,9 +3422,46 @@ function reopenSongFormIfBusy() {
   if (busy) showToast(songSaveBusy ? "กำลังบันทึกเพลงอยู่ — แสดงสถานะเดิมให้แล้ว" : "กำลังวิเคราะห์เสียงอยู่ — แสดงสถานะเดิมให้แล้ว", "info");
   return true;
 }
-function openAddSong() { if (reopenSongFormIfBusy()) return; resetSongForm(); document.getElementById("songFormBackdrop").classList.add("show"); }
+// 🆕 (SONG-DRAFT): เพลงที่เลือก/กรอกไว้ในฟอร์ม "เพิ่มเพลง" แต่ยังไม่ได้บันทึก → ปิด/เปิด popup ใหม่ต้องยังอยู่ครบ
+function songFormHasDraft() {
+  if (editingSongId) return false;
+  const nameEl = document.getElementById("fSongName");
+  return !!(pendingSongFile || pendingFullSongFile || pendingCoverFile || (nameEl && nameEl.value.trim()));
+}
+function refreshSongDraftUI() {
+  const btn = document.getElementById("songDraftDeleteBtn");
+  if (!btn) return;
+  btn.style.display = songFormHasDraft() ? "block" : "none";
+  btn.disabled = songSaveBusy;
+}
+function setSongFormStatus(msg) {
+  const el = document.getElementById("songFormStatus");
+  if (!el) return;
+  if (!msg) { el.style.display = "none"; el.textContent = ""; return; }
+  el.textContent = msg; el.style.display = "block";
+}
+function openAddSong() {
+  if (reopenSongFormIfBusy()) return;
+  if (songFormHasDraft()) { // มีเพลงค้างในฟอร์ม → โชว์ของเดิม ไม่ล้าง
+    document.getElementById("songFormBackdrop").classList.add("show");
+    refreshSongDraftUI();
+    return;
+  }
+  resetSongForm(); document.getElementById("songFormBackdrop").classList.add("show");
+}
 function openEditSong(id) {
   if (reopenSongFormIfBusy()) return;
+  if (songFormHasDraft()) { // กันแก้เพลงอื่นแล้วทับเพลงที่ยังไม่ได้บันทึกโดยไม่ตั้งใจ
+    adminConfirm("มีเพลงที่ยังไม่ได้บันทึกค้างอยู่ในฟอร์ม \"เพิ่มเพลง\" — ต้องการทิ้งเพลงนั้นแล้วเปิดแก้ไขเพลงนี้ใช่ไหม?", { title: "มีเพลงค้างในฟอร์ม", okText: "ทิ้งแล้วเปิดแก้ไข" })
+      .then((ok) => {
+        if (ok) doOpenEditSong(id);
+        else { document.getElementById("songFormBackdrop").classList.add("show"); refreshSongDraftUI(); }
+      });
+    return;
+  }
+  doOpenEditSong(id);
+}
+function doOpenEditSong(id) {
   resetSongForm();
   const s = CACHE.songs.find(x => x.id === id);
   if (!s) return;
@@ -3490,6 +3528,17 @@ document.getElementById("songFormClose").addEventListener("click", () => {
   // 🔧 (BG-JOB): ปิดฟอร์มระหว่างอัปโหลด/วิเคราะห์ → ไม่ยกเลิกงานอีกแล้ว ปล่อยทำต่อเบื้องหลัง (ยกเลิกจริงใช้ปุ่ม "ยกเลิก" ข้างแถบ progress)
   document.getElementById("songFormBackdrop").classList.remove("show");
   if (songSaveBusy) showToast("ปิดหน้าต่างแล้ว — ระบบยังอัปโหลดต่อเบื้องหลัง แตะแถบด้านล่างเพื่อกลับมาดูสถานะ", "info");
+});
+
+// 🆕 (SONG-DRAFT): ปุ่ม "ลบเพลงนี้ออกจากฟอร์ม" (ไม่มี checkbox เพราะเป็นเพลงเดียว) + อัปเดตการแสดงปุ่มตามสถานะฟอร์ม
+document.getElementById("songFormBackdrop").addEventListener("input", refreshSongDraftUI);
+document.getElementById("songFormBackdrop").addEventListener("change", () => setTimeout(refreshSongDraftUI, 0));
+document.getElementById("songDraftDeleteBtn").addEventListener("click", async () => {
+  if (songSaveBusy) { showToast("กำลังบันทึกอยู่ — ลบตอนนี้ไม่ได้ (กด \"ยกเลิก\" ที่แถบ progress ก่อนถ้าต้องการหยุด)", "error"); return; }
+  const ok = await adminConfirm("ลบเพลงนี้ออกจากฟอร์ม?\n(ไฟล์ในเครื่องของคุณไม่ถูกลบ)", { title: "ลบออกจากฟอร์ม", okText: "ลบ" });
+  if (!ok) return;
+  resetSongForm();
+  showToast("ลบเพลงออกจากฟอร์มแล้ว", "info");
 });
 
 document.getElementById("songFileInput").addEventListener("change", (e) => {
@@ -3708,6 +3757,7 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
   songUploadController = controller;
   // 🆕 (BG-JOB): ตั้งสถานะ "กำลังบันทึก" + แถบลอยแสดงความคืบหน้าตอน popup ถูกปิด
   songSaveBusy = true;
+  setSongFormStatus(""); refreshSongDraftUI(); // 🆕 (SONG-DRAFT)
   let songWatchedAtFinish = false; // สำเร็จตอนแอดมินยังเปิดฟอร์มดูอยู่ → ไม่ต้องโชว์แถบลอย
   const songChipOpen = () => songWatchedAtFinish || isModalShown("songFormBackdrop");
   const songChipName = name;
@@ -3843,6 +3893,9 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
     hideCancelButton("fullSongUploadProgressWrap");
     showToast("บันทึกเพลงสำเร็จ", "success");
     songWatchedAtFinish = isModalShown("songFormBackdrop");
+    // 🆕 (SONG-DRAFT): บันทึกผ่านแล้ว → เอาเพลงนี้ออกจากฟอร์มทันที (ครั้งหน้าเปิดมาเป็นฟอร์มว่าง)
+    songUploadController = null;
+    resetSongForm();
     songChipOutcome = { ok: true, text: `บันทึกเพลง “${songChipName}” สำเร็จ`, autoHideMs: 8000, dismissOnly: true };
     document.getElementById("songFormBackdrop").classList.remove("show");
     // 🆕 อัปเดตแคชในเครื่องแทนโหลดเพลงทั้งตารางใหม่ (ถ้าแคชหมดอายุ → โหลดใหม่ตามเดิม)
@@ -3862,14 +3915,17 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
       hideCancelButton("fullSongUploadProgressWrap");
       showToast("ยกเลิกการอัปโหลดแล้ว");
       songChipOutcome = { ok: false, text: "ยกเลิกการอัปโหลดแล้ว", autoHideMs: 0 };
+      setSongFormStatus("⏹️ ยกเลิกการอัปโหลดแล้ว — เพลงยังอยู่ในฟอร์ม กด \"บันทึกเพลง\" เพื่อลองใหม่");
     } else {
       showToast("บันทึกไม่สำเร็จ: " + err.message, "error");
       songChipOutcome = { ok: false, text: "บันทึกไม่สำเร็จ: " + err.message, autoHideMs: 0 };
+      setSongFormStatus("❌ ไม่ผ่าน — " + err.message + " (เพลงยังอยู่ในฟอร์ม แก้ไขแล้วกดบันทึกใหม่ได้)"); // 🆕 (SONG-DRAFT)
     }
     // 🆕 (BG-JOB): จบแบบมีปัญหาตอน popup ปิดอยู่ → เปิดใหม่ให้เห็นฟอร์ม/ข้อมูลเดิม ไม่ล้าง
     if (!songChipOpen()) songKeepOnReopen = true;
   }
   songSaveBusy = false;
+  refreshSongDraftUI();
   bgChipFinish("song", { isOpen: songChipOpen, ...(songChipOutcome || { ok: true, text: "เสร็จแล้ว", autoHideMs: 4000 }) });
   songUploadController = null;
   btn.disabled = false; btn.textContent = "บันทึกเพลง";
@@ -4805,11 +4861,60 @@ document.getElementById("playlistSaveBtn").addEventListener("click", async funct
 // ================= BULK UPLOAD (เพิ่มเพลงหลายไฟล์พร้อมกันเป็นเพลย์ลิสต์เดียว) =================
 let bulkFiles = [];
 let bulkFullFiles = [];
+
+// 🆕 (BULK-DRAFT): รายการเพลงที่เลือกไว้แต่ยังไม่อัปโหลด ต้อง "ค้างอยู่" แม้ปิด/เปิด popup ใหม่
+//   - เพิ่มไฟล์ใหม่ → รวมกับรายการเดิม (ไม่ทับ)
+//   - เพลงหายจากรายการเฉพาะตอน (1) อัปโหลดสำเร็จ หรือ (2) แอดมินกดลบเอง เท่านั้น
+//   - เพลงที่ไม่ผ่าน/ซ้ำ ยังค้างในรายการพร้อมเหตุผล ให้แก้แล้วลองใหม่
+//   bulkFileMeta   = ราคา + Music Key ต่อไฟล์ (ผูกกับ File object ไม่ผูกกับลำดับ → ไม่เพี้ยนตอนลบ/รวมรายการ)
+//   bulkRowStatus  = สถานะรอบล่าสุดของแต่ละไฟล์ { state: "failed" | "dup", reason }
+//   bulkSelectedFiles = ไฟล์ที่ติ๊ก checkbox ไว้เพื่อลบทีเดียว
+const bulkFileMeta = new WeakMap();
+const bulkRowStatus = new WeakMap();
+const bulkSelectedFiles = new Set();
+function bulkFileId(f) { return f.name + "|" + f.size + "|" + f.lastModified; }
+function bulkMetaOf(f) { let m = bulkFileMeta.get(f); if (!m) { m = {}; bulkFileMeta.set(f, m); } return m; }
+function bulkHasDraft() { return bulkFiles.length > 0 || bulkFullFiles.length > 0; }
+function bulkUpdatePickerLabels() {
+  const p = document.getElementById("bulkFilesPicker");
+  if (p) {
+    if (bulkFiles.length > 0) { p.textContent = `🎵 เลือกแล้ว ${bulkFiles.length} ไฟล์ — แตะเพื่อเพิ่มไฟล์อีก`; p.className = "file-picker filled"; }
+    else { p.textContent = "📁 แตะเพื่อเลือกไฟล์เพลงหลายไฟล์"; p.className = "file-picker"; }
+  }
+  const fp = document.getElementById("bulkFullFilesPicker");
+  const meta = document.getElementById("bulkFullFilesMeta");
+  if (fp) {
+    if (bulkFullFiles.length > 0) {
+      fp.textContent = `🔒 เลือกแล้ว ${bulkFullFiles.length} ไฟล์ — แตะเพื่อเพิ่มอีก`; fp.className = "file-picker filled";
+      if (meta) { meta.textContent = "จะจับคู่กับไฟล์ตัวอย่างโดยเทียบชื่อไฟล์ (ไม่รวมนามสกุล) — เพลงที่จับคู่ไม่ได้จะยังไม่มีไฟล์เต็ม เพิ่มทีหลังได้ที่หน้าแก้ไขเพลง"; meta.style.display = "block"; }
+    } else {
+      fp.textContent = "🔒 แตะเพื่อเลือกไฟล์เพลงเต็มหลายไฟล์ (WAV/MP3)"; fp.className = "file-picker";
+      if (meta) { meta.style.display = "none"; meta.textContent = ""; }
+    }
+  }
+}
+// ลบเพลงออกจากรายการ (พร้อมไฟล์เต็มที่จับคู่กับเพลงนั้น) — ใช้ทั้งตอนแอดมินกดลบเอง และตอนอัปโหลดสำเร็จ
+function bulkRemoveFiles(list) {
+  const rm = new Set(list);
+  if (rm.size === 0) return;
+  const fullRm = new Set();
+  rm.forEach((f) => {
+    const mf = matchFullFile(f.name, bulkFullFiles)
+      || (bulkFiles.length === 1 && bulkFullFiles.length === 1 ? bulkFullFiles[0] : null);
+    if (mf) fullRm.add(mf);
+  });
+  bulkFiles = bulkFiles.filter((f) => !rm.has(f));
+  bulkFullFiles = bulkFullFiles.filter((f) => !fullRm.has(f));
+  rm.forEach((f) => { bulkSelectedFiles.delete(f); bulkRowStatus.delete(f); });
+  renderBulkSongListPreview();
+  bulkUpdatePickerLabels();
+}
 let pendingBulkCoverFile = null;
 
 async function openBulkUpload() {
   // 🆕 (BG-JOB): ถ้ากำลังอัปโหลด Bulk อยู่ (หรือเพิ่งจบตอน popup ปิด) → โชว์สถานะ/ผลเดิม ไม่ล้างฟอร์ม ไม่ยกเลิกงาน
-  if (bulkUploadController || bulkKeepOnReopen) {
+  //   🆕 (BULK-DRAFT): มีเพลงที่เลือกไว้แต่ยังไม่อัปโหลด/ยังไม่ผ่าน → โชว์รายการเดิมครบ ไม่ล้าง
+  if (bulkUploadController || bulkKeepOnReopen || bulkHasDraft()) {
     const running = !!bulkUploadController;
     bulkKeepOnReopen = false;
     bgChipRemove("bulk");
@@ -4818,6 +4923,7 @@ async function openBulkUpload() {
     return;
   }
   bulkFiles = []; bulkFullFiles = []; pendingBulkCoverFile = null;
+  bulkSelectedFiles.clear();
   // 🔧 (2026-09-19): ล้าง song list preview ด้วย
   const bulkPreview = document.getElementById("bulkSongListPreview");
   if (bulkPreview) bulkPreview.innerHTML = "";
@@ -5033,10 +5139,19 @@ document.getElementById("bulkPlaylist").addEventListener("change", (e) => {
 });
 
 document.getElementById("bulkFilesInput").addEventListener("change", (e) => {
-  bulkFiles = Array.from(e.target.files || []);
-  if (bulkFiles.length === 0) return;
-  document.getElementById("bulkFilesPicker").textContent = `🎵 เลือกแล้ว ${bulkFiles.length} ไฟล์`;
-  document.getElementById("bulkFilesPicker").className = "file-picker filled";
+  // 🔧 (BULK-DRAFT): เลือกไฟล์เพิ่ม → "รวม" กับรายการเดิม (เดิมเคยทับของเก่าทิ้ง) · ไฟล์เดียวกันเลือกซ้ำจะถูกข้าม
+  const incoming = Array.from(e.target.files || []);
+  e.target.value = ""; // ให้เลือกไฟล์เดิมซ้ำได้อีก (ไม่งั้น change ไม่ยิง)
+  if (incoming.length === 0) return;
+  const have = new Set(bulkFiles.map(bulkFileId));
+  let added = 0, skipped = 0;
+  incoming.forEach((f) => {
+    const id = bulkFileId(f);
+    if (have.has(id)) { skipped++; return; }
+    have.add(id); bulkFiles.push(f); added++;
+  });
+  if (skipped > 0) showToast(`ข้ามไฟล์ที่เลือกไว้แล้ว ${skipped} ไฟล์ — เพิ่มใหม่ ${added} ไฟล์`, "info");
+  bulkUpdatePickerLabels();
   // 🔧 (2026-09-19): แสดงรายการเพลงพร้อมช่องตั้งราคาแต่ละเพลง
   renderBulkSongListPreview();
 });
@@ -5087,22 +5202,42 @@ function renderBulkSongListPreview() {
     '<option value="11B" style="color:#FCA5A5;">11B</option>',
     '<option value="12B" style="color:#F9A8D4;">12B</option>'
   ].join("");
+  const selCount = bulkFiles.filter((f) => bulkSelectedFiles.has(f)).length;
+  const allSel = bulkFiles.length > 0 && selCount === bulkFiles.length;
   container.innerHTML = `
-    <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text);">📋 รายการเพลง (${bulkFiles.length} เพลง) — ตั้ง Key + ราคาแต่ละเพลงแยกกันได้ด้านล่าง</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+        <input type="checkbox" id="bulkSelectAllChk" ${allSel ? "checked" : ""} style="width:18px;height:18px;"> เลือกทั้งหมด
+      </label>
+      <span style="flex:1;font-size:13px;font-weight:600;color:var(--text);text-align:right;">📋 ${bulkFiles.length} เพลง</span>
+      <button type="button" id="bulkDeleteSelectedBtn" class="btn danger" style="padding:6px 10px;font-size:12px;width:auto;" ${selCount ? "" : "disabled"}>🗑️ ลบที่เลือก (${selCount})</button>
+    </div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">ติ๊กเลือกแล้วลบทีเดียว หรือกด 🗑️ ลบทีละเพลง · ตั้ง Key + ราคาแยกกันได้ · เพลงที่อัปโหลดสำเร็จจะหายจากรายการเอง เหลือเฉพาะเพลงที่ไม่ผ่าน</div>
     <div style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px;">
       ${bulkFiles.map((file, i) => {
         const songName = cleanFileNameToSongName(file.name);
+        const st = bulkRowStatus.get(file);
+        const m = bulkFileMeta.get(file) || {};
+        const price = (m.price != null && m.price !== "") ? m.price : defaultPrice;
         return `
-          <div style="display:flex;align-items:center;gap:6px;padding:8px 6px;border-bottom:1px solid var(--border);">
-            <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(songName)}">${i + 1}. ${escapeHtml(songName)}</span>
-            <select data-bulk-song-key="${i}" aria-label="Music Key สำหรับเพลง ${i + 1}"
-                    style="width:60px;padding:4px 4px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:rgba(255,255,255,0.04);color:var(--text);flex-shrink:0;">
-              ${MUSIC_KEY_OPTIONS_HTML}
-            </select>
-            <input type="number" min="0" value="${defaultPrice}" data-bulk-song-price="${i}"
-                   style="width:80px;padding:4px 6px;font-size:12px;text-align:right;border:1px solid var(--border);border-radius:4px;"
-                   placeholder="0">
-            <span style="font-size:11px;color:var(--text-dim);white-space:nowrap;">LAK</span>
+          <div style="padding:8px 6px;border-bottom:1px solid var(--border);${st ? "background:rgba(239,68,68,.08);" : ""}">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" data-bulk-song-chk="${i}" ${bulkSelectedFiles.has(file) ? "checked" : ""} style="width:18px;height:18px;flex-shrink:0;" aria-label="เลือกเพลง ${i + 1} เพื่อลบ">
+              <span style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(songName)}">${i + 1}. ${escapeHtml(songName)}</span>
+              <button type="button" data-bulk-song-del="${i}" aria-label="ลบเพลงนี้ออกจากรายการ" title="ลบเพลงนี้ออกจากรายการ"
+                      style="flex-shrink:0;border:none;background:transparent;font-size:16px;cursor:pointer;padding:4px 6px;">🗑️</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;margin:6px 0 0 26px;">
+              <select data-bulk-song-key="${i}" aria-label="Music Key สำหรับเพลง ${i + 1}"
+                      style="width:60px;padding:4px 4px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:rgba(255,255,255,0.04);color:var(--text);flex-shrink:0;">
+                ${MUSIC_KEY_OPTIONS_HTML}
+              </select>
+              <input type="number" min="0" value="${escapeHtml(String(price))}" data-bulk-song-price="${i}"
+                     style="width:90px;padding:4px 6px;font-size:12px;text-align:right;border:1px solid var(--border);border-radius:4px;"
+                     placeholder="0">
+              <span style="font-size:11px;color:var(--text-dim);white-space:nowrap;">LAK</span>
+            </div>
+            ${st ? `<div style="font-size:11px;color:#f87171;margin:6px 0 0 26px;">${st.state === "dup" ? "⚠️ ข้าม — " : "❌ ไม่ผ่าน — "}${escapeHtml(st.reason || "")}</div>` : ""}
           </div>
         `;
       }).join("")}
@@ -5112,6 +5247,8 @@ function renderBulkSongListPreview() {
   //   เหมือน fMusicKey (consistent UX)
   //   🆕 (T143→T144): เมื่อ value ว่าง → ตั้ง color var(--text) (ขาว) แทน var(--text-dim) (เทา)
   container.querySelectorAll("[data-bulk-song-key]").forEach(sel => {
+    const f = bulkFiles[Number(sel.getAttribute("data-bulk-song-key"))];
+    if (f) { const mk = bulkFileMeta.get(f); if (mk && mk.key) sel.value = mk.key; } // 🆕 (BULK-DRAFT) คืนค่า Key เดิมของเพลงนี้
     const apply = () => {
       const val = String(sel.value || "").trim().toUpperCase();
       if (val && MUSIC_KEY_COLORS[val]) {
@@ -5122,14 +5259,65 @@ function renderBulkSongListPreview() {
         sel.style.fontWeight = "";
       }
     };
-    sel.addEventListener("change", apply);
+    sel.addEventListener("change", () => { apply(); if (f) bulkMetaOf(f).key = sel.value; });
     apply(); // initial
+  });
+  // 🆕 (BULK-DRAFT): เก็บราคาลง meta ของไฟล์ (อ่านตอนอัปโหลดจริงจาก meta ไม่ใช่ลำดับแถว)
+  container.querySelectorAll("[data-bulk-song-price]").forEach(inp => {
+    const f = bulkFiles[Number(inp.getAttribute("data-bulk-song-price"))];
+    if (!f) return;
+    const mp = bulkMetaOf(f);
+    if (mp.price == null || mp.price === "") mp.price = inp.value;
+    inp.addEventListener("input", () => { bulkMetaOf(f).price = inp.value; });
+  });
+  // 🆕 (BULK-DRAFT): checkbox เลือกลบทีเดียว / ปุ่มลบทีละเพลง
+  const refreshSelUI = () => {
+    const n = bulkFiles.filter((f) => bulkSelectedFiles.has(f)).length;
+    const delBtn = container.querySelector("#bulkDeleteSelectedBtn");
+    if (delBtn) { delBtn.disabled = n === 0; delBtn.textContent = `🗑️ ลบที่เลือก (${n})`; }
+    const allChk = container.querySelector("#bulkSelectAllChk");
+    if (allChk) allChk.checked = bulkFiles.length > 0 && n === bulkFiles.length;
+  };
+  const guardRunning = () => {
+    if (!bulkUploadController) return false;
+    showToast("กำลังอัปโหลดอยู่ — ลบรายการตอนนี้ไม่ได้ (กด \"ยกเลิก\" ก่อนถ้าต้องการหยุด)", "error");
+    return true;
+  };
+  container.querySelectorAll("[data-bulk-song-chk]").forEach(chk => {
+    chk.addEventListener("change", () => {
+      const f = bulkFiles[Number(chk.getAttribute("data-bulk-song-chk"))];
+      if (!f) return;
+      if (chk.checked) bulkSelectedFiles.add(f); else bulkSelectedFiles.delete(f);
+      refreshSelUI();
+    });
+  });
+  const selAllChk = container.querySelector("#bulkSelectAllChk");
+  if (selAllChk) selAllChk.addEventListener("change", () => {
+    bulkFiles.forEach((f) => { if (selAllChk.checked) bulkSelectedFiles.add(f); else bulkSelectedFiles.delete(f); });
+    container.querySelectorAll("[data-bulk-song-chk]").forEach((c) => { c.checked = selAllChk.checked; });
+    refreshSelUI();
+  });
+  container.querySelectorAll("[data-bulk-song-del]").forEach(b => {
+    b.addEventListener("click", () => {
+      if (guardRunning()) return;
+      const f = bulkFiles[Number(b.getAttribute("data-bulk-song-del"))];
+      if (f) bulkRemoveFiles([f]);
+    });
+  });
+  const delSelBtn = container.querySelector("#bulkDeleteSelectedBtn");
+  if (delSelBtn) delSelBtn.addEventListener("click", async () => {
+    if (guardRunning()) return;
+    const list = bulkFiles.filter((f) => bulkSelectedFiles.has(f));
+    if (list.length === 0) return;
+    const ok = await adminConfirm(`ลบ ${list.length} เพลงที่เลือกออกจากรายการ?\n(ไฟล์ในเครื่องของคุณไม่ถูกลบ)`, { title: "ลบออกจากรายการ", okText: "ลบ" });
+    if (ok) bulkRemoveFiles(list);
   });
 }
 
 // 🔧 (2026-09-19): เมื่อ bulkPrice เปลี่ยน → อัปเดตราคาทุกเพลงใน list (เป็น default)
 document.getElementById("bulkPrice").addEventListener("input", (e) => {
   const price = e.target.value;
+  bulkFiles.forEach((f) => { bulkMetaOf(f).price = price; }); // 🆕 (BULK-DRAFT) เก็บราคาที่ผูกกับไฟล์ ไม่ผูกกับลำดับแถว
   document.querySelectorAll("[data-bulk-song-price]").forEach(input => {
     input.value = price;
   });
@@ -5145,12 +5333,14 @@ document.getElementById("bulkFullFilesInput").addEventListener("change", (e) => 
   if (notAllowed.length > 0) {
     showToast("ไฟล์เพลงเต็มต้องเป็นนามสกุล .wav หรือ .mp3 เท่านั้น — ตัดไฟล์ที่ไม่รองรับออกแล้ว: " + notAllowed.map(f => f.name).join(", "), "error");
   }
-  bulkFullFiles = files.filter(isAllowedFile);
-  if (bulkFullFiles.length === 0) { meta.style.display = "none"; return; }
-  document.getElementById("bulkFullFilesPicker").textContent = `🔒 เลือกแล้ว ${bulkFullFiles.length} ไฟล์`;
-  document.getElementById("bulkFullFilesPicker").className = "file-picker filled";
-  meta.textContent = "จะจับคู่กับไฟล์ตัวอย่างโดยเทียบชื่อไฟล์ (ไม่รวมนามสกุล) — เพลงที่จับคู่ไม่ได้จะยังไม่มีไฟล์เต็ม เพิ่มทีหลังได้ที่หน้าแก้ไขเพลง";
-  meta.style.display = "block";
+  // 🔧 (BULK-DRAFT, ตามคำสั่งผู้ใช้ 2026-10-14): เลือกไฟล์เต็มเพิ่ม → รวมกับรายการเดิม (กฎนามสกุล .wav/.mp3 ด้านบนไม่เปลี่ยน)
+  e.target.value = "";
+  const haveFull = new Set(bulkFullFiles.map(bulkFileId));
+  files.filter(isAllowedFile).forEach((f) => {
+    const id = bulkFileId(f);
+    if (!haveFull.has(id)) { haveFull.add(id); bulkFullFiles.push(f); }
+  });
+  bulkUpdatePickerLabels();
 });
 // 🔒🔒🔒 จบส่วนที่ห้าม AI แก้เอง (ไฟล์เพลงเต็มแบบ Bulk) 🔒🔒🔒
 
@@ -5183,10 +5373,10 @@ function matchFullFile(previewFileName, fullFilesList) {
 
 // คำนวณคู่ไฟล์ตัวอย่าง<->ไฟล์เต็มล่วงหน้า (ใช้ตรรกะเดียวกับตอนอัปโหลดจริงเป๊ะๆ เพื่อให้ตารางที่โชว์
 // ตรงกับสิ่งที่จะเกิดขึ้นจริง 100% — ถ้าแก้ logic การจับคู่ ต้องแก้ทั้ง 2 จุดนี้ให้ตรงกันเสมอ)
-function computeBulkMatches() {
-  return bulkFiles.map((file) => {
+function computeBulkMatches(files = bulkFiles) {
+  return files.map((file) => {
     const matchedFull = matchFullFile(file.name, bulkFullFiles)
-      || (bulkFiles.length === 1 && bulkFullFiles.length === 1 ? bulkFullFiles[0] : null);
+      || (files.length === 1 && bulkFullFiles.length === 1 ? bulkFullFiles[0] : null);
     return {
       previewName: file.name,
       songName: cleanFileNameToSongName(file.name),
@@ -5240,6 +5430,9 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
   // ถ้ามีเพลงซ้ำ → ถามผู้ใช้ว่าจะ "skip เพลงซ้ำและอัปเฉพาะเพลงใหม่" หรือ "ยกเลิกทั้งหมด"
   // ถ้าทุกเพลงในชุดซ้ำ → ไม่ต้องถาม บอกยกเลิกเลย
   const skippedDupNames = []; // 🔧 (2026-10-01): ชื่อเพลงที่ถูกข้ามเพราะซ้ำ — ไว้สรุปท้ายงาน
+  // 🆕 (BULK-DRAFT): คิวอัปโหลดรอบนี้ (ตัดเพลงซ้ำออกเฉพาะคิว — ไม่ลบเพลงซ้ำออกจากรายการในหน้าจอ ให้แอดมินเห็น/ลบ/เปลี่ยนชื่อเอง)
+  let queueFiles = bulkFiles.slice();
+  bulkFiles.forEach((f) => bulkRowStatus.delete(f)); // ล้างสถานะรอบก่อน
   btn.disabled = true; btn.textContent = "กำลังตรวจเพลงซ้ำ...";
   const dupCheckReady = await refreshSongsForDupCheck((n, t) => {
     btn.textContent = `กำลังตรวจเพลงซ้ำ... ${n.toLocaleString("en-US")}${t ? "/" + t.toLocaleString("en-US") : ""}`;
@@ -5277,6 +5470,10 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
     if (duplicatesInDb.length > 0 || duplicatesInBatch.length > 0) {
       const totalDup = duplicatesInDb.length + duplicatesInBatch.length;
       const totalNew = bulkFiles.length - totalDup;
+      // 🆕 (BULK-DRAFT): ติดป้ายเหตุผลที่แถวเพลงซ้ำ (ค้างในรายการ ไม่ถูกลบเอง)
+      duplicatesInDb.forEach((d) => bulkRowStatus.set(bulkFiles[d.idx], { state: "dup", reason: "ชื่อซ้ำกับเพลงที่มีในระบบแล้ว" }));
+      duplicatesInBatch.forEach((d) => bulkRowStatus.set(bulkFiles[d.idx], { state: "dup", reason: "ชื่อซ้ำกับไฟล์อื่นในชุดนี้" }));
+      renderBulkSongListPreview();
 
       // สร้างข้อความสรุปรายชื่อเพลงซ้ำ
       let msg = `❌ พบเพลงซ้ำ ${totalDup} เพลง:\n\n`;
@@ -5301,8 +5498,8 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
           ...duplicatesInBatch.map(d => d.idx),
         ]);
         [...duplicatesInDb, ...duplicatesInBatch].forEach(d => skippedDupNames.push(d.songName));
-        bulkFiles = bulkFiles.filter((_, idx) => !dupIdx.has(idx));
-        showToast(`ข้ามเพลงซ้ำ ${totalDup} เพลง — กำลังอัปโหลด ${bulkFiles.length} เพลงใหม่`, "info");
+        queueFiles = bulkFiles.filter((_, idx) => !dupIdx.has(idx));
+        showToast(`ข้ามเพลงซ้ำ ${totalDup} เพลง — กำลังอัปโหลด ${queueFiles.length} เพลงใหม่`, "info");
       } else {
         // ทุกเพลงในชุดซ้ำ → ไม่มีอะไรให้อัปโหลด
         msg += `\nทุกเพลงในชุดซ้ำ — ไม่สามารถอัปโหลดได้ กรุณาเปลี่ยนชื่อหรือลบไฟล์ซ้ำออก`;
@@ -5315,7 +5512,7 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
   // ถ้ามีไฟล์เต็มที่เลือกไว้ ให้โชว์ตารางคู่ที่จับได้ให้เช็คก่อนเริ่มอัปโหลดจริง (กันจับคู่ผิดเพลง)
   // ถ้าไม่ได้เลือกไฟล์เต็มเลย ก็ไม่มีอะไรต้องเช็ค ข้ามไปอัปโหลดตามปกติ
   if (bulkFullFiles.length > 0) {
-    const matches = computeBulkMatches();
+    const matches = computeBulkMatches(queueFiles);
     const proceed = await showBulkMatchConfirm(matches);
     if (!proceed) return; // ผู้ใช้กดย้อนกลับไปแก้ไข — ยังไม่อัปโหลดอะไรทั้งสิ้น
   }
@@ -5332,6 +5529,8 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
   // 🆕 (BG-JOB): แถบลอยแสดงความคืบหน้าตอน popup ปิดอยู่ (อ่านจาก DOM ของ popup ที่ยังอัปเดตต่อเนื่อง)
   const bulkChipOpen = () => isModalShown("bulkUploadBackdrop");
   let bulkChipOutcome = null;
+  const bulkSucceeded = []; // 🆕 (BULK-DRAFT) ไฟล์ที่อัปโหลด+บันทึกสำเร็จรอบนี้ → เอาออกจากรายการเมื่อจบ
+  const bulkFailed = [];    // 🆕 (BULK-DRAFT) { name, reason } ที่ไม่ผ่านรอบนี้ → ค้างในรายการพร้อมเหตุผล
   bgChipStart("bulk", {
     isOpen: bulkChipOpen,
     onOpen: () => { bulkKeepOnReopen = false; document.getElementById("bulkUploadBackdrop").classList.add("show"); },
@@ -5432,15 +5631,19 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
     const shouldAnalyzePreview = bulkAutoPreviewEl ? bulkAutoPreviewEl.checked : true;
 
     let savedCount = 0; // 🔧 (2026-10-01): จำนวนเพลงที่บันทึกลงเว็บจริง (ไม่นับเพลงที่ข้าม)
-    for (let i = 0; i < bulkFiles.length; i++) {
-      const file = bulkFiles[i];
-      document.getElementById("bulkStatusText").textContent = `กำลังอัปโหลด ${i + 1}/${bulkFiles.length}: ${file.name}`;
+    for (let i = 0; i < queueFiles.length; i++) {
+      const file = queueFiles[i];
+      document.getElementById("bulkStatusText").textContent = `กำลังอัปโหลด ${i + 1}/${queueFiles.length}: ${file.name}`;
 
       // 🔧 (2026-10-01): ตรวจซ้ำอีกรอบก่อนอัปโหลดแต่ละเพลง (กันระหว่างอัปมีเพลงชื่อเดียวกันเข้าระบบ) — ถ้าซ้ำข้ามเพลงนี้ ไม่เสียเวลาอัปไฟล์
       if (findDuplicateSongsByName(cleanFileNameToSongName(file.name), null).length > 0) {
         skippedDupNames.push(cleanFileNameToSongName(file.name));
+        bulkRowStatus.set(file, { state: "dup", reason: "ชื่อซ้ำกับเพลงที่เพิ่งเข้าระบบ" });
         continue;
       }
+
+      // 🆕 (BULK-DRAFT): เพลงไหนพังให้จดเหตุผลแล้วไปเพลงถัดไป (เดิมพังเพลงเดียวหยุดทั้งคิว) — กดยกเลิกเองยังหยุดทั้งคิวเหมือนเดิม
+      try {
 
       // 🔧 (2026-09-22 Batch 7 fix Bug #8): อัปโหลด preview + full พร้อมกัน (parallel) แทน sequential
       //   เดิม: อัปโหลด preview (await) → analyze → อัปโหลด full (await) → save
@@ -5453,20 +5656,20 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
       //   หมายเหตุ: matchFullFile() ใช้ file.name (มีอยู่แล้ว) → ไม่ต้องรอ preview upload เสร็จ
       //            จึงสามารถเริ่มอัปโหลด full ไปพร้อมกันได้เลย
       const matchedFull = matchFullFile(file.name, bulkFullFiles)
-        || (bulkFiles.length === 1 && bulkFullFiles.length === 1 ? bulkFullFiles[0] : null);
+        || (queueFiles.length === 1 && bulkFullFiles.length === 1 ? bulkFullFiles[0] : null);
 
       // เริ่มทั้งสอง uploads พร้อมกัน
       const [previewUploadResult, fullUploadResult] = await Promise.all([
         // Upload preview (MP3 — ไฟล์ตัวอย่าง)
         uploadToCloudinary(file, (pct, loaded, total) => {
-          const overall = Math.round(((i + pct / 100) / bulkFiles.length) * 100);
+          const overall = Math.round(((i + pct / 100) / queueFiles.length) * 100);
           document.getElementById("bulkProgress").style.width = overall + "%";
           updateProgressLabel(bulkProgLabel, total || file.size, pct, loaded);
         }, controller.signal),
         // Upload full (WAV — ถ้ามี matchedFull)
         matchedFull
           ? uploadFullSong(matchedFull, (pct, loaded, total) => {
-              const overall = Math.round(((i + pct / 100) / bulkFiles.length) * 100);
+              const overall = Math.round(((i + pct / 100) / queueFiles.length) * 100);
               document.getElementById("bulkProgress").style.width = overall + "%";
               updateProgressLabel(bulkProgLabel, total || matchedFull.size, pct, loaded);
             }, controller.signal, (attempt, maxRetries) => {
@@ -5495,8 +5698,7 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
         //   ปัญหาเดิม: Number(priceInput.value || 0) → รับค่า -100, "abc", Infinity
         //   วิธีแก้: ใช้ helper validatePrice() ที่ตรวจ + ใช้ fallback เป็น defaultPrice ถ้าผิด
         price: (() => {
-          const priceInput = document.querySelector(`[data-bulk-song-price="${i}"]`);
-          const rawValue = priceInput ? priceInput.value : "";
+          const rawValue = (bulkFileMeta.get(file) || {}).price ?? ""; // 🔧 (BULK-DRAFT) อ่านจาก meta ของไฟล์ ไม่ใช่ลำดับแถว
           const numPrice = Number(rawValue);
           // validate: ต้องเป็นจำนวนจริงที่ >= 0 (รับ 0 ได้ = ฟรี, แต่ห้ามติดลบ/NaN/Infinity)
           if (!Number.isFinite(numPrice) || numPrice < 0) {
@@ -5520,8 +5722,7 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
         //   🆕 (T142 2026-10-13): เปลี่ยนเป็นอ่านจาก per-song select (data-bulk-song-key) แทน
         //   แต่ละเพลงมีคีย์ต่างกันได้ → ต้องอ่านทีละ row (เหมือน data-bulk-song-price)
         music_key: (() => {
-          const keyInput = document.querySelector(`[data-bulk-song-key="${i}"]`);
-          const rawKey = String(keyInput?.value || "").trim().toUpperCase();
+          const rawKey = String((bulkFileMeta.get(file) || {}).key || "").trim().toUpperCase();
           return isValidMusicKey(rawKey) ? rawKey : "";
         })(),
         created_at: new Date().toISOString(),
@@ -5542,7 +5743,7 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
       // ทำหลังอัปโหลดไฟล์ตัวอย่างเสร็จ ก่อนอัปโหลดไฟล์เต็ม (เผื่อใช้ร่วมกันในกรณี shared file)
       // ถ้าล้มเหลว → ข้ามไป ไม่ block การอัปโหลด — บันทึกชื่อเพลงไว้แจ้งเตือนท้าย
       if (shouldAnalyzePreview) {
-        document.getElementById("bulkStatusText").textContent = `กำลังวิเคราะห์เสียง ${i + 1}/${bulkFiles.length}: ${file.name}`;
+        document.getElementById("bulkStatusText").textContent = `กำลังวิเคราะห์เสียง ${i + 1}/${queueFiles.length}: ${file.name}`;
         try {
           const previewResult = await analyzeSongFile(file, undefined, /* bpm */ (() => {
             // 🆕 (T136): ส่ง BPM จาก bulkBpm input เข้า analyzeSongFile สำหรับ bulk upload
@@ -5577,6 +5778,14 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
       savedCount++;
       // 🔧 (2026-10-01): ใส่เพลงที่เพิ่งบันทึกเข้า CACHE ทันที เพื่อให้การตรวจซ้ำรอบถัดไปเห็นเพลงนี้
       CACHE.songs.push({ id: savedRef.id, ...songPayload });
+      bulkSucceeded.push(file);
+      } catch (songErr) {
+        if (isAbortError(songErr)) throw songErr;
+        const reason = (songErr && songErr.message) ? songErr.message : String(songErr);
+        console.warn(`Bulk upload: เพลง "${file.name}" ไม่ผ่าน:`, reason);
+        bulkFailed.push({ name: cleanFileNameToSongName(file.name), reason });
+        bulkRowStatus.set(file, { state: "failed", reason });
+      }
     }
     // 🎨 (Sort-Thai-Fix): re-sort CACHE.songs หลัง bulk upload — กันเพลงใหม่ไปต่อท้ายไม่เรียง
     CACHE.songs = sortSongsByThaiName(CACHE.songs);
@@ -5584,18 +5793,26 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
 
     hideCancelButton("bulkProgressWrap");
     document.getElementById("bulkProgress").style.width = "100%";
+    // 🆕 (BULK-DRAFT): เพลงที่ไม่ผ่านไม่ต้องไปอยู่ในโน้ต "ไฟล์เต็มไม่ตรง/Preview ล้มเหลว" ซ้ำ (เพราะไม่ได้ถูกบันทึกเข้าเว็บ)
+    const failedNameSet = new Set(bulkFailed.map((f) => f.name));
+    for (let k = unmatchedNames.length - 1; k >= 0; k--) if (failedNameSet.has(unmatchedNames[k])) unmatchedNames.splice(k, 1);
+    for (let k = previewFailedNames.length - 1; k >= 0; k--) if (failedNameSet.has(previewFailedNames[k])) previewFailedNames.splice(k, 1);
+    const hasFailed = bulkFailed.length > 0;
+    const failedNote = hasFailed
+      ? ` | ไม่ผ่าน ${bulkFailed.length} เพลง (ค้างในรายการให้แก้/ลองใหม่): ${bulkFailed.map((f) => `${f.name} (${f.reason})`).join(", ")}`
+      : "";
     const hasUnmatched = unmatchedNames.length > 0;
     const hasPreviewFailed = previewFailedNames.length > 0;
     // สรุปผล: รวมรายชื่อเพลงที่ต้องแก้ไขทีหลัง (ทั้งไฟล์เต็มไม่ตรง + Auto Preview ล้มเหลว)
     const unmatchedNote = hasUnmatched
-      ? ` (มีไฟล์เต็ม ${matchedCount}/${bulkFiles.length} เพลง — ยังไม่มีไฟล์เต็ม: ${unmatchedNames.join(", ")} ไปเพิ่มทีหลังได้ที่หน้าแก้ไขเพลง)`
+      ? ` (มีไฟล์เต็ม ${matchedCount}/${queueFiles.length} เพลง — ยังไม่มีไฟล์เต็ม: ${unmatchedNames.join(", ")} ไปเพิ่มทีหลังได้ที่หน้าแก้ไขเพลง)`
       : "";
     const previewFailedNote = hasPreviewFailed
-      ? ` | Auto Preview ล้มเหลว ${previewFailedNames.length}/${bulkFiles.length} เพลง: ${previewFailedNames.join(", ")} — ไปตั้ง Auto Preview เองได้ที่หน้าแก้ไขเพลง`
+      ? ` | Auto Preview ล้มเหลว ${previewFailedNames.length}/${queueFiles.length} เพลง: ${previewFailedNames.join(", ")} — ไปตั้ง Auto Preview เองได้ที่หน้าแก้ไขเพลง`
       : "";
     const destinationNote = playlistName ? ` เข้าเพลย์ลิสต์ "${playlistName}"` : "";
-    document.getElementById("bulkStatusText").textContent = `เสร็จแล้ว! เพิ่มเพลงสำเร็จ ${savedCount} เพลง${skippedDupNames.length ? ` | ข้ามเพลงซ้ำ ${skippedDupNames.length} เพลง: ${skippedDupNames.join(", ")}` : ""}${unmatchedNote}${previewFailedNote}`;
-    const hasIssue = hasUnmatched || hasPreviewFailed;
+    document.getElementById("bulkStatusText").textContent = `เสร็จแล้ว! เพิ่มเพลงสำเร็จ ${savedCount} เพลง${failedNote}${skippedDupNames.length ? ` | ข้ามเพลงซ้ำ ${skippedDupNames.length} เพลง: ${skippedDupNames.join(", ")}` : ""}${unmatchedNote}${previewFailedNote}`;
+    const hasIssue = hasUnmatched || hasPreviewFailed || hasFailed;
     const hasSkippedDup = skippedDupNames.length > 0; // ข้ามเพลงซ้ำ — ไม่ใช่ error แต่ค้างหน้าต่างไว้ให้อ่านรายชื่อ
     showToast(`เพิ่มเพลง ${savedCount} เพลง${destinationNote} สำเร็จ${skippedDupNames.length ? ` (ข้ามเพลงซ้ำ ${skippedDupNames.length} เพลง)` : ""}${hasIssue ? ` — มีบางเพลงต้องแก้ไขเพิ่ม (ดูรายละเอียดด้านล่าง)` : ""}`, hasIssue ? "error" : "success");
     loadDashboard();
@@ -5605,7 +5822,7 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
       bulkChipOutcome = { ok: true, text: `เพิ่มเพลงสำเร็จ ${savedCount} เพลง`, autoHideMs: 10000, dismissOnly: true };
     } else {
       // 🆕 (BG-JOB): มีรายชื่อที่ต้องอ่าน (ข้ามซ้ำ/ไฟล์เต็มไม่ตรง/Preview ล้มเหลว) → ถ้า popup ปิดอยู่ เปิดใหม่ให้เห็นสรุปเดิม
-      bulkChipOutcome = { ok: !hasIssue, text: `เพิ่มเพลง ${savedCount} เพลงแล้ว (มีรายการต้องตรวจ)`, autoHideMs: 0 };
+      bulkChipOutcome = { ok: !hasIssue, text: `เพิ่มเพลง ${savedCount} เพลงแล้ว (${hasFailed ? "ไม่ผ่าน " + bulkFailed.length + " เพลง" : "มีรายการต้องตรวจ"})`, autoHideMs: 0 };
       if (!bulkChipOpen()) bulkKeepOnReopen = true;
     }
   } catch (err) {
@@ -5626,6 +5843,8 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
   } finally {
     // 🆕 (BG-JOB): เคลียร์สถานะเสมอ แม้เจอ return กลางทาง (เช่น สร้าง DJ/หมวดใหม่ไม่สำเร็จ) กันค้างเป็น "กำลังอัปโหลด" ตลอดไป
     bulkUploadController = null;
+    // 🆕 (BULK-DRAFT): เอาเฉพาะเพลงที่ผ่านออกจากรายการ (รวมกรณีกดยกเลิกกลางคัน) — เหลือเพลงที่ไม่ผ่าน/ซ้ำ/ยังไม่ได้ทำ
+    if (bulkSucceeded.length > 0) bulkRemoveFiles(bulkSucceeded); else renderBulkSongListPreview();
     bgChipFinish("bulk", { isOpen: bulkChipOpen, ...(bulkChipOutcome || { ok: false, text: "หยุดการอัปโหลด", autoHideMs: 4000 }) });
   }
   bulkUploadController = null;
