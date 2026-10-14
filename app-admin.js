@@ -3437,7 +3437,25 @@ function songFormHasDraft() {
   const nameEl = document.getElementById("fSongName");
   return !!(pendingSongFile || pendingFullSongFile || pendingCoverFile || (nameEl && nameEl.value.trim()));
 }
+// 🆕 (FILE-MODE): ฟอร์มเพลงเดียว — บอกทันทีว่าเพลงนี้จะ "ไฟล์เต็มแยก" หรือ "ใช้ไฟล์ตัวอย่างเป็นไฟล์เต็ม"
+//   (แสดงผลอย่างเดียว ไม่แตะโค้ดส่วนไฟล์เต็มที่ล็อกไว้ — อ่านจากตัวแปรสถานะเท่านั้น)
+function refreshSongFileModeHint() {
+  const el = document.getElementById("songFileModeHint");
+  if (!el) return;
+  const hasSample = !!pendingSongFile || !!editingSongId;
+  const hasSeparate = !!pendingFullSongFile || !!existingFullFileUrl;
+  if (!hasSample && !hasSeparate) { el.style.display = "none"; el.textContent = ""; return; }
+  if (hasSeparate) {
+    el.style.color = "#22c55e";
+    el.textContent = pendingFullSongFile ? `🔒 ไฟล์เต็มแยก: ${pendingFullSongFile.name}` : "🔒 ไฟล์เต็มแยก (มีไฟล์เต็มอยู่แล้ว)";
+  } else {
+    el.style.color = "var(--text-dim)";
+    el.textContent = "🔗 จะใช้ไฟล์ตัวอย่างเป็นไฟล์เต็ม (ไฟล์เดียว ประหยัดพื้นที่)";
+  }
+  el.style.display = "block";
+}
 function refreshSongDraftUI() {
+  refreshSongFileModeHint();
   const btn = document.getElementById("songDraftDeleteBtn");
   if (!btn) return;
   btn.style.display = songFormHasDraft() ? "block" : "none";
@@ -3463,12 +3481,13 @@ function openEditSong(id) {
   if (songFormHasDraft()) { // กันแก้เพลงอื่นแล้วทับเพลงที่ยังไม่ได้บันทึกโดยไม่ตั้งใจ
     adminConfirm("มีเพลงที่ยังไม่ได้บันทึกค้างอยู่ในฟอร์ม \"เพิ่มเพลง\" — ต้องการทิ้งเพลงนั้นแล้วเปิดแก้ไขเพลงนี้ใช่ไหม?", { title: "มีเพลงค้างในฟอร์ม", okText: "ทิ้งแล้วเปิดแก้ไข" })
       .then((ok) => {
-        if (ok) doOpenEditSong(id);
+        if (ok) { doOpenEditSong(id); refreshSongDraftUI(); }
         else { document.getElementById("songFormBackdrop").classList.add("show"); refreshSongDraftUI(); }
       });
     return;
   }
   doOpenEditSong(id);
+  refreshSongDraftUI(); // 🆕 (FILE-MODE) โหลดเพลงมาแก้แล้ว อัปเดตป้ายโหมดไฟล์
 }
 function doOpenEditSong(id) {
   resetSongForm();
