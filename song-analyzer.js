@@ -67,6 +67,26 @@ export function clampBpm(bpm) {
   return Math.round(raw);
 }
 
+// 🆕 (BPM-sync): ค่าเวลา/ความไวของ BPM ให้ตรงกับตารางแอป DJ (djay / rekordbox ฯลฯ บน MacBook + iPhone)
+//   beatMsFor(bpm)          → มิลลิวินาทีต่อ 1 จังหวะ = 60000 / BPM  (150 → 400.00, 151 → 397.35, 165 → 363.64)
+//   bpmStepPct(bpm)         → % ที่เร็วขึ้นจาก BPM ก่อนหน้า (−1)     = (BPM / (BPM−1) − 1) × 100  (151 → 0.67)
+//   bpmVsBasePct(bpm, base) → % ที่เร็วขึ้นจาก BPM ฐาน (default 150)  = (BPM / base − 1) × 100     (155 → 3.33, 165 → 10.00)
+export function beatMsFor(bpm) {
+  const raw = Number(bpm);
+  if (!Number.isFinite(raw) || raw < 30 || raw > 300) return 60000 / BPM;
+  return 60000 / raw;
+}
+export function bpmStepPct(bpm) {
+  const raw = Number(bpm);
+  if (!Number.isFinite(raw) || raw <= 31 || raw > 300) return null;
+  return (raw / (raw - 1) - 1) * 100;
+}
+export function bpmVsBasePct(bpm, base = BPM) {
+  const raw = Number(bpm);
+  if (!Number.isFinite(raw) || raw < 30 || raw > 300) return null;
+  return (raw / base - 1) * 100;
+}
+
 export const DANCE_BARS = 24;                // ความยาวช่วงที่ใช้ "ค้นหา" Dance Section (อัลกอริทึมตรวจจับ — ไม่เปลี่ยน)
 export const PREVIEW_START_BAR = 5;          // Preview ทุกเพลงเริ่มที่ห้องที่ 6 (index 5) เสมอ ตามกติกาล่าสุด
 export const DANCE_STOP_OFFSET_BARS = 16;    // 🔧 (T135) เล่นต่อเนื่องไปจนจบห้องที่ 16 ของท่อนแดนแรก (Dance Start Bar + 16) แล้วหยุด (เดิม +8)
