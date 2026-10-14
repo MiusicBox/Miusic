@@ -15,8 +15,8 @@ import { resolveCurrentAdminRole, initAdminsView } from "./admin-roles.js?v=2026
 import {
   analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS,
   // 🆕 (T136): import barSecondsFor + clampBpm สำหรับคำนวณ BAR_SECONDS ตาม BPM จริงของแต่ละเพลง
-  barSecondsFor, clampBpm
-} from "./song-analyzer.js?v=20261013-fullfile";
+  barSecondsFor, clampBpm, beatMsFor, bpmStepPct, bpmVsBasePct
+} from "./song-analyzer.js?v=20261014-bpmsync";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261012-launch";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
@@ -2566,6 +2566,11 @@ function applyMusicKeySelectColor(selectId) {
     // trigger event ให้ listener อื่น (เช่น validation) ทำงาน
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
+    refreshBpmReadout(targetId);
+  });
+  document.addEventListener("input", (e) => {
+    const el = e.target;
+    if (el && el.classList && el.classList.contains("bpm-step-input")) refreshBpmReadout(el.id);
   });
   // ตรวจ input ที่พิมพ์เอง → clamp ค่าเมื่อ blur (ถ้าค่าเกิน range ให้ตัดกลับ)
   document.addEventListener("blur", (e) => {
@@ -2575,8 +2580,32 @@ function applyMusicKeySelectColor(selectId) {
     if (!Number.isFinite(raw)) { el.value = "150"; return; }
     const clamped = Math.max(BPM_MIN, Math.min(BPM_MAX, Math.round(raw)));
     el.value = String(clamped);
+    refreshBpmReadout(el.id);
   }, true);
+  // เริ่มต้น: เติมแถบ readout ให้ทุกช่อง BPM ที่มีในหน้า
+  document.querySelectorAll("[data-bpm-readout-for]").forEach((r) => refreshBpmReadout(r.getAttribute("data-bpm-readout-for")));
 })();
+
+// 🆕 (BPM-sync): แสดง ms/จังหวะ + % เร็วขึ้น ให้ตรงกับตารางแอป DJ (MacBook / iPhone)
+//   150 → 400.00 ms · 151 → 397.35 ms (+0.67%) · 155 → 387.10 ms (+3.33% จาก 150) · 165 → 363.64 ms (+10.00%)
+function refreshBpmReadout(inputId) {
+  const box = document.querySelector('[data-bpm-readout-for="' + inputId + '"]');
+  const input = document.getElementById(inputId);
+  if (!box || !input) return;
+  const bpm = clampBpm(Number(input.value));
+  const ms = beatMsFor(bpm).toFixed(2);
+  const bar = barSecondsFor(bpm).toFixed(3);
+  const step = bpm > 150 ? bpmStepPct(bpm) : null;
+  const vs150 = bpm > 150 ? bpmVsBasePct(bpm, 150) : null;
+  let html = '<b>' + ms + ' ms</b>/จังหวะ · ห้องละ <b>' + bar + ' วิ</b>';
+  if (step != null) {
+    html += '<br><span class="bpm-readout-up">เร็วขึ้น ' + step.toFixed(2) + '%</span> จาก ' + (bpm - 1) +
+            ' · <span class="bpm-readout-up">+' + vs150.toFixed(2) + '%</span> จาก 150';
+  } else {
+    html += '<br>BPM ฐาน (150) — กด + เพื่อเร่งความเร็ว';
+  }
+  box.innerHTML = html;
+}
 
 function renderSongList(list) {
   currentSongListView = list;
@@ -3287,7 +3316,7 @@ function resetSongForm() {
   document.getElementById("fPlaylist").value = "";
   // 🆕 (T133 2026-10-13): reset BPM กลับเป็น 150 (default)
   const fBpmEl = document.getElementById("fBpm");
-  if (fBpmEl) fBpmEl.value = "150";
+  if (fBpmEl) { fBpmEl.value = "150"; refreshBpmReadout("fBpm"); }
   // 🆕 (T139 2026-10-13): reset Music Key กลับเป็น "" (ไม่ระบุ)
   const fMusicKeyEl = document.getElementById("fMusicKey");
   if (fMusicKeyEl) fMusicKeyEl.value = "";
@@ -3331,6 +3360,7 @@ function openEditSong(id) {
                      : (rawBpm > 165) ? 165
                      : rawBpm;
     fBpmEditEl.value = String(clampedBpm);
+    refreshBpmReadout("fBpm");
   }
   // 🆕 (T139 2026-10-13): โหลด Music Key เดิม (validate format — ถ้าผิด → ว่าง)
   const fMusicKeyEditEl = document.getElementById("fMusicKey");
@@ -6655,6 +6685,7 @@ function openSongDetailPopup(songId) {
                      : (rawBpm > 165) ? 165
                      : Math.round(rawBpm);
     bpmInput.value = String(clampedBpm);
+    refreshBpmReadout("songDetailBpm");
   }
   if (bpmBadge) {
     bpmBadge.innerHTML = renderBpmBadge(s.bpm);
@@ -7038,9 +7069,9 @@ document.getElementById("songDetailReanalyzeBtn").addEventListener("click", asyn
   try {
     const result = await analyzeSongUrl(detailPopupSong.file_url, undefined, /* bpm */ (() => {
       // 🆕 (T136): ส่ง BPM ของเพลงใน popup เข้า analyzeSongUrl
-      if (detailPopupSong && detailPopupSong.bpm) return clampBpm(Number(detailPopupSong.bpm));
       const bpmInputEl = document.getElementById("songDetailBpm");
       if (bpmInputEl) return clampBpm(Number(bpmInputEl.value));
+      if (detailPopupSong && detailPopupSong.bpm) return clampBpm(Number(detailPopupSong.bpm));
       return 150;
     })());
     renderDetailPreviewData(result);
@@ -7066,7 +7097,9 @@ document.getElementById("songDetailRecalcBtn").addEventListener("click", () => {
     (existingSong && existingSong.preview_duration_sec) ||
     null;
   const result = recalculateFromManualBar(barVal, durationSec, /* bpm */ (() => {
-    // 🆕 (T136): ใช้ BPM ของเพลงใน popup ถ้ามี ไม่งั้น default 150
+    // 🆕 (T136): ใช้ BPM ที่ตั้งอยู่ในช่อง popup ก่อน (ค่าที่เพิ่งกด +/-) ไม่งั้นใช้ BPM ที่บันทึกไว้ → default 150
+    const bpmInputEl = document.getElementById("songDetailBpm");
+    if (bpmInputEl) return clampBpm(Number(bpmInputEl.value));
     if (detailPopupSong && detailPopupSong.bpm) return clampBpm(Number(detailPopupSong.bpm));
     return 150;
   })());
@@ -7089,9 +7122,9 @@ document.getElementById("songDetailManualBtn").addEventListener("click", () => {
     null;
   const result = manualPreviewWindow(startVal, endVal, durationSec, /* bpm */ (() => {
     // 🆕 (T136): ส่ง BPM ของเพลงใน popup เข้า manualPreviewWindow
-    if (detailPopupSong && detailPopupSong.bpm) return clampBpm(Number(detailPopupSong.bpm));
     const bpmInputEl = document.getElementById("songDetailBpm");
     if (bpmInputEl) return clampBpm(Number(bpmInputEl.value));
+    if (detailPopupSong && detailPopupSong.bpm) return clampBpm(Number(detailPopupSong.bpm));
     return 150;
   })());
   renderDetailPreviewData(result);
