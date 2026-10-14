@@ -6,7 +6,7 @@
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): noindex meta — กัน Google index หน้า admin -->
 <meta name="robots" content="noindex, nofollow">
 <title>Admin - Music Store</title>
-<link rel="stylesheet" href="style.css?v=20261013-t144">
+<link rel="stylesheet" href="style.css?v=20261014-bpmsync">
 <!-- 🎨 (2026-10-11) ระบบแจ้งเตือนใหม่ (toast + dialog) — ต้องโหลดก่อน app-*.js -->
 <link rel="stylesheet" href="notify.css?v=20261013-t144">
 <script src="notify.js?v=20261013-t144"></script>
@@ -1016,6 +1016,7 @@
           <input id="fBpm" type="number" min="150" max="165" step="1" value="150" inputmode="numeric" pattern="[0-9]*" class="bpm-step-input" aria-label="ค่า BPM">
           <button type="button" class="bpm-step-btn" data-bpm-target="fBpm" data-bpm-delta="1" aria-label="เพิ่ม BPM ขึ้น 1" title="เพิ่ม BPM ขึ้น 1">+</button>
         </div>
+        <div class="bpm-readout" data-bpm-readout-for="fBpm" style="margin-top:6px;"></div>
         <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">ค่าเริ่มต้น 150 — กด +/- หรือพิมพ์เองได้ ใส่ได้ 150-165 เท่านั้น</div>
       </div>
       <div class="field">
@@ -1476,6 +1477,7 @@
           <input id="songDetailBpm" type="number" min="150" max="165" step="1" value="150" inputmode="numeric" pattern="[0-9]*" class="bpm-step-input" aria-label="ค่า BPM">
           <button type="button" class="bpm-step-btn" data-bpm-target="songDetailBpm" data-bpm-delta="1" aria-label="เพิ่ม BPM ขึ้น 1" title="เพิ่ม BPM ขึ้น 1">+</button>
         </div>
+        <div class="bpm-readout" data-bpm-readout-for="songDetailBpm" style="margin-bottom:8px;"></div>
         <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">ค่าเริ่มต้น 150 — กด +/- หรือพิมพ์เองได้ ใส่ได้ 150-165 เท่านั้น</div>
         <button type="button" id="songDetailSaveBpmBtn" class="btn" style="width:100%;font-size:13px;padding:10px;">💾 บันทึก BPM ลงเพลงนี้</button>
       </div>
@@ -1585,6 +1587,7 @@
           <input id="bulkBpm" type="number" min="150" max="165" step="1" value="150" inputmode="numeric" pattern="[0-9]*" class="bpm-step-input" aria-label="ค่า BPM สำหรับทุกเพลง">
           <button type="button" class="bpm-step-btn" data-bpm-target="bulkBpm" data-bpm-delta="1" aria-label="เพิ่ม BPM ขึ้น 1" title="เพิ่ม BPM ขึ้น 1">+</button>
         </div>
+        <div class="bpm-readout" data-bpm-readout-for="bulkBpm" style="margin-top:6px;"></div>
         <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">กด +/- หรือพิมพ์เองได้ — ใช้กับทุกเพลงในชุดนี้ (default 150, ใส่ได้ 150-165)</div>
       </div>
       <!-- 🆕 (T142 2026-10-13): ย้าย Music Key จาก "ตั้งทุกเพลงพร้อมกัน" → เป็น "ตั้งแยกแต่ละเพลง" (อยู่ใน bulkSongListPreview)
@@ -1833,6 +1836,6 @@
   </div>
 
   <script src="phone-input.js?v=20261013-t144" defer></script>
-  <script type="module" src="app-admin.js?v=20261013-t144"></script>
+  <script type="module" src="app-admin.js?v=20261014-bpmsync"></script>
 </body>
 </html>
