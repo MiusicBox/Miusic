@@ -120,6 +120,76 @@ let songUploadSession = 0; // กันไม่ให้ progress ของก�
 let songUploadController = null; // AbortController ของการอัปโหลดเพลงเดี่ยวที่กำลังทำงานอยู่ (ใช้กดยกเลิก)
 let bulkUploadController = null; // AbortController ของการอัปโหลดแบบ Bulk ที่กำลังทำงานอยู่ (ใช้กดยกเลิก)
 
+// 🆕 (BG-JOB): งานเพิ่มเพลงทำงานต่อเบื้องหลังเมื่อปิด popup — เปิดใหม่ต้องเห็นสถานะเดิม ไม่ล้างฟอร์ม
+//   songSaveBusy        = กำลังอัปโหลด/บันทึกเพลงเดี่ยว
+//   songAnalysisBusyAt  = เวลาที่เริ่มวิเคราะห์เสียง (0 = ไม่ได้วิเคราะห์) — หมดอายุ 2 นาทีกันค้าง
+//   songKeepOnReopen    = งานจบ (error/ยกเลิก) ตอน popup ปิดอยู่ → เปิดใหม่ให้เห็นฟอร์ม/ข้อความเดิมก่อน
+//   bulkKeepOnReopen    = Bulk จบตอน popup ปิดอยู่ → เปิดใหม่ให้เห็นสรุปผลเดิมก่อน
+let songSaveBusy = false;
+let songAnalysisBusyAt = 0;
+let songKeepOnReopen = false;
+let bulkKeepOnReopen = false;
+function isSongAnalysisBusy() { return songAnalysisBusyAt > 0 && (Date.now() - songAnalysisBusyAt) < 120000; }
+function isModalShown(id) { const el = document.getElementById(id); return !!(el && el.classList.contains("show")); }
+
+// 🆕 (BG-JOB): แถบลอย (chip) แสดงความคืบหน้าตอน popup ถูกปิด — แตะเพื่อเปิด popup กลับมาดูสถานะ
+const bgJobChips = new Map(); // key -> { el, timer }
+function bgChipContainer() {
+  let c = document.getElementById("bgJobChips");
+  if (!c) { c = document.createElement("div"); c.id = "bgJobChips"; c.className = "bg-job-chips"; document.body.appendChild(c); }
+  return c;
+}
+function bgChipRemove(key) {
+  const j = bgJobChips.get(key);
+  if (!j) return;
+  if (j.timer) clearInterval(j.timer);
+  if (j.hideTimer) clearTimeout(j.hideTimer);
+  if (j.el && j.el.parentNode) j.el.parentNode.removeChild(j.el);
+  bgJobChips.delete(key);
+}
+// getState() → { text, pct } ; isOpen() → popup เปิดอยู่ไหม ; onOpen() → เปิด popup
+function bgChipStart(key, { getState, isOpen, onOpen }) {
+  bgChipRemove(key);
+  const el = document.createElement("button");
+  el.type = "button"; el.className = "bg-job-chip"; el.style.display = "none";
+  el.innerHTML = '<span class="bg-job-fill"></span><span class="bg-job-text"></span>';
+  el.addEventListener("click", () => {
+    const dismissOnly = !!(bgJobChips.get(key) && bgJobChips.get(key).dismissOnly);
+    bgChipRemove(key);
+    if (!dismissOnly) onOpen();
+  });
+  bgChipContainer().appendChild(el);
+  const tick = () => {
+    if (isOpen()) { el.style.display = "none"; return; }
+    const st = getState() || {};
+    const pct = Math.max(0, Math.min(100, Number(st.pct) || 0));
+    el.style.display = "flex";
+    el.querySelector(".bg-job-fill").style.width = pct + "%";
+    el.querySelector(".bg-job-text").textContent = "⏳ " + (st.text || "กำลังทำงาน...") + (pct ? " · " + pct + "%" : "");
+  };
+  const timer = setInterval(tick, 400);
+  bgJobChips.set(key, { el, timer });
+  tick();
+}
+// จบงาน: ถ้า popup เปิดอยู่ → ลบ chip ; ถ้าปิดอยู่ → เปลี่ยนเป็นผลลัพธ์ แตะเพื่อดู (autoHideMs = 0 → ค้างจนกว่าจะแตะ)
+//   dismissOnly = true → แตะแล้วแค่ปิดแถบ (ใช้กับงานที่สำเร็จเรียบร้อย ไม่มีอะไรต้องกลับไปดูใน popup)
+function bgChipFinish(key, { isOpen, text, ok, autoHideMs, dismissOnly }) {
+  const j = bgJobChips.get(key);
+  if (!j) return;
+  if (j.timer) { clearInterval(j.timer); j.timer = null; }
+  if (isOpen()) { bgChipRemove(key); return; }
+  j.dismissOnly = !!dismissOnly;
+  j.el.style.display = "flex";
+  j.el.classList.add(ok ? "done" : "failed");
+  j.el.querySelector(".bg-job-fill").style.width = "100%";
+  j.el.querySelector(".bg-job-text").textContent = (ok ? "✅ " : "⚠️ ") + text + (dismissOnly ? " — แตะเพื่อปิด" : " — แตะเพื่อดู");
+  if (autoHideMs) j.hideTimer = setTimeout(() => bgChipRemove(key), autoHideMs);
+}
+// กันปิดแท็บ/รีเฟรชทั้งที่งานอัปโหลดยังไม่เสร็จ
+window.addEventListener("beforeunload", (e) => {
+  if (songSaveBusy || bulkUploadController) { e.preventDefault(); e.returnValue = ""; }
+});
+
 // จำกัดขนาดไฟล์เพลงเต็มสูงสุด (รองรับทั้ง .wav และ .mp3 — ปรับได้ตามแผน Cloudinary — ฟรีแพลนอัปโหลดสูงสุดไฟล์ละ 100MB)
 const MAX_FULL_SONG_SIZE_MB = 100;
 function formatFileSize(bytes) {
@@ -3341,8 +3411,19 @@ function resetSongForm() {
   hideCancelButton("fullSongUploadProgressWrap");
   if (songUploadController) { songUploadController.abort(); songUploadController = null; } // เผื่อยังมีอัปโหลดค้างจากรอบก่อนหน้า ให้ยกเลิกจริงไปด้วยเลย
 }
-function openAddSong() { resetSongForm(); document.getElementById("songFormBackdrop").classList.add("show"); }
+// 🆕 (BG-JOB): ถ้ามีงานเพลงเดี่ยวค้างอยู่ (กำลังบันทึก/วิเคราะห์ หรือเพิ่งจบแบบมีปัญหาตอน popup ปิด) → โชว์ฟอร์มเดิมแทนการล้าง
+function reopenSongFormIfBusy() {
+  const busy = songSaveBusy || isSongAnalysisBusy();
+  if (!busy && !songKeepOnReopen) return false;
+  songKeepOnReopen = false;
+  bgChipRemove("song");
+  document.getElementById("songFormBackdrop").classList.add("show");
+  if (busy) showToast(songSaveBusy ? "กำลังบันทึกเพลงอยู่ — แสดงสถานะเดิมให้แล้ว" : "กำลังวิเคราะห์เสียงอยู่ — แสดงสถานะเดิมให้แล้ว", "info");
+  return true;
+}
+function openAddSong() { if (reopenSongFormIfBusy()) return; resetSongForm(); document.getElementById("songFormBackdrop").classList.add("show"); }
 function openEditSong(id) {
+  if (reopenSongFormIfBusy()) return;
   resetSongForm();
   const s = CACHE.songs.find(x => x.id === id);
   if (!s) return;
@@ -3406,8 +3487,9 @@ function openEditSong(id) {
 }
 document.getElementById("addSongBtn").addEventListener("click", openAddSong);
 document.getElementById("songFormClose").addEventListener("click", () => {
-  if (songUploadController) { songUploadController.abort(); songUploadController = null; } // ปิดฟอร์มระหว่างอัปโหลด ต้องยกเลิกอัปโหลดจริงด้วย ไม่ปล่อยค้างเบื้องหลัง
+  // 🔧 (BG-JOB): ปิดฟอร์มระหว่างอัปโหลด/วิเคราะห์ → ไม่ยกเลิกงานอีกแล้ว ปล่อยทำต่อเบื้องหลัง (ยกเลิกจริงใช้ปุ่ม "ยกเลิก" ข้างแถบ progress)
   document.getElementById("songFormBackdrop").classList.remove("show");
+  if (songSaveBusy) showToast("ปิดหน้าต่างแล้ว — ระบบยังอัปโหลดต่อเบื้องหลัง แตะแถบด้านล่างเพื่อกลับมาดูสถานะ", "info");
 });
 
 document.getElementById("songFileInput").addEventListener("change", (e) => {
@@ -3468,6 +3550,7 @@ document.getElementById("fullSongFileInput").addEventListener("change", (e) => {
 async function runAnalysisOnFile(file) {
   const mySession = songUploadSession;
   renderPreviewData({ status: "analyzing" });
+  songAnalysisBusyAt = Date.now(); // 🆕 (BG-JOB)
   try {
     // 🆕 (T136): อ่าน BPM จาก fBpm input ส่งเข้า analyzeSongFile เพื่อคำนวณ BAR_SECONDS ตาม BPM จริง
     const bpmInputEl = document.getElementById("fBpm");
@@ -3482,6 +3565,8 @@ async function runAnalysisOnFile(file) {
     if (mySession !== songUploadSession) return;
     renderPreviewData({ status: "needs_review", dance_start_bar: null, reason: "วิเคราะห์ไฟล์ไม่สำเร็จ: " + (err.message || err) });
     showToast("วิเคราะห์เสียงไม่สำเร็จ: " + (err.message || err) + " — กรอก Dance Start Bar เองได้", "error");
+  } finally {
+    if (mySession === songUploadSession) songAnalysisBusyAt = 0; // 🆕 (BG-JOB)
   }
 }
 
@@ -3546,6 +3631,7 @@ document.getElementById("reanalyzePreviewBtn").addEventListener("click", async (
   btn.disabled = true; btn.textContent = "กำลังวิเคราะห์...";
   renderPreviewData({ status: "analyzing" });
   const mySession = songUploadSession;
+  songAnalysisBusyAt = Date.now(); // 🆕 (BG-JOB)
   try {
     const result = pendingSongFile
       ? await analyzeSongFile(pendingSongFile, undefined, /* bpm */ (() => {
@@ -3567,6 +3653,8 @@ document.getElementById("reanalyzePreviewBtn").addEventListener("click", async (
   } catch (err) {
     if (mySession !== songUploadSession) return;
     showToast("วิเคราะห์ไม่สำเร็จ: " + (err.message || err), "error");
+  } finally {
+    if (mySession === songUploadSession) songAnalysisBusyAt = 0; // 🆕 (BG-JOB)
   }
   btn.disabled = false; btn.textContent = "🔄 วิเคราะห์เสียงใหม่ทั้งหมด (AI)";
 });
@@ -3618,6 +3706,22 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
   const mySession = songUploadSession; // จำ session ปัจจุบัน กันไม่ให้ callback ไปเขียนทับฟอร์มที่ถูกรีเซ็ต/เปิดใหม่ระหว่างอัปโหลด
   const controller = new AbortController(); // ใช้กดยกเลิกอัปโหลดจริง (xhr.abort())
   songUploadController = controller;
+  // 🆕 (BG-JOB): ตั้งสถานะ "กำลังบันทึก" + แถบลอยแสดงความคืบหน้าตอน popup ถูกปิด
+  songSaveBusy = true;
+  let songWatchedAtFinish = false; // สำเร็จตอนแอดมินยังเปิดฟอร์มดูอยู่ → ไม่ต้องโชว์แถบลอย
+  const songChipOpen = () => songWatchedAtFinish || isModalShown("songFormBackdrop");
+  const songChipName = name;
+  let songChipOutcome = null; // { ok, text, keep }
+  bgChipStart("song", {
+    isOpen: songChipOpen,
+    onOpen: () => { songKeepOnReopen = false; document.getElementById("songFormBackdrop").classList.add("show"); },
+    getState: () => {
+      const p1 = parseFloat(document.getElementById("songUploadProgress")?.style.width) || 0;
+      const p2 = parseFloat(document.getElementById("fullSongUploadProgress")?.style.width) || 0;
+      const pct = pendingFullSongFile && pendingSongFile ? Math.round((p1 + p2) / 2) : (pendingFullSongFile ? p2 : p1);
+      return { text: `กำลังบันทึกเพลง “${songChipName}”`, pct: Math.round(pct) };
+    }
+  });
   try {
     let fileUrl = null, coverUrl = null, fullFileUrl = null, fullFilePublicId = null, fullFileName = null;
     if (pendingSongFile) {
@@ -3738,6 +3842,8 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
     hideCancelButton("songUploadProgressWrap");
     hideCancelButton("fullSongUploadProgressWrap");
     showToast("บันทึกเพลงสำเร็จ", "success");
+    songWatchedAtFinish = isModalShown("songFormBackdrop");
+    songChipOutcome = { ok: true, text: `บันทึกเพลง “${songChipName}” สำเร็จ`, autoHideMs: 8000, dismissOnly: true };
     document.getElementById("songFormBackdrop").classList.remove("show");
     // 🆕 อัปเดตแคชในเครื่องแทนโหลดเพลงทั้งตารางใหม่ (ถ้าแคชหมดอายุ → โหลดใหม่ตามเดิม)
     if (applySongCachePatch({ upserts: [{ id: savedSongId, ...payload }] })) {
@@ -3755,10 +3861,16 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
       hideCancelButton("songUploadProgressWrap");
       hideCancelButton("fullSongUploadProgressWrap");
       showToast("ยกเลิกการอัปโหลดแล้ว");
+      songChipOutcome = { ok: false, text: "ยกเลิกการอัปโหลดแล้ว", autoHideMs: 0 };
     } else {
       showToast("บันทึกไม่สำเร็จ: " + err.message, "error");
+      songChipOutcome = { ok: false, text: "บันทึกไม่สำเร็จ: " + err.message, autoHideMs: 0 };
     }
+    // 🆕 (BG-JOB): จบแบบมีปัญหาตอน popup ปิดอยู่ → เปิดใหม่ให้เห็นฟอร์ม/ข้อมูลเดิม ไม่ล้าง
+    if (!songChipOpen()) songKeepOnReopen = true;
   }
+  songSaveBusy = false;
+  bgChipFinish("song", { isOpen: songChipOpen, ...(songChipOutcome || { ok: true, text: "เสร็จแล้ว", autoHideMs: 4000 }) });
   songUploadController = null;
   btn.disabled = false; btn.textContent = "บันทึกเพลง";
 });
@@ -4696,6 +4808,15 @@ let bulkFullFiles = [];
 let pendingBulkCoverFile = null;
 
 async function openBulkUpload() {
+  // 🆕 (BG-JOB): ถ้ากำลังอัปโหลด Bulk อยู่ (หรือเพิ่งจบตอน popup ปิด) → โชว์สถานะ/ผลเดิม ไม่ล้างฟอร์ม ไม่ยกเลิกงาน
+  if (bulkUploadController || bulkKeepOnReopen) {
+    const running = !!bulkUploadController;
+    bulkKeepOnReopen = false;
+    bgChipRemove("bulk");
+    document.getElementById("bulkUploadBackdrop").classList.add("show");
+    if (running) showToast("กำลังอัปโหลดหลายเพลงอยู่ — แสดงสถานะเดิมให้แล้ว", "info");
+    return;
+  }
   bulkFiles = []; bulkFullFiles = []; pendingBulkCoverFile = null;
   // 🔧 (2026-09-19): ล้าง song list preview ด้วย
   const bulkPreview = document.getElementById("bulkSongListPreview");
@@ -4751,8 +4872,9 @@ async function openBulkUpload() {
   syncBulkCatToggleLabel();
 }
 document.getElementById("bulkUploadClose").addEventListener("click", () => {
-  if (bulkUploadController) { bulkUploadController.abort(); bulkUploadController = null; } // ปิดหน้าต่างระหว่างอัปโหลด ต้องยกเลิกอัปโหลดจริงด้วย ไม่ปล่อยค้างเบื้องหลัง
+  // 🔧 (BG-JOB): ปิดหน้าต่างระหว่างอัปโหลด → ไม่ยกเลิกคิวอีกแล้ว ทำต่อเบื้องหลัง (ยกเลิกจริงใช้ปุ่ม "ยกเลิก" ข้างแถบ progress)
   document.getElementById("bulkUploadBackdrop").classList.remove("show");
+  if (bulkUploadController) showToast("ปิดหน้าต่างแล้ว — ระบบยังอัปโหลดต่อเบื้องหลัง แตะแถบด้านล่างเพื่อกลับมาดูสถานะ", "info");
   // 🆕 (2026-10-01 dropdown): ปิด dropdown DJ/หมวด ด้วยตอนปิด modal bulk upload (กัน dropdown ค้างเปิด)
   closeBulkDjDropdown();
   closeBulkCatDropdown();
@@ -5207,6 +5329,17 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
   const controller = new AbortController(); // ใช้กดยกเลิกอัปโหลดจริงทั้งคิว (xhr.abort())
   bulkUploadController = controller;
   ensureCancelButton("bulkProgressWrap", () => controller.abort());
+  // 🆕 (BG-JOB): แถบลอยแสดงความคืบหน้าตอน popup ปิดอยู่ (อ่านจาก DOM ของ popup ที่ยังอัปเดตต่อเนื่อง)
+  const bulkChipOpen = () => isModalShown("bulkUploadBackdrop");
+  let bulkChipOutcome = null;
+  bgChipStart("bulk", {
+    isOpen: bulkChipOpen,
+    onOpen: () => { bulkKeepOnReopen = false; document.getElementById("bulkUploadBackdrop").classList.add("show"); },
+    getState: () => ({
+      text: (document.getElementById("bulkStatusText")?.textContent || "กำลังอัปโหลดหลายเพลง...").slice(0, 60),
+      pct: Math.round(parseFloat(document.getElementById("bulkProgress")?.style.width) || 0)
+    })
+  });
 
   try {
     let playlistId = plSel.value;
@@ -5469,6 +5602,11 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
     // ถ้ามีเพลงจับคู่ไฟล์เต็มไม่ได้ หรือ Auto Preview ล้มเหลว ให้ค้างหน้าต่างไว้จนกว่าจะปิดเอง จะได้เห็นรายชื่อที่ต้องไปแก้ไขเพิ่ม
     if (!hasIssue && !hasSkippedDup) {
       setTimeout(() => { document.getElementById("bulkUploadBackdrop").classList.remove("show"); }, 1200);
+      bulkChipOutcome = { ok: true, text: `เพิ่มเพลงสำเร็จ ${savedCount} เพลง`, autoHideMs: 10000, dismissOnly: true };
+    } else {
+      // 🆕 (BG-JOB): มีรายชื่อที่ต้องอ่าน (ข้ามซ้ำ/ไฟล์เต็มไม่ตรง/Preview ล้มเหลว) → ถ้า popup ปิดอยู่ เปิดใหม่ให้เห็นสรุปเดิม
+      bulkChipOutcome = { ok: !hasIssue, text: `เพิ่มเพลง ${savedCount} เพลงแล้ว (มีรายการต้องตรวจ)`, autoHideMs: 0 };
+      if (!bulkChipOpen()) bulkKeepOnReopen = true;
     }
   } catch (err) {
     if (isAbortError(err)) {
@@ -5478,9 +5616,17 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
       hideCancelButton("bulkProgressWrap");
       document.getElementById("bulkStatusText").textContent = "ยกเลิกการอัปโหลดแล้ว";
       showToast("ยกเลิกการอัปโหลดแล้ว");
+      bulkChipOutcome = { ok: false, text: "ยกเลิกการอัปโหลดแล้ว", autoHideMs: 0 };
     } else {
       showToast("อัปโหลดไม่สำเร็จ: " + err.message, "error");
+      document.getElementById("bulkStatusText").textContent = "อัปโหลดไม่สำเร็จ: " + err.message; // 🆕 (BG-JOB): ให้เห็นสาเหตุตอนเปิด popup กลับมา
+      bulkChipOutcome = { ok: false, text: "อัปโหลดไม่สำเร็จ: " + err.message, autoHideMs: 0 };
     }
+    if (!bulkChipOpen()) bulkKeepOnReopen = true;
+  } finally {
+    // 🆕 (BG-JOB): เคลียร์สถานะเสมอ แม้เจอ return กลางทาง (เช่น สร้าง DJ/หมวดใหม่ไม่สำเร็จ) กันค้างเป็น "กำลังอัปโหลด" ตลอดไป
+    bulkUploadController = null;
+    bgChipFinish("bulk", { isOpen: bulkChipOpen, ...(bulkChipOutcome || { ok: false, text: "หยุดการอัปโหลด", autoHideMs: 4000 }) });
   }
   bulkUploadController = null;
   btn.disabled = false; btn.textContent = "เริ่มอัปโหลดทั้งหมด";
