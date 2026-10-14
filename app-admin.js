@@ -2677,6 +2677,15 @@ function refreshBpmReadout(inputId) {
   box.innerHTML = html;
 }
 
+// 🆕 (FILE-MODE): ให้แอดมินรู้ว่าเพลงไหน "ไฟล์เต็มแยก" (ตัวอย่าง + เต็ม 2 ไฟล์) หรือ "ใช้ไฟล์ตัวอย่างเป็นไฟล์เต็ม" (ไฟล์เดียว ประหยัดพื้นที่)
+//   แสดงผลอย่างเดียว — ไม่ยุ่งกับข้อมูล/ตรรกะ full_file_url || file_url ฝั่งลูกค้า (orders.js, worker)
+function songFileModeBadge(s) {
+  if (!s.file_url && !s.full_file_url) return ""; // เคสไม่มีไฟล์เลย มีป้าย ⚠️ ของมันเองอยู่แล้ว
+  const separate = !!s.full_file_url && s.full_file_url !== s.file_url;
+  return separate
+    ? `<div class="n2" style="color:#22c55e;">🔒 ไฟล์เต็มแยก (ตัวอย่าง + เต็ม 2 ไฟล์)</div>`
+    : `<div class="n2" style="color:var(--text-dim);">🔗 ใช้ไฟล์ตัวอย่างเป็นไฟล์เต็ม (ไฟล์เดียว)</div>`;
+}
 function renderSongList(list) {
   currentSongListView = list;
   const wrap = document.getElementById("songList");
@@ -2691,7 +2700,7 @@ function renderSongList(list) {
       <div class="info"><div class="n1">${escapeHtml(s.song_name)}</div>
       <div class="n2">${escapeHtml(s.dj_name || "-")} · ${escapeHtml(s.category_name || "-")} · ${formatPrice(s.price)} <span class="bpm-badge-wrap">${renderBpmBadge(s.bpm)}${renderMusicKeyBadge(s.music_key)}</span></div>
       ${!s.full_file_url && !s.file_url ? `<div class="n2" style="color:var(--danger);">⚠️ ยังไม่มีไฟล์เต็ม (WAV) บน Cloud</div>` : ""}
-      ${!s.full_file_url && s.file_url ? `<div class="n2" style="color:var(--text-dim);">🔗 ใช้ไฟล์ร่วม (file_url = full_file_url)</div>` : ""}</div>
+      ${songFileModeBadge(s)}</div>
       <div class="row-actions">
         <button class="icon-btn" data-menu="${s.id}" title="เมนู">⋮</button>
       </div>
@@ -3500,6 +3509,9 @@ function doOpenEditSong(id) {
   if (existingFullFileUrl) {
     document.getElementById("fullSongFilePicker").textContent = `🔒✔ มีไฟล์เต็มอยู่แล้ว${s.full_file_name ? " (" + s.full_file_name + ")" : ""} — ไม่บังคับอัปโหลดใหม่`;
     document.getElementById("fullSongFilePicker").className = "file-picker filled";
+  } else if (s.file_url) {
+    // 🆕 (FILE-MODE): เพลงนี้ไม่มีไฟล์เต็มแยก → บอกชัดว่าตอนนี้ใช้ไฟล์ตัวอย่างเป็นไฟล์เต็ม
+    document.getElementById("fullSongFilePicker").textContent = "🔗 ตอนนี้ใช้ไฟล์ตัวอย่างเป็นไฟล์เต็ม — แตะเลือกไฟล์ถ้าต้องการอัปโหลดไฟล์เต็มแยก";
   }
   // Auto Preview: ถ้าเพลงนี้เคยวิเคราะห์ไว้แล้ว (หรือเคยแก้มือไว้) ให้โชว์สถานะเดิม — ยังไม่ต้องวิเคราะห์ซ้ำ
   if (s.file_url) {
@@ -4874,8 +4886,26 @@ const bulkRowStatus = new WeakMap();
 const bulkSelectedFiles = new Set();
 function bulkFileId(f) { return f.name + "|" + f.size + "|" + f.lastModified; }
 function bulkMetaOf(f) { let m = bulkFileMeta.get(f); if (!m) { m = {}; bulkFileMeta.set(f, m); } return m; }
+// 🆕 (FILE-MODE): ป้ายต่อเพลงในรายการอัปโหลดหลายเพลง — ใช้ตรรกะจับคู่เดียวกับตอนอัปโหลดจริง/ตารางยืนยัน
+function bulkPairedFull(file) {
+  return matchFullFile(file.name, bulkFullFiles)
+    || (bulkFiles.length === 1 && bulkFullFiles.length === 1 ? bulkFullFiles[0] : null);
+}
+function bulkPairHtml(file) {
+  const mf = bulkPairedFull(file);
+  return mf
+    ? `<span style="color:#22c55e;">🔒 ไฟล์เต็มแยก: ${escapeHtml(mf.name)}</span>`
+    : `<span style="color:var(--text-dim);">🔗 ใช้ไฟล์ตัวอย่างเป็นไฟล์เต็ม</span>`;
+}
+function bulkUpdatePairBadges() {
+  document.querySelectorAll("[data-bulk-pair]").forEach((el) => {
+    const f = bulkFiles[Number(el.getAttribute("data-bulk-pair"))];
+    if (f) el.innerHTML = bulkPairHtml(f);
+  });
+}
 function bulkHasDraft() { return bulkFiles.length > 0 || bulkFullFiles.length > 0; }
 function bulkUpdatePickerLabels() {
+  bulkUpdatePairBadges(); // 🆕 (FILE-MODE) เลือกไฟล์เต็มเพิ่ม/ล้าง → ป้ายต่อเพลงอัปเดตทันที
   const p = document.getElementById("bulkFilesPicker");
   if (p) {
     if (bulkFiles.length > 0) { p.textContent = `🎵 เลือกแล้ว ${bulkFiles.length} ไฟล์ — แตะเพื่อเพิ่มไฟล์อีก`; p.className = "file-picker filled"; }
@@ -4886,13 +4916,35 @@ function bulkUpdatePickerLabels() {
   if (fp) {
     if (bulkFullFiles.length > 0) {
       fp.textContent = `🔒 เลือกแล้ว ${bulkFullFiles.length} ไฟล์ — แตะเพื่อเพิ่มอีก`; fp.className = "file-picker filled";
-      if (meta) { meta.textContent = "จะจับคู่กับไฟล์ตัวอย่างโดยเทียบชื่อไฟล์ (ไม่รวมนามสกุล) — เพลงที่จับคู่ไม่ได้จะยังไม่มีไฟล์เต็ม เพิ่มทีหลังได้ที่หน้าแก้ไขเพลง"; meta.style.display = "block"; }
+      if (meta) {
+        // 🆕 (FULL-PAIR): บอกทันทีว่าไฟล์เต็มไหนยังไม่มีเพลงตัวอย่างคู่กัน + ปุ่มล้างไฟล์เต็ม (เดิมไฟล์เต็มที่ไม่มีคู่จะค้างและลบไม่ได้)
+        const paired = new Set();
+        bulkFiles.forEach((f) => {
+          const mf = matchFullFile(f.name, bulkFullFiles) || (bulkFiles.length === 1 && bulkFullFiles.length === 1 ? bulkFullFiles[0] : null);
+          if (mf) paired.add(mf);
+        });
+        const orphan = bulkFullFiles.filter((f) => !paired.has(f));
+        const orphanNames = orphan.slice(0, 3).map((f) => escapeHtml(f.name)).join(", ") + (orphan.length > 3 ? " …" : "");
+        meta.innerHTML = "จะจับคู่กับไฟล์ตัวอย่างโดยเทียบชื่อไฟล์ (ไม่รวมนามสกุล) — เพลงที่จับคู่ไม่ได้จะใช้ไฟล์ตัวอย่างเป็นไฟล์เต็ม (ประหยัดพื้นที่) — ถ้าต้องการไฟล์เต็มแยก เพิ่มทีหลังได้ที่หน้าแก้ไขเพลง"
+          + (orphan.length > 0
+            ? `<div style="color:#f59e0b;margin-top:6px;">⚠️ ไฟล์เต็มที่ยังไม่มีเพลงตัวอย่างคู่กัน ${orphan.length} ไฟล์ (จะไม่ถูกอัปโหลด): ${orphanNames}</div>`
+            : `<div style="color:#22c55e;margin-top:6px;">✅ ไฟล์เต็มทุกไฟล์มีเพลงคู่แล้ว</div>`)
+          + `<button type="button" id="bulkClearFullBtn" class="btn" style="margin-top:8px;width:auto;padding:6px 12px;font-size:12px;">🗑️ ล้างไฟล์เต็มทั้งหมด</button>`;
+        meta.style.display = "block";
+      }
     } else {
       fp.textContent = "🔒 แตะเพื่อเลือกไฟล์เพลงเต็มหลายไฟล์ (WAV/MP3)"; fp.className = "file-picker";
       if (meta) { meta.style.display = "none"; meta.textContent = ""; }
     }
   }
 }
+// 🆕 (FULL-PAIR): ปุ่มล้างไฟล์เต็มทั้งหมด (ไฟล์ตัวอย่างไม่กระทบ)
+document.getElementById("bulkFullFilesMeta").addEventListener("click", (e) => {
+  if (!e.target.closest("#bulkClearFullBtn")) return;
+  if (bulkUploadController) { showToast("กำลังอัปโหลดอยู่ — ล้างไฟล์เต็มตอนนี้ไม่ได้", "error"); return; }
+  bulkFullFiles = [];
+  bulkUpdatePickerLabels();
+});
 // ลบเพลงออกจากรายการ (พร้อมไฟล์เต็มที่จับคู่กับเพลงนั้น) — ใช้ทั้งตอนแอดมินกดลบเอง และตอนอัปโหลดสำเร็จ
 function bulkRemoveFiles(list) {
   const rm = new Set(list);
@@ -4906,6 +4958,7 @@ function bulkRemoveFiles(list) {
   bulkFiles = bulkFiles.filter((f) => !rm.has(f));
   bulkFullFiles = bulkFullFiles.filter((f) => !fullRm.has(f));
   rm.forEach((f) => { bulkSelectedFiles.delete(f); bulkRowStatus.delete(f); });
+  if (bulkFiles.length === 0) bulkFullFiles = []; // 🆕 (FULL-PAIR) ไม่เหลือเพลงแล้ว → ไฟล์เต็มที่ไม่มีคู่ไม่ต้องค้างเป็น "ฟอร์มที่ยังไม่เสร็จ"
   renderBulkSongListPreview();
   bulkUpdatePickerLabels();
 }
@@ -5237,6 +5290,7 @@ function renderBulkSongListPreview() {
                      placeholder="0">
               <span style="font-size:11px;color:var(--text-dim);white-space:nowrap;">LAK</span>
             </div>
+            <div data-bulk-pair="${i}" style="font-size:11px;margin:6px 0 0 26px;">${bulkPairHtml(file)}</div>
             ${st ? `<div style="font-size:11px;color:#f87171;margin:6px 0 0 26px;">${st.state === "dup" ? "⚠️ ข้าม — " : "❌ ไม่ผ่าน — "}${escapeHtml(st.reason || "")}</div>` : ""}
           </div>
         `;
@@ -5395,7 +5449,7 @@ function showBulkMatchConfirm(matches) {
     const rows = matches.map((m) => {
       const fullLabel = m.fullName
         ? `✅ ${escapeHtml(m.fullName)}`
-        : `<span style="color:var(--text-dim);">— ไม่มีไฟล์เต็ม —</span>`;
+        : `<span style="color:var(--text-dim);">🔗 ใช้ไฟล์ตัวอย่างเป็นไฟล์เต็ม</span>`;
       return `
         <div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08);">
           <div><strong>${escapeHtml(m.songName)}</strong><small style="display:block;color:var(--text-dim);margin-top:3px;">${escapeHtml(m.previewName)}</small></div>
@@ -5403,7 +5457,7 @@ function showBulkMatchConfirm(matches) {
         </div>`;
     }).join("");
     content.innerHTML =
-      `<p style="color:var(--text-dim);font-size:13px;margin-top:0;">พบไฟล์เต็มจับคู่ได้ ${matchedCount}/${matches.length} เพลง — ตรวจสอบให้ตรงก่อนอัปโหลดจริง ถ้าคู่ไหนผิดให้กด "ย้อนกลับไปแก้ไข" แล้วเลือกไฟล์ใหม่</p>` +
+      `<p style="color:var(--text-dim);font-size:13px;margin-top:0;">พบไฟล์เต็มจับคู่ได้ ${matchedCount}/${matches.length} เพลง (เพลงที่เหลือจะใช้ไฟล์ตัวอย่างเป็นไฟล์เต็ม) — ตรวจสอบให้ตรงก่อนอัปโหลดจริง ถ้าคู่ไหนผิดให้กด "ย้อนกลับไปแก้ไข" แล้วเลือกไฟล์ใหม่</p>` +
       rows;
     backdrop.classList.add("show");
 
@@ -5805,7 +5859,7 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
     const hasPreviewFailed = previewFailedNames.length > 0;
     // สรุปผล: รวมรายชื่อเพลงที่ต้องแก้ไขทีหลัง (ทั้งไฟล์เต็มไม่ตรง + Auto Preview ล้มเหลว)
     const unmatchedNote = hasUnmatched
-      ? ` (มีไฟล์เต็ม ${matchedCount}/${queueFiles.length} เพลง — ยังไม่มีไฟล์เต็ม: ${unmatchedNames.join(", ")} ไปเพิ่มทีหลังได้ที่หน้าแก้ไขเพลง)`
+      ? ` (ไฟล์เต็มแยก ${matchedCount}/${queueFiles.length} เพลง — ใช้ไฟล์ตัวอย่างเป็นไฟล์เต็ม: ${unmatchedNames.join(", ")} · ถ้าต้องการไฟล์เต็มแยก เพิ่มได้ที่หน้าแก้ไขเพลง)`
       : "";
     const previewFailedNote = hasPreviewFailed
       ? ` | Auto Preview ล้มเหลว ${previewFailedNames.length}/${queueFiles.length} เพลง: ${previewFailedNames.join(", ")} — ไปตั้ง Auto Preview เองได้ที่หน้าแก้ไขเพลง`
