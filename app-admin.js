@@ -13,10 +13,10 @@ import {
 import { initOrdersView } from "./orders.js?v=20261012-launch";
 import { resolveCurrentAdminRole, initAdminsView } from "./admin-roles.js?v=20261012-launch";
 import {
-  analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS,
+  analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, rescalePreviewForBpm, BAR_SECONDS,
   // 🆕 (T136): import barSecondsFor + clampBpm สำหรับคำนวณ BAR_SECONDS ตาม BPM จริงของแต่ละเพลง
   barSecondsFor, clampBpm, beatMsFor, bpmStepPct, bpmVsBasePct
-} from "./song-analyzer.js?v=20261016-autokey";
+} from "./song-analyzer.js?v=20261017-barfix";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261012-launch";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
@@ -269,7 +269,7 @@ function renderPreviewDataCore(data) {
   if (eManualEl2) eManualEl2.value = data.preview_end_bar ?? "";
   const confText = data.confidence != null ? ` (ความมั่นใจ ${(data.confidence * 100).toFixed(0)}%)` : " (แก้ไขเอง)";
   info.textContent =
-    `Dance: ห้อง ${data.dance_start_bar}–${data.preview_end_bar}${confText} · ` +
+    `Dance เริ่มห้อง ${data.dance_start_bar}${confText} · ` +
     `Preview: ${formatSec(data.preview_start_sec)} – ${formatSec(data.preview_end_sec)} ` +
     `(ห้อง ${data.preview_start_bar}–${data.preview_end_bar})`;
 }
@@ -3043,10 +3043,13 @@ document.getElementById("songBulkBpmBtn").addEventListener("click", async () => 
     let successCount = 0, failCount = 0;
     for (const id of ids) {
       try {
-        await updateDoc(doc(db, "songs", id), { bpm: targetBpm, updated_at });
-        // อัปเดตใน CACHE ด้วย
         const cached = CACHE.songs.find(x => x.id === id);
-        if (cached) { cached.bpm = targetBpm; cached.updated_at = updated_at; }
+        // 🔧 (FIX) คำนวณวินาทีของ Preview ใหม่ตาม BPM ใหม่ (เลขห้องคงเดิม)
+        const rescaled = cached ? rescalePreviewForBpm(cached, targetBpm) : null;
+        const bpmPayload = { bpm: targetBpm, updated_at, ...(rescaled || {}) };
+        await updateDoc(doc(db, "songs", id), bpmPayload);
+        // อัปเดตใน CACHE ด้วย
+        if (cached) Object.assign(cached, bpmPayload);
         successCount++;
       } catch (err) {
         console.error(`[bulk BPM] อัปเดต BPM ล้มเหลวสำหรับ song ${id}:`, err?.message || err);
@@ -3835,7 +3838,8 @@ if (recalcManualRangeBtnEl) recalcManualRangeBtnEl.addEventListener("click", () 
     return 150;
   })());
   renderPreviewData(result);
-  showToast("ใช้ช่วง Preview ที่กำหนดเองแล้ว", "success");
+  if (result.clamped) showToast(`⚠️ ค่าที่กรอกเกินความยาวเพลง — ปรับเป็นห้อง ${result.preview_start_bar}–${result.preview_end_bar} ให้แล้ว`, "error");
+  else showToast("ใช้ช่วง Preview ที่กำหนดเองแล้ว", "success");
 });
 
 // ปุ่ม "วิเคราะห์เสียงใหม่ทั้งหมด (AI)" — รันตัววิเคราะห์ใหม่ทั้งเพลง (ใช้ไฟล์ที่เพิ่งเลือกถ้ามี ไม่งั้นดึงจาก URL เดิม)
@@ -4040,6 +4044,16 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
     }
     // Auto Preview: บันทึกแค่วินาทีเริ่ม/จบ + สถานะ — ไม่มีการอัปโหลดไฟล์ preview แยกใดๆ ทั้งสิ้น
     if (pendingPreviewData && pendingPreviewData.status !== "analyzing") {
+      // 🔧 (FIX) ถ้าแอดมินเปลี่ยน BPM หลังวิเคราะห์ → คำนวณวินาทีจากเลขห้องใหม่ด้วย BPM ที่จะบันทึกจริง
+      {
+        const r = rescalePreviewForBpm({
+          preview_status: pendingPreviewData.status,
+          preview_start_bar: pendingPreviewData.preview_start_bar,
+          preview_end_bar: pendingPreviewData.preview_end_bar,
+          preview_duration_sec: pendingPreviewData.duration_sec
+        }, payload.bpm);
+        if (r) Object.assign(pendingPreviewData, r);
+      }
       payload.preview_status = pendingPreviewData.status;
       payload.dance_start_bar = pendingPreviewData.dance_start_bar ?? null;
       payload.preview_start_bar = pendingPreviewData.preview_start_bar ?? null;
@@ -7565,12 +7579,28 @@ function setDetailPreviewBadge(text, color) {
   el.style.color = color;
 }
 
+// 🆕 สถานะ "ยังไม่บันทึก": ค่าในช่องแก้ไข (draft) ต่างจากค่าที่บันทึกไว้ในเพลง
+let detailPreviewDirty = false;
+let _detailLoadingSaved = false;
+function applyDetailDirtyUi() {
+  const saveBtn = document.getElementById("songDetailSavePreviewBtn");
+  if (saveBtn && !saveBtn.disabled) {
+    saveBtn.textContent = detailPreviewDirty ? "💾 บันทึก Preview ลงเพลงนี้ (มีการแก้ไขที่ยังไม่บันทึก)" : "💾 บันทึก Preview ลงเพลงนี้";
+    saveBtn.style.boxShadow = detailPreviewDirty ? "0 0 0 2px #ff9f43" : "";
+  }
+  if (detailPreviewDirty && detailPendingPreviewData && detailPendingPreviewData.status !== "analyzing") {
+    setDetailPreviewBadge("● ยังไม่บันทึก", "#ff9f43");
+  }
+}
 function renderDetailPreviewData(data) {
+  if (_detailLoadingSaved) detailPreviewDirty = false;
+  else if (data && data.status !== "analyzing") detailPreviewDirty = true;
   if (data && data.status !== "analyzing" && !data.waveform && detailPendingPreviewData && Array.isArray(detailPendingPreviewData.waveform)) {
     data.waveform = detailPendingPreviewData.waveform; // 🆕 (WAVEFORM) คงกราฟเดิมตอนคำนวณช่วงใหม่ด้วยมือ
     data.waveform_duration = detailPendingPreviewData.waveform_duration;
   }
   renderDetailPreviewDataCore(data);
+  applyDetailDirtyUi();
   refreshDetailWave();
 }
 function renderDetailPreviewDataCore(data) {
@@ -7613,13 +7643,17 @@ function renderDetailPreviewDataCore(data) {
   if (manualEnd) manualEnd.value = data.preview_end_bar ?? "";
   const confText = data.confidence != null ? ` (ความมั่นใจ ${(data.confidence * 100).toFixed(0)}%)` : " (แก้ไขเอง)";
   if (info) info.textContent =
-    `Dance: ห้อง ${data.dance_start_bar}–${data.preview_end_bar}${confText} · ` +
+    `Dance เริ่มห้อง ${data.dance_start_bar}${confText} · ` +
     `Preview: ${detailFormatTime(data.preview_start_sec)} – ${detailFormatTime(data.preview_end_sec)} ` +
     `(ห้อง ${data.preview_start_bar}–${data.preview_end_bar})`;
 }
 
 // โหลดข้อมูล preview ปัจจุบันจากเพลงที่เปิดอยู่ ลงใน Auto Preview Editor
 function loadDetailPreviewFromSong() {
+  _detailLoadingSaved = true;
+  try { _loadDetailPreviewFromSongInner(); } finally { _detailLoadingSaved = false; }
+}
+function _loadDetailPreviewFromSongInner() {
   if (!detailPopupSong) return;
   const s = detailPopupSong;
   if (s.preview_status) {
@@ -7746,7 +7780,8 @@ document.getElementById("songDetailManualBtn").addEventListener("click", () => {
     return 150;
   })());
   renderDetailPreviewData(result);
-  showToast("ใช้ช่วง Preview ที่กำหนดเองแล้ว — กด \"บันทึก Preview\" เพื่อใช้", "success");
+  if (result.clamped) showToast(`⚠️ ค่าที่กรอกเกินความยาวเพลง — ปรับเป็นห้อง ${result.preview_start_bar}–${result.preview_end_bar} ให้แล้ว (กด "บันทึก Preview" เพื่อใช้)`, "error");
+  else showToast("ใช้ช่วง Preview ที่กำหนดเองแล้ว — กด \"บันทึก Preview\" เพื่อใช้", "success");
 });
 
 // ปุ่ม "บันทึก Preview ลงเพลงนี้" — บันทึกเฉพาะฟิลด์ preview_* ลง Firestore (ไม่แต้ฟิลด์อื่น)
@@ -7850,12 +7885,20 @@ document.getElementById("songDetailSaveBpmBtn").addEventListener("click", async 
   btn.disabled = true; btn.textContent = `กำลังบันทึก BPM ${targetBpm}...`;
   try {
     const updated_at = new Date().toISOString();
-    await updateDoc(doc(db, "songs", detailPopupSong.id), { bpm: targetBpm, updated_at });
+    // 🔧 (FIX) เลขห้องคือค่าหลัก — เปลี่ยน BPM แล้วต้องคำนวณวินาทีเริ่ม/หยุด Preview ใหม่ด้วย ไม่งั้นตำแหน่งเพี้ยน
+    const rescaled = rescalePreviewForBpm(detailPopupSong, targetBpm);
+    const bpmPayload = { bpm: targetBpm, updated_at, ...(rescaled || {}) };
+    await updateDoc(doc(db, "songs", detailPopupSong.id), bpmPayload);
     // อัปเดตใน CACHE
-    detailPopupSong.bpm = targetBpm;
-    detailPopupSong.updated_at = updated_at;
+    Object.assign(detailPopupSong, bpmPayload);
     const cached = CACHE.songs.find(x => x.id === detailPopupSong.id);
-    if (cached) { cached.bpm = targetBpm; cached.updated_at = updated_at; }
+    if (cached) Object.assign(cached, bpmPayload);
+    if (rescaled) {
+      detailPopupPreview = { start: Number(rescaled.preview_start_sec), end: Number(rescaled.preview_end_sec) };
+      const metaLine = document.getElementById("songDetailMetaLine");
+      if (metaLine) metaLine.innerHTML = `🎯 เล่นช่วงตัวอย่าง ${detailFormatTime(detailPopupPreview.start)}–${detailFormatTime(detailPopupPreview.end)} · ห้อง ${escapeHtml(String(rescaled.preview_start_bar))}–${escapeHtml(String(rescaled.preview_end_bar))}<br>ใช้ปุ่มด้านบนเพื่อข้ามไปฟังส่วนต่าง ๆ ของเพลง`;
+      if (!detailPreviewDirty) loadDetailPreviewFromSong();
+    }
     // อัปเดต badge ใน popup
     const bpmBadge = document.getElementById("songDetailBpmBadge");
     if (bpmBadge) bpmBadge.innerHTML = renderBpmBadge(targetBpm);
