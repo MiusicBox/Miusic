@@ -611,6 +611,81 @@ export function computeWaveformPeaks(channelData, bins = WAVEFORM_BINS) {
   return Array.from(rms, (v) => Math.max(3, Math.min(100, Math.round(Math.sqrt(Math.min(1, v / ref)) * 100))));
 }
 
+// 🆕 (2026-10-16): detectMusicKey -- ตรวจ Key เพลง (Camelot) แบบอัตโนมัติ "เพื่อแสดงป้ายเท่านั้น"
+//   - อ่านข้อมูลเสียงอย่างเดียว (read-only) ไม่แก้ไฟล์เสียง/ไม่ส่งผลต่อการเล่น, Preview, BPM, กราฟ
+//   - วิธี: สุ่มหน้าต่าง FFT จากกลางเพลง -> รวมพลังงานเป็น 12 โน้ต (chroma) -> เทียบโปรไฟล์ Krumhansl-Schmuckler (major/minor)
+//   - ไม่แม่น 100% (ประมาณ 60-80%) -- คืน null ถ้าไม่มั่นใจ/ข้อมูลสั้นเกินไป/เกิด error
+const KEY_PROFILE_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const KEY_PROFILE_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+function keyCorrelation(chroma, profile, tonic) {
+  let mx = 0, my = 0;
+  for (let i = 0; i < 12; i++) { mx += chroma[(i + tonic) % 12]; my += profile[i]; }
+  mx /= 12; my /= 12;
+  let num = 0, dx = 0, dy = 0;
+  for (let i = 0; i < 12; i++) {
+    const a = chroma[(i + tonic) % 12] - mx, b = profile[i] - my;
+    num += a * b; dx += a * a; dy += b * b;
+  }
+  return dx > 0 && dy > 0 ? num / Math.sqrt(dx * dy) : 0;
+}
+// tonic: 0=C ... 11=B -> Camelot (major = B ring, minor = A ring ผ่านคีย์เมเจอร์สัมพัทธ์ +3 semitones)
+function camelotFromTonic(tonic, isMinor) {
+  const majorTonic = isMinor ? (tonic + 3) % 12 : tonic;
+  const num = (((majorTonic * 7) % 12) + 7) % 12 + 1;
+  return String(num) + (isMinor ? "A" : "B");
+}
+export function detectMusicKey(channelData, sampleRate) {
+  try {
+    const N = 8192;
+    const len = channelData ? channelData.length : 0;
+    if (!len || !(sampleRate > 0) || len < N * 8) return null;
+    const win = getHannWindow(N);
+    const binHz = sampleRate / N;
+    const loBin = Math.max(1, Math.ceil(100 / binHz));
+    const hiBin = Math.min(N / 2 - 1, Math.floor(2000 / binHz));
+    const chroma = new Float64Array(12);
+    const WINDOWS = 48;
+    const from = Math.floor(len * 0.10), to = Math.floor(len * 0.90) - N;
+    if (to <= from) return null;
+    const re = new Float32Array(N), im = new Float32Array(N);
+    let used = 0;
+    for (let w = 0; w < WINDOWS; w++) {
+      const start = from + Math.floor(((to - from) * w) / Math.max(1, WINDOWS - 1));
+      let energy = 0;
+      for (let i = 0; i < N; i++) { const v = channelData[start + i]; re[i] = v * win[i]; im[i] = 0; energy += v * v; }
+      if (energy / N < 1e-7) continue; // ช่วงเงียบ -> ข้าม
+      fftInPlace(re, im);
+      const local = new Float64Array(12);
+      let sum = 0;
+      for (let b = loBin; b <= hiBin; b++) {
+        const mag = Math.sqrt(re[b] * re[b] + im[b] * im[b]);
+        const pitch = 12 * Math.log2((b * binHz) / 440) + 69;
+        const near = Math.round(pitch);
+        const wgt = Math.max(0, 1 - 2 * Math.abs(pitch - near)); // บินที่คร่อมระหว่างโน้ตให้น้ำหนักน้อย
+        if (wgt <= 0) continue;
+        const v = Math.sqrt(mag) * wgt;
+        local[((near % 12) + 12) % 12] += v; sum += v;
+      }
+      if (sum <= 0) continue;
+      for (let k = 0; k < 12; k++) chroma[k] += local[k] / sum;
+      used++;
+    }
+    if (used < 6) return null;
+    let best = { r: -2, tonic: 0, minor: false }, second = -2;
+    for (let t = 0; t < 12; t++) {
+      for (const minor of [false, true]) {
+        const r = keyCorrelation(chroma, minor ? KEY_PROFILE_MINOR : KEY_PROFILE_MAJOR, t);
+        if (r > best.r) { second = best.r; best = { r, tonic: t, minor }; }
+        else if (r > second) second = r;
+      }
+    }
+    if (!(best.r >= 0.45)) return null; // ไม่มั่นใจพอ -> ไม่ใส่ (ดีกว่าใส่ผิด)
+    return { music_key: camelotFromTonic(best.tonic, best.minor), confidence: Number(best.r.toFixed(3)) };
+  } catch (_) {
+    return null;
+  }
+}
+
 // 🆕 (T132): แยกส่วน DSP ออกมาเป็นฟังก์ชันที่ไม่พึ่ง Web Audio — ใช้ทดสอบอัตโนมัติได้
 // 🆕 (T136): รับ optional bpm parameter — ใช้ barSecondsFor(bpm) ใน aggregateIntoBars + computePreviewWindow
 export function analyzeChannelData(channelData, sampleRate, durationSec, onProgress, bpm = null) {
@@ -622,6 +697,11 @@ export function analyzeChannelData(channelData, sampleRate, durationSec, onProgr
   } catch (_) { /* ignore */ }
   const frames = analyzeFrames(channelData, sampleRate);
   if (onProgress) onProgress(70);
+  let keyExtra = {};
+  try { // 🆕 (MUSIC-KEY): ตรวจ Key เพื่อแสดงผลเท่านั้น -- พังก็ข้าม ไม่กระทบผลวิเคราะห์เดิม
+    const mk = detectMusicKey(channelData, sampleRate);
+    if (mk) keyExtra = { music_key: mk.music_key, music_key_confidence: mk.confidence };
+  } catch (_) { /* ignore */ }
   // หมายเหตุ (T132): เคยทดลองหา beat-grid offset อัตโนมัติ แต่ "จังหวะที่ 1 ของห้อง" แยกจากเสียงอย่างเดียวไม่นิ่งพอ
   //   (เพลงแดนกระเดื่องทุกจังหวะ) จึงไม่เปิดใช้ — ยึด grid เริ่มที่ 0 ตามสเปกระบบเดิม
   // 🆕 (T136): ส่ง bpm เข้า aggregateIntoBars + computePreviewWindow เพื่อใช้ BAR_SECONDS ตาม BPM จริงของเพลง
@@ -635,7 +715,8 @@ export function analyzeChannelData(channelData, sampleRate, durationSec, onProgr
       reason: result.reason || "",
       confidence: Number((result.confidence || 0).toFixed(3)),
       duration_sec: Number(durationSec.toFixed(3)),
-      ...waveformExtra
+      ...waveformExtra,
+      ...keyExtra
     };
   }
 
@@ -644,6 +725,7 @@ export function analyzeChannelData(channelData, sampleRate, durationSec, onProgr
     confidence: Number(result.confidence.toFixed(3)),
     duration_sec: Number(durationSec.toFixed(3)),
     ...waveformExtra,
+    ...keyExtra,
     ...computePreviewWindow(result.danceStartBar, durationSec, 0, bpm)
   };
 }
