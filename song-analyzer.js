@@ -588,10 +588,38 @@ async function analyzeArrayBuffer(arrayBuffer, onProgress, bpm = null) {
   return analyzeChannelData(channelData, audioBuffer.sampleRate, audioBuffer.duration, onProgress, bpm);
 }
 
+// 🆕 (WAVEFORM): กราฟคลื่นเสียงแบบเบา — แบ่งเพลงเป็น 160 ช่วง เก็บความดัง (RMS) ของแต่ละช่วงเป็นเลข 3-100
+//   ใช้เก็บลงข้อมูลเพลง (~0.6 KB) ให้หน้าเว็บวาดกราฟได้ทันที ไม่ต้องโหลดไฟล์เสียงเพิ่ม
+//   ปรับสเกลด้วยค่า percentile 97 (กันเสียงสไปก์ตัวเดียวทำให้ทั้งกราฟแบน) + sqrt ให้ช่วงเบามองเห็นได้
+export const WAVEFORM_BINS = 160;
+export function computeWaveformPeaks(channelData, bins = WAVEFORM_BINS) {
+  const n = channelData ? channelData.length : 0;
+  if (!n || n < bins) return null;
+  const rms = new Float32Array(bins);
+  const step = n / bins;
+  for (let b = 0; b < bins; b++) {
+    const start = Math.floor(b * step);
+    const end = Math.max(start + 1, Math.floor((b + 1) * step));
+    const stride = Math.max(1, Math.floor((end - start) / 600)); // สุ่มอ่านไม่เกิน ~600 ค่าต่อช่วง → เร็วแม้ไฟล์ใหญ่
+    let sum = 0, cnt = 0;
+    for (let i = start; i < end; i += stride) { const v = channelData[i]; sum += v * v; cnt++; }
+    rms[b] = cnt ? Math.sqrt(sum / cnt) : 0;
+  }
+  const sorted = Array.from(rms).sort((a, c) => a - c);
+  const ref = sorted[Math.min(bins - 1, Math.floor(bins * 0.97))] || sorted[bins - 1] || 0;
+  if (!(ref > 0)) return null; // เงียบสนิท — ไม่ต้องมีกราฟ
+  return Array.from(rms, (v) => Math.max(3, Math.min(100, Math.round(Math.sqrt(Math.min(1, v / ref)) * 100))));
+}
+
 // 🆕 (T132): แยกส่วน DSP ออกมาเป็นฟังก์ชันที่ไม่พึ่ง Web Audio — ใช้ทดสอบอัตโนมัติได้
 // 🆕 (T136): รับ optional bpm parameter — ใช้ barSecondsFor(bpm) ใน aggregateIntoBars + computePreviewWindow
 export function analyzeChannelData(channelData, sampleRate, durationSec, onProgress, bpm = null) {
   if (onProgress) onProgress(45);
+  let waveformExtra = {};
+  try { // 🆕 (WAVEFORM): คำนวณกราฟคลื่นเสียงจากข้อมูลชุดเดียวกับที่วิเคราะห์ (ไม่ถอดเสียงซ้ำ) — พังก็ข้าม ไม่กระทบผลวิเคราะห์เดิม
+    const wf = computeWaveformPeaks(channelData);
+    if (wf) waveformExtra = { waveform: wf, waveform_duration: Number(durationSec.toFixed(3)) };
+  } catch (_) { /* ignore */ }
   const frames = analyzeFrames(channelData, sampleRate);
   if (onProgress) onProgress(70);
   // หมายเหตุ (T132): เคยทดลองหา beat-grid offset อัตโนมัติ แต่ "จังหวะที่ 1 ของห้อง" แยกจากเสียงอย่างเดียวไม่นิ่งพอ
@@ -606,7 +634,8 @@ export function analyzeChannelData(channelData, sampleRate, durationSec, onProgr
       dance_start_bar: result.danceStartBar,
       reason: result.reason || "",
       confidence: Number((result.confidence || 0).toFixed(3)),
-      duration_sec: Number(durationSec.toFixed(3))
+      duration_sec: Number(durationSec.toFixed(3)),
+      ...waveformExtra
     };
   }
 
@@ -614,6 +643,7 @@ export function analyzeChannelData(channelData, sampleRate, durationSec, onProgr
     status: "ok",
     confidence: Number(result.confidence.toFixed(3)),
     duration_sec: Number(durationSec.toFixed(3)),
+    ...waveformExtra,
     ...computePreviewWindow(result.danceStartBar, durationSec, 0, bpm)
   };
 }
