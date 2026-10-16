@@ -3282,6 +3282,11 @@ function openSongModal(songId) {
   updatePlayButtonsUI();
   if (backdropEl) backdropEl.classList.add("show");
 
+  // 🆕 (WAVEFORM-FIX 2026-10-15): วาดกราฟคลื่นเสียงใน popup — เรียกหลังเปิด backdrop ให้ canvas มีขนาด
+  //   ถ้าเพลงไม่มี waveform data → refreshModalWave จะซ่อนไว้เอง (เหมือนเดิม)
+  //   ถ้ามี → ลบ hidden + วาดกราฟ + ไฮไลต์ช่วง Preview
+  try { refreshModalWave(); } catch (err) { console.warn("[WAVEFORM-FIX] refreshModalWave failed:", err?.message || err); }
+
   // 🆕 (Feature #4): แสดงเพลงแนะนำ — เพลงอื่นของ DJ เดียวกัน + หมวดเดียวกัน
   //   - ทำหลังเปิด modal เพื่อให้ user เห็นเพลงแนะนำทันที
   //   - ไม่กระทบระบบเดิม — ถ้า fail ข้ามไปเงียบ ๆ (defensive)
@@ -3632,6 +3637,8 @@ function updateModalSeekUI() {
     seekEl.value = 0;
     if (currEl) currEl.textContent = "0:00";
     if (durEl) durEl.textContent = "0:00";
+    // 🆕 (WAVEFORM-FIX): sync playhead ของ waveform ด้วย (time = null ตอนยังไม่เล่น)
+    refreshModalWave();
     return;
   }
 
@@ -3649,7 +3656,75 @@ function updateModalSeekUI() {
     if (currEl) currEl.textContent = formatTime(AUDIO.currentTime);
     if (durEl) durEl.textContent = formatTime(AUDIO.duration || 0);
   }
+  // 🆕 (WAVEFORM-FIX): อัปเดต playhead ของ waveform ทุกครั้งที่ seek/UI update
+  refreshModalWave();
 }
+
+// 🆕 (WAVEFORM-FIX 2026-10-15): วาดกราฟคลื่นเสียงในหน้าลูกค้า (popup)
+//   ทำงานคล้าย refreshDetailWave() ฝั่ง admin — แต่ลูกค้า read-only (ไม่มี drag ตั้ง Dance)
+//   ถ้าเพลงไม่มี waveform data → ซ่อน (เหมือนเดิม)
+//   ถ้ามี → ลบ hidden + วาด + ไฮไลต์ช่วง Preview + playhead + grid (ถ้ามี BPM)
+function refreshModalWave() {
+  const wrap = document.getElementById("modalWaveWrap");
+  const cv = document.getElementById("modalWave");
+  if (!wrap || !cv || !window.MiusicWave) return;
+  const song = findSong(modalCurrentSongId);
+  if (!song || !Array.isArray(song.waveform)) {
+    wrap.hidden = true;
+    return;
+  }
+  const peaks = window.MiusicWave.sanitize(song.waveform);
+  if (!peaks) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  const dur = Number(song.waveform_duration || song.duration) || 0;
+  const preview = (song.preview_status === "ok" && song.preview_start_sec != null && song.preview_end_sec != null)
+    ? { start: Number(song.preview_start_sec), end: Number(song.preview_end_sec) } : null;
+  const time = (modalCurrentSongId === STATE.currentPlayingId && AUDIO && AUDIO.readyState >= 1 && !AUDIO.paused)
+    ? AUDIO.currentTime : null;
+  const bpm = (Number(song.bpm) >= 150 && Number(song.bpm) <= 165) ? Number(song.bpm) : 150;
+  // วาดด้วย retry เหมือนฝั่ง admin (กัน canvas ยัง 0px ตอน popup เพิ่งเปิด)
+  const paint = (tries) => {
+    const ok = window.MiusicWave.draw(cv, {
+      peaks, duration: dur, region: preview, tint: true,
+      bpm, grid: true, gridLabels: false, // ลูกค้าไม่ต้องดูหมายเลขห้อง
+      time, outside: "rgba(148,163,184,.30)"
+    });
+    if (!ok && tries > 0) requestAnimationFrame(() => paint(tries - 1));
+  };
+  paint(6);
+}
+
+// 🆕 (WAVEFORM-FIX): แตะบนกราฟ → กระโดดไปตำแหน่งนั้น (เหมือนกด seek bar)
+//   ใช้ได้เฉพาะตอนที่เพลงกำลังเล่น (modalCurrentSongId === STATE.currentPlayingId)
+//   ถ้ายังไม่ได้กด play → ไม่ทำอะไร (ไม่บังคับเริ่มเล่น)
+(function bindModalWaveTap() {
+  const cv = document.getElementById("modalWave");
+  if (!cv || !window.MiusicWave) return;
+  let dragging = false;
+  const seekToPosition = (ev) => {
+    if (modalCurrentSongId !== STATE.currentPlayingId || !AUDIO || !AUDIO.duration) return;
+    const song = findSong(modalCurrentSongId);
+    if (!song) return;
+    const dur = Number(song.waveform_duration || song.duration) || AUDIO.duration;
+    const t = window.MiusicWave.timeAt(cv, ev.clientX, dur);
+    const preview = (song.preview_status === "ok") ? { start: Number(song.preview_start_sec), end: Number(song.preview_end_sec) } : null;
+    // ถ้ามี preview → จำกัดให้อยู่ในช่วง preview เท่านั้น (เหมือน seek bar เดิม)
+    const finalT = preview ? Math.max(preview.start, Math.min(preview.end, t)) : t;
+    AUDIO.currentTime = finalT;
+    refreshModalWave();
+  };
+  cv.addEventListener("pointerdown", (ev) => {
+    dragging = true;
+    try { cv.setPointerCapture(ev.pointerId); } catch (_) {}
+    seekToPosition(ev);
+  });
+  cv.addEventListener("pointermove", (ev) => {
+    if (!dragging) return;
+    seekToPosition(ev);
+  });
+  cv.addEventListener("pointerup", () => { dragging = false; });
+  cv.addEventListener("pointercancel", () => { dragging = false; });
+})();
 
 // ===== เพิ่มใหม่: event listeners สำหรับ popup ใหม่ — เหมือนฝั่ง admin =====
 // ปุ่มกระโดดช่วงเพลง (3 ปุ่ม) — เหมือน jumpToIntro / jumpToPreview / jumpToOutro ฝั่ง admin
