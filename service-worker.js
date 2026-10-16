@@ -33,7 +33,7 @@
 // 🚀 (T062): ค้นหา/กรองฝั่ง server + keyset paging รองรับ 10,000+ เพลง
 // 🚀 (T063): หน้าแอดมินโหลดเพลงแบบแบ่งหน้า (cursor) แทนโหลดทั้งหมดครั้งเดียว
 // 🐛 (T064): แก้ popup ตัวกรองขั้นสูง (ย้ายออกจาก topbar) ให้เห็นครบทั้งมือถือและจอใหญ่
-const CACHE_VERSION = 'miusic-pwa-v1.0.16-launch'; // 🆕 (T128 2026-10-12): fix /privacy.html → /privacy link
+const CACHE_VERSION = 'miusic-pwa-v1.0.17-waveform'; // 🆕 (T128 2026-10-12): fix /privacy.html → /privacy link
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const FONT_CACHE    = `${CACHE_VERSION}-fonts`;
@@ -89,6 +89,7 @@ const PRECACHE_URLS = [
   '/orders.js',
   '/storage-adapter.js',
   '/song-analyzer.js',
+  '/waveform.js',
   '/thai-sort.js',
   '/admin-roles.js',
   // 🆕 (T049-B): เพิ่มไฟล์ใหม่จาก T013 + T045 — ไม่ precache จะทำให้ offline mode ไม่ทำงาน
