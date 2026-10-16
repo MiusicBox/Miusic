@@ -3632,7 +3632,10 @@ function refreshModalWave() {
   wrap.hidden = false;
   const preview = modalWavePreview();
   const time = _waveDragT != null ? _waveDragT : (isCur ? AUDIO.currentTime : null);
-  window.MiusicWave.draw(cv, { peaks: d.peaks, duration, region: preview, time, tint: true });
+  // 🆕 (2026-10-16): แสดงเลขห้อง (ทุก 8 ห้อง) ใต้กราฟเหมือนฝั่งแอดมิน — ใช้ BPM ของเพลง (150–165, ไม่มีค่า = 150)
+  const _song = findSong(modalCurrentSongId);
+  const _bpm = (_song && Number(_song.bpm) >= 150 && Number(_song.bpm) <= 165) ? Number(_song.bpm) : 150;
+  window.MiusicWave.draw(cv, { peaks: d.peaks, duration, region: preview, time, tint: true, bpm: _bpm, grid: true, gridLabels: true });
   const hint = document.getElementById("modalWaveHint");
   if (hint && Date.now() > _waveHintUntil) {
     hint.style.color = "";
