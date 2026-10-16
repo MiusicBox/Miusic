@@ -3020,9 +3020,7 @@ AUDIO.addEventListener("timeupdate", () => {
   if (backdrop && backdrop.classList.contains("show")) {
     const t = AUDIO.currentTime;
     if (preview) {
-      if (t >= preview.start && t < preview.end) setModalJumpActive("preview");
-      else if (t < preview.start) setModalJumpActive("intro");
-      else setModalJumpActive("outro");
+      setModalJumpActive(previewSectionAt(t, findSong(STATE.currentPlayingId), preview));
     } else {
       const dur = AUDIO.duration || 0;
       if (t < dur * 0.7) setModalJumpActive("intro");
@@ -3089,6 +3087,10 @@ function _previewGuardTick() {
   const preview = STATE.currentPreview;
   if (!preview || AUDIO.paused) { stopPreviewGuard(); _setAudioVolume(1); return; }
   if (isSeeking) return;
+  // 🔒 อยู่ก่อนต้นช่วง Preview (เช่น เล่นจาก 0:00) → ดึงกลับเข้าช่วงทันที ไม่ให้ได้ยินส่วนนอกช่วง
+  if (AUDIO.readyState >= 1 && AUDIO.currentTime < preview.start - 0.25) {
+    try { AUDIO.currentTime = preview.start; } catch (e) {}
+  }
   const remain = preview.end - AUDIO.currentTime;
   if (remain <= 0.03) { endPreviewPlayback(); return; }
   if (remain < PREVIEW_FADE_SEC) _setAudioVolume(remain / PREVIEW_FADE_SEC);
@@ -3918,6 +3920,32 @@ function updateModalSeekUI() {
 //   - ถ้าไม่ตรง → ไม่ seek (เพราะมี call ใหม่กว่า → listener เก่า)
 //   - ถ้า playSong fail → ล้าง listener ทันทีเพื่อกัน leak
 let _seekToken = 0;
+// 🔒 จุดกระโดดของปุ่ม 3 ปุ่ม — ต้องอยู่ในช่วง Preview เท่านั้น (ห้ามกระโดดออกนอกช่วงที่ตั้งไว้)
+//   ต้นเพลง = ต้นช่วง · Dance/Preview = จุดเริ่ม Dance (ถ้าอยู่ในช่วง) ไม่งั้นต้นช่วง · ท้ายเพลง = 10 วิสุดท้ายของช่วง
+function songPreviewOf(song) {
+  return song && song.preview_status === "ok" && song.preview_start_sec != null && song.preview_end_sec != null
+    ? { start: Number(song.preview_start_sec), end: Number(song.preview_end_sec) }
+    : null;
+}
+function previewJumpTargets(song, preview) {
+  if (!preview) return null;
+  let danceT = preview.start;
+  const bar = song ? Number(song.dance_start_bar) : NaN;
+  if (Number.isFinite(bar) && bar > 0) {
+    const bpm = Number(song.bpm) >= 150 && Number(song.bpm) <= 165 ? Number(song.bpm) : 150;
+    const d = bar * (240 / bpm);
+    if (d >= preview.start + 1 && d <= preview.end - 3) danceT = d;
+  }
+  return { intro: preview.start, dance: danceT, outro: Math.max(preview.start, preview.end - 10) };
+}
+function previewSectionAt(t, song, preview) {
+  const g = previewJumpTargets(song, preview);
+  if (!g) return null;
+  if (t >= g.outro) return "outro";
+  if (t >= g.dance) return "preview";
+  return "intro";
+}
+
 function playSongAndSeekTo(songId, targetSec, section) {
   const song = findSong(songId);
   if (!song || !song.file_url) {
@@ -3977,7 +4005,9 @@ if (_modalJumpIntro) _modalJumpIntro.addEventListener("click", () => {
     //   → permanent listener (บรรทัด 777) ชนะ → seek ไป preview.start แทน 0:00
     //   แก้: ส่ง 0 แทน null → per-call listener จะ seek ไป 0 ทับ permanent listener
     //   (เพราะ per-call listener ลงทะเบียนหลัง → ทำงานทีหลัง → override ค่าสุดท้าย)
-    playSongAndSeekTo(modalCurrentSongId, 0, "intro");
+    // 🔒 มี Preview → ต้นช่วง Preview (ห้ามเริ่มจาก 0:00 นอกช่วง) · ไม่มี → ต้นเพลงเดิม
+    const _g = previewJumpTargets(findSong(modalCurrentSongId), songPreviewOf(findSong(modalCurrentSongId)));
+    playSongAndSeekTo(modalCurrentSongId, _g ? _g.intro : 0, "intro");
     return;
   }
   // กรณี modal เปิดอยู่ที่เพลงที่กำลังเล่น — โค้ดเดิม
@@ -3986,7 +4016,10 @@ if (_modalJumpIntro) _modalJumpIntro.addEventListener("click", () => {
     return;
   }
   setModalJumpActive("intro");
-  AUDIO.currentTime = 0; // ต้นเพลง = วินาที 0 เสมอ
+  {
+    const _g = previewJumpTargets(findSong(modalCurrentSongId), STATE.currentPreview);
+    AUDIO.currentTime = _g ? _g.intro : 0; // 🔒 มี Preview → ต้นช่วง Preview · ไม่มี → ต้นเพลง
+  }
   if (AUDIO.paused) {
     AUDIO.play().then(updatePlayButtonsUI).catch(() => {});
   }
@@ -4006,7 +4039,7 @@ if (_modalJumpPreview) _modalJumpPreview.addEventListener("click", () => {
       playSongAndSeekTo(modalCurrentSongId, null, "intro");
       return;
     }
-    playSongAndSeekTo(modalCurrentSongId, preview.start, "preview");
+    playSongAndSeekTo(modalCurrentSongId, previewJumpTargets(song, preview).dance, "preview");
     return;
   }
   // กรณี modal เปิดอยู่ที่เพลงที่กำลังเล่น — โค้ดเดิม
@@ -4021,7 +4054,7 @@ if (_modalJumpPreview) _modalJumpPreview.addEventListener("click", () => {
     return;
   }
   setModalJumpActive("preview");
-  AUDIO.currentTime = preview.start; // กระโดดไปยังจุดเริ่มช่วง Dance/Preview
+  AUDIO.currentTime = previewJumpTargets(findSong(modalCurrentSongId), preview).dance; // 🔒 จุดเริ่ม Dance (อยู่ในช่วง Preview เสมอ)
   if (AUDIO.paused) {
     AUDIO.play().then(updatePlayButtonsUI).catch(() => {});
   }
