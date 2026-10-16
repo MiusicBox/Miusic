@@ -3002,13 +3002,9 @@ AUDIO.addEventListener("timeupdate", () => {
   const currTimeEl = document.getElementById("playerCurrentTime");
 
   if (preview && AUDIO.currentTime >= preview.end) {
-    // ถึงท้ายห้องที่ 16 ของ Dance แล้ว — หยุดเล่นทันที ไม่ให้เล่นต่อไปยังส่วนอื่นของเพลงเต็ม
-    AUDIO.pause();
-    AUDIO.currentTime = preview.start;
-    if (currTimeEl) currTimeEl.textContent = formatTime(0);
-    if (seekEl) seekEl.value = preview.start;
-    STATE.currentPlayingId = null;
-    updatePlayButtonsUI();
+    // ถึงท้ายช่วง Preview แล้ว — หยุดเล่นทันที ไม่ให้เล่นต่อไปยังส่วนอื่นของเพลงเต็ม
+    // (ตัวเช็กแม่นยำอยู่ที่ _previewGuardTick ด้านล่าง — อันนี้เป็นตัวสำรองเผื่อ timer ถูกเบราว์เซอร์หน่วง)
+    endPreviewPlayback();
     return;
   }
 
@@ -3065,6 +3061,48 @@ AUDIO.addEventListener("pause", updatePlayButtonsUI);
 AUDIO.addEventListener("play", updatePlayButtonsUI);
 AUDIO.addEventListener("waiting", () => { STATE.currentLoadingId = STATE.currentPlayingId; updatePlayButtonsUI(); });
 AUDIO.addEventListener("playing", () => { STATE.currentLoadingId = null; updatePlayButtonsUI(); });
+
+// ===== 🆕 หยุดตรงจุดจบ Preview แบบแม่นยำ + fade out =====
+// เดิมเช็กจุดหยุดจาก timeupdate (~4 ครั้ง/วินาที) → เลยจุดได้ 0.1–0.25 วิ และตัดเสียงกระทันหัน
+// ตอนนี้: timer ถี่ 30ms ระหว่างเล่น → หยุดที่จุดจบจริง + ลดเสียงลง 0.35 วิสุดท้าย
+// (iOS Safari ไม่ยอมให้ปรับ audio.volume ด้วยโค้ด → บน iPhone จะไม่มี fade แต่จุดหยุดยังแม่นเหมือนเดิม)
+const PREVIEW_FADE_SEC = 0.35;
+let _previewGuardTimer = 0;
+function _setAudioVolume(v) { try { AUDIO.volume = Math.max(0, Math.min(1, v)); } catch (e) {} }
+function stopPreviewGuard() {
+  if (_previewGuardTimer) { clearInterval(_previewGuardTimer); _previewGuardTimer = 0; }
+}
+function endPreviewPlayback() {
+  const preview = STATE.currentPreview;
+  stopPreviewGuard();
+  AUDIO.pause();
+  _setAudioVolume(1); // คืนระดับเสียงก่อนเล่นครั้งถัดไป
+  if (!preview) return;
+  try { AUDIO.currentTime = preview.start; } catch (e) {}
+  const currTimeEl = document.getElementById("playerCurrentTime");
+  if (currTimeEl) currTimeEl.textContent = formatTime(0);
+  if (seekEl) seekEl.value = preview.start;
+  STATE.currentPlayingId = null;
+  updatePlayButtonsUI();
+}
+function _previewGuardTick() {
+  const preview = STATE.currentPreview;
+  if (!preview || AUDIO.paused) { stopPreviewGuard(); _setAudioVolume(1); return; }
+  if (isSeeking) return;
+  const remain = preview.end - AUDIO.currentTime;
+  if (remain <= 0.03) { endPreviewPlayback(); return; }
+  if (remain < PREVIEW_FADE_SEC) _setAudioVolume(remain / PREVIEW_FADE_SEC);
+  else if (AUDIO.volume !== 1) _setAudioVolume(1);
+}
+function startPreviewGuard() {
+  stopPreviewGuard();
+  if (!STATE.currentPreview) { _setAudioVolume(1); return; }
+  _previewGuardTimer = setInterval(_previewGuardTick, 30);
+}
+AUDIO.addEventListener("playing", startPreviewGuard);
+AUDIO.addEventListener("pause", () => { stopPreviewGuard(); _setAudioVolume(1); });
+AUDIO.addEventListener("ended", () => { stopPreviewGuard(); _setAudioVolume(1); });
+AUDIO.addEventListener("emptied", () => { stopPreviewGuard(); _setAudioVolume(1); });
 
 // 🆕 (Feature #4 → T097 2026-10-06): renderRecommendSongs — แสดงเพลงแนะนำ
 //   Algorithm ใหม่ (ตาม owner request):
