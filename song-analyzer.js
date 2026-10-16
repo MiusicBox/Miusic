@@ -116,11 +116,11 @@ export function computePreviewWindow(danceStartBar, songDurationSec, gridOffsetS
   const rawStartBar = PREVIEW_START_BAR; // = 5 เสมอ ทุกเพลง (ห้องที่ 6)
   // จบห้องที่ 16 ของช่วง Dance (T135: เดิมห้องที่ 8) — กันเคสขอบ (Dance ถูกจับได้เร็วมากจนน้อยกว่าห้องเริ่ม Preview)
   const rawEndBar = Math.max(rawStartBar + 1, danceStartBar + DANCE_STOP_OFFSET_BARS);
-  const startSec = off + barToSec(rawStartBar, bpm);
-  const endSec = Math.min(
-    songDurationSec != null ? songDurationSec : Infinity,
-    off + barToSec(rawEndBar, bpm)
-  );
+  const dur = songDurationSec != null && songDurationSec > 0 ? songDurationSec : Infinity;
+  const oneBar = barToSec(1, bpm);
+  // 🔧 กัน start เกิน/ชนปลายเพลง (เพลงสั้นมาก) — เลื่อนให้เหลืออย่างน้อย 1 ห้อง ไม่ให้ start > end
+  const startSec = Math.min(off + barToSec(rawStartBar, bpm), Math.max(0, dur - oneBar));
+  const endSec = Math.max(startSec + 0.001, Math.min(dur, off + barToSec(rawEndBar, bpm)));
   return {
     dance_start_bar: danceStartBar,
     preview_start_bar: rawStartBar,
@@ -134,21 +134,30 @@ export function computePreviewWindow(danceStartBar, songDurationSec, gridOffsetS
 // ไม่อิงสูตร Dance ด้านบนเลย — แอดมินระบุ "ห้องเริ่มเล่น" และ "ห้องหยุดเล่น" เองได้ตามต้องการ
 // ใช้เมื่อกติกาอัตโนมัติ (เริ่มห้อง 1 → หยุดห้อง Dance+8) ไม่ตรงกับที่ต้องการสำหรับเพลงนั้นๆ
 // 🆕 (T136): รับ optional bpm parameter — ใช้คำนวณ BAR_SECONDS ตาม BPM จริงของเพลง
-export function manualPreviewWindow(startBar, endBar, songDurationSec, bpm = null) {
-  const sBar = Math.max(0, Math.floor(Number(startBar) || 0));
-  const eBarRaw = Math.floor(Number(endBar) || 0);
-  const eBar = Math.max(sBar + 1, eBarRaw); // ห้องหยุดต้องอยู่หลังห้องเริ่มเสมอ อย่างน้อย 1 ห้อง
-  const startSec = barToSec(sBar, bpm);
-  const endSec = Math.min(
-    songDurationSec != null ? songDurationSec : Infinity,
-    barToSec(eBar, bpm)
-  );
+export function manualPreviewWindow(startBar, endBar, songDurationSec, bpm = null, gridOffsetSec = 0) {
+  const off = Number(gridOffsetSec) || 0;
+  const dur = songDurationSec != null && songDurationSec > 0 ? songDurationSec : null;
+  let sBar = Math.max(0, Math.floor(Number(startBar) || 0));
+  let eBar = Math.max(sBar + 1, Math.floor(Number(endBar) || 0)); // ห้องหยุดต้องอยู่หลังห้องเริ่มอย่างน้อย 1 ห้อง
+  let clamped = false;
+  if (dur != null) {
+    // 🔧 (FIX) เดิมจำกัดแค่ปลาย → ถ้าห้องเริ่มเกินความยาวเพลง start จะมากกว่า end (ช่วงกลับด้าน)
+    //   ตอนนี้จำกัดทั้งสองฝั่ง: ห้องเริ่มสูงสุด = ห้องสุดท้ายที่ยังอยู่ในเพลง, ห้องหยุดไม่เกินปลายเพลง
+    const lastStartBar = Math.max(0, Math.ceil((dur - off) / barToSec(1, bpm)) - 1);
+    if (sBar > lastStartBar) { sBar = lastStartBar; clamped = true; }
+    const maxEndBar = Math.max(sBar + 1, Math.ceil((dur - off) / barToSec(1, bpm)));
+    if (eBar > maxEndBar) { eBar = maxEndBar; clamped = true; }
+    if (eBar <= sBar) eBar = sBar + 1;
+  }
+  const startSec = off + barToSec(sBar, bpm);
+  const endSec = Math.max(startSec + 0.001, Math.min(dur != null ? dur : Infinity, off + barToSec(eBar, bpm)));
   return {
     status: "ok",
     manual_window: true,       // ใช้แยกแยะฝั่ง UI ว่าเป็นค่าที่กำหนดเอง ไม่ใช่ผลจาก AI
+    clamped,                   // true = ค่าที่กรอกเกินความยาวเพลงและถูกปรับให้ (UI ควรแจ้งแอดมิน)
     dance_start_bar: null,     // ไม่ได้อิงตำแหน่ง Dance ที่ตรวจพบ
     confidence: null,
-    duration_sec: songDurationSec != null ? Number(songDurationSec.toFixed(3)) : null,
+    duration_sec: dur != null ? Number(dur.toFixed(3)) : null,
     preview_start_bar: sBar,
     preview_end_bar: eBar,
     preview_start_sec: Number(startSec.toFixed(3)),
@@ -741,5 +750,22 @@ export function recalculateFromManualBar(danceStartBar, durationSec, bpm = null)
     confidence: null, // ค่ามือ ไม่ใช่ผลจาก AI จึงไม่มี confidence score
     duration_sec: durationSec != null ? Number(durationSec.toFixed(3)) : null,
     ...computePreviewWindow(bar, durationSec, 0, bpm)
+  };
+}
+
+
+// 🆕 คำนวณ preview_start_sec / preview_end_sec ใหม่จาก "เลขห้อง" ที่บันทึกไว้ + BPM ปัจจุบัน
+//   ใช้ตอนแอดมินเปลี่ยน BPM ของเพลง — เลขห้องคือค่าหลัก วินาทีเป็นค่าที่คำนวณตามได้เสมอ
+//   คืน null ถ้าเพลงนี้ไม่มีช่วง Preview ที่ใช้งานได้ (ไม่ต้องแตะอะไร)
+export function rescalePreviewForBpm(song, bpm, gridOffsetSec = 0) {
+  if (!song || song.preview_status !== "ok") return null;
+  if (song.preview_start_bar == null || song.preview_end_bar == null) return null;
+  const dur = Number(song.preview_duration_sec) > 0 ? Number(song.preview_duration_sec) : null;
+  const w = manualPreviewWindow(song.preview_start_bar, song.preview_end_bar, dur, bpm, gridOffsetSec);
+  return {
+    preview_start_bar: w.preview_start_bar,
+    preview_end_bar: w.preview_end_bar,
+    preview_start_sec: w.preview_start_sec,
+    preview_end_sec: w.preview_end_sec
   };
 }
