@@ -3777,71 +3777,75 @@ function updateModalSeekUI() {
   refreshModalWave();
 }
 
-// 🆕 (WAVEFORM-FIX 2026-10-15): วาดกราฟคลื่นเสียงในหน้าลูกค้า (popup)
-//   ทำงานคล้าย refreshDetailWave() ฝั่ง admin — แต่ลูกค้า read-only (ไม่มี drag ตั้ง Dance)
-//   ถ้าเพลงไม่มี waveform data → ซ่อน (เหมือนเดิม)
-//   ถ้ามี → ลบ hidden + วาด + ไฮไลต์ช่วง Preview + playhead + grid (ถ้ามี BPM)
-function refreshModalWave() {
-  const wrap = document.getElementById("modalWaveWrap");
-  const cv = document.getElementById("modalWave");
-  if (!wrap || !cv || !window.MiusicWave) return;
-  const song = findSong(modalCurrentSongId);
-  if (!song || !Array.isArray(song.waveform)) {
-    wrap.hidden = true;
-    return;
-  }
-  const peaks = window.MiusicWave.sanitize(song.waveform);
-  if (!peaks) { wrap.hidden = true; return; }
-  wrap.hidden = false;
-  const dur = Number(song.waveform_duration || song.duration) || 0;
-  const preview = (song.preview_status === "ok" && song.preview_start_sec != null && song.preview_end_sec != null)
-    ? { start: Number(song.preview_start_sec), end: Number(song.preview_end_sec) } : null;
-  const time = (modalCurrentSongId === STATE.currentPlayingId && AUDIO && AUDIO.readyState >= 1 && !AUDIO.paused)
-    ? AUDIO.currentTime : null;
-  const bpm = (Number(song.bpm) >= 150 && Number(song.bpm) <= 165) ? Number(song.bpm) : 150;
-  // วาดด้วย retry เหมือนฝั่ง admin (กัน canvas ยัง 0px ตอน popup เพิ่งเปิด)
-  const paint = (tries) => {
-    const ok = window.MiusicWave.draw(cv, {
-      peaks, duration: dur, region: preview, tint: true,
-      bpm, grid: true, gridLabels: false, // ลูกค้าไม่ต้องดูหมายเลขห้อง
-      time, outside: "rgba(148,163,184,.30)"
-    });
-    if (!ok && tries > 0) requestAnimationFrame(() => paint(tries - 1));
-  };
-  paint(6);
-}
+// 🐛 (2026-10-16) ปิดการใช้งานบล็อก WAVEFORM-FIX ด้านล่าง (refreshModalWave ตัวที่ 2 + bindModalWaveTap)
+//   สาเหตุ: ประกาศ function refreshModalWave ซ้ำกับตัวแรก (~บรรทัด 3622) → SyntaxError ทำให้ app-user.js ทั้งไฟล์โหลดไม่ขึ้น
+//   จึงไม่มีเพลง/รูป/โปรโมชันบนหน้าลูกค้า (เหลือแค่ HTML/CSS) · ตัวแรกดึง waveform ทีละเพลงจาก API ใช้งานได้จริง
+//   ส่วนตัวที่ 2 อ่าน song.waveform จาก list ซึ่งถูกตัดออก (slim) จึงไม่เคยทำงานได้ · เก็บโค้ดไว้เป็นคอมเมนต์ ไม่ลบ
+//DISABLED // 🆕 (WAVEFORM-FIX 2026-10-15): วาดกราฟคลื่นเสียงในหน้าลูกค้า (popup)
+//DISABLED //   ทำงานคล้าย refreshDetailWave() ฝั่ง admin — แต่ลูกค้า read-only (ไม่มี drag ตั้ง Dance)
+//DISABLED //   ถ้าเพลงไม่มี waveform data → ซ่อน (เหมือนเดิม)
+//DISABLED //   ถ้ามี → ลบ hidden + วาด + ไฮไลต์ช่วง Preview + playhead + grid (ถ้ามี BPM)
+//DISABLED function refreshModalWave() {
+//DISABLED   const wrap = document.getElementById("modalWaveWrap");
+//DISABLED   const cv = document.getElementById("modalWave");
+//DISABLED   if (!wrap || !cv || !window.MiusicWave) return;
+//DISABLED   const song = findSong(modalCurrentSongId);
+//DISABLED   if (!song || !Array.isArray(song.waveform)) {
+//DISABLED     wrap.hidden = true;
+//DISABLED     return;
+//DISABLED   }
+//DISABLED   const peaks = window.MiusicWave.sanitize(song.waveform);
+//DISABLED   if (!peaks) { wrap.hidden = true; return; }
+//DISABLED   wrap.hidden = false;
+//DISABLED   const dur = Number(song.waveform_duration || song.duration) || 0;
+//DISABLED   const preview = (song.preview_status === "ok" && song.preview_start_sec != null && song.preview_end_sec != null)
+//DISABLED     ? { start: Number(song.preview_start_sec), end: Number(song.preview_end_sec) } : null;
+//DISABLED   const time = (modalCurrentSongId === STATE.currentPlayingId && AUDIO && AUDIO.readyState >= 1 && !AUDIO.paused)
+//DISABLED     ? AUDIO.currentTime : null;
+//DISABLED   const bpm = (Number(song.bpm) >= 150 && Number(song.bpm) <= 165) ? Number(song.bpm) : 150;
+//DISABLED   // วาดด้วย retry เหมือนฝั่ง admin (กัน canvas ยัง 0px ตอน popup เพิ่งเปิด)
+//DISABLED   const paint = (tries) => {
+//DISABLED     const ok = window.MiusicWave.draw(cv, {
+//DISABLED       peaks, duration: dur, region: preview, tint: true,
+//DISABLED       bpm, grid: true, gridLabels: false, // ลูกค้าไม่ต้องดูหมายเลขห้อง
+//DISABLED       time, outside: "rgba(148,163,184,.30)"
+//DISABLED     });
+//DISABLED     if (!ok && tries > 0) requestAnimationFrame(() => paint(tries - 1));
+//DISABLED   };
+//DISABLED   paint(6);
+//DISABLED }
 
-// 🆕 (WAVEFORM-FIX): แตะบนกราฟ → กระโดดไปตำแหน่งนั้น (เหมือนกด seek bar)
-//   ใช้ได้เฉพาะตอนที่เพลงกำลังเล่น (modalCurrentSongId === STATE.currentPlayingId)
-//   ถ้ายังไม่ได้กด play → ไม่ทำอะไร (ไม่บังคับเริ่มเล่น)
-(function bindModalWaveTap() {
-  const cv = document.getElementById("modalWave");
-  if (!cv || !window.MiusicWave) return;
-  let dragging = false;
-  const seekToPosition = (ev) => {
-    if (modalCurrentSongId !== STATE.currentPlayingId || !AUDIO || !AUDIO.duration) return;
-    const song = findSong(modalCurrentSongId);
-    if (!song) return;
-    const dur = Number(song.waveform_duration || song.duration) || AUDIO.duration;
-    const t = window.MiusicWave.timeAt(cv, ev.clientX, dur);
-    const preview = (song.preview_status === "ok") ? { start: Number(song.preview_start_sec), end: Number(song.preview_end_sec) } : null;
-    // ถ้ามี preview → จำกัดให้อยู่ในช่วง preview เท่านั้น (เหมือน seek bar เดิม)
-    const finalT = preview ? Math.max(preview.start, Math.min(preview.end, t)) : t;
-    AUDIO.currentTime = finalT;
-    refreshModalWave();
-  };
-  cv.addEventListener("pointerdown", (ev) => {
-    dragging = true;
-    try { cv.setPointerCapture(ev.pointerId); } catch (_) {}
-    seekToPosition(ev);
-  });
-  cv.addEventListener("pointermove", (ev) => {
-    if (!dragging) return;
-    seekToPosition(ev);
-  });
-  cv.addEventListener("pointerup", () => { dragging = false; });
-  cv.addEventListener("pointercancel", () => { dragging = false; });
-})();
+//DISABLED // 🆕 (WAVEFORM-FIX): แตะบนกราฟ → กระโดดไปตำแหน่งนั้น (เหมือนกด seek bar)
+//DISABLED //   ใช้ได้เฉพาะตอนที่เพลงกำลังเล่น (modalCurrentSongId === STATE.currentPlayingId)
+//DISABLED //   ถ้ายังไม่ได้กด play → ไม่ทำอะไร (ไม่บังคับเริ่มเล่น)
+//DISABLED (function bindModalWaveTap() {
+//DISABLED   const cv = document.getElementById("modalWave");
+//DISABLED   if (!cv || !window.MiusicWave) return;
+//DISABLED   let dragging = false;
+//DISABLED   const seekToPosition = (ev) => {
+//DISABLED     if (modalCurrentSongId !== STATE.currentPlayingId || !AUDIO || !AUDIO.duration) return;
+//DISABLED     const song = findSong(modalCurrentSongId);
+//DISABLED     if (!song) return;
+//DISABLED     const dur = Number(song.waveform_duration || song.duration) || AUDIO.duration;
+//DISABLED     const t = window.MiusicWave.timeAt(cv, ev.clientX, dur);
+//DISABLED     const preview = (song.preview_status === "ok") ? { start: Number(song.preview_start_sec), end: Number(song.preview_end_sec) } : null;
+//DISABLED     // ถ้ามี preview → จำกัดให้อยู่ในช่วง preview เท่านั้น (เหมือน seek bar เดิม)
+//DISABLED     const finalT = preview ? Math.max(preview.start, Math.min(preview.end, t)) : t;
+//DISABLED     AUDIO.currentTime = finalT;
+//DISABLED     refreshModalWave();
+//DISABLED   };
+//DISABLED   cv.addEventListener("pointerdown", (ev) => {
+//DISABLED     dragging = true;
+//DISABLED     try { cv.setPointerCapture(ev.pointerId); } catch (_) {}
+//DISABLED     seekToPosition(ev);
+//DISABLED   });
+//DISABLED   cv.addEventListener("pointermove", (ev) => {
+//DISABLED     if (!dragging) return;
+//DISABLED     seekToPosition(ev);
+//DISABLED   });
+//DISABLED   cv.addEventListener("pointerup", () => { dragging = false; });
+//DISABLED   cv.addEventListener("pointercancel", () => { dragging = false; });
+//DISABLED })();
 
 // ===== เพิ่มใหม่: event listeners สำหรับ popup ใหม่ — เหมือนฝั่ง admin =====
 // ปุ่มกระโดดช่วงเพลง (3 ปุ่ม) — เหมือน jumpToIntro / jumpToPreview / jumpToOutro ฝั่ง admin
@@ -7200,4 +7204,3 @@ window.addEventListener('beforeunload', () => {
     if (typeof window.stopOrdersPolling === 'function') window.stopOrdersPolling();
   } catch (_) {}
 });
-
