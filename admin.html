@@ -1474,6 +1474,25 @@
               <input id="songDetailManualEnd" type="number" min="0" step="1" placeholder="ห้องหยุด" style="width:100%;min-width:0;box-sizing:border-box;padding:10px 12px;font-size:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);border-radius:6px;color:var(--text);">
             </div>
             <button type="button" id="songDetailManualBtn" class="btn secondary" style="width:100%;font-size:12px;padding:6px;margin-top:6px;">🎛 ใช้ช่วงที่กำหนดเอง</button>
+            <!-- 🆕 ปุ่มขยับทีละ 1 ห้อง (ปรับแล้วอัปเดตกราฟทันที ยังไม่บันทึกจนกว่าจะกดบันทึก) -->
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;margin-top:8px;align-items:center;">
+              <div style="display:flex;gap:6px;">
+                <button type="button" class="btn secondary" data-detail-nudge="start" data-d="-1" style="flex:1;font-size:13px;padding:9px 0;">−1</button>
+                <button type="button" class="btn secondary" data-detail-nudge="start" data-d="1" style="flex:1;font-size:13px;padding:9px 0;">+1</button>
+              </div>
+              <span style="color:transparent;">→</span>
+              <div style="display:flex;gap:6px;">
+                <button type="button" class="btn secondary" data-detail-nudge="end" data-d="-1" style="flex:1;font-size:13px;padding:9px 0;">−1</button>
+                <button type="button" class="btn secondary" data-detail-nudge="end" data-d="1" style="flex:1;font-size:13px;padding:9px 0;">+1</button>
+              </div>
+            </div>
+            <!-- 🆕 ฟังช่วงที่ตั้งไว้ก่อนบันทึก -->
+            <div style="font-size:11px;color:var(--text-dim);margin:10px 0 4px;">ฟังช่วงที่ตั้งไว้ (ยังไม่ต้องบันทึก)</div>
+            <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;">
+              <button type="button" class="btn secondary" id="songDetailAuditionStart" style="font-size:12px;padding:8px 4px;">▶ ต้นช่วง</button>
+              <button type="button" class="btn secondary" id="songDetailAuditionEnd" style="font-size:12px;padding:8px 4px;">▶ ท้ายช่วง</button>
+              <button type="button" class="btn secondary" id="songDetailAuditionAll" style="font-size:12px;padding:8px 4px;">▶ ทั้งช่วง</button>
+            </div>
           </div>
 
           <!-- ปุ่มบันทึก Preview ลงเดียว -->
@@ -1891,6 +1910,6 @@
 
   <script src="phone-input.js?v=20261015-waveback" defer></script>
   <script src="waveform.js?v=20261015-waveback" defer></script>
-  <script type="module" src="app-admin.js?v=20261017-barfix"></script>
+  <script type="module" src="app-admin.js?v=20261017-stopfix"></script>
 </body>
 </html>
