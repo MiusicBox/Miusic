@@ -16,7 +16,7 @@ import {
   analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS,
   // 🆕 (T136): import barSecondsFor + clampBpm สำหรับคำนวณ BAR_SECONDS ตาม BPM จริงของแต่ละเพลง
   barSecondsFor, clampBpm, beatMsFor, bpmStepPct, bpmVsBasePct
-} from "./song-analyzer.js?v=20261014-bpmsync";
+} from "./song-analyzer.js?v=20261015-wave";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261012-launch";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
@@ -216,6 +216,15 @@ function setPreviewBadge(text, color) {
   el.style.color = color;
 }
 function renderPreviewData(data) {
+  // 🆕 (WAVEFORM): กดคำนวณช่วง Preview ใหม่ด้วยมือ (ไม่ได้วิเคราะห์เสียงใหม่) → คงกราฟเดิมของไฟล์เดียวกันไว้ ไม่ให้หาย
+  if (data && data.status !== "analyzing" && !data.waveform && pendingPreviewData && Array.isArray(pendingPreviewData.waveform)) {
+    data.waveform = pendingPreviewData.waveform;
+    data.waveform_duration = pendingPreviewData.waveform_duration;
+  }
+  renderPreviewDataCore(data);
+  refreshFormWave();
+}
+function renderPreviewDataCore(data) {
   pendingPreviewData = data;
   showPreviewBox();
   const barField = document.getElementById("fDanceStartBar");
@@ -3437,6 +3446,84 @@ function songFormHasDraft() {
   const nameEl = document.getElementById("fSongName");
   return !!(pendingSongFile || pendingFullSongFile || pendingCoverFile || (nameEl && nameEl.value.trim()));
 }
+// ===== 🆕 (WAVEFORM): กราฟคลื่นเสียงฝั่งแอดมิน =====
+//   แสดงในฟอร์มเพลงเดียว (กล่อง Auto Preview) และใน popup รายละเอียดเพลง
+//   แตะ/ลากบนกราฟ = ตั้ง "Dance Start Bar" (เส้นเหลือง) แล้วกดคำนวณ Preview ใหม่ให้อัตโนมัติ (ใช้ปุ่มคำนวณเดิม → ตรวจค่าเหมือนเดิมทุกอย่าง)
+const _waveBarOverride = { previewWave: null, songDetailWave: null }; // ห้องที่กำลังลากอยู่ (ยังไม่ปล่อยนิ้ว)
+function waveFmt(sec) { return typeof formatSec === "function" ? formatSec(sec) : String(Math.round(sec)); }
+function waveCapText(region, bar, hasMarker) {
+  const r = region ? `ช่วง Preview ${waveFmt(region.start)}–${waveFmt(region.end)}` : "ยังไม่ได้เลือกช่วง Preview";
+  return hasMarker
+    ? `${r} · เส้นเหลือง = จุดเริ่ม Dance (ห้อง ${bar}) — แตะหรือลากบนกราฟเพื่อย้าย`
+    : `${r} — แตะบนกราฟเพื่อตั้งจุดเริ่ม Dance`;
+}
+function drawAdminWave(key, wrapId, capId, data, bpm, time) {
+  const wrap = document.getElementById(wrapId), cv = document.getElementById(key), cap = document.getElementById(capId);
+  if (!wrap || !cv || !window.MiusicWave) return;
+  const peaks = data && window.MiusicWave.sanitize(data.waveform);
+  if (!peaks) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  const dur = Number(data.waveform_duration || data.duration_sec) || 0;
+  const bs = barSecondsFor(bpm);
+  const region = data.status === "ok" && data.preview_start_sec != null && data.preview_end_sec != null
+    ? { start: Number(data.preview_start_sec), end: Number(data.preview_end_sec) } : null;
+  const bar = _waveBarOverride[key] != null ? _waveBarOverride[key] : data.dance_start_bar;
+  const marker = bar != null && bar !== "" ? { time: Number(bar) * bs, label: "Dance" } : null;
+  if (cap) cap.textContent = waveCapText(region, bar, !!marker);
+  const paint = (tries) => {
+    const ok = window.MiusicWave.draw(cv, { peaks, duration: dur, region, tint: true, bpm, grid: true, gridLabels: true, marker, time, outside: "rgba(148,163,184,.45)" });
+    if (!ok && tries > 0) requestAnimationFrame(() => paint(tries - 1)); // popup เพิ่งเปิด ขนาด canvas ยังเป็น 0 → ลองใหม่
+  };
+  paint(6);
+}
+function refreshFormWave() {
+  const bpmEl = document.getElementById("fBpm");
+  drawAdminWave("previewWave", "previewWaveWrap", "previewWaveCap", pendingPreviewData, clampBpm(Number(bpmEl ? bpmEl.value : 150)), null);
+}
+function refreshDetailWave() {
+  const bpmEl = document.getElementById("songDetailBpm");
+  const data = detailPendingPreviewData;
+  const t = (typeof DETAIL_AUDIO !== "undefined" && DETAIL_AUDIO.readyState >= 1 && (!DETAIL_AUDIO.paused || DETAIL_AUDIO.currentTime > 0)) ? DETAIL_AUDIO.currentTime : null;
+  drawAdminWave("songDetailWave", "songDetailWaveWrap", "songDetailWaveCap", data, clampBpm(Number(bpmEl ? bpmEl.value : 150)), t);
+}
+function bindAdminWaveTap(key, getData, getBpm, inputId, btnId, redraw) {
+  const cv = document.getElementById(key);
+  if (!cv || !window.MiusicWave) return;
+  let dragging = false;
+  const barAt = (ev) => {
+    const d = getData();
+    const dur = d ? Number(d.waveform_duration || d.duration_sec) || 0 : 0;
+    if (!dur) return null;
+    const t = window.MiusicWave.timeAt(cv, ev.clientX, dur);
+    return Math.max(0, Math.round(t / barSecondsFor(getBpm())));
+  };
+  cv.addEventListener("pointerdown", (ev) => {
+    const bar = barAt(ev); if (bar == null) return;
+    dragging = true; cv.setPointerCapture(ev.pointerId);
+    _waveBarOverride[key] = bar; redraw();
+  });
+  cv.addEventListener("pointermove", (ev) => {
+    if (!dragging) return;
+    const bar = barAt(ev); if (bar == null) return;
+    _waveBarOverride[key] = bar; redraw();
+  });
+  const finish = (commit) => {
+    if (!dragging) return;
+    dragging = false;
+    const bar = _waveBarOverride[key]; _waveBarOverride[key] = null;
+    const input = document.getElementById(inputId), btn = document.getElementById(btnId);
+    if (commit && bar != null && input && btn) { input.value = String(bar); btn.click(); } // ใช้ปุ่ม "คำนวณ" เดิม → ตรวจค่า/คำนวณ/บันทึกเหมือนเดิม
+    else redraw();
+  };
+  cv.addEventListener("pointerup", () => finish(true));
+  cv.addEventListener("pointercancel", () => finish(false));
+}
+bindAdminWaveTap("previewWave", () => pendingPreviewData, () => clampBpm(Number(document.getElementById("fBpm")?.value)), "fDanceStartBar", "recalcPreviewBtn", refreshFormWave);
+bindAdminWaveTap("songDetailWave", () => detailPendingPreviewData, () => clampBpm(Number(document.getElementById("songDetailBpm")?.value)), "songDetailDanceStartBar", "songDetailRecalcBtn", refreshDetailWave);
+document.getElementById("fBpm")?.addEventListener("input", refreshFormWave);
+document.getElementById("songDetailBpm")?.addEventListener("input", refreshDetailWave);
+window.addEventListener("resize", () => { refreshFormWave(); refreshDetailWave(); });
+
 // 🆕 (FILE-MODE): ฟอร์มเพลงเดียว — บอกทันทีว่าเพลงนี้จะ "ไฟล์เต็มแยก" หรือ "ใช้ไฟล์ตัวอย่างเป็นไฟล์เต็ม"
 //   (แสดงผลอย่างเดียว ไม่แตะโค้ดส่วนไฟล์เต็มที่ล็อกไว้ — อ่านจากตัวแปรสถานะเท่านั้น)
 function refreshSongFileModeHint() {
@@ -3456,6 +3543,7 @@ function refreshSongFileModeHint() {
 }
 function refreshSongDraftUI() {
   refreshSongFileModeHint();
+  refreshFormWave(); // 🆕 (WAVEFORM) เปิดฟอร์มที่ค้างไว้กลับมา → วาดกราฟใหม่
   const btn = document.getElementById("songDraftDeleteBtn");
   if (!btn) return;
   btn.style.display = songFormHasDraft() ? "block" : "none";
@@ -3543,7 +3631,8 @@ function doOpenEditSong(id) {
         preview_start_sec: s.preview_start_sec,
         preview_end_sec: s.preview_end_sec,
         confidence: s.preview_confidence,
-        duration_sec: s.preview_duration_sec
+        duration_sec: s.preview_duration_sec,
+        waveform: s.waveform, waveform_duration: s.waveform_duration // 🆕 (WAVEFORM)
       });
     } else {
       // เพลงเก่าก่อนมีระบบนี้ — ยังไม่เคยวิเคราะห์เลย
@@ -3909,6 +3998,11 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
       payload.preview_end_sec = pendingPreviewData.preview_end_sec ?? null;
       payload.preview_confidence = pendingPreviewData.confidence ?? null;
       payload.preview_duration_sec = pendingPreviewData.duration_sec ?? null;
+      // 🆕 (WAVEFORM): กราฟคลื่นเสียง (ตัวเลข ~160 ค่า) — มีเฉพาะตอนวิเคราะห์เสียงสำเร็จ ถ้าไม่มีไม่แตะข้อมูลเดิม
+      if (Array.isArray(pendingPreviewData.waveform)) {
+        payload.waveform = pendingPreviewData.waveform;
+        payload.waveform_duration = pendingPreviewData.waveform_duration ?? pendingPreviewData.duration_sec ?? null;
+      }
     }
 
     const wasEditingSong = !!editingSongId;
@@ -5823,6 +5917,10 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
             const bulkBpmEl = document.getElementById("bulkBpm");
             return bulkBpmEl ? clampBpm(Number(bulkBpmEl.value)) : 150;
           })());
+          if (previewResult && Array.isArray(previewResult.waveform)) { // 🆕 (WAVEFORM) เก็บกราฟไว้ทั้งกรณี ok และ needs_review
+            songPayload.waveform = previewResult.waveform;
+            songPayload.waveform_duration = previewResult.waveform_duration ?? previewResult.duration_sec ?? null;
+          }
           if (previewResult && previewResult.status === "ok") {
             songPayload.preview_status = previewResult.status;
             songPayload.dance_start_bar = previewResult.dance_start_bar ?? null;
@@ -7065,6 +7163,7 @@ function setDetailJumpActive(section) {
 }
 
 function updateDetailSeekUI() {
+  refreshDetailWave(); // 🆕 (WAVEFORM) playhead ตามเสียงที่เล่น
   const seekEl = document.getElementById("songDetailSeek");
   const currEl = document.getElementById("songDetailCurrTime");
   const durEl = document.getElementById("songDetailDurTime");
@@ -7409,6 +7508,14 @@ function setDetailPreviewBadge(text, color) {
 }
 
 function renderDetailPreviewData(data) {
+  if (data && data.status !== "analyzing" && !data.waveform && detailPendingPreviewData && Array.isArray(detailPendingPreviewData.waveform)) {
+    data.waveform = detailPendingPreviewData.waveform; // 🆕 (WAVEFORM) คงกราฟเดิมตอนคำนวณช่วงใหม่ด้วยมือ
+    data.waveform_duration = detailPendingPreviewData.waveform_duration;
+  }
+  renderDetailPreviewDataCore(data);
+  refreshDetailWave();
+}
+function renderDetailPreviewDataCore(data) {
   detailPendingPreviewData = data;
   const info = document.getElementById("songDetailPreviewInfo");
   const danceField = document.getElementById("songDetailDanceStartBar");
@@ -7467,6 +7574,7 @@ function loadDetailPreviewFromSong() {
       preview_end_sec: s.preview_end_sec,
       confidence: s.preview_confidence,
       duration_sec: s.preview_duration_sec,
+      waveform: s.waveform, waveform_duration: s.waveform_duration, // 🆕 (WAVEFORM)
       manual_window: s.preview_manual_window === true || (s.preview_status === "ok" && s.dance_start_bar == null)
     });
   } else {
@@ -7591,6 +7699,10 @@ document.getElementById("songDetailSavePreviewBtn").addEventListener("click", as
       preview_manual_window: detailPendingPreviewData.manual_window === true,
       updated_at: new Date().toISOString()
     };
+    if (Array.isArray(detailPendingPreviewData.waveform)) { // 🆕 (WAVEFORM)
+      payload.waveform = detailPendingPreviewData.waveform;
+      payload.waveform_duration = detailPendingPreviewData.waveform_duration ?? detailPendingPreviewData.duration_sec ?? null;
+    }
     await updateDoc(doc(db, "songs", detailPopupSong.id), payload);
     // อัปเดต CACHE ด้วย เพื่อให้ list แสดงผลลัพธ์ใหม่ถูกต้อง
     Object.assign(detailPopupSong, payload);
