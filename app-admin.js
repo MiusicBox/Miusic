@@ -7297,6 +7297,11 @@ function closeSongDetailPopup() {
   if (editorBody) editorBody.style.display = "none";
   const chevron = document.getElementById("songDetailPreviewChevron");
   if (chevron) chevron.style.transform = "rotate(0deg)";
+  // 🆕 (2026-10-16): พับดร็อปดาวน์ BPM & Key กลับเป็นปิดทุกครั้งที่ปิด popup
+  const bpmKeyBody = document.getElementById("songDetailBpmKeyBody");
+  if (bpmKeyBody) bpmKeyBody.style.display = "none";
+  const bpmKeyChevron = document.getElementById("songDetailBpmKeyChevron");
+  if (bpmKeyChevron) bpmKeyChevron.style.transform = "rotate(0deg)";
   // เคลียร์ช่องกรอก
   const danceField = document.getElementById("songDetailDanceStartBar");
   if (danceField) danceField.value = "";
@@ -7601,6 +7606,18 @@ document.getElementById("songDetailPreviewToggle").addEventListener("click", () 
   if (chevron) chevron.style.transform = detailPreviewEditorOpen ? "rotate(180deg)" : "rotate(0deg)";
   // โหลดข้อมูล preview ทุกครั้งที่เปิด
   if (detailPreviewEditorOpen) loadDetailPreviewFromSong();
+});
+
+// 🆕 (2026-10-16): ปุ่ม toggle เปิด/ปิดดร็อปดาวน์ BPM & Music Key (รวม 2 ส่วนไว้ด้วยกัน) — แค่ซ่อน/แสดง ไม่แตะ logic บันทึก BPM/Key เดิม
+document.getElementById("songDetailBpmKeyToggle")?.addEventListener("click", () => {
+  const body = document.getElementById("songDetailBpmKeyBody");
+  const chevron = document.getElementById("songDetailBpmKeyChevron");
+  const btn = document.getElementById("songDetailBpmKeyToggle");
+  if (!body) return;
+  const open = body.style.display === "none";
+  body.style.display = open ? "block" : "none";
+  if (chevron) chevron.style.transform = open ? "rotate(180deg)" : "rotate(0deg)";
+  if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
 });
 
 // ปุ่ม "วิเคราะห์เสียงใหม่ทั้งหมด (AI)"
@@ -8483,4 +8500,3 @@ document.getElementById("backfillWaveCancelBtn")?.addEventListener("click", () =
   _backfillWaveCancel = true;
   showToast("กำลังหยุดหลังเพลงปัจจุบันเสร็จ...", "info");
 });
-
