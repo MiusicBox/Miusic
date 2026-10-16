@@ -7348,6 +7348,7 @@ function openSongDetailPopup(songId) {
 function closeSongDetailPopup() {
   document.getElementById("songDetailBackdrop").classList.remove("show");
   // หยุด + คืน memory ทันที (ตามข้อตกลง: ปิด popup → เสียงหยุด)
+  stopDetailAudition();
   DETAIL_AUDIO.pause();
   DETAIL_AUDIO.removeAttribute("src");
   DETAIL_AUDIO.load();
@@ -7489,7 +7490,10 @@ DETAIL_AUDIO.addEventListener("loadedmetadata", () => {
 });
 DETAIL_AUDIO.addEventListener("timeupdate", () => {
   // ถ้าอยู่ในโหมด preview และถึงท้ายช่วง preview → หยุด (เหมือนฝั่ง user)
-  if (detailPopupPreview && DETAIL_AUDIO.currentTime >= detailPopupPreview.end) {
+  // 🔧 หยุดเฉพาะตอนเล่นไหลผ่านจุดจบ (เกินไม่เกิน 1 วิ) — เดิมกดปุ่ม "ท้ายเพลง" แล้วเพลงถูกตัดหยุดทันที
+  //    และไม่ยุ่งตอนกำลังฟังช่วงทดสอบ (audition) ที่ยังไม่ได้บันทึก
+  if (!detailAudition && detailPopupPreview &&
+      DETAIL_AUDIO.currentTime >= detailPopupPreview.end && DETAIL_AUDIO.currentTime < detailPopupPreview.end + 1) {
     DETAIL_AUDIO.pause();
     try { DETAIL_AUDIO.currentTime = detailPopupPreview.start; } catch (e) {}
     setDetailPlayBtnUI("play");
@@ -7782,6 +7786,100 @@ document.getElementById("songDetailManualBtn").addEventListener("click", () => {
   renderDetailPreviewData(result);
   if (result.clamped) showToast(`⚠️ ค่าที่กรอกเกินความยาวเพลง — ปรับเป็นห้อง ${result.preview_start_bar}–${result.preview_end_bar} ให้แล้ว (กด "บันทึก Preview" เพื่อใช้)`, "error");
   else showToast("ใช้ช่วง Preview ที่กำหนดเองแล้ว — กด \"บันทึก Preview\" เพื่อใช้", "success");
+});
+
+// ===== 🆕 ปุ่ม ±1 ห้อง + ฟังช่วงที่ตั้งก่อนบันทึก (audition) =====
+let detailAudition = null;            // { start, end } วินาที — ช่วงที่กำลังฟังทดสอบ (ค่า draft ยังไม่บันทึก)
+let _detailAuditionTimer = 0;
+let _detailAuditionStarted = false;
+function stopDetailAudition() {
+  detailAudition = null; _detailAuditionStarted = false;
+  if (_detailAuditionTimer) { clearInterval(_detailAuditionTimer); _detailAuditionTimer = 0; }
+}
+function startDetailAudition(fromSec, toSec) {
+  if (!detailPopupSong || !detailPopupSong.file_url) { showToast("ไม่พบไฟล์เพลง", "error"); return; }
+  if (!(toSec > fromSec)) return;
+  stopDetailAudition();
+  if (!detailAudioUnlocked) { DETAIL_AUDIO.play().catch(() => {}); DETAIL_AUDIO.pause(); detailAudioUnlocked = true; }
+  detailAudition = { start: fromSec, end: toSec };
+  detailSeekOrQueue(fromSec);
+  setDetailPlayBtnUI("loading");
+  DETAIL_AUDIO.play().then(() => setDetailPlayBtnUI("pause")).catch(() => {
+    stopDetailAudition(); setDetailPlayBtnUI("play");
+    showToast("ไม่สามารถเล่นเพลงได้ ลองแตะปุ่มอีกครั้ง", "error");
+  });
+  _detailAuditionTimer = setInterval(() => {
+    const a = detailAudition;
+    if (!a) { stopDetailAudition(); return; }
+    if (!DETAIL_AUDIO.paused) _detailAuditionStarted = true;
+    else if (_detailAuditionStarted) { stopDetailAudition(); return; } // แอดมินกดหยุดเอง
+    const t = DETAIL_AUDIO.currentTime;
+    if (t >= a.end - 0.03) { // หยุดตรงจุดจบที่ตั้งไว้
+      DETAIL_AUDIO.pause(); stopDetailAudition(); setDetailPlayBtnUI("play"); updateDetailSeekUI(); return;
+    }
+    // แอดมินกระโดดไปส่วนอื่นเอง → เลิกโหมดทดสอบ (รอ seek ที่ค้างอยู่ให้เสร็จก่อนค่อยเช็ก)
+    if (_detailAuditionStarted && detailPendingSeek === null && (t < a.start - 1 || t > a.end + 1)) stopDetailAudition();
+  }, 30);
+}
+function detailAuditionRange(mode) {
+  const d = detailPendingPreviewData;
+  if (!d || d.status === "analyzing" || d.preview_start_sec == null || d.preview_end_sec == null) {
+    showToast("ยังไม่มีช่วง Preview ให้ฟัง — วิเคราะห์หรือกรอกก่อน", "error");
+    return;
+  }
+  const s0 = Number(d.preview_start_sec), e0 = Number(d.preview_end_sec), SNIP = 6;
+  if (mode === "start") startDetailAudition(s0, Math.min(e0, s0 + SNIP));
+  else if (mode === "end") startDetailAudition(Math.max(s0, e0 - SNIP), e0);
+  else startDetailAudition(s0, e0);
+}
+// ใช้เลขห้องเริ่ม/หยุด (draft) → คำนวณช่วงใหม่ + อัปเดตกราฟทันที (ยังไม่บันทึกลงเพลง)
+function detailApplyBars(sBar, eBar) {
+  const audioDur = Number.isFinite(DETAIL_AUDIO.duration) && DETAIL_AUDIO.duration > 0 ? DETAIL_AUDIO.duration : null;
+  const durationSec =
+    (detailPendingPreviewData && detailPendingPreviewData.duration_sec) ||
+    (detailPopupSong && detailPopupSong.preview_duration_sec) ||
+    audioDur || null;
+  const bpm = (() => {
+    const el = document.getElementById("songDetailBpm");
+    if (el) return clampBpm(Number(el.value));
+    if (detailPopupSong && detailPopupSong.bpm) return clampBpm(Number(detailPopupSong.bpm));
+    return 150;
+  })();
+  const result = manualPreviewWindow(sBar, eBar, durationSec, bpm);
+  renderDetailPreviewData(result);
+  if (result.clamped) showToast(`⚠️ ค่าเกินความยาวเพลง — ปรับเป็นห้อง ${result.preview_start_bar}–${result.preview_end_bar} ให้แล้ว`, "error");
+  return result;
+}
+document.querySelectorAll("[data-detail-nudge]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const which = btn.dataset.detailNudge, delta = Number(btn.dataset.d) || 0;
+    const sEl = document.getElementById("songDetailManualStart"), eEl = document.getElementById("songDetailManualEnd");
+    const cur = detailPendingPreviewData;
+    let sBar = sEl && sEl.value !== "" ? Number(sEl.value) : (cur ? cur.preview_start_bar : null);
+    let eBar = eEl && eEl.value !== "" ? Number(eEl.value) : (cur ? cur.preview_end_bar : null);
+    if (sBar == null || eBar == null || !Number.isFinite(sBar) || !Number.isFinite(eBar)) {
+      showToast("ยังไม่มีช่วง Preview — วิเคราะห์หรือกรอกห้องก่อน", "error");
+      return;
+    }
+    if (which === "start") sBar += delta; else eBar += delta;
+    detailApplyBars(Math.max(0, sBar), eBar);
+    // กำลังฟังอยู่ → เล่นส่วนที่เพิ่งขยับให้ฟังทันที (ต้นช่วง 6 วิ / ท้ายช่วง 6 วิ)
+    if (!DETAIL_AUDIO.paused || detailAudition) detailAuditionRange(which === "start" ? "start" : "end");
+  });
+});
+// พิมพ์เลขห้องเองแล้วออกจากช่อง → ใช้ช่วงให้เลย ไม่ต้องกดปุ่ม "ใช้ช่วงที่กำหนดเอง" อีก
+["songDetailManualStart", "songDetailManualEnd"].forEach((id) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener("change", () => {
+    const sEl = document.getElementById("songDetailManualStart"), eEl = document.getElementById("songDetailManualEnd");
+    if (!sEl || !eEl || sEl.value === "" || eEl.value === "") return;
+    detailApplyBars(sEl.value, eEl.value);
+  });
+});
+[["songDetailAuditionStart", "start"], ["songDetailAuditionEnd", "end"], ["songDetailAuditionAll", "all"]].forEach(([id, mode]) => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("click", () => detailAuditionRange(mode));
 });
 
 // ปุ่ม "บันทึก Preview ลงเพลงนี้" — บันทึกเฉพาะฟิลด์ preview_* ลง Firestore (ไม่แต้ฟิลด์อื่น)
