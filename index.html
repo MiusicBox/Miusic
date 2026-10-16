@@ -77,7 +77,7 @@
 <!-- 🔧 (2026-09-24 CLS fix): style.css กลับมาเป็น <link rel="stylesheet"> ปกติ (บล็อกการแสดงผลสั้น ๆ)
      สาเหตุ: เทคนิค media="print"+onload ทำให้หน้าเว็บวาดแบบ "ไม่มีสไตล์" ก่อน แล้วสไตล์มาทีหลัง → ทุกอย่างกระโดด
      (CLS 0.649 = ตัวที่ทำให้คะแนนตก 76) ไฟล์/เวอร์ชันเดิมทุกอย่าง แค่เอาการโหลดแบบหน่วงออก -->
-<link rel="stylesheet" href="style.css?v=20261013-t144">
+<link rel="stylesheet" href="style.css?v=20261015-wave">
 <!-- 🎨 (2026-10-11) ระบบแจ้งเตือนใหม่ (toast + dialog) — ต้องโหลดก่อน app-*.js -->
 <link rel="stylesheet" href="notify.css?v=20261013-t144">
 <script src="notify.js?v=20261013-t144"></script>
@@ -902,6 +902,11 @@
 
       <!-- Player ภายใน popup — เหมือนฝั่ง admin -->
       <div id="modalPlayer">
+        <!-- 🆕 (WAVEFORM): กราฟคลื่นเสียง — ซ่อนอยู่ถ้าเพลงนี้ยังไม่มีข้อมูลกราฟ (เพลงเก่า ไม่กระทบอะไร) -->
+        <div class="wave-wrap" id="modalWaveWrap" hidden>
+          <div class="wave-box"><canvas id="modalWave" role="img" aria-label="กราฟคลื่นเสียงของเพลง แตะหรือลากเพื่อเลื่อนตำแหน่ง"></canvas></div>
+          <div class="wave-cap" id="modalWaveHint"></div>
+        </div>
         <!-- Seek bar -->
         <div id="modalSeekWrap">
           <span id="modalCurrTime">0:00</span>
@@ -1408,7 +1413,8 @@
   <!-- เปลี่ยนเลข v ทุกครั้งที่อัปโหลดไฟล์ใหม่ เพื่อไม่ให้มือถือใช้ไฟล์ JS จาก cache -->
   <!-- 🔧 v=20260917-p0: P0 แก้ Bug 1 (ลูกค้าตั้ง status เองไม่ได้) + Sec 1 (change-password ต้อง verify เดิม) -->
   <!-- 🔧 v=20260917-polling-fix: Phase 0 ยกเลิก polling ทุก 4 วิ + Phase 1 จุด 5 (admin view cache) + Phase 2 จุด 1 (state ฝั่ง client) -->
-  <script type="module" src="app-user.js?v=20261013-t144"></script>
+  <script src="waveform.js?v=20261015-wave" defer></script>
+<script type="module" src="app-user.js?v=20261015-wave"></script>
   <!-- 🆕 (T045): PhoneInput country selector — โหลดก่อน customer-auth.js เพราะ customer-auth.js ใช้ PhoneInput.mount() -->
   <!--   ผลกระทบระบบเดิม: 0% — ไฟล์ใหม่ ไม่แตะ app-user.js/app-cart.js -->
   <script src="phone-input.js?v=20261013-t144" defer></script>
