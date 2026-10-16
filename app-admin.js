@@ -2573,18 +2573,18 @@ function isValidMusicKey(key) {
 //   ใช้สำหรับ: option inline style (HTML) + select.color (JS dynamic)
 //   A (minor) ใช้สีสว่างขึ้นเพื่อให้อ่านง่ายบน dark background
 const MUSIC_KEY_COLORS = {
-  "1A": "#94A3B8", "1B": "#A0AEC0",
-  "2A": "#818CF8", "2B": "#A5B4FC",
-  "3A": "#60A5FA", "3B": "#93C5FD",
-  "4A": "#22D3EE", "4B": "#67E8F9",
-  "5A": "#2DD4BF", "5B": "#5EEAD4",
-  "6A": "#4ADE80", "6B": "#86EFAC",
-  "7A": "#A3E635", "7B": "#BEF264",
-  "8A": "#FACC15", "8B": "#FDE047",
-  "9A": "#FBBF24", "9B": "#FCD34D",
-  "10A": "#FB923C", "10B": "#FDBA74",
-  "11A": "#F87171", "11B": "#FCA5A5",
-  "12A": "#F472B6", "12B": "#F9A8D4"
+  "1A": "#70EFDA", "1B": "#70EEC9",
+  "2A": "#7DF2AB", "2B": "#6FEE82",
+  "3A": "#AEF68A", "3B": "#87F550",
+  "4A": "#E7DCA2", "4B": "#DFCB75",
+  "5A": "#F5BFA7", "5B": "#F1A17C",
+  "6A": "#F0AFB5", "6B": "#EE8895",
+  "7A": "#F2A8CB", "7B": "#EE7FB4",
+  "8A": "#F1AAE4", "8B": "#EE80D9",
+  "9A": "#DDB4FA", "9B": "#CF8BF8",
+  "10A": "#BFCBFB", "10B": "#A0B5F8",
+  "11A": "#8FE3FD", "11B": "#64D9FA",
+  "12A": "#70F0F1", "12B": "#6DEBEA"
 };
 
 // 🆕 (T140): applyMusicKeySelectColor(selectId) — ปรับสี text ของ select ตามค่าที่เลือก
@@ -5343,30 +5343,30 @@ function renderBulkSongListPreview() {
   //   compact: เอาชื่อโน้ตออก (เช่น "8B" ไม่ใช่ "8B (C major)") เพื่อประหยัดพื้นที่
   const MUSIC_KEY_OPTIONS_HTML = [
     '<option value="" style="color: var(--text);">—</option>',
-    '<option value="1A" style="color:#94A3B8;">1A</option>',
-    '<option value="2A" style="color:#818CF8;">2A</option>',
-    '<option value="3A" style="color:#60A5FA;">3A</option>',
-    '<option value="4A" style="color:#22D3EE;">4A</option>',
-    '<option value="5A" style="color:#2DD4BF;">5A</option>',
-    '<option value="6A" style="color:#4ADE80;">6A</option>',
-    '<option value="7A" style="color:#A3E635;">7A</option>',
-    '<option value="8A" style="color:#FACC15;">8A</option>',
-    '<option value="9A" style="color:#FBBF24;">9A</option>',
-    '<option value="10A" style="color:#FB923C;">10A</option>',
-    '<option value="11A" style="color:#F87171;">11A</option>',
-    '<option value="12A" style="color:#F472B6;">12A</option>',
-    '<option value="1B" style="color:#A0AEC0;">1B</option>',
-    '<option value="2B" style="color:#A5B4FC;">2B</option>',
-    '<option value="3B" style="color:#93C5FD;">3B</option>',
-    '<option value="4B" style="color:#67E8F9;">4B</option>',
-    '<option value="5B" style="color:#5EEAD4;">5B</option>',
-    '<option value="6B" style="color:#86EFAC;">6B</option>',
-    '<option value="7B" style="color:#BEF264;">7B</option>',
-    '<option value="8B" style="color:#FDE047;">8B</option>',
-    '<option value="9B" style="color:#FCD34D;">9B</option>',
-    '<option value="10B" style="color:#FDBA74;">10B</option>',
-    '<option value="11B" style="color:#FCA5A5;">11B</option>',
-    '<option value="12B" style="color:#F9A8D4;">12B</option>'
+    '<option value="1A" style="color:#70EFDA;">1A</option>',
+    '<option value="2A" style="color:#7DF2AB;">2A</option>',
+    '<option value="3A" style="color:#AEF68A;">3A</option>',
+    '<option value="4A" style="color:#E7DCA2;">4A</option>',
+    '<option value="5A" style="color:#F5BFA7;">5A</option>',
+    '<option value="6A" style="color:#F0AFB5;">6A</option>',
+    '<option value="7A" style="color:#F2A8CB;">7A</option>',
+    '<option value="8A" style="color:#F1AAE4;">8A</option>',
+    '<option value="9A" style="color:#DDB4FA;">9A</option>',
+    '<option value="10A" style="color:#BFCBFB;">10A</option>',
+    '<option value="11A" style="color:#8FE3FD;">11A</option>',
+    '<option value="12A" style="color:#70F0F1;">12A</option>',
+    '<option value="1B" style="color:#70EEC9;">1B</option>',
+    '<option value="2B" style="color:#6FEE82;">2B</option>',
+    '<option value="3B" style="color:#87F550;">3B</option>',
+    '<option value="4B" style="color:#DFCB75;">4B</option>',
+    '<option value="5B" style="color:#F1A17C;">5B</option>',
+    '<option value="6B" style="color:#EE8895;">6B</option>',
+    '<option value="7B" style="color:#EE7FB4;">7B</option>',
+    '<option value="8B" style="color:#EE80D9;">8B</option>',
+    '<option value="9B" style="color:#CF8BF8;">9B</option>',
+    '<option value="10B" style="color:#A0B5F8;">10B</option>',
+    '<option value="11B" style="color:#64D9FA;">11B</option>',
+    '<option value="12B" style="color:#6DEBEA;">12B</option>'
   ].join("");
   const selCount = bulkFiles.filter((f) => bulkSelectedFiles.has(f)).length;
   const allSel = bulkFiles.length > 0 && selCount === bulkFiles.length;
