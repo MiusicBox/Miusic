@@ -1481,6 +1481,16 @@
         </div>
       </div>
 
+      <!-- ===== 🆕 (2026-10-16): รวม BPM + Music Key ไว้ในดร็อปดาวน์เดียวกัน (collapsible) — id/ปุ่มบันทึกเดิมไม่เปลี่ยน ===== -->
+      <style>
+        #songDetailBpmKeyBody > #songDetailBpmEditor { margin-top:0 !important; padding-top:0 !important; border-top:0 !important; }
+      </style>
+      <div id="songDetailBpmKeyEditor" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
+        <button type="button" id="songDetailBpmKeyToggle" aria-expanded="false" style="width:100%;display:flex;align-items:center;justify-content:space-between;background:transparent;border:0;color:var(--text);font-size:13px;font-weight:700;padding:4px 0;cursor:pointer;">
+          <span>🎵 ตั้งค่า BPM &amp; Music Key</span>
+          <span id="songDetailBpmKeyChevron" style="transition:transform .2s;">▼</span>
+        </button>
+        <div id="songDetailBpmKeyBody" style="display:none;margin-top:10px;">
       <!-- ===== 🆕 (T135 2026-10-13): BPM Adjust Section — ปรับ BPM ได้จาก popup เลย ===== -->
       <div id="songDetailBpmEditor" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
@@ -1520,6 +1530,8 @@
         </select>
         <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">อ่านจากแอป DJ — A = minor / B = major — เว้นว่างได้ถ้าไม่ระบุ</div>
         <button type="button" id="songDetailSaveMusicKeyBtn" class="btn" style="width:100%;font-size:13px;padding:10px;">💾 บันทึก Key ลงเพลงนี้</button>
+      </div>
+        </div>
       </div>
     </div>
   </div>
