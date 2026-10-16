@@ -1468,10 +1468,10 @@
           <!-- กำหนดช่วงเอง -->
           <div style="border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;margin-bottom:10px;">
             <div style="font-size:12px;font-weight:700;margin-bottom:6px;">กำหนดช่วง Preview เอง (ไม่ผูกกับสูตร Dance)</div>
-            <div style="display:flex;gap:6px;align-items:center;">
-              <input id="songDetailManualStart" type="number" min="0" step="1" placeholder="ห้องเริ่ม" style="flex:1;padding:6px 8px;font-size:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);border-radius:6px;color:var(--text);">
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center;">
+              <input id="songDetailManualStart" type="number" min="0" step="1" placeholder="ห้องเริ่ม" style="width:100%;min-width:0;box-sizing:border-box;padding:10px 12px;font-size:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);border-radius:6px;color:var(--text);">
               <span style="color:var(--text-dim);">→</span>
-              <input id="songDetailManualEnd" type="number" min="0" step="1" placeholder="ห้องหยุด" style="flex:1;padding:6px 8px;font-size:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);border-radius:6px;color:var(--text);">
+              <input id="songDetailManualEnd" type="number" min="0" step="1" placeholder="ห้องหยุด" style="width:100%;min-width:0;box-sizing:border-box;padding:10px 12px;font-size:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);border-radius:6px;color:var(--text);">
             </div>
             <button type="button" id="songDetailManualBtn" class="btn secondary" style="width:100%;font-size:12px;padding:6px;margin-top:6px;">🎛 ใช้ช่วงที่กำหนดเอง</button>
           </div>
