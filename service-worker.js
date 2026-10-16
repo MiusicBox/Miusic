@@ -33,7 +33,7 @@
 // 🚀 (T062): ค้นหา/กรองฝั่ง server + keyset paging รองรับ 10,000+ เพลง
 // 🚀 (T063): หน้าแอดมินโหลดเพลงแบบแบ่งหน้า (cursor) แทนโหลดทั้งหมดครั้งเดียว
 // 🐛 (T064): แก้ popup ตัวกรองขั้นสูง (ย้ายออกจาก topbar) ให้เห็นครบทั้งมือถือและจอใหญ่
-const CACHE_VERSION = 'miusic-pwa-v1.0.18-wavefix'; // 🐛 (2026-10-16): ล้าง cache app-user.js ตัวที่พัง (refreshModalWave ซ้ำ) · เดิม: v1.0.17-waveform
+const CACHE_VERSION = 'miusic-pwa-v1.0.19-keycolors'; // 🐛 (2026-10-16): ล้าง cache app-user.js ตัวที่พัง (refreshModalWave ซ้ำ) · เดิม: v1.0.17-waveform
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const API_CACHE     = `${CACHE_VERSION}-api`;
 const FONT_CACHE    = `${CACHE_VERSION}-fonts`;
