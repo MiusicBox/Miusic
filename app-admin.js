@@ -2572,6 +2572,14 @@ function isValidMusicKey(key) {
 // 🆕 (2026-10-16): Auto Music Key -- ตอนกด "วิเคราะห์เสียง (AI)" ระบบตรวจ Key ให้อัตโนมัติ (เพื่อแสดงป้ายให้ลูกค้าเท่านั้น ไม่กระทบเสียง)
 //   - ไม่ทับ Key ที่แอดมินตั้งเองไว้แล้ว: เติมเฉพาะเพลง/ช่องที่ "ยังว่าง" เท่านั้น
 //   - ตั้ง Key เองได้เหมือนเดิม (dropdown + ปุ่มบันทึก) -- ค่าที่ตั้งเองมาก่อนเสมอ
+// 🆕 (2026-10-16): กันปุ่มวิเคราะห์ AI ค้าง -- ถ้านานเกินกำหนด (เช่น ดาวน์โหลดไฟล์เสียงไม่จบ) ให้ error ออกมาแทนการหมุนค้างตลอด
+function withAnalysisTimeout(promise, ms) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("วิเคราะห์นานเกินไป (เกิน " + Math.round(ms / 1000) + " วินาที) -- ลองใหม่อีกครั้ง หรือเช็กอินเทอร์เน็ต")), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 // (ฟอร์มเพิ่ม/แก้เพลง) ถ้าช่อง Key ว่าง -> เติมค่าที่ตรวจได้ลงช่อง (บันทึกพร้อมฟอร์มตามปกติ)
 function autoFillFormMusicKey(result) {
   try {
@@ -7676,15 +7684,15 @@ document.getElementById("songDetailReanalyzeBtn").addEventListener("click", asyn
   renderDetailPreviewData({ status: "analyzing" });
   try {
     const analyzedSong = detailPopupSong; // 🆕 (AUTO-KEY) จำเพลงที่กำลังวิเคราะห์ไว้ กันสลับเพลงระหว่างรอ
-    const result = await analyzeSongUrl(detailPopupSong.file_url, undefined, /* bpm */ (() => {
+    const result = await withAnalysisTimeout(analyzeSongUrl(detailPopupSong.file_url, undefined, /* bpm */ (() => {
       // 🆕 (T136): ส่ง BPM ของเพลงใน popup เข้า analyzeSongUrl
       const bpmInputEl = document.getElementById("songDetailBpm");
       if (bpmInputEl) return clampBpm(Number(bpmInputEl.value));
       if (detailPopupSong && detailPopupSong.bpm) return clampBpm(Number(detailPopupSong.bpm));
       return 150;
-    })());
+    })()), 120000);
     renderDetailPreviewData(result);
-    await autoSaveMusicKeyForSong(analyzedSong, result); // 🆕 (AUTO-KEY)
+    autoSaveMusicKeyForSong(analyzedSong, result); // 🆕 (AUTO-KEY) ทำงานเบื้องหลัง ไม่รอ -- ต่อให้บันทึก Key ช้า ปุ่มวิเคราะห์ก็ไม่ค้าง
     showToast(result.status === "ok" ? "วิเคราะห์ใหม่สำเร็จ" : "วิเคราะห์ไม่พบช่วง Dance ที่มั่นใจพอ — กรอกเองได้", result.status === "ok" ? "success" : "error");
   } catch (err) {
     renderDetailPreviewData({ status: "needs_review", dance_start_bar: null, reason: "วิเคราะห์ไฟล์ไม่สำเร็จ: " + (err.message || err) });
