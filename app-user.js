@@ -3281,6 +3281,7 @@ function openSongModal(songId) {
   }
   updatePlayButtonsUI();
   if (backdropEl) backdropEl.classList.add("show");
+  try { initModalWave(songId); } catch (err) { console.warn("[WAVEFORM] init failed:", err?.message || err); } // 🆕 (WAVEFORM)
 
   // 🆕 (Feature #4): แสดงเพลงแนะนำ — เพลงอื่นของ DJ เดียวกัน + หมวดเดียวกัน
   //   - ทำหลังเปิด modal เพื่อให้ user เห็นเพลงแนะนำทันที
@@ -3596,6 +3597,121 @@ let modalIsSeeking = false;
 // ผลกระทบต่อระบบเดิม: 0% — เปลี่ยนเฉพาะ modal UI flow ไม่แตะระบบอื่น
 let modalCurrentSongId = null;
 
+// ===== 🆕 (WAVEFORM): กราฟคลื่นเสียงใน popup เพลง =====
+//   - ข้อมูลกราฟ (waveform ~160 ค่า) ไม่อยู่ใน list แบบ slim (กัน response บวม) → ดึงทีละเพลงตอนเปิด popup แล้วจำไว้
+//   - วาดด้วย canvas จากตัวเลขชุดสั้น ไม่โหลดไฟล์เสียงเพิ่ม · เพลงเก่าที่ไม่มีข้อมูล → ซ่อนกราฟ ทุกอย่างเหมือนเดิม
+//   - แตะ/ลากบนกราฟ = เลื่อนตำแหน่ง โดย "ถูกบีบให้อยู่ในช่วง Preview" เหมือน seek bar เดิม (ฟังนอกช่วงไม่ได้)
+//   ผลกระทบระบบเดิม: 0% — ไม่แก้ตรรกะเล่น/จำกัดช่วง/ซื้อ ใช้ AUDIO + playSongAndSeekTo ตัวเดิม
+const WAVE_CACHE = new Map(); // songId -> { peaks, duration } | null (null = เพลงนี้ไม่มีกราฟ)
+let _waveRaf = 0;
+let _waveDragT = null;
+let _waveHintUntil = 0; // เวลาที่ข้อความเตือน "ฟังได้เฉพาะช่วงที่ไฮไลต์" ยังต้องค้างไว้ (ms)
+
+function modalWaveData() { return WAVE_CACHE.get(modalCurrentSongId) || null; }
+function modalWavePreview() {
+  const s = findSong(modalCurrentSongId);
+  return s && s.preview_status === "ok" && s.preview_start_sec != null && s.preview_end_sec != null
+    ? { start: Number(s.preview_start_sec), end: Number(s.preview_end_sec) }
+    : null;
+}
+function refreshModalWave() {
+  const wrap = document.getElementById("modalWaveWrap");
+  const cv = document.getElementById("modalWave");
+  const backdrop = document.getElementById("songModalBackdrop");
+  if (!wrap || !cv || !window.MiusicWave || !backdrop || !backdrop.classList.contains("show")) return;
+  const d = modalWaveData();
+  if (!d) { wrap.hidden = true; return; }
+  const isCur = modalCurrentSongId === STATE.currentPlayingId;
+  const duration = d.duration || (isCur && isFinite(AUDIO.duration) ? AUDIO.duration : 0);
+  if (!duration) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  const preview = modalWavePreview();
+  const time = _waveDragT != null ? _waveDragT : (isCur ? AUDIO.currentTime : null);
+  window.MiusicWave.draw(cv, { peaks: d.peaks, duration, region: preview, time, tint: true });
+  const hint = document.getElementById("modalWaveHint");
+  if (hint && Date.now() > _waveHintUntil) {
+    hint.style.color = "";
+    hint.textContent = preview
+      ? "แตะหรือลากบนกราฟเพื่อเลื่อน · ฟังได้เฉพาะช่วงที่ไฮไลต์"
+      : "แตะหรือลากบนกราฟเพื่อเลื่อนตำแหน่ง";
+  }
+  // เล่นอยู่ → วาดต่อเนื่องให้ playhead ลื่น (หยุดเองเมื่อหยุดเล่น/ปิด popup)
+  if (isCur && !AUDIO.paused && !_waveRaf) {
+    _waveRaf = requestAnimationFrame(() => { _waveRaf = 0; refreshModalWave(); });
+  }
+}
+function initModalWave(songId) {
+  _waveDragT = null;
+  const wrap = document.getElementById("modalWaveWrap");
+  if (WAVE_CACHE.has(songId)) { refreshModalWave(); return; }
+  if (wrap) wrap.hidden = true; // ระหว่างรอข้อมูล ไม่ดันเลย์เอาต์
+  getDoc(doc(db, "songs", songId)).then((snap) => {
+    const data = snap && snap.exists() ? snap.data() : null;
+    const peaks = window.MiusicWave ? window.MiusicWave.sanitize(data && data.waveform) : null;
+    WAVE_CACHE.set(songId, peaks
+      ? { peaks, duration: Number(data.waveform_duration || data.preview_duration_sec) || 0 }
+      : null);
+    if (modalCurrentSongId === songId) refreshModalWave();
+  }).catch(() => { /* โหลดกราฟไม่ได้ → ไม่แสดงกราฟ ที่เหลือใช้งานได้ปกติ (ไม่ cache เพื่อให้ลองใหม่ครั้งหน้า) */ });
+}
+function commitModalWaveSeek(t) {
+  const preview = modalWavePreview();
+  const section = preview && t >= preview.start ? "preview" : "intro";
+  try { unlockAudio(); } catch (_) {}
+  if (modalCurrentSongId !== STATE.currentPlayingId) {
+    playSongAndSeekTo(modalCurrentSongId, t, section); // เพลงใน popup ยังไม่ได้เล่น → เริ่มเล่นแล้วข้ามไปจุดที่แตะ
+    return;
+  }
+  try { AUDIO.currentTime = t; } catch (_) {}
+  setModalJumpActive(section);
+  if (AUDIO.paused) AUDIO.play().then(updatePlayButtonsUI).catch(() => {});
+  refreshModalWave();
+}
+(function bindModalWave() {
+  const cv = document.getElementById("modalWave");
+  if (!cv) return;
+  const tAt = (ev) => {
+    const d = modalWaveData();
+    const dur = d ? (d.duration || AUDIO.duration || 0) : 0;
+    if (!dur || !window.MiusicWave) return null;
+    let t = window.MiusicWave.timeAt(cv, ev.clientX, dur);
+    const p = modalWavePreview();
+    if (p) t = Math.min(p.end - 0.5, Math.max(p.start, t)); // บีบให้อยู่ในช่วง Preview เหมือน seek bar เดิม (เว้น 0.5 วิท้ายช่วง กันเล่นแล้วหยุดทันที)
+    return t;
+  };
+  // แตะนอกช่วงที่ไฮไลต์ = ไม่เลื่อน แต่บอกเหตุผลสั้นๆ (ดีกว่าเด้งไปขอบช่วงแล้วเพลงหยุดเอง)
+  const outsidePreview = (ev) => {
+    const p = modalWavePreview(), d = modalWaveData();
+    const dur = d ? (d.duration || AUDIO.duration || 0) : 0;
+    if (!p || !dur || !window.MiusicWave) return false;
+    const raw = window.MiusicWave.timeAt(cv, ev.clientX, dur);
+    return raw < p.start || raw > p.end;
+  };
+  cv.addEventListener("pointerdown", (ev) => {
+    if (outsidePreview(ev)) {
+      _waveHintUntil = Date.now() + 2500;
+      const h = document.getElementById("modalWaveHint");
+      if (h) { h.textContent = "🔒 ฟังได้เฉพาะช่วงที่ไฮไลต์เท่านั้น — ซื้อเพลงเพื่อรับไฟล์เต็ม"; h.style.color = "#fbbf24"; }
+      setTimeout(refreshModalWave, 2600);
+      return;
+    }
+    const t = tAt(ev); if (t == null) return;
+    cv.setPointerCapture(ev.pointerId); _waveDragT = t; refreshModalWave();
+  });
+  cv.addEventListener("pointermove", (ev) => {
+    if (_waveDragT == null) return;
+    const t = tAt(ev); if (t != null) { _waveDragT = t; refreshModalWave(); }
+  });
+  cv.addEventListener("pointerup", () => {
+    if (_waveDragT == null) return;
+    const t = _waveDragT; _waveDragT = null;
+    commitModalWaveSeek(t);
+  });
+  cv.addEventListener("pointercancel", () => { _waveDragT = null; refreshModalWave(); });
+  ["play", "pause", "ended"].forEach((evName) => AUDIO.addEventListener(evName, () => { try { refreshModalWave(); } catch (_) {} }));
+  window.addEventListener("resize", () => { try { refreshModalWave(); } catch (_) {} });
+})();
+
 // ไอคอนเล่น/หยุดของปุ่มใน popup (ใช้ SVG เดียวกับของเดิม)
 function modalPlayIconSvg() { return '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>'; }
 function modalStopIconSvg() { return '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"></rect><rect x="14" y="5" width="4" height="14"></rect></svg>'; }
@@ -3622,6 +3738,7 @@ function updateModalSeekUI() {
   // อัปเดตเฉพาะเมื่อ popup เปิดอยู่ (ประหยัด CPU)
   const backdrop = document.getElementById("songModalBackdrop");
   if (!backdrop || !backdrop.classList.contains("show")) return;
+  try { refreshModalWave(); } catch (_) { /* กราฟพังต้องไม่กระทบ seek bar เดิม */ } // 🆕 (WAVEFORM)
 
   // 🔧 แก้บั๊ก (2026-09-17): ถ้าเพลงใน modal ไม่ใช่เพลงที่กำลังเล่น → reset seek bar
   //   กัน seek bar แสดงเวลาของเพลงอื่นที่กำลังเล่นอยู่ (เช่น เปิด modal B ระหว่างเพลง A เล่น)
