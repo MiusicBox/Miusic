@@ -6,7 +6,7 @@
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): noindex meta — กัน Google index หน้า admin -->
 <meta name="robots" content="noindex, nofollow">
 <title>Admin - Music Store</title>
-<link rel="stylesheet" href="style.css?v=20261014-filemode">
+<link rel="stylesheet" href="style.css?v=20261015-wave">
 <!-- 🎨 (2026-10-11) ระบบแจ้งเตือนใหม่ (toast + dialog) — ต้องโหลดก่อน app-*.js -->
 <link rel="stylesheet" href="notify.css?v=20261013-t144">
 <script src="notify.js?v=20261013-t144"></script>
@@ -974,6 +974,11 @@
           <span id="previewStatusBadge" style="font-size:12px;font-weight:700;padding:2px 10px;border-radius:999px;"></span>
         </label>
         <div id="previewInfoText" style="font-size:12px;color:var(--text-dim);margin:6px 0 10px;"></div>
+        <!-- 🆕 (WAVEFORM): กราฟคลื่นเสียงจากไฟล์ตัวอย่าง — แตะ/ลากบนกราฟเพื่อย้ายจุดเริ่ม Dance (เส้นเหลือง) -->
+        <div class="wave-wrap" id="previewWaveWrap" hidden>
+          <div class="wave-box"><canvas id="previewWave" role="img" aria-label="กราฟคลื่นเสียง แตะหรือลากเพื่อตั้งจุดเริ่ม Dance"></canvas></div>
+          <div class="wave-cap" id="previewWaveCap"></div>
+        </div>
         <label style="font-size:13px;">Dance Start Bar (ห้องที่เริ่ม Dance — แก้เองได้ถ้าระบบเดาไม่ตรง)</label>
         <input id="fDanceStartBar" type="number" min="0" step="1" placeholder="เช่น 100">
         <button type="button" class="btn secondary" id="recalcPreviewBtn" style="margin-top:8px;width:100%;">✎ แก้ไข / คำนวณ Preview ใหม่ (เริ่มห้อง 6 → หยุด Dance+8)</button>
@@ -1395,6 +1400,11 @@
 
       <div id="songDetailPlayer">
         <!-- Seek bar -->
+        <!-- 🆕 (WAVEFORM): กราฟคลื่นเสียง + playhead — แตะ/ลากเพื่อย้ายจุดเริ่ม Dance (เส้นเหลือง) -->
+        <div class="wave-wrap" id="songDetailWaveWrap" hidden>
+          <div class="wave-box"><canvas id="songDetailWave" role="img" aria-label="กราฟคลื่นเสียง แตะหรือลากเพื่อตั้งจุดเริ่ม Dance"></canvas></div>
+          <div class="wave-cap" id="songDetailWaveCap"></div>
+        </div>
         <div id="songDetailSeekWrap">
           <span id="songDetailCurrTime">0:00</span>
           <input id="songDetailSeek" type="range" min="0" max="0" step="0.1" value="0" aria-label="ตำแหน่งเพลง">
@@ -1839,6 +1849,7 @@
   </div>
 
   <script src="phone-input.js?v=20261013-t144" defer></script>
-  <script type="module" src="app-admin.js?v=20261014-filemode"></script>
+  <script src="waveform.js?v=20261015-wave" defer></script>
+  <script type="module" src="app-admin.js?v=20261015-wave"></script>
 </body>
 </html>
