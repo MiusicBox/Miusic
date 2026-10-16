@@ -16,7 +16,7 @@ import {
   analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, BAR_SECONDS,
   // 🆕 (T136): import barSecondsFor + clampBpm สำหรับคำนวณ BAR_SECONDS ตาม BPM จริงของแต่ละเพลง
   barSecondsFor, clampBpm, beatMsFor, bpmStepPct, bpmVsBasePct
-} from "./song-analyzer.js?v=20261015-wave";
+} from "./song-analyzer.js?v=20261016-autokey";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261012-launch";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
@@ -2569,6 +2569,46 @@ function isValidMusicKey(key) {
   return /^([1-9]|1[0-2])[AB]$/.test(k);
 }
 
+// 🆕 (2026-10-16): Auto Music Key -- ตอนกด "วิเคราะห์เสียง (AI)" ระบบตรวจ Key ให้อัตโนมัติ (เพื่อแสดงป้ายให้ลูกค้าเท่านั้น ไม่กระทบเสียง)
+//   - ไม่ทับ Key ที่แอดมินตั้งเองไว้แล้ว: เติมเฉพาะเพลง/ช่องที่ "ยังว่าง" เท่านั้น
+//   - ตั้ง Key เองได้เหมือนเดิม (dropdown + ปุ่มบันทึก) -- ค่าที่ตั้งเองมาก่อนเสมอ
+// (ฟอร์มเพิ่ม/แก้เพลง) ถ้าช่อง Key ว่าง -> เติมค่าที่ตรวจได้ลงช่อง (บันทึกพร้อมฟอร์มตามปกติ)
+function autoFillFormMusicKey(result) {
+  try {
+    const k = String((result && result.music_key) || "").trim().toUpperCase();
+    const sel = document.getElementById("fMusicKey");
+    if (!sel || !isValidMusicKey(k)) return;
+    if (String(sel.value || "").trim() !== "") return; // มี Key อยู่แล้ว (ตั้งเอง) -> ไม่ทับ
+    sel.value = k;
+    sel.dispatchEvent(new Event("change")); // ให้สีของ select อัปเดต
+    showToast(`🎹 ตรวจพบ Key ${k} อัตโนมัติ — เปลี่ยนได้ที่ช่อง Key`, "success");
+  } catch (_) { /* ไม่กระทบการวิเคราะห์เดิม */ }
+}
+// (popup รายละเอียดเพลง) เพลงที่ยังไม่มี Key -> บันทึก Key ที่ตรวจได้ลง DB ทันที
+async function autoSaveMusicKeyForSong(song, result) {
+  try {
+    const k = String((result && result.music_key) || "").trim().toUpperCase();
+    if (!song || !song.id || !isValidMusicKey(k)) return;
+    if (String(song.music_key || "").trim() !== "") return; // มี Key อยู่แล้ว -> ไม่ทับ
+    const updated_at = new Date().toISOString();
+    await updateDoc(doc(db, "songs", song.id), { music_key: k, updated_at });
+    song.music_key = k; song.updated_at = updated_at;
+    const cached = CACHE.songs.find(x => x.id === song.id);
+    if (cached) { cached.music_key = k; cached.updated_at = updated_at; }
+    if (detailPopupSong && detailPopupSong.id === song.id) { // popup ยังเปิดเพลงเดิมอยู่ -> อัปเดต dropdown + ป้าย
+      const sel = document.getElementById("songDetailMusicKey");
+      if (sel) { sel.value = k; sel.dispatchEvent(new Event("change")); }
+      const badge = document.getElementById("songDetailMusicKeyBadge");
+      if (badge) badge.innerHTML = renderMusicKeyBadge(k);
+    }
+    if (typeof currentSongListView !== "undefined" && currentSongListView.length > 0) renderSongList(currentSongListView);
+    invalidateAdminCache("songs");
+    showToast(`🎹 ตรวจพบและบันทึก Key ${k} ให้เพลงนี้แล้ว — เปลี่ยนได้ที่ช่อง Music Key`, "success");
+  } catch (err) {
+    console.warn("[AutoKey] save failed:", err?.message || err); // ไม่กระทบผลวิเคราะห์เดิม
+  }
+}
+
 // 🆕 (T140 2026-10-13): MUSIC_KEY_COLORS — 24 สี Camelot wheel (brightened versions for readability)
 //   ใช้สำหรับ: option inline style (HTML) + select.color (JS dynamic)
 //   A (minor) ใช้สีสว่างขึ้นเพื่อให้อ่านง่ายบน dark background
@@ -3727,6 +3767,7 @@ async function runAnalysisOnFile(file) {
     const result = await analyzeSongFile(file, undefined, bpmVal);
     if (mySession !== songUploadSession) return; // ฟอร์มถูกรีเซ็ต/ปิดไปแล้วระหว่างวิเคราะห์
     renderPreviewData(result);
+    autoFillFormMusicKey(result); // 🆕 (AUTO-KEY)
     if (result.status === "needs_review") {
       showToast("วิเคราะห์ไม่พบช่วง Dance ที่มั่นใจพอ — กรุณากรอก Dance Start Bar เอง", "error");
     }
@@ -3818,6 +3859,7 @@ document.getElementById("reanalyzePreviewBtn").addEventListener("click", async (
       })());
     if (mySession !== songUploadSession) return;
     renderPreviewData(result);
+    autoFillFormMusicKey(result); // 🆕 (AUTO-KEY)
     showToast(result.status === "ok" ? "วิเคราะห์ใหม่สำเร็จ" : "วิเคราะห์ไม่พบช่วง Dance ที่มั่นใจพอ — กรอกเองได้", result.status === "ok" ? "success" : "error");
   } catch (err) {
     if (mySession !== songUploadSession) return;
@@ -5917,6 +5959,9 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
             const bulkBpmEl = document.getElementById("bulkBpm");
             return bulkBpmEl ? clampBpm(Number(bulkBpmEl.value)) : 150;
           })());
+          if (previewResult && !songPayload.music_key && isValidMusicKey(previewResult.music_key)) {
+            songPayload.music_key = previewResult.music_key; // 🆕 (AUTO-KEY) เติมเฉพาะเพลงที่ไม่ได้เลือก Key เอง
+          }
           if (previewResult && Array.isArray(previewResult.waveform)) { // 🆕 (WAVEFORM) เก็บกราฟไว้ทั้งกรณี ok และ needs_review
             songPayload.waveform = previewResult.waveform;
             songPayload.waveform_duration = previewResult.waveform_duration ?? previewResult.duration_sec ?? null;
@@ -7630,6 +7675,7 @@ document.getElementById("songDetailReanalyzeBtn").addEventListener("click", asyn
   btn.disabled = true; btn.textContent = "กำลังวิเคราะห์...";
   renderDetailPreviewData({ status: "analyzing" });
   try {
+    const analyzedSong = detailPopupSong; // 🆕 (AUTO-KEY) จำเพลงที่กำลังวิเคราะห์ไว้ กันสลับเพลงระหว่างรอ
     const result = await analyzeSongUrl(detailPopupSong.file_url, undefined, /* bpm */ (() => {
       // 🆕 (T136): ส่ง BPM ของเพลงใน popup เข้า analyzeSongUrl
       const bpmInputEl = document.getElementById("songDetailBpm");
@@ -7638,6 +7684,7 @@ document.getElementById("songDetailReanalyzeBtn").addEventListener("click", asyn
       return 150;
     })());
     renderDetailPreviewData(result);
+    await autoSaveMusicKeyForSong(analyzedSong, result); // 🆕 (AUTO-KEY)
     showToast(result.status === "ok" ? "วิเคราะห์ใหม่สำเร็จ" : "วิเคราะห์ไม่พบช่วง Dance ที่มั่นใจพอ — กรอกเองได้", result.status === "ok" ? "success" : "error");
   } catch (err) {
     renderDetailPreviewData({ status: "needs_review", dance_start_bar: null, reason: "วิเคราะห์ไฟล์ไม่สำเร็จ: " + (err.message || err) });
