@@ -4000,7 +4000,9 @@ if (_modalJumpOutro) _modalJumpOutro.addEventListener("click", () => {
       : null;
     // ท้ายเพลง = (preview.end + 30s) หรือ (dur - 15) ถ้าไม่มี preview — เหมือนฝั่ง admin
     //   แต่ตอนนี้ยังไม่รู้ duration เพราะยังไม่ได้โหลด → ใช้ค่าประมาณ: preview.end + 30 หรือ 0 (รอ loadedmetadata)
-    const outroTarget = preview ? preview.end + 30 : 0;
+    // 🔧 (FIX) เดิม preview.end+30 → เกินจุดหยุด timeupdate เลยหยุดเพลงทันที ปุ่มใช้ไม่ได้
+    //   มี preview → กระโดดไป 10 วิท้ายของช่วง Preview (ยังอยู่ในช่วงที่อนุญาตให้ฟัง)
+    const outroTarget = preview ? Math.max(preview.start, preview.end - 10) : 0;
     playSongAndSeekTo(modalCurrentSongId, outroTarget >= 0 ? outroTarget : null, "outro");
     return;
   }
@@ -4013,7 +4015,7 @@ if (_modalJumpOutro) _modalJumpOutro.addEventListener("click", () => {
   const dur = AUDIO.duration || 0;
   // ท้ายเพลง = (preview.end + 30s) หรือ (dur - 15) ถ้าไม่มี preview — เหมือนฝั่ง admin
   const outroTarget = preview
-    ? Math.min(dur - 5, preview.end + 30)
+    ? Math.max(preview.start, preview.end - 10) // 🔧 (FIX) อยู่ในช่วง Preview เสมอ ไม่โดน timeupdate ตัดทิ้ง
     : Math.max(0, dur - 15);
   if (isFinite(outroTarget) && outroTarget >= 0) {
     try { AUDIO.currentTime = outroTarget; } catch (e) {}
