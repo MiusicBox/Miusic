@@ -8339,3 +8339,148 @@ window.loadCustomers = async function(search = "") {
 
 // 🆕 (T058): expose สำหรับเรียกจากภายนอก
 window.loadDeletedCustomers = loadDeletedCustomers;
+
+// ============================================================
+// 🆕 (WAVEFORM-BACKFILL 2026-10-15): คำนวณ waveform ให้เพลงเก่า
+//   - วนลูปเพลงที่ยังไม่มี field "waveform" (หรือไม่ใช่ array)
+//   - แต่ละเพลง: analyzeSongUrl(file_url) → ดึง waveform + waveform_duration → updateDoc
+//   - อัปเดต CACHE.songs ทันที (เห็นผลลัพธ์ใน list/popup ทันที)
+//   - มี progress bar + cancel button + error log
+//   - Resumable: กดยกเลิกได้ตอนไหน → กดเริ่มใหม่จะข้ามเพลงที่มี waveform แล้ว
+// ============================================================
+let _backfillWaveRunning = false;       // flag กันรันซ้อน
+let _backfillWaveCancel = false;        // กดปุ่มยกเลิก → set true → ลูปจะออกเอง
+
+function openBackfillWaveModal() {
+  const backdrop = document.getElementById("backfillWaveBackdrop");
+  if (!backdrop) return;
+  backdrop.classList.add("show");
+  // นับเพลงที่ยังไม่มี waveform
+  refreshBackfillWaveStatus();
+}
+
+function refreshBackfillWaveStatus() {
+  const total = (CACHE.songs || []).length;
+  const done = (CACHE.songs || []).filter(s => Array.isArray(s.waveform) && s.waveform.length >= 16).length;
+  const pending = total - done;
+  const statusEl = document.getElementById("backfillWaveStatus");
+  if (statusEl) {
+    statusEl.textContent = `📊 ทั้งหมด ${total} เพลง · มีกราฟแล้ว ${done} · รอคำนวณ ${pending}`;
+  }
+  const startBtn = document.getElementById("backfillWaveStartBtn");
+  if (startBtn) startBtn.disabled = _backfillWaveRunning || pending === 0;
+  if (startBtn) startBtn.textContent = _backfillWaveRunning ? "⏳ กำลังรัน..." : (pending === 0 ? "✅ ทุกเพลงมีกราฟแล้ว" : "🚀 เริ่มคำนวณ");
+}
+
+async function runBackfillWaveform() {
+  if (_backfillWaveRunning) return;
+  _backfillWaveRunning = true;
+  _backfillWaveCancel = false;
+  // ปุ่มเริ่ม/ยกเลิก toggle
+  const startBtn = document.getElementById("backfillWaveStartBtn");
+  const cancelBtn = document.getElementById("backfillWaveCancelBtn");
+  const progressWrap = document.getElementById("backfillWaveProgressWrap");
+  const progressEl = document.getElementById("backfillWaveProgress");
+  const countsEl = document.getElementById("backfillWaveCounts");
+  const errorsEl = document.getElementById("backfillWaveErrors");
+  if (startBtn) startBtn.style.display = "none";
+  if (cancelBtn) cancelBtn.style.display = "block";
+  if (progressWrap) progressWrap.style.display = "block";
+  if (errorsEl) errorsEl.style.display = "none";
+
+  // ดึงเพลงที่ยังไม่มี waveform (ก๊อปปี้ list เพื่อกัน iterator invalidation)
+  const queue = (CACHE.songs || []).filter(s => !Array.isArray(s.waveform) || s.waveform.length < 16);
+  const total = queue.length;
+  let success = 0, failed = 0, skipped = 0;
+  const errs = [];
+
+  for (let i = 0; i < queue.length; i++) {
+    if (_backfillWaveCancel) {
+      // อัปเดต status ก่อน break
+      if (countsEl) countsEl.textContent = `⏹ หยุดโดยผู้ใช้ · สำเร็จ ${success} · ล้มเหลว ${failed} · ข้าม ${skipped} · เหลืออีก ${queue.length - i}`;
+      break;
+    }
+    const song = queue[i];
+    const statusEl = document.getElementById("backfillWaveStatus");
+    if (statusEl) statusEl.textContent = `🎵 กำลังประมวลผล ${i + 1}/${total}: ${song.song_name || song.id}`;
+    if (countsEl) countsEl.textContent = `สำเร็จ ${success} · ล้มเหลว ${failed} · ข้าม ${skipped} · เหลือ ${total - i - 1}`;
+    if (progressEl) progressEl.style.width = Math.round((i / total) * 100) + "%";
+    if (errorsEl && errs.length > 0) {
+      errorsEl.style.display = "block";
+      errorsEl.innerHTML = errs.slice(-10).map(e => `• ${escapeHtml(e)}<br>`).join("");
+    }
+
+    // ข้ามเพลงที่ไม่มี file_url
+    if (!song.file_url) {
+      skipped++;
+      errs.push(`[${song.song_name}] ไม่มี file_url — ข้าม`);
+      continue;
+    }
+    try {
+      // ใช้ analyzeSongUrl ที่มีอยู่แล้ว — รองรับ bpm (T136) + ส่งคืน waveform
+      const bpm = (Number(song.bpm) >= 150 && Number(song.bpm) <= 165) ? Number(song.bpm) : null;
+      const result = await analyzeSongUrl(song.file_url, undefined, bpm);
+      if (!result || !Array.isArray(result.waveform) || result.waveform.length < 16) {
+        failed++;
+        errs.push(`[${song.song_name}] วิเคราะห์แล้วไม่ได้ waveform — อาจไฟล์เสียหรือสั้นเกิน`);
+        continue;
+      }
+      // บันทึก waveform + waveform_duration ลง Firestore
+      const payload = {
+        waveform: result.waveform,
+        waveform_duration: result.waveform_duration ?? result.duration_sec ?? null,
+        updated_at: new Date().toISOString()
+      };
+      await updateDoc(doc(db, "songs", song.id), payload);
+      // อัปเดต CACHE ทันที
+      song.waveform = result.waveform;
+      song.waveform_duration = payload.waveform_duration;
+      success++;
+    } catch (err) {
+      failed++;
+      errs.push(`[${song.song_name}] ${(err?.message || err).slice(0, 80)}`);
+      console.warn("[Backfill Wave] failed for", song.id, err);
+    }
+    // เล็กน้อยให้ browser หายใจ — กัน CPU spin บน mobile
+    await new Promise(r => setTimeout(r, 50));
+  }
+
+  // อัปเดต progress เป็น 100% (หรือค้างตรงที่หยุด)
+  if (!_backfillWaveCancel && progressEl) progressEl.style.width = "100%";
+  const finalStatus = _backfillWaveCancel
+    ? `⏹ หยุดกลางทาง — สำเร็จ ${success}/${total}`
+    : `✅ เสร็จ! — สำเร็จ ${success} · ล้มเหลว ${failed} · ข้าม ${skipped}`;
+  const statusEl = document.getElementById("backfillWaveStatus");
+  if (statusEl) statusEl.textContent = finalStatus;
+  if (countsEl) countsEl.textContent = `รวม ${total} เพลงที่รออยู่`;
+  if (errorsEl && errs.length > 0) {
+    errorsEl.style.display = "block";
+    errorsEl.innerHTML = `<strong>⚠️ ล้มเหลว ${failed} เพลง (ล่าสุด 10):</strong><br>` + errs.slice(-10).map(e => `• ${escapeHtml(e)}<br>`).join("");
+  }
+  // reset ปุ่ม
+  _backfillWaveRunning = false;
+  _backfillWaveCancel = false;
+  if (startBtn) startBtn.style.display = "block";
+  if (cancelBtn) cancelBtn.style.display = "none";
+  refreshBackfillWaveStatus();
+  // re-render list เพื่อให้เห็น badge ใหม่ (ถ้ามี)
+  if (typeof currentSongListView !== "undefined" && currentSongListView.length > 0) {
+    renderSongList(currentSongListView);
+  }
+  invalidateAdminCache("songs"); // บังคับโหลดใหม่ครั้งถัดไป
+  showToast(finalStatus, failed > 0 ? "info" : "success");
+}
+
+// 🆕 (WAVEFORM-BACKFILL): ผูก event listeners ให้ปุ่ม/โมดัล
+document.getElementById("songBackfillWaveBtn")?.addEventListener("click", openBackfillWaveModal);
+document.getElementById("backfillWaveClose")?.addEventListener("click", () => {
+  // ถ้ากำลังรันอยู่ → ไม่ให้ปิด (ต้องกดหยุดก่อน)
+  if (_backfillWaveRunning) { showToast("กำลังรันอยู่ — กด 'หยุด' ก่อน", "info"); return; }
+  document.getElementById("backfillWaveBackdrop").classList.remove("show");
+});
+document.getElementById("backfillWaveStartBtn")?.addEventListener("click", runBackfillWaveform);
+document.getElementById("backfillWaveCancelBtn")?.addEventListener("click", () => {
+  _backfillWaveCancel = true;
+  showToast("กำลังหยุดหลังเพลงปัจจุบันเสร็จ...", "info");
+});
+

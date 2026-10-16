@@ -6,10 +6,10 @@
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): noindex meta — กัน Google index หน้า admin -->
 <meta name="robots" content="noindex, nofollow">
 <title>Admin - Music Store</title>
-<link rel="stylesheet" href="style.css?v=20261015-wavefix">
+<link rel="stylesheet" href="style.css?v=20261015-waveback">
 <!-- 🎨 (2026-10-11) ระบบแจ้งเตือนใหม่ (toast + dialog) — ต้องโหลดก่อน app-*.js -->
-<link rel="stylesheet" href="notify.css?v=20261015-wavefix">
-<script src="notify.js?v=20261015-wavefix"></script>
+<link rel="stylesheet" href="notify.css?v=20261015-waveback">
+<script src="notify.js?v=20261015-waveback"></script>
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1) + 🔒 (Audit Fix H-13): Self-host html2canvas
      เดิม: orders.js ใช้ dynamic import ทุกครั้ง → ช้า + พังถ้า CDN ล่ม
@@ -187,6 +187,8 @@
         <button class="icon-btn back-btn">←</button>
         <div class="search-box" style="flex:1;"><input id="songSearch" placeholder="ค้นหาเพลง..."></div>
         <button class="icon-btn" id="songSelectModeBtn" title="เลือกหลายเพลง">☑️</button>
+        <!-- 🆕 (WAVEFORM-BACKFILL): ปุ่มคำนวณ waveform ให้เพลงเก่าที่ยังไม่มี — กดแล้วรันเป็น background -->
+        <button class="icon-btn" id="songBackfillWaveBtn" title="คำนวณกราฟคลื่นเสียงให้เพลงเก่าที่ยังไม่มี" style="background:rgba(139,92,246,0.18);color:var(--accent);font-size:16px;">🌊</button>
         <button class="icon-btn" id="addSongBtn" style="background:var(--accent);color:#fff;">＋</button>
       </div>
       <!-- 🆕 (2026-10-01 date filter): ตัวกรองวันที่แบบ dropdown — กดที่ปุ่มจึงเปิดตัวเลือก
@@ -1848,8 +1850,35 @@
     <div class="toast-progress"></div>
   </div>
 
-  <script src="phone-input.js?v=20261015-wavefix" defer></script>
-  <script src="waveform.js?v=20261015-wavefix" defer></script>
-  <script type="module" src="app-admin.js?v=20261015-wavefix"></script>
+  <!-- 🆕 (WAVEFORM-BACKFILL): Modal สำหรับรัน backfill waveform พร้อม progress + cancel -->
+  <div class="modal-backdrop" id="backfillWaveBackdrop" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal" style="max-width:440px;">
+      <div class="modal-header">
+        <h3>🌊 Backfill Waveform</h3>
+        <button class="modal-close" id="backfillWaveClose" type="button" aria-label="ปิด">✕</button>
+      </div>
+      <div style="padding:8px 0;">
+        <div id="backfillWaveIntro" style="font-size:13px;color:var(--text-dim);line-height:1.5;margin-bottom:12px;">
+          คำนวณกราฟคลื่นเสียงให้เพลงเก่าที่ยังไม่มี waveform<br>
+          ระบบจะดาวน์โหลดไฟล์ตัวอย่างแต่ละเพลง → ถอดรหัส → สร้างกราฟ 160 ค่า<br>
+          แต่ละเพลงใช้เวลา ~3-8 วินาที (ขึ้นกับขนาดไฟล์) — รันได้ทีละชุด
+        </div>
+        <div id="backfillWaveStatus" style="font-size:13px;color:var(--text);font-weight:600;margin-bottom:8px;"></div>
+        <div class="progress-outer" id="backfillWaveProgressWrap" style="display:none;margin-bottom:10px;">
+          <div class="progress-inner" id="backfillWaveProgress" style="width:0%;"></div>
+        </div>
+        <div id="backfillWaveCounts" style="font-size:12px;color:var(--text-dim);margin-bottom:12px;"></div>
+        <div id="backfillWaveErrors" style="font-size:11px;color:var(--danger);max-height:120px;overflow-y:auto;margin-bottom:8px;display:none;"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn" id="backfillWaveStartBtn" style="flex:1;font-size:13px;padding:10px;">🚀 เริ่มคำนวณ</button>
+          <button class="btn danger" id="backfillWaveCancelBtn" style="flex:1;font-size:13px;padding:10px;display:none;">⏹ หยุด</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="phone-input.js?v=20261015-waveback" defer></script>
+  <script src="waveform.js?v=20261015-waveback" defer></script>
+  <script type="module" src="app-admin.js?v=20261015-waveback"></script>
 </body>
 </html>
