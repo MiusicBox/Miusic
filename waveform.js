@@ -47,15 +47,15 @@
 
   // ===== สไตล์กราฟ (ให้ผู้ใช้เลือก) =====
   //   section = สีตามส่วนของเพลง (แบบแถบ phrase บนเครื่อง DJ): อินโทร=เขียว · ปกติ=ม่วงน้ำเงิน · Dance=แดง-ส้ม
-  //   rgb     = DJ 3 ชั้น (แบบ 3-Band บน Rekordbox/CDJ): เสียงต่ำ=น้ำเงิน (ชั้นนอก) · กลาง=เหลืองอำพัน · สูง=ขาว (แกนใน)
+  //   rgb     = DJ Pro (แบบ djay Pro / Rekordbox RGB): สีผสมตามย่านเสียง ต่ำ=แดง · กลาง=เขียว · สูง=น้ำเงิน · เนียนต่อเนื่อง
   //   mono    = สีเดียวแบบเดิม
   const SEC = {
     intro:  { c0: "#15803d", c1: "#22c55e", tag: "INTRO", dot: "#22c55e", name: "อินโทร" },
     normal: { c0: "#3730a3", c1: "#818cf8", tag: "",      dot: "#818cf8", name: "ปกติ" },
     dance:  { c0: "#b91c1c", c1: "#f97316", tag: "DANCE", dot: "#f97316", name: "Dance" }
   };
-  const LAYER = { low: "#2563eb", mid: "#f59e0b", high: "#f8fafc" };
-  const STYLES = [["section", "ส่วนเพลง"], ["rgb", "DJ 3 ชั้น"], ["mono", "สีเดียว"]];
+  const BAND_DOT = { low: "#ef4444", mid: "#22c55e", high: "#3b82f6" }; // สีจุดอธิบายย่านเสียงในปุ่ม legend
+  const STYLES = [["section", "ส่วนเพลง"], ["rgb", "DJ Pro"], ["mono", "สีเดียว"]];
   const DANCE_BARS = 24; // ความยาว Dance ที่ระบบวิเคราะห์ใช้ (ห้อง)
 
   // แบ่งเพลงเป็นส่วน: อินโทร (ช่วงต้นที่เบากว่า) · Dance (เริ่มที่ห้อง Dance ยาว 24 ห้อง) · ปกติ (ที่เหลือ)
@@ -96,7 +96,7 @@
     const items = style === "section"
       ? [[SEC.intro.dot, SEC.intro.name], [SEC.normal.dot, SEC.normal.name], [SEC.dance.dot, SEC.dance.name]]
       : style === "rgb"
-        ? [[LAYER.low, "ต่ำ"], [LAYER.mid, "กลาง"], [LAYER.high, "สูง"]]
+        ? [[BAND_DOT.low, "ต่ำ"], [BAND_DOT.mid, "กลาง"], [BAND_DOT.high, "สูง"]]
         : [];
     items.forEach(function (it) {
       const s = document.createElement("span");
@@ -145,6 +145,19 @@
     canvas.__waveSwitch = box;
     paintActive();
     return getStyle(storageKey, def);
+  }
+
+  // สีแท่งแบบ djay Pro: ผสม R=ต่ำ G=กลาง B=สูง แล้ว "ดันความอิ่มตัว" (ลากแต่ละช่องออกจากค่าเฉลี่ย) ไม่ให้ออกมาซีดเป็นสีขาว
+  //   ช่วงเบาสีเข้มลง ช่วงดังสว่างขึ้น (ตามความสูงแท่ง) · คืน [r,g,b] 0-255
+  function djColor(lo, mi, hi, v) {
+    const m = (lo + mi + hi) / 3, S = 1.6;
+    const cl = function (x) { return Math.max(0, Math.min(0.92, x)); };
+    const k = 0.4 + 0.55 * v;
+    return [
+      Math.round(20 + 235 * cl(m + (lo - m) * S) * k),
+      Math.round(20 + 235 * cl(m + (mi - m) * S) * k),
+      Math.round(20 + 235 * cl(m + (hi - m) * S) * k)
+    ];
   }
 
   // วินาทีที่ตรงกับตำแหน่งนิ้ว/เมาส์บน canvas
@@ -196,9 +209,50 @@
     const top0 = segs ? 14 : 0, gridPad = (o.grid && o.bpm && dur) ? 11 : 0;
     const halfH = Math.max(4, (h - top0 - gridPad) / 2), cy = top0 + halfH;
 
-    if (region && o.tint) {
+    if (region && o.tint && style !== "rgb") {
       g.fillStyle = withAlpha(accent, 0.14);
       g.fillRect((region.start / dur) * w, 0, ((region.end - region.start) / dur) * w, h);
+    }
+    // ----- DJ Pro: วาดกราฟทั้งเส้นลง canvas สำรองครั้งเดียว (แคช) แล้วทุกเฟรมแค่แปะภาพ → เบาเครื่องแม้เล่นต่อเนื่อง -----
+    if (style === "rgb") {
+      const paintDj = function (ctx) {
+        const cols = Math.max(24, Math.min(Math.floor(w / 1.5), 420)); // ไม่เกิน 420 คอลัมน์ → เบา
+        const cw = w / cols;
+        for (let c = 0; c < cols; c++) {
+          // ต่อเนื่องเนียน: สอดแทรกค่าจาก 160 ช่วงให้ครบทุกคอลัมน์ (ไม่ต้องเก็บข้อมูลเพิ่ม)
+          const u = ((c + 0.5) / cols) * n - 0.5;
+          const i0 = Math.max(0, Math.min(n - 1, Math.floor(u))), i1 = Math.min(n - 1, i0 + 1);
+          const f = Math.max(0, Math.min(1, u - i0));
+          const lp = function (arr) { return arr[i0] + (arr[i1] - arr[i0]) * f; };
+          const v = lp(peaks) / 100;
+          const col = djColor(lp(bands[0]) / 100, lp(bands[1]) / 100, lp(bands[2]) / 100, v);
+          const amp = Math.max(1.2, v * halfH * 0.94), amp2 = amp * 0.6;
+          const x = c * cw, bwid = cw + 0.6; // ซ้อนกันเล็กน้อยกันเส้นรอยต่อ
+          ctx.fillStyle = "rgb(" + Math.round(col[0] * 0.55) + "," + Math.round(col[1] * 0.55) + "," + Math.round(col[2] * 0.55) + ")";
+          ctx.fillRect(x, cy - amp, bwid, amp * 2);                         // ชั้นนอก: ขอบนุ่มสีเข้ม
+          ctx.fillStyle = "rgb(" + Math.min(255, col[0] + 28) + "," + Math.min(255, col[1] + 28) + "," + Math.min(255, col[2] + 28) + ")";
+          ctx.fillRect(x, cy - amp2, bwid, amp2 * 2);                       // แกนใน: สว่าง
+        }
+        if (region) { // นอกช่วง Preview: ทับด้วยสีพื้นหลังโปร่งแสง ให้ช่วงที่ฟังได้เด่นขึ้น
+          ctx.fillStyle = "rgba(10,12,24,.66)";
+          const rx0 = Math.max(0, (region.start / dur) * w), rx1 = Math.min(w, (region.end / dur) * w);
+          if (rx0 > 0) ctx.fillRect(0, 0, rx0, h);
+          if (rx1 < w) ctx.fillRect(rx1, 0, w - rx1, h);
+        }
+      };
+      const sig = w + "|" + h + "|" + dpr + "|" + (region ? region.start + "," + region.end : "-") + "|" + gridPad;
+      let layer = canvas.__djLayer;
+      if (!layer || layer.sig !== sig || layer.pr !== o.peaks || layer.br !== o.bands) {
+        let off = null, og = null;
+        try { off = document.createElement("canvas"); off.width = pw; off.height = ph; og = off.getContext("2d"); } catch (_) { og = null; }
+        if (og) { og.setTransform(dpr, 0, 0, dpr, 0, 0); paintDj(og); layer = { sig: sig, pr: o.peaks, br: o.bands, cv: off }; canvas.__djLayer = layer; }
+        else { layer = null; canvas.__djLayer = null; }
+      }
+      if (layer) g.drawImage(layer.cv, 0, 0, w, h); else paintDj(g);
+      if (time != null && dur) { // ส่วนที่เล่นผ่านแล้วหรี่ลงเล็กน้อย (แบบ djay)
+        g.fillStyle = "rgba(6,8,18,.38)";
+        g.fillRect(0, 0, Math.max(0, Math.min(w, (time / dur) * w)), h);
+      }
     }
     let grads = null;
     const segOf = function (t) {
@@ -213,7 +267,7 @@
         grads[k] = gr;
       });
     }
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; style !== "rgb" && i < n; i++) {
       const t = dur ? ((i + 0.5) / n) * dur : 0;
       const inR = !region || (t >= region.start && t <= region.end);
       const v = peaks[i] / 100;
@@ -235,13 +289,6 @@
         const core = amp * (bands ? 0.3 + 0.5 * bands[0][i] / 100 : 0.5); // แกนสว่างตรงกลาง: หนาตามพลังเสียงต่ำ (จังหวะกระเดื่อง)
         g.fillStyle = "rgba(255,255,255,.2)";
         g.fillRect(x, cy - core, bwid, core * 2);
-      } else { // rgb = DJ 3 ชั้น ซ้อนกันจากต่ำ (นอกสุด) → กลาง → สูง (แกนในสุด สีขาว)
-        const hl = Math.max(1.5, amp * (0.2 + 0.8 * bands[0][i] / 100));
-        const hm = Math.max(1, amp * (0.15 + 0.85 * bands[1][i] / 100) * 0.7);
-        const hh = Math.max(0.8, amp * (0.1 + 0.9 * bands[2][i] / 100) * 0.38);
-        g.fillStyle = LAYER.low;  g.fillRect(x, cy - hl, bwid, hl * 2);
-        g.fillStyle = LAYER.mid;  g.fillRect(x, cy - hm, bwid, hm * 2);
-        g.fillStyle = LAYER.high; g.fillRect(x, cy - hh, bwid, hh * 2);
       }
       g.globalAlpha = 1;
     }
@@ -278,7 +325,7 @@
     }
     if (time != null) { // playhead
       const x = Math.max(1, Math.min(w - 1, (time / dur) * w));
-      g.fillStyle = "#fff"; g.fillRect(x - 1, 0, 2, h);
+      g.fillStyle = style === "rgb" ? "#ef4444" : "#fff"; g.fillRect(x - 1, 0, 2, h);
     }
     return true;
   }
