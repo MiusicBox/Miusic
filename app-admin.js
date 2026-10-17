@@ -2570,6 +2570,13 @@ function isValidMusicKey(key) {
   return /^([1-9]|1[0-2])[AB]$/.test(k);
 }
 
+// 🆕 (2026-10-17): แสดง Key badge ในแถว badge ด้านบนของ popup รายละเอียดเพลง (เหมือนหน้า user)
+//   อัปเดตเฉพาะ #songDetailTopKey — ไม่แตะ badge อื่น / ช่อง Music Key เดิม
+function refreshSongDetailTopKey(key) {
+  const el = document.getElementById("songDetailTopKey");
+  if (el) el.innerHTML = renderMusicKeyBadge(key);
+}
+
 // 🆕 (2026-10-16): Auto Music Key -- ตอนกด "วิเคราะห์เสียง (AI)" ระบบตรวจ Key ให้อัตโนมัติ (เพื่อแสดงป้ายให้ลูกค้าเท่านั้น ไม่กระทบเสียง)
 //   - ไม่ทับ Key ที่แอดมินตั้งเองไว้แล้ว: เติมเฉพาะเพลง/ช่องที่ "ยังว่าง" เท่านั้น
 //   - ตั้ง Key เองได้เหมือนเดิม (dropdown + ปุ่มบันทึก) -- ค่าที่ตั้งเองมาก่อนเสมอ
@@ -2609,6 +2616,7 @@ async function autoSaveMusicKeyForSong(song, result) {
       if (sel) { sel.value = k; sel.dispatchEvent(new Event("change")); }
       const badge = document.getElementById("songDetailMusicKeyBadge");
       if (badge) badge.innerHTML = renderMusicKeyBadge(k);
+      refreshSongDetailTopKey(k);
     }
     if (typeof currentSongListView !== "undefined" && currentSongListView.length > 0) renderSongList(currentSongListView);
     invalidateAdminCache("songs");
@@ -7281,7 +7289,9 @@ function openSongDetailPopup(songId) {
   if (s.dj_name) badges.push(`<span class="badge dj">🎧 ${escapeHtml(s.dj_name)}</span>`);
   if (s.category_name) badges.push(`<span class="badge cat">🗂️ ${escapeHtml(s.category_name)}</span>`);
   if (s.playlist_name) badges.push(`<span class="badge pl">🎶 ${escapeHtml(s.playlist_name)}</span>`);
-  document.getElementById("songDetailBadges").innerHTML = badges.join("") || '<span style="font-size:12px;color:var(--text-dim);">— ไม่ได้จัดเข้ารายการใด —</span>';
+  // 🆕 (2026-10-17): ต่อท้ายด้วย Key badge (ถ้าเพลงมี Key) — เหมือนฝั่ง user
+  document.getElementById("songDetailBadges").innerHTML = (badges.join("") || '<span style="font-size:12px;color:var(--text-dim);">— ไม่ได้จัดเข้ารายการใด —</span>')
+    + `<span id="songDetailTopKey" style="display:contents;">${renderMusicKeyBadge(s.music_key)}</span>`;
 
   document.getElementById("songDetailDesc").textContent = s.description || "";
   document.getElementById("songDetailPrice").textContent = formatPrice(s.price);
@@ -8089,6 +8099,7 @@ document.getElementById("songDetailSaveMusicKeyBtn").addEventListener("click", a
     // อัปเดต badge ใน popup
     const mkBadge = document.getElementById("songDetailMusicKeyBadge");
     if (mkBadge) mkBadge.innerHTML = renderMusicKeyBadge(newKey);
+    refreshSongDetailTopKey(newKey);
     // Re-render list + invalidate cache
     if (typeof currentSongListView !== "undefined" && currentSongListView.length > 0) {
       renderSongList(currentSongListView);
