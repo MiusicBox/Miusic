@@ -3675,7 +3675,10 @@ function refreshModalWave() {
   // 🆕 (2026-10-16): แสดงเลขห้อง (ทุก 8 ห้อง) ใต้กราฟเหมือนฝั่งแอดมิน — ใช้ BPM ของเพลง (150–165, ไม่มีค่า = 150)
   const _song = findSong(modalCurrentSongId);
   const _bpm = (_song && Number(_song.bpm) >= 150 && Number(_song.bpm) <= 165) ? Number(_song.bpm) : 150;
-  window.MiusicWave.draw(cv, { peaks: d.peaks, bands: d.bands, duration, region: preview, time, tint: true, bpm: _bpm, grid: true, gridLabels: true });
+  // 🆕 ปุ่มเลือกสไตล์กราฟ (ส่วนเพลง / DJ 3 ชั้น / สีเดียว) — จำค่าที่เลือกไว้ในเครื่องลูกค้า · ค่าเริ่มต้นหน้าลูกค้า = DJ 3 ชั้น
+  const _waveStyle = window.MiusicWave.mountSwitch(cv, "miusic_wave_style_user", "rgb", () => refreshModalWave());
+  const _dance = Number.isFinite(d.danceBar) && d.danceBar > 0 ? { time: d.danceBar * (240 / _bpm) } : null;
+  window.MiusicWave.draw(cv, { peaks: d.peaks, bands: d.bands, style: _waveStyle, dance: _dance, duration, region: preview, time, tint: true, bpm: _bpm, grid: true, gridLabels: true });
   const hint = document.getElementById("modalWaveHint");
   if (hint && Date.now() > _waveHintUntil) {
     hint.style.color = "";
@@ -3697,7 +3700,7 @@ function initModalWave(songId) {
     const data = snap && snap.exists() ? snap.data() : null;
     const peaks = window.MiusicWave ? window.MiusicWave.sanitize(data && data.waveform) : null;
     WAVE_CACHE.set(songId, peaks
-      ? { peaks, bands: (Array.isArray(data.waveform_rgb) ? data.waveform_rgb : null), duration: Number(data.waveform_duration || data.preview_duration_sec) || 0 } // 🆕 bands = กราฟสี RGB (ไม่มี → สีเดียวเหมือนเดิม)
+      ? { peaks, bands: (Array.isArray(data.waveform_rgb) ? data.waveform_rgb : null), danceBar: Number(data.dance_start_bar), duration: Number(data.waveform_duration || data.preview_duration_sec) || 0 } // 🆕 bands = กราฟสี RGB (ไม่มี → สีเดียวเหมือนเดิม)
       : null);
     if (modalCurrentSongId === songId) refreshModalWave();
   }).catch(() => { /* โหลดกราฟไม่ได้ → ไม่แสดงกราฟ ที่เหลือใช้งานได้ปกติ (ไม่ cache เพื่อให้ลองใหม่ครั้งหน้า) */ });
