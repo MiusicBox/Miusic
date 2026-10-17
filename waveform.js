@@ -57,6 +57,9 @@ return out;
 const SEC = {
 intro:  { c0: "#15803d", c1: "#22c55e", tag: "INTRO", dot: "#22c55e", name: "อินโทร" },
 normal: { c0: "#3730a3", c1: "#818cf8", tag: "",      dot: "#818cf8", name: "ปกติ" },
+hook:   { c0: "#3730a3", c1: "#818cf8", tag: "HOOK",  dot: "#818cf8", name: "Hook" },
+brk:    { c0: "#0f766e", c1: "#2dd4bf", tag: "BREAK", dot: "#2dd4bf", name: "Break" },
+outro:  { c0: "#475569", c1: "#94a3b8", tag: "OUTRO", dot: "#94a3b8", name: "Outro" },
 dance:  { c0: "#b91c1c", c1: "#f97316", tag: "DANCE", dot: "#f97316", name: "Dance" }
 };
 const BAND_DOT = { low: "#ef4444", mid: "#22c55e", high: "#3b82f6" };
@@ -66,16 +69,21 @@ const DANCE_BARS = 24; // ความยาว Dance ที่ระบบว�
 // 🆕 (Style 4): ความสูงของตัวนับห้องใหญ่ — เพิ่มจาก 11px (เดิม) เป็น 32px
 const BIG_BAR_PAD = 30; // 🆕 (2026-10-17): 32 → 36 ให้เลขห้องใหญ่ขึ้นและไม่ทับกับตัวนับ BAR
 // แบ่งเพลงเป็นส่วน: อินโทร · Dance · ปกติ — ใช้สำหรับ style "section" (เดิม ไม่เปลี่ยน)
-function computeSections(peaks, dur, danceStartSec, barSec) {
+function computeSections(peaks, dur, danceStartSec, barSec, dances) {
 const n = peaks.length, binSec = dur / n;
 const sm = peaks.map((v, i) => (peaks[Math.max(0, i - 1)] + v + peaks[Math.min(n - 1, i + 1)]) / 3);
 const sorted = sm.slice().sort((a, b) => a - b);
 const loud = sorted[Math.floor(n * 0.9)] || 1;
-let dS = null, dE = null;
-if (danceStartSec != null && isFinite(danceStartSec) && danceStartSec >= 0 && danceStartSec < dur) {
-dS = danceStartSec;
-dE = Math.min(dur, dS + DANCE_BARS * barSec);
+// 🆕 (2026-10-17): ท่อน Dance ได้ทั้ง 2 ท่อน (D1 หน้า / D2 หลัง) — ไม่มี 2 ท่อนให้ใช้ท่อนเดียวจากจุดเริ่ม Dance เดิม
+let ds = [];
+if (dances && dances.length) {
+ds = dances.filter(function (d) { return d && isFinite(d.start) && isFinite(d.end) && d.end > d.start && d.start >= 0 && d.start < dur; })
+.map(function (d) { return { start: d.start, end: Math.min(dur, d.end) }; })
+.sort(function (a, b) { return a.start - b.start; });
+} else if (danceStartSec != null && isFinite(danceStartSec) && danceStartSec >= 0 && danceStartSec < dur) {
+ds = [{ start: danceStartSec, end: Math.min(dur, danceStartSec + DANCE_BARS * barSec) }];
 }
+const dS = ds.length ? ds[0].start : null;
 let k = 0;
 while (k < n && sm[k] < loud * 0.55) k++;
 let iE = k * binSec;
@@ -84,9 +92,23 @@ if (iE > limit) iE = limit;
 if (iE < 3) iE = 0;
 const segs = [];
 const add = (type, s, e) => { if (e - s > 0.001) segs.push({ type: type, start: s, end: e }); };
+// ท่อนที่ไม่ใช่ Dance: พลังงานสูง = HOOK · ต่ำ = BREAK (ประเมินจากกราฟ — เป็นค่าประมาณ)
+const energyOf = function (s, e) {
+const i0 = Math.max(0, Math.floor(s / binSec)), i1 = Math.min(n - 1, Math.max(i0, Math.floor(e / binSec) - 1));
+let sum = 0, c = 0;
+for (let i = i0; i <= i1; i++) { sum += sm[i]; c++; }
+return c ? sum / c / loud : 0;
+};
+const kindOf = function (s, e) { return energyOf(s, e) >= 0.62 ? "hook" : "brk"; };
 if (iE > 0) add("intro", 0, iE);
-if (dS != null) { add("normal", iE, dS); add("dance", dS, dE); add("normal", dE, dur); }
-else add("normal", iE, dur);
+if (!ds.length) { add("normal", iE, dur); return segs; }
+let cur = iE;
+ds.forEach(function (d) {
+if (d.start > cur) add(kindOf(cur, d.start), cur, d.start);
+add("dance", Math.max(cur, d.start), d.end);
+cur = Math.max(cur, d.end);
+});
+if (cur < dur) add((dur - cur) <= 24 * barSec ? "outro" : kindOf(cur, dur), cur, dur);
 return segs;
 }
 
@@ -152,7 +174,7 @@ return def;
 function legendFill(el, style) {
 el.textContent = "";
 const items = style === "section"
-? [[SEC.intro.dot, SEC.intro.name], [SEC.normal.dot, SEC.normal.name], [SEC.dance.dot, SEC.dance.name]]
+? [[SEC.intro.dot, SEC.intro.name], [SEC.hook.dot, SEC.hook.name], [SEC.dance.dot, SEC.dance.name]]
 : style === "rgb"
 ? [[BAND_DOT.low, "ต่ำ"], [BAND_DOT.mid, "กลาง"], [BAND_DOT.high, "สูง"]]
 : [];
@@ -274,12 +296,12 @@ const totalBars = twoDance ? twoDance.totalBars : Math.floor(dur / barSec);
 // 🆕 (Style 4): ใช้ knownDanceSec สำหรับ computeSections (style "section") เหมือนเดิม
 const danceT = o.dance && o.dance.time != null ? Number(o.dance.time)
 : (o.marker && o.marker.time != null ? Number(o.marker.time) : null);
-const segs = style === "section" && dur ? computeSections(peaks, dur, danceT, barSec) : null;
+const segs = style === "section" && dur ? computeSections(peaks, dur, danceT, barSec, (d1 || d2) ? [d1, d2].filter(Boolean) : null) : null;
 
 // 🆕 (Style 4): ใช้ bigBarPad ขนาดใหญ่ขึ้น (32px แทน 11px) เมื่อ grid/bpm มีอยู่
 const useBigBar = o.bigBar !== false && o.grid && o.bpm && dur;
 const gridPad = useBigBar ? BIG_BAR_PAD : ((o.grid && o.bpm && dur) ? 11 : 0);
-const top0 = segs ? 14 : 6;
+const top0 = segs ? 18 : 6;
 const halfH = Math.max(4, (h - top0 - gridPad) / 2), cy = top0 + halfH;
 if (region && o.tint && style !== "rgb") {
 g.fillStyle = withAlpha(accent, 0.14);
@@ -332,7 +354,7 @@ return "normal";
 };
 if (segs) {
 grads = {};
-["intro", "normal", "dance"].forEach(function (k) {
+["intro", "normal", "hook", "brk", "outro", "dance"].forEach(function (k) {
 const gr = g.createLinearGradient(0, cy - halfH, 0, cy + halfH);
 gr.addColorStop(0, SEC[k].c0); gr.addColorStop(0.5, SEC[k].c1); gr.addColorStop(1, SEC[k].c0);
 grads[k] = gr;
@@ -364,14 +386,16 @@ g.globalAlpha = 1;
 }
 if (segs) {
 g.save();
+g.font = "bold 10px sans-serif";
 segs.forEach(function (s) {
 const x0 = (s.start / dur) * w, bwid = ((s.end - s.start) / dur) * w;
 if (bwid <= 0) return;
 g.fillStyle = SEC[s.type].c0;
-g.fillRect(x0 + 0.5, 1, Math.max(1, bwid - 1), 10);
-if (SEC[s.type].tag && bwid > 40) {
-g.fillStyle = "#fff"; g.font = "bold 8px sans-serif";
-g.fillText(SEC[s.type].tag, x0 + 4, 9);
+g.fillRect(x0 + 0.5, 1, Math.max(1, bwid - 1), 14);
+const tag = SEC[s.type].tag;
+if (tag && g.measureText(tag).width + 8 <= bwid) {
+g.fillStyle = "#fff";
+g.fillText(tag, x0 + 4, 12);
 }
 });
 g.restore();
@@ -437,12 +461,12 @@ if (t == null || !dur || t < 0 || t > dur) return;
 const x = Math.round((t / dur) * w) + 0.5;
 g.save();
 g.strokeStyle = "#ef4444"; g.lineWidth = 2; g.setLineDash([4, 3]);
-g.beginPath(); g.moveTo(x, segs ? 11 : 0); g.lineTo(x, h - gridPad); g.stroke();
+g.beginPath(); g.moveTo(x, segs ? 15 : 0); g.lineTo(x, h - gridPad); g.stroke();
 g.restore();
 // ป้ายชื่อ D1/D2 ด้านบน (สีแดง + ขอบขาว ให้อ่านง่ายบนพื้นเข้ม)
 g.fillStyle = "#ef4444";
 g.font = "bold 10px sans-serif";
-g.fillText(label, Math.min(w - 24, x + 4), segs ? 22 : 12);
+g.fillText(label, Math.min(w - 24, x + 4), segs ? 28 : 12);
 // ลูกศรด้านล่าง strip (ถ้ามี big bar)
 if (useBigBar) {
 const stripTop = h - gridPad;
@@ -461,7 +485,7 @@ if (d2) drawDanceMarker(d2.start, "D2");
 // Fallback: แสดง marker เดียวแบบเดิม (ถ้า twoDance ถูกปิด) — สีแดงเหมือน D1/D2
 const x = Math.round((o.marker.time / dur) * w) + 0.5;
 g.save(); g.strokeStyle = "#ef4444"; g.fillStyle = "#ef4444"; g.lineWidth = 2; g.setLineDash([4, 3]);
-g.beginPath(); g.moveTo(x, segs ? 11 : 0); g.lineTo(x, h); g.stroke(); g.restore();
+g.beginPath(); g.moveTo(x, segs ? 15 : 0); g.lineTo(x, h - gridPad); g.stroke(); g.restore();
 if (o.marker.label && !segs) { g.font = "bold 10px sans-serif"; g.fillText(o.marker.label, Math.min(w - 40, x + 4), 11); }
 }
 
@@ -471,7 +495,7 @@ const curBar = Math.min(totalBars, Math.floor(time / barSec) + 1);
 const txt = "BAR " + curBar + "/" + totalBars;
 g.font = "bold 11px sans-serif";
 const tw = g.measureText(txt).width;
-const py = segs ? 16 : 3;
+const py = segs ? 20 : 3;
 g.fillStyle = "rgba(5,7,16,.7)";
 g.fillRect(w - tw - 12, py, tw + 8, 15);
 g.fillStyle = "#fff";
