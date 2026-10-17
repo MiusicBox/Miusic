@@ -2156,7 +2156,7 @@ function renderSongGrid() {
                 </button>
                 <button class="btn-icon-mini" type="button" data-favorite-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="บันทึกซื้อทีหลัง" title="บันทึกซื้อทีหลัง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
                 <button class="cart-add-btn cart-add-btn-row" type="button" data-add-cart="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h2.6l2.3 10.9a2 2 0 0 0 2 1.6h8.1a2 2 0 0 0 2-1.5l1.7-6.7H6.1"/><circle cx="9.7" cy="20" r="1.5"/><circle cx="17.5" cy="20" r="1.5"/></svg>
                   <span>เพิ่มลงตะกร้า</span>
                 </button>
               </div>
@@ -2485,7 +2485,7 @@ function renderPlaylists() {
                 </button>
                 <button class="btn-icon-mini" type="button" data-favorite-btn="${pl.id}" data-favorite-type="playlist" data-song-name="${escapeHtml(pl.playlist_name)}" aria-label="บันทึกซื้อทีหลัง" title="บันทึกซื้อทีหลัง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
                 <button type="button" class="cart-add-btn playlist-folder-buy-btn" data-add-cart-playlist="${pl.id}" aria-label="ซื้อเพลย์ลิสต์ ${escapeHtml(pl.playlist_name)}">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h2.6l2.3 10.9a2 2 0 0 0 2 1.6h8.1a2 2 0 0 0 2-1.5l1.7-6.7H6.1"/><circle cx="9.7" cy="20" r="1.5"/><circle cx="17.5" cy="20" r="1.5"/></svg>
                   <span>ซื้อทั้งเพลย์ลิสต์</span>
                 </button>
               </div>
@@ -2552,7 +2552,7 @@ function renderPlaylists() {
                       </button>
                       <button class="btn-icon-mini" type="button" data-favorite-btn="${s.id}" data-song-name="${escapeHtml(s.song_name)}" aria-label="บันทึกซื้อทีหลัง" title="บันทึกซื้อทีหลัง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
                       <button class="cart-add-btn playlist-add-cart cart-add-btn-row" type="button" data-add-cart-song="${s.id}" aria-label="เพิ่ม ${escapeHtml(s.song_name)} ลงตะกร้า">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h2.6l2.3 10.9a2 2 0 0 0 2 1.6h8.1a2 2 0 0 0 2-1.5l1.7-6.7H6.1"/><circle cx="9.7" cy="20" r="1.5"/><circle cx="17.5" cy="20" r="1.5"/></svg>
                         <span>เพิ่มลงตะกร้า</span>
                       </button>
                     </div>
