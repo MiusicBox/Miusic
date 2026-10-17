@@ -561,7 +561,7 @@ async function loadCustomerFavorites() {
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
             <button class="btn-icon-mini is-favorite" data-favorite-btn="${escapeHtmlCustomer(f.song_id)}" data-song-name="${songName}" aria-label="ลบจากบันทึกซื้อทีหลัง" title="ลบจากบันทึกซื้อทีหลัง"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
-            <button class="btn-icon-mini" data-fav-buy="${escapeHtmlCustomer(f.song_id)}" aria-label="เพิ่มลงตะกร้า" title="เพิ่มลงตะกร้า"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M9 14v-3.5"/><circle cx="8" cy="14.5" r="1.5"/><path d="M14 13v-3.5"/><circle cx="13" cy="13.5" r="1.5"/></svg></button>
+            <button class="btn-icon-mini" data-fav-buy="${escapeHtmlCustomer(f.song_id)}" aria-label="เพิ่มลงตะกร้า" title="เพิ่มลงตะกร้า"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h2.6l2.3 10.9a2 2 0 0 0 2 1.6h8.1a2 2 0 0 0 2-1.5l1.7-6.7H6.1"/><circle cx="9.7" cy="20" r="1.5"/><circle cx="17.5" cy="20" r="1.5"/></svg></button>
           </div>
         </div>`;
     }).join("");
