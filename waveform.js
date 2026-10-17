@@ -32,7 +32,7 @@
     return out;
   }
 
-  // 🆕 (RGB) ข้อมูลสี 3 ย่านความถี่: array ยาว 3×n = [ต่ำ×n, กลาง×n, สูง×n] ค่า 0-100 · ไม่ตรงรูปแบบ → null (วาดสีเดียวเหมือนเดิม)
+  // ===== ข้อมูลสี 3 ย่านความถี่ (waveform_rgb): array ยาว 3×n = [ต่ำ×n, กลาง×n, สูง×n] ค่า 0-100 · ไม่ตรงรูปแบบ → null =====
   function sanitizeBands(bands, n) {
     if (!Array.isArray(bands) || !n || bands.length !== n * 3) return null;
     const out = [new Array(n), new Array(n), new Array(n)];
@@ -44,12 +44,107 @@
     }
     return out;
   }
-  // สีของแท่ง: R=เสียงต่ำ(เบส/กระเดื่อง) G=เสียงกลาง B=เสียงสูง — ช่องที่แรงสุดสว่างเต็ม ช่องอื่นลดตามสัดส่วน (gamma 1.4 ให้สีชัด)
-  function bandColor(lo, mi, hi) {
-    const mx = Math.max(lo, mi, hi);
-    if (!(mx > 0)) return [110, 115, 135];
-    const f = (v) => Math.round(35 + 220 * Math.pow(v / mx, 1.4));
-    return [f(lo), f(mi), f(hi)];
+
+  // ===== สไตล์กราฟ (ให้ผู้ใช้เลือก) =====
+  //   section = สีตามส่วนของเพลง (แบบแถบ phrase บนเครื่อง DJ): อินโทร=เขียว · ปกติ=ม่วงน้ำเงิน · Dance=แดง-ส้ม
+  //   rgb     = DJ 3 ชั้น (แบบ 3-Band บน Rekordbox/CDJ): เสียงต่ำ=น้ำเงิน (ชั้นนอก) · กลาง=เหลืองอำพัน · สูง=ขาว (แกนใน)
+  //   mono    = สีเดียวแบบเดิม
+  const SEC = {
+    intro:  { c0: "#15803d", c1: "#22c55e", tag: "INTRO", dot: "#22c55e", name: "อินโทร" },
+    normal: { c0: "#3730a3", c1: "#818cf8", tag: "",      dot: "#818cf8", name: "ปกติ" },
+    dance:  { c0: "#b91c1c", c1: "#f97316", tag: "DANCE", dot: "#f97316", name: "Dance" }
+  };
+  const LAYER = { low: "#2563eb", mid: "#f59e0b", high: "#f8fafc" };
+  const STYLES = [["section", "ส่วนเพลง"], ["rgb", "DJ 3 ชั้น"], ["mono", "สีเดียว"]];
+  const DANCE_BARS = 24; // ความยาว Dance ที่ระบบวิเคราะห์ใช้ (ห้อง)
+
+  // แบ่งเพลงเป็นส่วน: อินโทร (ช่วงต้นที่เบากว่า) · Dance (เริ่มที่ห้อง Dance ยาว 24 ห้อง) · ปกติ (ที่เหลือ)
+  //   คำนวณจากกราฟความดังที่มีอยู่แล้ว + ตำแหน่ง Dance — ไม่ต้องเก็บข้อมูลเพิ่ม เพลงเก่าใช้ได้ทันที
+  function computeSections(peaks, dur, danceStartSec, barSec) {
+    const n = peaks.length, binSec = dur / n;
+    const sm = peaks.map((v, i) => (peaks[Math.max(0, i - 1)] + v + peaks[Math.min(n - 1, i + 1)]) / 3);
+    const sorted = sm.slice().sort((a, b) => a - b);
+    const loud = sorted[Math.floor(n * 0.9)] || 1;
+    let dS = null, dE = null;
+    if (danceStartSec != null && isFinite(danceStartSec) && danceStartSec >= 0 && danceStartSec < dur) {
+      dS = danceStartSec;
+      dE = Math.min(dur, dS + DANCE_BARS * barSec);
+    }
+    let k = 0;
+    while (k < n && sm[k] < loud * 0.55) k++;       // อินโทร = ช่วงต้นเพลงจนกว่าความดังจะถึง ~55% ของระดับเต็ม
+    let iE = k * binSec;
+    const limit = dS != null ? dS : dur * 0.4;      // ต้องจบก่อน Dance (ไม่มี Dance → ไม่เกิน 40% ของเพลง)
+    if (iE > limit) iE = limit;
+    if (iE < 3) iE = 0;                              // สั้นกว่า 3 วิ ไม่ถือเป็นอินโทร (เช่น เพลงที่เริ่มดังเต็มตั้งแต่ต้น)
+    const segs = [];
+    const add = (type, s, e) => { if (e - s > 0.001) segs.push({ type: type, start: s, end: e }); };
+    if (iE > 0) add("intro", 0, iE);
+    if (dS != null) { add("normal", iE, dS); add("dance", dS, dE); add("normal", dE, dur); }
+    else add("normal", iE, dur);
+    return segs;
+  }
+
+  function getStyle(storageKey, def) {
+    try {
+      const v = global.localStorage.getItem(storageKey);
+      if (v === "section" || v === "rgb" || v === "mono") return v;
+    } catch (_) { /* ignore */ }
+    return def;
+  }
+  function legendFill(el, style) {
+    el.textContent = "";
+    const items = style === "section"
+      ? [[SEC.intro.dot, SEC.intro.name], [SEC.normal.dot, SEC.normal.name], [SEC.dance.dot, SEC.dance.name]]
+      : style === "rgb"
+        ? [[LAYER.low, "ต่ำ"], [LAYER.mid, "กลาง"], [LAYER.high, "สูง"]]
+        : [];
+    items.forEach(function (it) {
+      const s = document.createElement("span");
+      s.style.cssText = "display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:11px;opacity:.85;white-space:nowrap;";
+      const d = document.createElement("i");
+      d.style.cssText = "width:9px;height:9px;border-radius:50%;display:inline-block;background:" + it[0] + ";";
+      s.appendChild(d); s.appendChild(document.createTextNode(it[1]));
+      el.appendChild(s);
+    });
+  }
+  // วางปุ่มเลือกสไตล์ไว้เหนือ canvas (ทำครั้งเดียวต่อ canvas) · คืนสไตล์ปัจจุบัน · จำค่าที่เลือกไว้ในเครื่องนี้ (localStorage)
+  function mountSwitch(canvas, storageKey, def, onChange) {
+    if (!canvas || !canvas.parentNode) return def;
+    if (canvas.__waveSwitch) return getStyle(storageKey, def);
+    const box = document.createElement("div");
+    box.className = "wave-style-switch";
+    box.style.cssText = "display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 6px;";
+    const accent = cssVar("--accent", "#8b5cf6");
+    const btns = [];
+    const legend = document.createElement("span");
+    legend.style.cssText = "margin-left:auto;display:inline-flex;flex-wrap:wrap;";
+    const paintActive = function () {
+      const cur = getStyle(storageKey, def);
+      btns.forEach(function (b) {
+        const on = b.dataset.waveStyle === cur;
+        b.style.background = on ? withAlpha(accent, 0.28) : "transparent";
+        b.style.borderColor = on ? accent : "rgba(255,255,255,.16)";
+        b.style.color = on ? "#fff" : "inherit";
+      });
+      legendFill(legend, cur);
+    };
+    STYLES.forEach(function (st) {
+      const b = document.createElement("button");
+      b.type = "button"; b.dataset.waveStyle = st[0]; b.textContent = st[1];
+      b.style.cssText = "font:inherit;font-size:11px;padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.16);background:transparent;cursor:pointer;line-height:1.3;";
+      b.addEventListener("click", function () {
+        try { global.localStorage.setItem(storageKey, st[0]); } catch (_) { /* ignore */ }
+        document.querySelectorAll(".wave-style-switch").forEach(function (el) { if (el.__paintActive) el.__paintActive(); });
+        if (onChange) onChange(st[0]);
+      });
+      btns.push(b); box.appendChild(b);
+    });
+    box.appendChild(legend);
+    box.__paintActive = paintActive;
+    canvas.parentNode.insertBefore(box, canvas);
+    canvas.__waveSwitch = box;
+    paintActive();
+    return getStyle(storageKey, def);
   }
 
   // วินาทีที่ตรงกับตำแหน่งนิ้ว/เมาส์บน canvas
@@ -62,12 +157,14 @@
   /* o = {
    *   peaks: number[], duration: วินาทีทั้งเพลง,
    *   region: {start,end}|null   ช่วงที่ไฮไลต์ (ช่วง Preview) — นอกช่วงจะจาง
-   *   time: number|null          ตำแหน่งเล่นปัจจุบัน (วินาที) → เส้น playhead + แท่งที่เล่นแล้วเป็นสีชมพู
+   *   time: number|null          ตำแหน่งเล่นปัจจุบัน (วินาที) → เส้น playhead + แท่งที่ยังไม่เล่นจางลงเล็กน้อย
    *   tint: bool                 พื้นหลังอ่อนในช่วง region
    *   bpm, grid, gridLabels      เส้นห้อง (ทุก 8 ห้อง) + ตัวเลขห้อง
    *   marker: {time,label}|null  เส้นประสีเหลือง (จุดเริ่ม Dance)
-   *   outside: สีแท่งนอกช่วง (กราฟสีเดียว)
-   *   bands: number[3n]|null     🆕 ข้อมูลสี RGB 3 ย่านความถี่ (waveform_rgb) — ไม่ส่ง/ไม่ตรงรูปแบบ = กราฟสีเดียวเหมือนเดิม
+   *   dance: {time}|null         จุดเริ่ม Dance สำหรับสไตล์ "ส่วนเพลง" (ถ้าไม่ส่งจะใช้ marker)
+   *   style: "section"|"rgb"|"mono"   สไตล์กราฟ (ไม่ส่ง = rgb ถ้ามีข้อมูลสี ไม่งั้น mono)
+   *   bands: number[3n]|null     ข้อมูลสี 3 ย่านความถี่ (waveform_rgb) — ไม่มี/ไม่ตรงรูปแบบ → rgb จะวาดเป็นสีเดียว
+   *   outside: สีแท่งนอกช่วง (สไตล์สีเดียว)
    * } */
   function draw(canvas, o) {
     if (!canvas || !o) return false;
@@ -88,34 +185,87 @@
     const region = o.region && dur && o.region.end > o.region.start ? o.region : null;
     const time = o.time != null && dur ? Number(o.time) : null;
     const n = peaks.length, bw = w / n, gap = bw > 3 ? 1.5 : 0.6;
-    const bands = sanitizeBands(o.bands, n); // null = ไม่มีข้อมูลสี → วาดสีเดียวแบบเดิม
+    const bands = sanitizeBands(o.bands, n);
+    let style = o.style === "section" || o.style === "rgb" || o.style === "mono" ? o.style : (bands ? "rgb" : "mono");
+    if (style === "rgb" && !bands) style = "mono"; // ไม่มีข้อมูลสี → วาดสีเดียวเหมือนเดิม
+    const barSec = Number(o.bpm) > 0 ? 240 / Number(o.bpm) : 1.6;
+    const danceT = o.dance && o.dance.time != null ? Number(o.dance.time)
+      : (o.marker && o.marker.time != null ? Number(o.marker.time) : null);
+    const segs = style === "section" && dur ? computeSections(peaks, dur, danceT, barSec) : null;
+    // พื้นที่วาดแท่ง: สไตล์ section เว้นแถบส่วนเพลงไว้ด้านบน 14px · เว้นด้านล่างให้เลขห้อง 11px
+    const top0 = segs ? 14 : 0, gridPad = (o.grid && o.bpm && dur) ? 11 : 0;
+    const halfH = Math.max(4, (h - top0 - gridPad) / 2), cy = top0 + halfH;
 
     if (region && o.tint) {
       g.fillStyle = withAlpha(accent, 0.14);
       g.fillRect((region.start / dur) * w, 0, ((region.end - region.start) / dur) * w, h);
     }
+    let grads = null;
+    const segOf = function (t) {
+      if (segs) for (let s = 0; s < segs.length; s++) if (t >= segs[s].start && t < segs[s].end) return segs[s].type;
+      return "normal";
+    };
+    if (segs) { // ไล่สีแนวตั้ง: ขอบเข้ม → กลางสว่าง (ให้ดูมีมิติแบบเครื่อง DJ)
+      grads = {};
+      ["intro", "normal", "dance"].forEach(function (k) {
+        const gr = g.createLinearGradient(0, cy - halfH, 0, cy + halfH);
+        gr.addColorStop(0, SEC[k].c0); gr.addColorStop(0.5, SEC[k].c1); gr.addColorStop(1, SEC[k].c0);
+        grads[k] = gr;
+      });
+    }
     for (let i = 0; i < n; i++) {
       const t = dur ? ((i + 0.5) / n) * dur : 0;
       const inR = !region || (t >= region.start && t <= region.end);
-      const amp = Math.max(1.5, (peaks[i] / 100) * h * 0.44);
-      if (bands) {
-        // กราฟสี: นอกช่วง Preview จางมาก · ในช่วงที่ยังไม่เล่นถึงจางลงเล็กน้อย · ที่เล่นผ่านแล้วสีเต็ม (มีเส้น playhead สีขาวกำกับ)
-        const c = bandColor(bands[0][i], bands[1][i], bands[2][i]);
-        const al = !inR ? 0.22 : (time != null && t > time ? 0.6 : 1);
-        g.fillStyle = "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + al + ")";
-      } else {
+      const v = peaks[i] / 100;
+      const x = i * bw + gap / 2, bwid = Math.max(1, bw - gap);
+      if (style === "mono") {
+        const amp = Math.max(1.5, v * h * 0.44);
         g.fillStyle = !inR ? (o.outside || "rgba(148,163,184,.25)")
           : (time != null && t <= time ? accent2 : accent);
+        g.fillRect(x, h / 2 - amp, bwid, amp * 2);
+        continue;
       }
-      g.fillRect(i * bw + gap / 2, h / 2 - amp, Math.max(1, bw - gap), amp * 2);
+      // นอกช่วง Preview จางมาก · ในช่วงที่ยังไม่เล่นถึงจางลงเล็กน้อย · เล่นผ่านแล้วสีเต็ม
+      const al = !inR ? 0.4 : (time != null && t > time ? 0.66 : 1);
+      const amp = Math.max(1.5, v * halfH * 0.94);
+      g.globalAlpha = al;
+      if (style === "section") {
+        g.fillStyle = grads[segOf(t)];
+        g.fillRect(x, cy - amp, bwid, amp * 2);
+        const core = amp * (bands ? 0.3 + 0.5 * bands[0][i] / 100 : 0.5); // แกนสว่างตรงกลาง: หนาตามพลังเสียงต่ำ (จังหวะกระเดื่อง)
+        g.fillStyle = "rgba(255,255,255,.2)";
+        g.fillRect(x, cy - core, bwid, core * 2);
+      } else { // rgb = DJ 3 ชั้น ซ้อนกันจากต่ำ (นอกสุด) → กลาง → สูง (แกนในสุด สีขาว)
+        const hl = Math.max(1.5, amp * (0.2 + 0.8 * bands[0][i] / 100));
+        const hm = Math.max(1, amp * (0.15 + 0.85 * bands[1][i] / 100) * 0.7);
+        const hh = Math.max(0.8, amp * (0.1 + 0.9 * bands[2][i] / 100) * 0.38);
+        g.fillStyle = LAYER.low;  g.fillRect(x, cy - hl, bwid, hl * 2);
+        g.fillStyle = LAYER.mid;  g.fillRect(x, cy - hm, bwid, hm * 2);
+        g.fillStyle = LAYER.high; g.fillRect(x, cy - hh, bwid, hh * 2);
+      }
+      g.globalAlpha = 1;
     }
 
+    if (segs) { // แถบส่วนเพลงด้านบน (เหมือนแถบ phrase บน Rekordbox): อินโทร / ปกติ / Dance
+      g.save();
+      segs.forEach(function (s) {
+        const x0 = (s.start / dur) * w, bwid = ((s.end - s.start) / dur) * w;
+        if (bwid <= 0) return;
+        g.fillStyle = SEC[s.type].c0;
+        g.fillRect(x0 + 0.5, 1, Math.max(1, bwid - 1), 10);
+        if (SEC[s.type].tag && bwid > 40) {
+          g.fillStyle = "#fff"; g.font = "bold 8px sans-serif";
+          g.fillText(SEC[s.type].tag, x0 + 4, 9);
+        }
+      });
+      g.restore();
+    }
     if (o.grid && o.bpm && dur) { // เส้นห้อง ทุก 8 ห้อง
-      const barSec = 240 / o.bpm;
+      const bs = 240 / o.bpm;
       g.strokeStyle = "rgba(255,255,255,.16)"; g.fillStyle = "rgba(255,255,255,.6)";
       g.font = "10px sans-serif"; g.lineWidth = 1;
-      for (let b = 0; b * barSec < dur; b += 8) {
-        const x = Math.round(((b * barSec) / dur) * w) + 0.5;
+      for (let b = 0; b * bs < dur; b += 8) {
+        const x = Math.round(((b * bs) / dur) * w) + 0.5;
         g.beginPath(); g.moveTo(x, h - 11); g.lineTo(x, h); g.stroke();
         if (o.gridLabels) g.fillText(String(b), x + 3, h - 2);
       }
@@ -123,8 +273,8 @@
     if (o.marker && dur && o.marker.time >= 0 && o.marker.time <= dur) { // เส้นประเหลือง = จุดเริ่ม Dance
       const x = Math.round((o.marker.time / dur) * w) + 0.5;
       g.save(); g.strokeStyle = "#fbbf24"; g.fillStyle = "#fbbf24"; g.lineWidth = 2; g.setLineDash([4, 3]);
-      g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); g.restore();
-      if (o.marker.label) { g.font = "bold 10px sans-serif"; g.fillText(o.marker.label, Math.min(w - 40, x + 4), 11); }
+      g.beginPath(); g.moveTo(x, segs ? 11 : 0); g.lineTo(x, h); g.stroke(); g.restore();
+      if (o.marker.label && !segs) { g.font = "bold 10px sans-serif"; g.fillText(o.marker.label, Math.min(w - 40, x + 4), 11); }
     }
     if (time != null) { // playhead
       const x = Math.max(1, Math.min(w - 1, (time / dur) * w));
@@ -133,5 +283,5 @@
     return true;
   }
 
-  global.MiusicWave = { draw: draw, timeAt: timeAt, sanitize: sanitize, sanitizeBands: sanitizeBands };
+  global.MiusicWave = { draw: draw, timeAt: timeAt, sanitize: sanitize, sanitizeBands: sanitizeBands, computeSections: computeSections, mountSwitch: mountSwitch, getStyle: getStyle };
 })(window);
