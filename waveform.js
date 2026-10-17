@@ -63,8 +63,8 @@ const BAND_DOT = { low: "#ef4444", mid: "#22c55e", high: "#3b82f6" };
 const STYLES = [["section", "ส่วนเพลง"], ["rgb", "DJ Pro"], ["mono", "สีเดียว"]];
 const DANCE_BARS = 24; // ความยาว Dance ที่ระบบวิเคราะห์ใช้ (ห้อง)
 
-// 🆕 (Style 4): ความสูงของตัวนับห้องใหญ่ — เพิ่มจาก 11px (เดิม) เป็น 32px
-const BIG_BAR_PAD = 32;
+// 🆕 (Style 4): ความสูงของตัวนับห้องใหญ่ — เพิ่มจาก 11px (เดิม) เป็น 36px (ใหญ่ขึ้นอีก เพื่อให้เลขห้องชัดเจน)
+const BIG_BAR_PAD = 36;
 // แบ่งเพลงเป็นส่วน: อินโทร · Dance · ปกติ — ใช้สำหรับ style "section" (เดิม ไม่เปลี่ยน)
 function computeSections(peaks, dur, danceStartSec, barSec) {
 const n = peaks.length, binSec = dur / n;
@@ -398,26 +398,39 @@ const pxPerBar = w / totalBars;
 for (let b = 0; b <= totalBars; b++) {
 const x = Math.round(b * pxPerBar) + 0.5;
 if (b % 8 === 0) {
-// เส้นเข้ม + เลขใหญ่
-g.strokeStyle = "rgba(255,255,255,.32)";
-g.lineWidth = 1;
+// เส้นเข้ม + เลขใหญ่มาก (ทุก 8 ห้อง) — สีขาวสว่าง + เงาดำ ให้อ่านชัดบนพื้นเข้ม
+g.strokeStyle = "rgba(255,255,255,.45)";
+g.lineWidth = 1.2;
 g.beginPath(); g.moveTo(x, stripTop); g.lineTo(x, stripTop + stripH); g.stroke();
-g.fillStyle = "#cbd5e1";
-g.font = "bold 13px sans-serif";
-g.fillText(String(b), x + 2, stripTop + stripH - 8);
+// เงาดำด้านหลังเลข
+g.save();
+g.shadowColor = "rgba(0,0,0,.95)";
+g.shadowBlur = 3;
+g.shadowOffsetX = 0;
+g.shadowOffsetY = 1;
+g.fillStyle = "#ffffff";
+g.font = "bold 15px sans-serif";
+g.fillText(String(b), x + 3, stripTop + stripH - 8);
+g.restore();
 } else if (b % 4 === 0) {
-// เส้นกลาง + เลขกลาง
-g.strokeStyle = "rgba(255,255,255,.14)";
+// เส้นกลาง + เลขกลาง (ทุก 4 ห้อง) — สีขาวอ่อน + เงา
+g.strokeStyle = "rgba(255,255,255,.22)";
 g.lineWidth = 1;
 g.beginPath(); g.moveTo(x, stripTop); g.lineTo(x, stripTop + stripH); g.stroke();
-g.fillStyle = "#64748b";
-g.font = "bold 10px sans-serif";
-g.fillText(String(b), x + 2, stripTop + stripH - 8);
+g.save();
+g.shadowColor = "rgba(0,0,0,.9)";
+g.shadowBlur = 2;
+g.shadowOffsetX = 0;
+g.shadowOffsetY = 1;
+g.fillStyle = "#e2e8f0";
+g.font = "bold 12px sans-serif";
+g.fillText(String(b), x + 3, stripTop + stripH - 8);
+g.restore();
 } else {
-// เส้นบางด้านล่าง
-g.strokeStyle = "rgba(255,255,255,.06)";
+// เส้นบางด้านล่าง (ห้องธรรมดา)
+g.strokeStyle = "rgba(255,255,255,.08)";
 g.lineWidth = 1;
-g.beginPath(); g.moveTo(x, stripTop + stripH - 6); g.lineTo(x, stripTop + stripH); g.stroke();
+g.beginPath(); g.moveTo(x, stripTop + stripH - 8); g.lineTo(x, stripTop + stripH); g.stroke();
 }
 }
 } else if (o.grid && o.bpm && dur) {
@@ -466,15 +479,21 @@ g.beginPath(); g.moveTo(x, segs ? 11 : 0); g.lineTo(x, h); g.stroke(); g.restore
 if (o.marker.label && !segs) { g.font = "bold 10px sans-serif"; g.fillText(o.marker.label, Math.min(w - 40, x + 4), 11); }
 }
 
-// 🆕 (Style 4): ตัวนับห้องปัจจุบัน (BAR X/Y) — มุมขวาบนของ strip
+// 🆕 (Style 4): ตัวนับห้องปัจจุบัน (BAR X/Y) — มุมขวาบนของ strip — สีขาวสว่าง + เงาดำ ให้อ่านชัด
 if (useBigBar && time != null) {
 const stripTop = h - gridPad;
 const curBar = Math.min(totalBars, Math.floor(time / barSec) + 1);
-g.fillStyle = "#fff";
-g.font = "bold 13px sans-serif";
+g.save();
+g.shadowColor = "rgba(0,0,0,.95)";
+g.shadowBlur = 3;
+g.shadowOffsetX = 0;
+g.shadowOffsetY = 1;
+g.fillStyle = "#ffffff";
+g.font = "bold 15px sans-serif";
 g.textAlign = "right";
-g.fillText("BAR " + curBar + "/" + totalBars, w - 4, stripTop + 16);
+g.fillText("BAR " + curBar + "/" + totalBars, w - 6, stripTop + 18);
 g.textAlign = "left";
+g.restore();
 }
 
 if (time != null) { // playhead (red — เหมือน djay Pro)
