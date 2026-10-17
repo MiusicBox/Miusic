@@ -32,6 +32,26 @@
     return out;
   }
 
+  // 🆕 (RGB) ข้อมูลสี 3 ย่านความถี่: array ยาว 3×n = [ต่ำ×n, กลาง×n, สูง×n] ค่า 0-100 · ไม่ตรงรูปแบบ → null (วาดสีเดียวเหมือนเดิม)
+  function sanitizeBands(bands, n) {
+    if (!Array.isArray(bands) || !n || bands.length !== n * 3) return null;
+    const out = [new Array(n), new Array(n), new Array(n)];
+    for (let k = 0; k < 3; k++) {
+      for (let i = 0; i < n; i++) {
+        const v = Number(bands[k * n + i]);
+        out[k][i] = isFinite(v) ? Math.max(0, Math.min(100, v)) : 0;
+      }
+    }
+    return out;
+  }
+  // สีของแท่ง: R=เสียงต่ำ(เบส/กระเดื่อง) G=เสียงกลาง B=เสียงสูง — ช่องที่แรงสุดสว่างเต็ม ช่องอื่นลดตามสัดส่วน (gamma 1.4 ให้สีชัด)
+  function bandColor(lo, mi, hi) {
+    const mx = Math.max(lo, mi, hi);
+    if (!(mx > 0)) return [110, 115, 135];
+    const f = (v) => Math.round(35 + 220 * Math.pow(v / mx, 1.4));
+    return [f(lo), f(mi), f(hi)];
+  }
+
   // วินาทีที่ตรงกับตำแหน่งนิ้ว/เมาส์บน canvas
   function timeAt(canvas, clientX, duration) {
     const r = canvas.getBoundingClientRect();
@@ -46,7 +66,8 @@
    *   tint: bool                 พื้นหลังอ่อนในช่วง region
    *   bpm, grid, gridLabels      เส้นห้อง (ทุก 8 ห้อง) + ตัวเลขห้อง
    *   marker: {time,label}|null  เส้นประสีเหลือง (จุดเริ่ม Dance)
-   *   outside: สีแท่งนอกช่วง
+   *   outside: สีแท่งนอกช่วง (กราฟสีเดียว)
+   *   bands: number[3n]|null     🆕 ข้อมูลสี RGB 3 ย่านความถี่ (waveform_rgb) — ไม่ส่ง/ไม่ตรงรูปแบบ = กราฟสีเดียวเหมือนเดิม
    * } */
   function draw(canvas, o) {
     if (!canvas || !o) return false;
@@ -67,6 +88,7 @@
     const region = o.region && dur && o.region.end > o.region.start ? o.region : null;
     const time = o.time != null && dur ? Number(o.time) : null;
     const n = peaks.length, bw = w / n, gap = bw > 3 ? 1.5 : 0.6;
+    const bands = sanitizeBands(o.bands, n); // null = ไม่มีข้อมูลสี → วาดสีเดียวแบบเดิม
 
     if (region && o.tint) {
       g.fillStyle = withAlpha(accent, 0.14);
@@ -76,8 +98,15 @@
       const t = dur ? ((i + 0.5) / n) * dur : 0;
       const inR = !region || (t >= region.start && t <= region.end);
       const amp = Math.max(1.5, (peaks[i] / 100) * h * 0.44);
-      g.fillStyle = !inR ? (o.outside || "rgba(148,163,184,.25)")
-        : (time != null && t <= time ? accent2 : accent);
+      if (bands) {
+        // กราฟสี: นอกช่วง Preview จางมาก · ในช่วงที่ยังไม่เล่นถึงจางลงเล็กน้อย · ที่เล่นผ่านแล้วสีเต็ม (มีเส้น playhead สีขาวกำกับ)
+        const c = bandColor(bands[0][i], bands[1][i], bands[2][i]);
+        const al = !inR ? 0.22 : (time != null && t > time ? 0.6 : 1);
+        g.fillStyle = "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + al + ")";
+      } else {
+        g.fillStyle = !inR ? (o.outside || "rgba(148,163,184,.25)")
+          : (time != null && t <= time ? accent2 : accent);
+      }
       g.fillRect(i * bw + gap / 2, h / 2 - amp, Math.max(1, bw - gap), amp * 2);
     }
 
@@ -104,5 +133,5 @@
     return true;
   }
 
-  global.MiusicWave = { draw: draw, timeAt: timeAt, sanitize: sanitize };
+  global.MiusicWave = { draw: draw, timeAt: timeAt, sanitize: sanitize, sanitizeBands: sanitizeBands };
 })(window);
