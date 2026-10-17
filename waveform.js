@@ -384,13 +384,13 @@ const stripH = gridPad;
 // พื้นหลัง strip
 g.fillStyle = "rgba(5,7,16,.85)";
 g.fillRect(0, stripTop, w, stripH);
-// ไฮไลต์ทอนแดน 2 ทอน (สีเหลืองโปร่งแสง)
+// ไฮไลต์ทอนแดน 2 ทอน (สีแดงโปร่งแสง — เหมือน D1/D2 marker)
 if (d1) {
-g.fillStyle = "rgba(251,191,36,.14)";
+g.fillStyle = "rgba(239,68,68,.16)";
 g.fillRect((d1.start / dur) * w, stripTop, ((d1.end - d1.start) / dur) * w, stripH);
 }
 if (d2) {
-g.fillStyle = "rgba(251,191,36,.14)";
+g.fillStyle = "rgba(239,68,68,.16)";
 g.fillRect((d2.start / dur) * w, stripTop, ((d2.end - d2.start) / dur) * w, stripH);
 }
 // เส้นห้อง + ตัวเลขห้อง — ใหญ่ขึ้นสำหรับ iPad
@@ -432,22 +432,22 @@ if (o.gridLabels) g.fillText(String(b), x + 3, h - 2);
 }
 }
 
-// 🆕 (2 Dance): เส้นเหลือง D1, D2 + ป้ายชื่อ
+// 🆕 (2 Dance): เส้นแดง D1, D2 + ป้ายชื่อ (สีแดงเหมือนกันทั้งคู่ — เหมือนจุดเริ่มเล่นใน djay Pro)
 const drawDanceMarker = function (t, label) {
 if (t == null || !dur || t < 0 || t > dur) return;
 const x = Math.round((t / dur) * w) + 0.5;
 g.save();
-g.strokeStyle = "#fbbf24"; g.lineWidth = 2; g.setLineDash([4, 3]);
+g.strokeStyle = "#ef4444"; g.lineWidth = 2; g.setLineDash([4, 3]);
 g.beginPath(); g.moveTo(x, segs ? 11 : 0); g.lineTo(x, h); g.stroke();
 g.restore();
-// ป้ายชื่อ D1/D2 ด้านบน
-g.fillStyle = "#fbbf24";
+// ป้ายชื่อ D1/D2 ด้านบน (สีแดง + ขอบขาว ให้อ่านง่ายบนพื้นเข้ม)
+g.fillStyle = "#ef4444";
 g.font = "bold 10px sans-serif";
 g.fillText(label, Math.min(w - 24, x + 4), segs ? 22 : 12);
 // ลูกศรด้านล่าง strip (ถ้ามี big bar)
 if (useBigBar) {
 const stripTop = h - gridPad;
-g.fillStyle = "#fbbf24";
+g.fillStyle = "#ef4444";
 g.beginPath();
 g.moveTo(x, stripTop); g.lineTo(x - 4, stripTop + 6); g.lineTo(x + 4, stripTop + 6); g.closePath();
 g.fill();
@@ -459,9 +459,9 @@ if (twoDanceEnabled && (d1 || d2)) {
 if (d1) drawDanceMarker(d1.start, "D1");
 if (d2) drawDanceMarker(d2.start, "D2");
 } else if (o.marker && dur && o.marker.time >= 0 && o.marker.time <= dur) {
-// Fallback: แสดง marker เดียวแบบเดิม (ถ้า twoDance ถูกปิด)
+// Fallback: แสดง marker เดียวแบบเดิม (ถ้า twoDance ถูกปิด) — สีแดงเหมือน D1/D2
 const x = Math.round((o.marker.time / dur) * w) + 0.5;
-g.save(); g.strokeStyle = "#fbbf24"; g.fillStyle = "#fbbf24"; g.lineWidth = 2; g.setLineDash([4, 3]);
+g.save(); g.strokeStyle = "#ef4444"; g.fillStyle = "#ef4444"; g.lineWidth = 2; g.setLineDash([4, 3]);
 g.beginPath(); g.moveTo(x, segs ? 11 : 0); g.lineTo(x, h); g.stroke(); g.restore();
 if (o.marker.label && !segs) { g.font = "bold 10px sans-serif"; g.fillText(o.marker.label, Math.min(w - 40, x + 4), 11); }
 }
