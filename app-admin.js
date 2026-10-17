@@ -3522,8 +3522,11 @@ function drawAdminWave(key, wrapId, capId, data, bpm, time) {
   const bar = _waveBarOverride[key] != null ? _waveBarOverride[key] : data.dance_start_bar;
   const marker = bar != null && bar !== "" ? { time: Number(bar) * bs, label: "Dance" } : null;
   if (cap) cap.textContent = waveCapText(region, bar, !!marker);
+  // 🆕 ปุ่มเลือกสไตล์กราฟ (ส่วนเพลง / DJ 3 ชั้น / สีเดียว) — จำค่าที่เลือกไว้ในเครื่องนี้ · ค่าเริ่มต้นหน้าแอดมิน = ส่วนเพลง
+  const waveStyle = window.MiusicWave.mountSwitch(cv, "miusic_wave_style_admin", "section",
+    () => (key === "songDetailWave" ? refreshDetailWave() : refreshFormWave()));
   const paint = (tries) => {
-    const ok = window.MiusicWave.draw(cv, { peaks, bands: data.waveform_rgb, duration: dur, region, tint: true, bpm, grid: true, gridLabels: true, marker, time, outside: "rgba(148,163,184,.45)" });
+    const ok = window.MiusicWave.draw(cv, { peaks, bands: data.waveform_rgb, style: waveStyle, duration: dur, region, tint: true, bpm, grid: true, gridLabels: true, marker, time, outside: "rgba(148,163,184,.45)" });
     if (!ok && tries > 0) requestAnimationFrame(() => paint(tries - 1)); // popup เพิ่งเปิด ขนาด canvas ยังเป็น 0 → ลองใหม่
   };
   paint(6);
