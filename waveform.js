@@ -64,7 +64,7 @@ const STYLES = [["section", "ส่วนเพลง"], ["rgb", "DJ Pro"], ["mo
 const DANCE_BARS = 24; // ความยาว Dance ที่ระบบวิเคราะห์ใช้ (ห้อง)
 
 // 🆕 (Style 4): ความสูงของตัวนับห้องใหญ่ — เพิ่มจาก 11px (เดิม) เป็น 32px
-const BIG_BAR_PAD = 32;
+const BIG_BAR_PAD = 36; // 🆕 (2026-10-17): 32 → 36 ให้เลขห้องใหญ่ขึ้นและไม่ทับกับตัวนับ BAR
 // แบ่งเพลงเป็นส่วน: อินโทร · Dance · ปกติ — ใช้สำหรับ style "section" (เดิม ไม่เปลี่ยน)
 function computeSections(peaks, dur, danceStartSec, barSec) {
 const n = peaks.length, binSec = dur / n;
@@ -395,27 +395,34 @@ g.fillRect((d2.start / dur) * w, stripTop, ((d2.end - d2.start) / dur) * w, stri
 }
 // เส้นห้อง + ตัวเลขห้อง — ใหญ่ขึ้นสำหรับ iPad
 const pxPerBar = w / totalBars;
+// 🆕 (2026-10-17): เลือกระยะเลขหลักอัตโนมัติ (8/16/32 ห้อง) ให้เลขไม่ซ้อนกันในเพลงยาว/จอแคบ
+let majorStep = 8;
+while (majorStep < 64 && pxPerBar * majorStep < 32) majorStep *= 2;
+const showMinor = majorStep === 8 && pxPerBar * 4 >= 22; // เลขรอง (ทุก 4 ห้อง) แสดงเมื่อมีที่พอ
+const labelY = stripTop + stripH - 7;
 for (let b = 0; b <= totalBars; b++) {
 const x = Math.round(b * pxPerBar) + 0.5;
-if (b % 8 === 0) {
-// เส้นเข้ม + เลขใหญ่
-g.strokeStyle = "rgba(255,255,255,.32)";
+if (b % majorStep === 0) {
+// เส้นเข้ม + เลขใหญ่ สว่างชัด
+g.strokeStyle = "rgba(255,255,255,.45)";
 g.lineWidth = 1;
 g.beginPath(); g.moveTo(x, stripTop); g.lineTo(x, stripTop + stripH); g.stroke();
-g.fillStyle = "#cbd5e1";
-g.font = "bold 13px sans-serif";
-g.fillText(String(b), x + 2, stripTop + stripH - 8);
+g.fillStyle = "#ffffff";
+g.font = "bold 15px sans-serif";
+g.fillText(String(b), x + 3, labelY);
 } else if (b % 4 === 0) {
-// เส้นกลาง + เลขกลาง
-g.strokeStyle = "rgba(255,255,255,.14)";
+// เส้นกลาง + เลขกลาง (แสดงเลขเมื่อมีที่พอ)
+g.strokeStyle = "rgba(255,255,255,.2)";
 g.lineWidth = 1;
-g.beginPath(); g.moveTo(x, stripTop); g.lineTo(x, stripTop + stripH); g.stroke();
-g.fillStyle = "#64748b";
-g.font = "bold 10px sans-serif";
-g.fillText(String(b), x + 2, stripTop + stripH - 8);
-} else {
+g.beginPath(); g.moveTo(x, stripTop + (showMinor ? 0 : stripH * 0.5)); g.lineTo(x, stripTop + stripH); g.stroke();
+if (showMinor) {
+g.fillStyle = "#a5b4c8";
+g.font = "bold 12px sans-serif";
+g.fillText(String(b), x + 2, labelY);
+}
+} else if (pxPerBar >= 4) {
 // เส้นบางด้านล่าง
-g.strokeStyle = "rgba(255,255,255,.06)";
+g.strokeStyle = "rgba(255,255,255,.08)";
 g.lineWidth = 1;
 g.beginPath(); g.moveTo(x, stripTop + stripH - 6); g.lineTo(x, stripTop + stripH); g.stroke();
 }
@@ -471,9 +478,9 @@ if (useBigBar && time != null) {
 const stripTop = h - gridPad;
 const curBar = Math.min(totalBars, Math.floor(time / barSec) + 1);
 g.fillStyle = "#fff";
-g.font = "bold 13px sans-serif";
+g.font = "bold 12px sans-serif";
 g.textAlign = "right";
-g.fillText("BAR " + curBar + "/" + totalBars, w - 4, stripTop + 16);
+g.fillText("BAR " + curBar + "/" + totalBars, w - 4, stripTop + 13);
 g.textAlign = "left";
 }
 
