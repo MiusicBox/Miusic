@@ -16,7 +16,7 @@ import {
   analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, rescalePreviewForBpm, BAR_SECONDS,
   // 🆕 (T136): import barSecondsFor + clampBpm สำหรับคำนวณ BAR_SECONDS ตาม BPM จริงของแต่ละเพลง
   barSecondsFor, clampBpm, beatMsFor, bpmStepPct, bpmVsBasePct
-} from "./song-analyzer.js?v=20261017-barfix";
+} from "./song-analyzer.js?v=20261017-rgbwave";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261012-launch";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
@@ -220,6 +220,7 @@ function renderPreviewData(data) {
   if (data && data.status !== "analyzing" && !data.waveform && pendingPreviewData && Array.isArray(pendingPreviewData.waveform)) {
     data.waveform = pendingPreviewData.waveform;
     data.waveform_duration = pendingPreviewData.waveform_duration;
+    data.waveform_rgb = pendingPreviewData.waveform_rgb; // 🆕 (RGB)
   }
   renderPreviewDataCore(data);
   refreshFormWave();
@@ -3522,7 +3523,7 @@ function drawAdminWave(key, wrapId, capId, data, bpm, time) {
   const marker = bar != null && bar !== "" ? { time: Number(bar) * bs, label: "Dance" } : null;
   if (cap) cap.textContent = waveCapText(region, bar, !!marker);
   const paint = (tries) => {
-    const ok = window.MiusicWave.draw(cv, { peaks, duration: dur, region, tint: true, bpm, grid: true, gridLabels: true, marker, time, outside: "rgba(148,163,184,.45)" });
+    const ok = window.MiusicWave.draw(cv, { peaks, bands: data.waveform_rgb, duration: dur, region, tint: true, bpm, grid: true, gridLabels: true, marker, time, outside: "rgba(148,163,184,.45)" });
     if (!ok && tries > 0) requestAnimationFrame(() => paint(tries - 1)); // popup เพิ่งเปิด ขนาด canvas ยังเป็น 0 → ลองใหม่
   };
   paint(6);
@@ -3683,7 +3684,7 @@ function doOpenEditSong(id) {
         preview_end_sec: s.preview_end_sec,
         confidence: s.preview_confidence,
         duration_sec: s.preview_duration_sec,
-        waveform: s.waveform, waveform_duration: s.waveform_duration // 🆕 (WAVEFORM)
+        waveform: s.waveform, waveform_duration: s.waveform_duration, waveform_rgb: s.waveform_rgb // 🆕 (WAVEFORM + RGB)
       });
     } else {
       // เพลงเก่าก่อนมีระบบนี้ — ยังไม่เคยวิเคราะห์เลย
@@ -4066,6 +4067,7 @@ document.getElementById("songSaveBtn").addEventListener("click", async function 
       if (Array.isArray(pendingPreviewData.waveform)) {
         payload.waveform = pendingPreviewData.waveform;
         payload.waveform_duration = pendingPreviewData.waveform_duration ?? pendingPreviewData.duration_sec ?? null;
+        if (Array.isArray(pendingPreviewData.waveform_rgb)) payload.waveform_rgb = pendingPreviewData.waveform_rgb; // 🆕 (RGB)
       }
     }
 
@@ -5987,6 +5989,7 @@ document.getElementById("bulkUploadBtn").addEventListener("click", async functio
           if (previewResult && Array.isArray(previewResult.waveform)) { // 🆕 (WAVEFORM) เก็บกราฟไว้ทั้งกรณี ok และ needs_review
             songPayload.waveform = previewResult.waveform;
             songPayload.waveform_duration = previewResult.waveform_duration ?? previewResult.duration_sec ?? null;
+            if (Array.isArray(previewResult.waveform_rgb)) songPayload.waveform_rgb = previewResult.waveform_rgb; // 🆕 (RGB)
           }
           if (previewResult && previewResult.status === "ok") {
             songPayload.preview_status = previewResult.status;
@@ -7637,6 +7640,7 @@ function renderDetailPreviewData(data) {
   if (data && data.status !== "analyzing" && !data.waveform && detailPendingPreviewData && Array.isArray(detailPendingPreviewData.waveform)) {
     data.waveform = detailPendingPreviewData.waveform; // 🆕 (WAVEFORM) คงกราฟเดิมตอนคำนวณช่วงใหม่ด้วยมือ
     data.waveform_duration = detailPendingPreviewData.waveform_duration;
+    data.waveform_rgb = detailPendingPreviewData.waveform_rgb; // 🆕 (RGB)
   }
   renderDetailPreviewDataCore(data);
   applyDetailDirtyUi();
@@ -7705,7 +7709,7 @@ function _loadDetailPreviewFromSongInner() {
       preview_end_sec: s.preview_end_sec,
       confidence: s.preview_confidence,
       duration_sec: s.preview_duration_sec,
-      waveform: s.waveform, waveform_duration: s.waveform_duration, // 🆕 (WAVEFORM)
+      waveform: s.waveform, waveform_duration: s.waveform_duration, waveform_rgb: s.waveform_rgb, // 🆕 (WAVEFORM + RGB)
       manual_window: s.preview_manual_window === true || (s.preview_status === "ok" && s.dance_start_bar == null)
     });
   } else {
@@ -7942,6 +7946,7 @@ document.getElementById("songDetailSavePreviewBtn").addEventListener("click", as
     if (Array.isArray(detailPendingPreviewData.waveform)) { // 🆕 (WAVEFORM)
       payload.waveform = detailPendingPreviewData.waveform;
       payload.waveform_duration = detailPendingPreviewData.waveform_duration ?? detailPendingPreviewData.duration_sec ?? null;
+      if (Array.isArray(detailPendingPreviewData.waveform_rgb)) payload.waveform_rgb = detailPendingPreviewData.waveform_rgb; // 🆕 (RGB)
     }
     await updateDoc(doc(db, "songs", detailPopupSong.id), payload);
     // อัปเดต CACHE ด้วย เพื่อให้ list แสดงผลลัพธ์ใหม่ถูกต้อง
@@ -8607,13 +8612,18 @@ function openBackfillWaveModal() {
   refreshBackfillWaveStatus();
 }
 
+// 🆕 (RGB) เพลงที่มีทั้งกราฟและข้อมูลสี 3 ย่านครบ (ยาว 3 เท่าของกราฟ)
+function songHasFullWave(s) {
+  return Array.isArray(s.waveform) && s.waveform.length >= 16 &&
+    Array.isArray(s.waveform_rgb) && s.waveform_rgb.length === s.waveform.length * 3;
+}
 function refreshBackfillWaveStatus() {
   const total = (CACHE.songs || []).length;
-  const done = (CACHE.songs || []).filter(s => Array.isArray(s.waveform) && s.waveform.length >= 16).length;
+  const done = (CACHE.songs || []).filter(songHasFullWave).length; // 🆕 นับเฉพาะเพลงที่มีกราฟสี RGB แล้ว
   const pending = total - done;
   const statusEl = document.getElementById("backfillWaveStatus");
   if (statusEl) {
-    statusEl.textContent = `📊 ทั้งหมด ${total} เพลง · มีกราฟแล้ว ${done} · รอคำนวณ ${pending}`;
+    statusEl.textContent = `📊 ทั้งหมด ${total} เพลง · มีกราฟสี RGB แล้ว ${done} · รอคำนวณ ${pending}`;
   }
   const startBtn = document.getElementById("backfillWaveStartBtn");
   if (startBtn) startBtn.disabled = _backfillWaveRunning || pending === 0;
@@ -8637,7 +8647,7 @@ async function runBackfillWaveform() {
   if (errorsEl) errorsEl.style.display = "none";
 
   // ดึงเพลงที่ยังไม่มี waveform (ก๊อปปี้ list เพื่อกัน iterator invalidation)
-  const queue = (CACHE.songs || []).filter(s => !Array.isArray(s.waveform) || s.waveform.length < 16);
+  const queue = (CACHE.songs || []).filter(s => !songHasFullWave(s)); // 🆕 รวมเพลงที่มีกราฟเดิมแต่ยังไม่มีสี RGB
   const total = queue.length;
   let success = 0, failed = 0, skipped = 0;
   const errs = [];
@@ -8677,12 +8687,14 @@ async function runBackfillWaveform() {
       const payload = {
         waveform: result.waveform,
         waveform_duration: result.waveform_duration ?? result.duration_sec ?? null,
+        ...(Array.isArray(result.waveform_rgb) ? { waveform_rgb: result.waveform_rgb } : {}), // 🆕 (RGB)
         updated_at: new Date().toISOString()
       };
       await updateDoc(doc(db, "songs", song.id), payload);
       // อัปเดต CACHE ทันที
       song.waveform = result.waveform;
       song.waveform_duration = payload.waveform_duration;
+      if (payload.waveform_rgb) song.waveform_rgb = payload.waveform_rgb; // 🆕 (RGB)
       success++;
     } catch (err) {
       failed++;
