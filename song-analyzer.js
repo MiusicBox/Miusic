@@ -620,6 +620,45 @@ export function computeWaveformPeaks(channelData, bins = WAVEFORM_BINS) {
   return Array.from(rms, (v) => Math.max(3, Math.min(100, Math.round(Math.sqrt(Math.min(1, v / ref)) * 100))));
 }
 
+// 🆕 (WAVEFORM-RGB): สีของกราฟแบบ 3 ย่านความถี่ (แบบ Rekordbox) — เก็บพลังงานเสียงต่ำ/กลาง/สูงต่อช่วงเป็นตัวเลข 0-100
+//   คืน array ยาว 3×bins = [ต่ำ×160, กลาง×160, สูง×160] (~1.5 KB/เพลง) · หน้าเว็บแปลงเป็นสี R=เบส G=กลาง B=แหลม
+//   วิธี: แต่ละช่วงของกราฟสุ่มอ่านหน้าต่าง FFT 2048 จุดกระจาย 6 จุด → รวมพลังงานตามย่านความถี่ (ต่ำ <200 Hz · กลาง 200–2500 Hz · สูง >2500 Hz)
+//   (FFT แยกย่านได้คมกว่าฟิลเตอร์ธรรมดา สีไม่ปนกันมั่ว · ใช้ FFT ตัวเดิมของระบบ · ไม่กี่ร้อย ms ต่อเพลง)
+//   ปรับสเกลแต่ละย่านด้วย percentile 97 ของตัวเอง (ไม่งั้นเบสดังกลบย่านอื่นหมด สีจะเป็นแดงล้วน) + sqrt เหมือนกราฟหลัก
+export function computeWaveformBands(channelData, sampleRate, bins = WAVEFORM_BINS) {
+  const FRAME = 2048, PER_BIN = 6;
+  const n = channelData ? channelData.length : 0;
+  if (!n || n < Math.max(bins, FRAME) || !(sampleRate > 0)) return null;
+  const binHz = sampleRate / FRAME, half = FRAME / 2;
+  const lowEnd = Math.min(half, Math.max(1, Math.round(200 / binHz)));
+  const midEnd = Math.min(half, Math.max(lowEnd + 1, Math.round(2500 / binHz)));
+  const step = n / bins;
+  const amp = [new Float32Array(bins), new Float32Array(bins), new Float32Array(bins)];
+  for (let b = 0; b < bins; b++) {
+    const s0 = Math.floor(b * step);
+    const len = Math.max(FRAME, Math.floor((b + 1) * step) - s0);
+    let eL = 0, eM = 0, eH = 0;
+    for (let j = 0; j < PER_BIN; j++) {
+      const start = Math.min(n - FRAME, s0 + Math.floor((j * (len - FRAME)) / (PER_BIN - 1 || 1)));
+      const mag = magnitudeSpectrum(channelData.subarray(start, start + FRAME));
+      for (let k = 1; k < lowEnd; k++) eL += mag[k] * mag[k];       // ข้ามบิน 0 (DC)
+      for (let k = lowEnd; k < midEnd; k++) eM += mag[k] * mag[k];
+      for (let k = midEnd; k < half; k++) eH += mag[k] * mag[k];
+    }
+    amp[0][b] = Math.sqrt(eL / PER_BIN); amp[1][b] = Math.sqrt(eM / PER_BIN); amp[2][b] = Math.sqrt(eH / PER_BIN);
+  }
+  const out = new Array(bins * 3).fill(0);
+  let any = false;
+  for (let k = 0; k < 3; k++) {
+    const sorted = Array.from(amp[k]).sort((p, q) => p - q);
+    const ref = sorted[Math.min(bins - 1, Math.floor(bins * 0.97))] || sorted[bins - 1] || 0;
+    if (!(ref > 0)) continue; // ย่านนี้เงียบสนิท → ศูนย์ทั้งแถว
+    for (let i = 0; i < bins; i++) out[k * bins + i] = Math.max(0, Math.min(100, Math.round(Math.sqrt(Math.min(1, amp[k][i] / ref)) * 100)));
+    any = true;
+  }
+  return any ? out : null;
+}
+
 // 🆕 (2026-10-16): detectMusicKey -- ตรวจ Key เพลง (Camelot) แบบอัตโนมัติ "เพื่อแสดงป้ายเท่านั้น"
 //   - อ่านข้อมูลเสียงอย่างเดียว (read-only) ไม่แก้ไฟล์เสียง/ไม่ส่งผลต่อการเล่น, Preview, BPM, กราฟ
 //   - วิธี: สุ่มหน้าต่าง FFT จากกลางเพลง -> รวมพลังงานเป็น 12 โน้ต (chroma) -> เทียบโปรไฟล์ Krumhansl-Schmuckler (major/minor)
@@ -702,7 +741,13 @@ export function analyzeChannelData(channelData, sampleRate, durationSec, onProgr
   let waveformExtra = {};
   try { // 🆕 (WAVEFORM): คำนวณกราฟคลื่นเสียงจากข้อมูลชุดเดียวกับที่วิเคราะห์ (ไม่ถอดเสียงซ้ำ) — พังก็ข้าม ไม่กระทบผลวิเคราะห์เดิม
     const wf = computeWaveformPeaks(channelData);
-    if (wf) waveformExtra = { waveform: wf, waveform_duration: Number(durationSec.toFixed(3)) };
+    if (wf) {
+      waveformExtra = { waveform: wf, waveform_duration: Number(durationSec.toFixed(3)) };
+      try { // 🆕 (WAVEFORM-RGB) กราฟสี 3 ย่านความถี่ — พังก็ข้าม ยังได้กราฟสีเดียวเหมือนเดิม
+        const rgb = computeWaveformBands(channelData, sampleRate);
+        if (rgb) waveformExtra.waveform_rgb = rgb;
+      } catch (_) { /* ignore */ }
+    }
   } catch (_) { /* ignore */ }
   const frames = analyzeFrames(channelData, sampleRate);
   if (onProgress) onProgress(70);
