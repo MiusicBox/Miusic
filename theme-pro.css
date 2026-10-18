@@ -354,3 +354,42 @@ button:active { transform: none; }
 .admin-page .bar-chart { border-radius: var(--radius-sm); }
 .admin-page .badge { border-radius: 2px; box-shadow: none; }
 .admin-page .login-card { border-radius: var(--radius) !important; }
+
+/* ==========================================================================
+   พื้นเขียว lime = ตัวหนังสือ/ไอคอนดำเสมอ (อ่านง่าย สีไม่กลืนกัน)
+   ========================================================================== */
+.btn:not(.secondary):not(.danger):not(.whatsapp),
+.hero-cta, .chip.active, .adv-chip.active, .adv-btn-primary, .customer-login-btn,
+.guest-orders-login-banner-btn, #scrollTopBtn, .player-bar .ctrl, .filter-badge, .adv-filter-badge,
+.category-card .cat-count, .buy-btn:hover,
+#songModalBackdrop .btn-review-login, #songModalBackdrop .btn-review-submit,
+#songModalBackdrop .review-avatar, #songModalBackdrop .review-mine-badge,
+.btn-icon-mini[data-favorite-btn].is-favorite, #alertBackdrop .btn {
+  color: var(--accent-ink) !important;
+  text-shadow: none !important;
+}
+/* ลูกและตัวอักษรลูกของพื้นเขียวรับสีดำตาม */
+.btn:not(.secondary):not(.danger):not(.whatsapp) *,
+.hero-cta *, .adv-btn-primary *, .customer-login-btn *, .guest-orders-login-banner-btn *,
+#scrollTopBtn *, .player-bar .ctrl *, #songModalBackdrop .btn-review-login *,
+#songModalBackdrop .btn-review-submit * { color: inherit; }
+/* ไอคอน SVG ที่ฝัง fill="#fff" อยู่ในพื้นเขียว → ดำ */
+:is(.btn:not(.secondary):not(.danger):not(.whatsapp), .hero-cta, .adv-btn-primary, .customer-login-btn,
+    .guest-orders-login-banner-btn, #scrollTopBtn, .player-bar .ctrl, .chip.active,
+    #songModalBackdrop .btn-review-login, #songModalBackdrop .btn-review-submit,
+    .btn-icon-mini[data-favorite-btn].is-favorite) svg,
+:is(.btn:not(.secondary):not(.danger):not(.whatsapp), .hero-cta, .adv-btn-primary, .customer-login-btn,
+    .guest-orders-login-banner-btn, #scrollTopBtn, .player-bar .ctrl, .chip.active,
+    #songModalBackdrop .btn-review-login, #songModalBackdrop .btn-review-submit) svg * {
+  fill: currentColor;
+}
+:is(.btn:not(.secondary):not(.danger):not(.whatsapp), .hero-cta, .adv-btn-primary, .customer-login-btn,
+    .guest-orders-login-banner-btn, #scrollTopBtn, .player-bar .ctrl, #songModalBackdrop .btn-review-login) svg[fill="none"],
+:is(.btn:not(.secondary):not(.danger):not(.whatsapp), .hero-cta, .adv-btn-primary, .customer-login-btn,
+    .guest-orders-login-btn, #scrollTopBtn, .player-bar .ctrl, #songModalBackdrop .btn-review-login) svg[fill="none"] * {
+  fill: none;
+  stroke: currentColor;
+}
+.player-bar .ctrl .spinner, .btn .spinner { border-color: rgba(12, 13, 14, 0.25); border-top-color: var(--accent-ink); }
+/* ปุ่มไอคอนสีเขียวจาง ๆ → ขอบ lime ตัวหนังสือสว่าง ไม่ต้องดำ */
+.btn.secondary, .btn.danger { text-shadow: none; }
