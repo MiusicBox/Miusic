@@ -6,7 +6,7 @@
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): noindex meta — กัน Google index หน้า admin -->
 <meta name="robots" content="noindex, nofollow">
 <title>Admin - Music Store</title>
-<link rel="stylesheet" href="style.css?v=20261017-sections">
+<link rel="stylesheet" href="style.css?v=20261018-slim">
 <!-- 🎨 (2026-10-11) ระบบแจ้งเตือนใหม่ (toast + dialog) — ต้องโหลดก่อน app-*.js -->
 <link rel="stylesheet" href="notify.css?v=20261015-waveback">
 <script src="notify.js?v=20261015-waveback"></script>
@@ -1552,6 +1552,25 @@
       </div>
         </div>
       </div>
+
+      <!-- ===== 🆕 (2026-10-18): แก้ท่อนเพลงเอง (Intro / Verse / Chorus / Break / Dance / Outro) — แตะบนกราฟเพื่อตั้งจุดเริ่มท่อน · เก็บเป็น song_sections ในเอกสารเพลง (แยกจาก Dance/Preview เดิม) ===== -->
+      <div id="songDetailSectionsEditor" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">
+        <button type="button" id="songDetailSectionsToggle" aria-expanded="false" style="width:100%;display:flex;align-items:center;justify-content:space-between;background:transparent;border:0;color:var(--text);font-size:13px;font-weight:700;padding:4px 0;cursor:pointer;">
+          <span>🎼 แก้ท่อนเพลง (Intro / Verse / Chorus / Dance)</span>
+          <span id="songDetailSectionsChevron" style="transition:transform .2s;">▼</span>
+        </button>
+        <div id="songDetailSectionsBody" style="display:none;margin-top:10px;">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">1) เลือกชนิดท่อน · 2) กด "เปิดโหมดแตะ" · 3) แตะบนกราฟตรงที่ท่อนนั้นเริ่ม (ระบบปัดเข้าหาห้องที่ใกล้ที่สุด) · ท่อนจะจบที่จุดเริ่มของท่อนถัดไป</div>
+          <div id="songDetailSecChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"><button type="button" class="btn secondary" data-sec-type="intro" style="font-size:12px;padding:7px 10px;">INTRO</button><button type="button" class="btn secondary" data-sec-type="verse" style="font-size:12px;padding:7px 10px;">VERSE</button><button type="button" class="btn secondary" data-sec-type="chorus" style="font-size:12px;padding:7px 10px;">CHORUS</button><button type="button" class="btn secondary" data-sec-type="break" style="font-size:12px;padding:7px 10px;">BREAK</button><button type="button" class="btn secondary" data-sec-type="dance" style="font-size:12px;padding:7px 10px;">DANCE</button><button type="button" class="btn secondary" data-sec-type="outro" style="font-size:12px;padding:7px 10px;">OUTRO</button></div>
+          <button type="button" id="songDetailSecTapBtn" class="btn secondary" style="width:100%;font-size:13px;padding:10px;margin-bottom:8px;">👆 เปิดโหมดแตะตั้งท่อน</button>
+          <div id="songDetailSecList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;"></div>
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-bottom:8px;">
+            <button type="button" id="songDetailSecAutoBtn" class="btn secondary" style="font-size:12px;padding:8px 4px;">📋 ดึงค่าอัตโนมัติมาแก้</button>
+            <button type="button" id="songDetailSecClearBtn" class="btn secondary" style="font-size:12px;padding:8px 4px;">🗑️ ล้างทั้งหมด</button>
+          </div>
+          <button type="button" id="songDetailSecSaveBtn" class="btn" style="width:100%;font-size:13px;padding:10px;">💾 บันทึกท่อนเพลงนี้</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1909,7 +1928,7 @@
   </div>
 
   <script src="phone-input.js?v=20261015-waveback" defer></script>
-  <script src="waveform.js?v=20261017-sections" defer></script>
-  <script type="module" src="app-admin.js?v=20261017-adminkey"></script>
+  <script src="waveform.js?v=20261018-sections2" defer></script>
+  <script type="module" src="app-admin.js?v=20261018-secedit"></script>
 </body>
 </html>
