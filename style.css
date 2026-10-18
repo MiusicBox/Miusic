@@ -8,10 +8,10 @@
 
 :root {
   /* Color Palette */
-  --bg: #0b0d14;
-  --surface: #131722;
-  --surface-2: #1c2234;
-  --surface-hover: #262e45;
+  --bg: #0c0d0e;
+  --surface: #141618;
+  --surface-2: #1a1d20;
+  --surface-hover: #22262a;
   --border: rgba(255, 255, 255, 0.08);
   --border-focus: rgba(198, 255, 61, 0.5);
   
@@ -107,7 +107,7 @@ button:active {
   right: 0;
   z-index: 40;
   /* 🔧 (2026-09-22): ใช้พื้นหลังโปร่งใสแทน blur — กัน iOS Safari กระตุก */
-  background: rgba(11, 13, 20, 0.95);
+  background: rgba(12, 13, 14, 0.95);
   /* เก็บ backdrop-filter ไว้แต่ลด blur ลงมาก เพื่อความปลอดภัย */
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
@@ -260,7 +260,7 @@ button:active {
   flex-shrink: 0;
   padding: 8px 18px;
   border-radius: var(--radius-full);
-  background: rgba(15, 17, 24, 0.6);
+  background: rgba(14, 16, 18, 0.6);
   border: 1px solid rgba(198, 255, 61, 0.2);
   color: #c6ff3d;
   font-size: 13.5px;
@@ -282,7 +282,7 @@ button:active {
 .chip.active {
   background: linear-gradient(135deg, #c6ff3d, #c6ff3d);
   border-color: transparent;
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   font-weight: 700;
   box-shadow: 0 4px 16px rgba(198, 255, 61, 0.4), 0 2px 8px rgba(198, 255, 61, 0.3);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
@@ -994,7 +994,7 @@ button:active {
 .buy-btn:hover {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   box-shadow: 0 4px 12px var(--accent-glow);
 }
 
@@ -1032,7 +1032,7 @@ button:active {
   -webkit-backdrop-filter: blur(10px);
   /* 🔧 (2026-09-19 perf Chrome): translateZ(0) → บังคับ GPU compositing เหมือน Safari */
   transform: translateZ(0);
-  background: rgba(19, 23, 34, 0.92);
+  background: rgba(20, 22, 24, 0.92);
 }
 
 .bottom-nav button {
@@ -1074,7 +1074,7 @@ button:active {
   max-width: 420px;
   bottom: calc(65px + var(--safe-bottom));
   z-index: 60;
-  background: rgba(19, 23, 34, 0.96);
+  background: rgba(20, 22, 24, 0.96);
   /* 🔧 (2026-09-19 perf): ลด backdrop-filter blur(20px) saturate(180%) → blur(10px) */
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -1162,7 +1162,7 @@ button:active {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   box-shadow: var(--shadow-accent);
   transform: scale(1.05);
 }
@@ -1300,7 +1300,7 @@ button:active {
   min-height: 100dvh !important; /* 🔑 ใช้ dynamic viewport height บนมือถือ */
   padding: 24px 16px !important;
   padding: calc(24px + var(--safe-top, 0px)) 16px calc(24px + var(--safe-bottom, 0px)) 16px !important;
-  background: linear-gradient(180deg, #0a0a0f 0%, #1a1428 100%) !important;
+  background: linear-gradient(180deg, #0a0a0f 0%, #141618 100%) !important;
   box-sizing: border-box !important;
 }
 
@@ -1392,7 +1392,7 @@ button:active {
   justify-content: center;
   gap: 8px;
   background: linear-gradient(135deg, var(--accent), #9ad600);
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   border: none;
   border-radius: var(--radius-sm);
   padding: 12px 20px;
@@ -1687,8 +1687,7 @@ button:active {
   background: linear-gradient(135deg, var(--accent), #9ad600);
   box-shadow:
     0 4px 16px var(--accent-glow),
-    inset 0 1px 0 rgba(255,255,255,.15);
-}
+    inset 0 1px 0 rgba(255,255,255,.15); color: var(--accent-ink, #0c0d0e);}
 
 /* ============================================================
    🎨 (2026-09-26) QR Code Preview — สไตล์สำหรับหน้าตั้งค่าการชำระเงิน
@@ -2070,7 +2069,7 @@ button:active {
   border-radius: 12px !important;
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%) !important;
   border: none !important;
-  color: #fff !important;
+  color: var(--accent-ink, #0c0d0e) !important;
   font-size: 13px;
   font-weight: 700;
   display: flex;
@@ -2603,7 +2602,7 @@ button:active {
 }
 
 .my-orders-form {
-  background: var(--surface, #131722);
+  background: var(--surface, #141618);
   border-radius: var(--radius, 20px);
   padding: 18px;
   margin-bottom: 16px;
@@ -2612,7 +2611,7 @@ button:active {
 /* 🆕 (T014): ส่วน "ค้นหาด้วยเลขใบเสร็จ" ใน tab ออเดอร์ — ย้ายจาก topbar modal เดิม (trackOrderBtn) มาไว้ที่นี่
    reuse field/input style จาก .my-orders-form .field (เหมือนกันทุกประการ) — แค่ขยาย card style แยก */
 .my-orders-receipt-search {
-  background: var(--surface, #131722);
+  background: var(--surface, #141618);
   border: 1px solid var(--border, rgba(255,255,255,.08));
   border-radius: 12px;
   padding: 14px 16px;
@@ -2637,7 +2636,7 @@ button:active {
 .my-orders-receipt-search .field input {
   width: 100%;
   padding: 12px 14px;
-  background: var(--surface-2, #1c2234);
+  background: var(--surface-2, #1a1d20);
   border: 1px solid var(--border, rgba(255,255,255,.08));
   border-radius: var(--radius-sm, 12px);
   color: var(--text, #f8fafc);
@@ -2660,7 +2659,7 @@ button:active {
 .my-orders-form .field input {
   width: 100%;
   padding: 12px 14px;
-  background: var(--surface-2, #1c2234);
+  background: var(--surface-2, #1a1d20);
   border: 1px solid var(--border, rgba(255,255,255,.08));
   border-radius: var(--radius-sm, 12px);
   color: var(--text, #f8fafc);
@@ -2693,7 +2692,7 @@ button:active {
 }
 
 .my-order-card {
-  background: var(--surface, #131722);
+  background: var(--surface, #141618);
   border-radius: var(--radius, 20px);
   padding: 14px;
   margin-bottom: 10px;
@@ -3160,7 +3159,7 @@ button:active {
    - ไล่เฉดภายใน + glow พรีเมียม
    - ใช้ !important เพื่อ override CSS เดิม */
 .song-card-row {
-  background: linear-gradient(135deg, #0B0B14, #13131F) !important;
+  background: linear-gradient(135deg, #0c0d0e, #141618) !important;
   border: 1px solid transparent !important;
   border-radius: 14px !important;
   margin-bottom: 2px !important;
@@ -3234,7 +3233,7 @@ button:active {
   inset: 1.5px;
   background:
     radial-gradient(circle at 30% 50%, var(--ap-glow, rgba(198, 255, 61, 0.18)), transparent 60%),
-    linear-gradient(135deg, rgba(11, 11, 20, 0.85), rgba(19, 19, 31, 0.90));
+    linear-gradient(135deg, rgba(12, 13, 14, 0.85), rgba(20, 22, 24, 0.90));
   border-radius: 13px;
   z-index: 1;
   pointer-events: none;
@@ -3873,7 +3872,7 @@ button:active {
 /* 🔧 ปรับ (2026-09-14 รอบ 2): ลด margin รอบแถวเพลงในเพลย์ลิสต์จาก 4px → 2px ตามคำสั่งผู้ใช้
    - รักษา padding ซ้าย-ขวา (12px) เดิมไว้ ไม่กระทบขอบเพลย์ลิสต์ */
 .playlist-song-row.song-card-row {
-  background: linear-gradient(135deg, #0B0B14, #13131F) !important;
+  background: linear-gradient(135deg, #0c0d0e, #141618) !important;
   border: 1px solid transparent !important;
   border-radius: 14px !important;
   margin: 2px 12px !important;
@@ -3909,7 +3908,7 @@ button:active {
   inset: 1.5px;
   background:
     radial-gradient(circle at 30% 50%, var(--ap-glow, rgba(198, 255, 61, 0.18)), transparent 60%),
-    linear-gradient(135deg, rgba(11, 11, 20, 0.85), rgba(19, 19, 31, 0.90));
+    linear-gradient(135deg, rgba(12, 13, 14, 0.85), rgba(20, 22, 24, 0.90));
   border-radius: 13px;
   z-index: 1;
   pointer-events: none;
@@ -4116,7 +4115,7 @@ button:active {
   box-shadow: 0 4px 14px rgba(198, 255, 61, 0.3) !important;
 }
 .playlist-block:nth-child(3n+2) .playlist-folder-btn {
-  background: linear-gradient(135deg, #0c3a4a, #062a36) !important;
+  background: linear-gradient(135deg, #0c3a4a, #141618) !important;
   border: 2px solid rgba(20, 184, 166, 0.8) !important;
   box-shadow: 0 4px 14px rgba(20, 184, 166, 0.3) !important;
 }
@@ -4141,7 +4140,7 @@ button:active {
 .playlist-block:nth-child(3n+2) .playlist-folder-btn:hover {
   border-color: rgba(45, 212, 191, 0.8) !important;
   box-shadow: 0 6px 18px rgba(20, 184, 166, 0.35) !important;
-  background: linear-gradient(135deg, #1c3a4a, #0c2a36) !important;
+  background: linear-gradient(135deg, #1c3a4a, #141618) !important;
 }
 .playlist-block:nth-child(3n+3) .playlist-folder-btn:hover {
   border-color: rgba(74, 222, 128, 0.8) !important;
@@ -4427,7 +4426,7 @@ button:active {
 
 /* ==========================================================================
    🎁 (2026-09-20) หน้าโปรโมชั่นพรีวิว (ฝั่ง User) — สไตล์ J: CYBERPUNK
-   - นีออนชมพู (#ff00ff) + ฟ้า (#00ffff) + เหลือง (#ffff00) บนพื้น #0a0014
+   - นีออนชมพู (#ff00ff) + ฟ้า (#00ffff) + เหลือง (#ffff00) บนพื้น #0c0d0e
    - ฟอนต์ "Courier New", monospace ทุกที่
    - มุมตัด (clip-path polygon) + glow/text-shadow นีออน + glitch effect
    - คลาสทั้งหมดขึ้นต้นด้วย .promo-* ไม่ทับซ้อนกับคลาสเดิม
@@ -4461,7 +4460,7 @@ button:active {
 
 /* ---------- ตัวแปรสีเฉพาะสไตล์ Cyberpunk ---------- */
 :root {
-  --cp-bg:        #0a0014;
+  --cp-bg:        #0c0d0e;
   --cp-pink:      #ff00ff;
   --cp-cyan:      #00ffff;
   --cp-yellow:    #ffff00;
@@ -4926,7 +4925,7 @@ button:active {
 /* ---- แถวเพลง (หน้าหลัก + เพลงในเพลย์ลิสต์) : พื้นเรียบ ขอบบาง ไม่มีแสงเมช ---- */
 .song-card-row,
 .playlist-song-row.song-card-row {
-  background: #141824 !important;
+  background: #141618 !important;
   border: 1px solid rgba(255, 255, 255, 0.10) !important;
   border-radius: 10px !important;
   padding: 10px !important;
@@ -4955,7 +4954,7 @@ button:active {
 .song-card-row:hover,
 .playlist-song-row.song-card-row:hover {
   transform: none !important;
-  background: #181d2b !important;
+  background: #1a1d20 !important;
   border-color: rgba(198, 255, 61, 0.45) !important;
   box-shadow: none !important;
 }
@@ -5056,7 +5055,7 @@ button:active {
 .playlist-block:nth-child(3n+1) .playlist-folder-btn,
 .playlist-block:nth-child(3n+2) .playlist-folder-btn,
 .playlist-block:nth-child(3n+3) .playlist-folder-btn {
-  background: linear-gradient(90deg, rgba(198, 255, 61, 0.10), #141824 60%) !important;
+  background: linear-gradient(90deg, rgba(198, 255, 61, 0.10), #141618 60%) !important;
   border: 1px solid rgba(255, 255, 255, 0.10) !important;
   border-left: 4px solid #c6ff3d !important;
   border-radius: 10px !important;
@@ -5065,7 +5064,7 @@ button:active {
 .playlist-block:nth-child(3n+1) .playlist-folder-btn:hover,
 .playlist-block:nth-child(3n+2) .playlist-folder-btn:hover,
 .playlist-block:nth-child(3n+3) .playlist-folder-btn:hover {
-  background: linear-gradient(90deg, rgba(198, 255, 61, 0.16), #181d2b 60%) !important;
+  background: linear-gradient(90deg, rgba(198, 255, 61, 0.16), #1a1d20 60%) !important;
   border-color: rgba(198, 255, 61, 0.45) !important;
   border-left-color: #c6ff3d !important;
   box-shadow: none !important;
@@ -5426,7 +5425,7 @@ html.store-page body {
   right: auto;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  background: rgba(11, 13, 20, 0.98);
+  background: rgba(12, 13, 14, 0.98);
 }
 
 /* ============================================================
@@ -5818,7 +5817,7 @@ html.admin-page body {
 }
 .btn-icon-mini[data-favorite-btn].is-favorite {
   background: linear-gradient(145deg, #c6ff3d 0%, #9ad600 50%, #5d8a00 100%) !important;
-  color: #fff !important;
+  color: var(--accent-ink, #0c0d0e) !important;
   border: 1px solid rgba(255, 255, 255, 0.35) !important;
   box-shadow: 0 4px 14px rgba(198, 255, 61, 0.65), 0 0 0 2px rgba(198, 255, 61, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
 }
@@ -6043,7 +6042,7 @@ html.admin-page body {
   flex-shrink: 0;
   padding: 9px 16px;
   background: linear-gradient(145deg, var(--accent) 0%, var(--accent-2) 100%);
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 9999px;
   font-size: 13px;
@@ -6234,7 +6233,7 @@ html.admin-page body {
   height: 44px;
   border-radius: 50%;
   background: var(--accent, #c6ff3d);
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   border: none;
   font-size: 22px;
   font-weight: 700;
@@ -6712,7 +6711,7 @@ html.admin-page body {
 /* Badge จำนวน active filters */
 .filter-badge {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   font-size: 11px;
   font-weight: 700;
   padding: 2px 7px;
@@ -7711,7 +7710,7 @@ html.admin-page body {
 .hero-cta {
   /* 🎨 (T114): ขยาย size (14→16px font + padding 10px 24px → 14px 32px) + pulse glow + icon bounce */
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   border: none;
   padding: 14px 32px;
   border-radius: 9999px;
@@ -7987,7 +7986,7 @@ html.admin-page body {
    🎨 (T113 2026-10-07): ใช้ solid accent bg (ไม่ใช่ translucent) + font 11→10px + tighter padding */
 .category-card .cat-count {
   font-size: 10px;
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   font-weight: 600;
   margin-top: 4px;
   position: relative;
@@ -8354,7 +8353,7 @@ html.admin-page body {
   height: 28px;
   border-radius: 50%;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -8384,7 +8383,7 @@ html.admin-page body {
   padding: 1px 6px;
   border-radius: 4px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -8514,7 +8513,7 @@ html.admin-page body {
 #songModalBackdrop .btn-review-submit {
   flex: 1;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   border: none;
   padding: 10px 16px;
   border-radius: 10px;
@@ -8571,7 +8570,7 @@ html.admin-page body {
 /* Login button — accent outline */
 #songModalBackdrop .btn-review-login {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   border: none;
   padding: 10px 20px;
   border-radius: 10px;
@@ -8651,7 +8650,7 @@ html.admin-page body {
   height: 36px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -8665,7 +8664,7 @@ html.admin-page body {
 #songModalBackdrop .review-mine-badge {
   display: inline-block;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   font-size: 9px;
   font-weight: 700;
   padding: 2px 6px;
@@ -9244,7 +9243,7 @@ html.admin-page body {
   top: calc(100% + 4px);
   left: 0;
   min-width: 200px;
-  background: var(--bg-card, #1f1f2e);
+  background: var(--bg-card, #1a1d20);
   border: 1px solid var(--border, rgba(255,255,255,0.12));
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
@@ -9392,7 +9391,7 @@ html.admin-page body {
   padding: 0 5px;
   border-radius: 9px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
@@ -9421,7 +9420,7 @@ html.admin-page body {
   position: relative;
   width: 100%;
   max-width: 480px;
-  background: var(--bg, #0b0d14);
+  background: var(--bg, #0c0d0e);
   border-left: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   flex-direction: column;
@@ -9446,7 +9445,7 @@ html.admin-page body {
   padding: 16px 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0; /* 🐛 FIX: header อยู่บนสุดเสมอ ไม่ทับ footer */
-  background: var(--bg, #0b0d14);
+  background: var(--bg, #0c0d0e);
 }
 .adv-modal-header h2 {
   margin: 0;
@@ -9542,7 +9541,7 @@ html.admin-page body {
 .adv-chip.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   font-weight: 600;
 }
 .adv-chip-empty {
@@ -9670,7 +9669,7 @@ html.admin-page body {
 }
 .adv-btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink, #0c0d0e);
   border-color: var(--accent);
 }
 .adv-btn-primary:hover {
@@ -9924,7 +9923,7 @@ html.admin-page body {
    ============================================================ */
 @media (prefers-color-scheme: dark) {
   .adv-modal-panel {
-    background: var(--bg, #0b0d14);
+    background: var(--bg, #0c0d0e);
   }
   .adv-chip {
     background: rgba(255, 255, 255, 0.06);
@@ -10785,7 +10784,7 @@ html.admin-page body {
   z-index: 50 !important;
   margin: 0 -20px 14px !important;
   padding: 18px 20px 12px !important;
-  background: #151a29 !important;           /* ทึบ 100% — ไม่ใช้ gradient/transparent */
+  background: #141618 !important;           /* ทึบ 100% — ไม่ใช้ gradient/transparent */
   border-bottom: 1px solid rgba(255, 255, 255, .07) !important;
   box-shadow: 0 8px 14px -10px rgba(0, 0, 0, .65);
   border-radius: var(--radius) var(--radius) 0 0;
