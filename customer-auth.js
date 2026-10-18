@@ -973,7 +973,7 @@ function openAccountSettingsModal() {
 
         <!-- Section: ข้อมูลบัญชี -->
         <div style="margin-bottom:20px;">
-          <h4 style="margin:0 0 8px;font-size:14px;color:var(--accent,#8b5cf6);">ข้อมูลบัญชี</h4>
+          <h4 style="margin:0 0 8px;font-size:14px;color:var(--accent,#c6ff3d);">ข้อมูลบัญชี</h4>
           <div style="background:var(--surface,#131722);border-radius:8px;padding:12px;font-size:13px;">
             <div style="margin-bottom:6px;">
               <strong style="color:var(--text-dim,#94a3b8);">ชื่อที่แสดง:</strong>
@@ -992,7 +992,7 @@ function openAccountSettingsModal() {
 
         <!-- Section: แก้ไขข้อมูล (สิทธิ์แก้ไข) -->
         <div style="margin-bottom:20px;">
-          <h4 style="margin:0 0 8px;font-size:14px;color:var(--accent,#8b5cf6);">✏️ แก้ไขข้อมูล (สิทธิ์ PDPA มาตรา 35)</h4>
+          <h4 style="margin:0 0 8px;font-size:14px;color:var(--accent,#c6ff3d);">✏️ แก้ไขข้อมูล (สิทธิ์ PDPA มาตรา 35)</h4>
           <div class="field" style="margin-bottom:8px;">
             <label style="font-size:12px;color:var(--text-dim,#94a3b8);">ชื่อที่แสดง</label>
             <input id="accountSettingsEditName" type="text" placeholder="ชื่อใหม่"
@@ -1015,7 +1015,7 @@ function openAccountSettingsModal() {
 
         <!-- Section: สิทธิ์ PDPA -->
         <div style="margin-bottom:20px;">
-          <h4 style="margin:0 0 8px;font-size:14px;color:var(--accent,#8b5cf6);">📋 สิทธิ์ของคุณตาม PDPA</h4>
+          <h4 style="margin:0 0 8px;font-size:14px;color:var(--accent,#c6ff3d);">📋 สิทธิ์ของคุณตาม PDPA</h4>
 
           <button type="button" id="accountSettingsExportBtn" style="
             display:flex;align-items:center;gap:8px;width:100%;
@@ -1063,7 +1063,7 @@ function openAccountSettingsModal() {
 
         <!-- Privacy Policy link -->
         <div style="text-align:center;font-size:12px;color:var(--text-dim,#94a3b8);">
-          📜 <a href="/privacy" target="_blank" style="color:var(--accent,#8b5cf6);text-decoration:underline;">นโยบายความเป็นส่วนตัว</a> <!-- 🆕 (T128 2026-10-12): /privacy.html → /privacy (Cloudflare auto-strips .html → redirect ทำให้ ERR_FAILED) -->
+          📜 <a href="/privacy" target="_blank" style="color:var(--accent,#c6ff3d);text-decoration:underline;">นโยบายความเป็นส่วนตัว</a> <!-- 🆕 (T128 2026-10-12): /privacy.html → /privacy (Cloudflare auto-strips .html → redirect ทำให้ ERR_FAILED) -->
         </div>
       </div>
     </div>
