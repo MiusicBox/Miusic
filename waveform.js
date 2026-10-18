@@ -58,16 +58,18 @@ const SEC = {
 intro:  { c0: "#15803d", c1: "#22c55e", tag: "INTRO", dot: "#22c55e", name: "อินโทร" },
 normal: { c0: "#3730a3", c1: "#818cf8", tag: "",      dot: "#818cf8", name: "ปกติ" },
 hook:   { c0: "#3730a3", c1: "#818cf8", tag: "HOOK",  dot: "#818cf8", name: "Hook" },
-brk:    { c0: "#0f766e", c1: "#2dd4bf", tag: "BREAK", dot: "#2dd4bf", name: "Break" },
+verse:  { c0: "#0369a1", c1: "#38bdf8", tag: "VERSE",  dot: "#38bdf8", name: "Verse" },
+chorus: { c0: "#a21caf", c1: "#e879f9", tag: "CHORUS", dot: "#e879f9", name: "Chorus" },
+brk:    { c0: "#b45309", c1: "#fbbf24", tag: "BREAK", dot: "#fbbf24", name: "Break" },
 outro:  { c0: "#475569", c1: "#94a3b8", tag: "OUTRO", dot: "#94a3b8", name: "Outro" },
 dance:  { c0: "#b91c1c", c1: "#f97316", tag: "DANCE", dot: "#f97316", name: "Dance" }
 };
 const BAND_DOT = { low: "#ef4444", mid: "#22c55e", high: "#3b82f6" };
-const STYLES = [["section", "ส่วนเพลง"], ["rgb", "DJ Pro"], ["mono", "สีเดียว"]];
+const STYLES = [["section", "ส่วนเพลง"], ["rgb", "RGB"], ["mono", "สีเดียว"]];
 const DANCE_BARS = 24; // ความยาว Dance ที่ระบบวิเคราะห์ใช้ (ห้อง)
 
 // 🆕 (Style 4): ความสูงของตัวนับห้องใหญ่ — เพิ่มจาก 11px (เดิม) เป็น 32px
-const BIG_BAR_PAD = 30; // 🆕 (2026-10-17): 32 → 36 ให้เลขห้องใหญ่ขึ้นและไม่ทับกับตัวนับ BAR
+const BIG_BAR_PAD = 22; // 🆕 (2026-10-18): 30 → 22 ให้แถบเลขห้องบางลง กราฟจะได้สูงขึ้น // 🆕 (2026-10-17): 32 → 36 ให้เลขห้องใหญ่ขึ้นและไม่ทับกับตัวนับ BAR
 // แบ่งเพลงเป็นส่วน: อินโทร · Dance · ปกติ — ใช้สำหรับ style "section" (เดิม ไม่เปลี่ยน)
 function computeSections(peaks, dur, danceStartSec, barSec, dances) {
 const n = peaks.length, binSec = dur / n;
@@ -99,7 +101,7 @@ let sum = 0, c = 0;
 for (let i = i0; i <= i1; i++) { sum += sm[i]; c++; }
 return c ? sum / c / loud : 0;
 };
-const kindOf = function (s, e) { return energyOf(s, e) >= 0.62 ? "hook" : "brk"; };
+const kindOf = function (s, e) { return energyOf(s, e) >= 0.62 ? "verse" : "brk"; };
 if (iE > 0) add("intro", 0, iE);
 if (!ds.length) { add("normal", iE, dur); return segs; }
 let cur = iE;
@@ -164,6 +166,25 @@ const mk = (x) => x ? { start: x.start * barSec, end: x.end * barSec, bar: x.sta
 return { d1: mk(chosen[0]), d2: mk(chosen[1]), totalBars };
 }
 
+// 🆕 (2026-10-18): ท่อนเพลงที่แอดมินตั้งเอง — รับ [{type, start(วินาที)}] · แต่ละท่อนจบที่จุดเริ่มของท่อนถัดไป (ท่อนสุดท้ายจบที่ท้ายเพลง)
+//   คืน null ถ้าไม่มีข้อมูล → ผู้เรียกใช้ค่าอัตโนมัติ (computeSections) ตามเดิม
+const MANUAL_TYPES = { intro: "intro", verse: "verse", chorus: "chorus", hook: "hook", dance: "dance", outro: "outro", normal: "normal", "break": "brk", brk: "brk" };
+function manualSegs(secs, dur) {
+if (!Array.isArray(secs) || !secs.length || !dur) return null;
+const list = secs
+.map(function (s) { return { type: s && MANUAL_TYPES[s.type], start: Number(s && s.start) }; })
+.filter(function (s) { return s.type && isFinite(s.start) && s.start >= 0 && s.start < dur; })
+.sort(function (a, b) { return a.start - b.start; });
+if (!list.length) return null;
+const segs = [];
+if (list[0].start > 0.001) segs.push({ type: "normal", start: 0, end: list[0].start });
+list.forEach(function (s, i) {
+const end = i + 1 < list.length ? list[i + 1].start : dur;
+if (end - s.start > 0.001) segs.push({ type: s.type, start: s.start, end: end });
+});
+return segs.length ? segs : null;
+}
+
 function getStyle(storageKey, def) {
 try {
 const v = global.localStorage.getItem(storageKey);
@@ -174,7 +195,7 @@ return def;
 function legendFill(el, style) {
 el.textContent = "";
 const items = style === "section"
-? [[SEC.intro.dot, SEC.intro.name], [SEC.hook.dot, SEC.hook.name], [SEC.dance.dot, SEC.dance.name]]
+? [[SEC.intro.dot, SEC.intro.name], [SEC.verse.dot, SEC.verse.name], [SEC.chorus.dot, SEC.chorus.name], [SEC.dance.dot, SEC.dance.name]]
 : style === "rgb"
 ? [[BAND_DOT.low, "ต่ำ"], [BAND_DOT.mid, "กลาง"], [BAND_DOT.high, "สูง"]]
 : [];
@@ -193,7 +214,7 @@ if (!canvas || !canvas.parentNode) return def;
 if (canvas.__waveSwitch) return getStyle(storageKey, def);
 const box = document.createElement("div");
 box.className = "wave-style-switch";
-box.style.cssText = "display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 6px;";
+box.style.cssText = "display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 2px;";
 const accent = cssVar("--accent", "#8b5cf6");
 const btns = [];
 const legend = document.createElement("span");
@@ -211,7 +232,7 @@ legendFill(legend, cur);
 STYLES.forEach(function (st) {
 const b = document.createElement("button");
 b.type = "button"; b.dataset.waveStyle = st[0]; b.textContent = st[1];
-b.style.cssText = "font:inherit;font-size:11px;padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.16);background:transparent;cursor:pointer;line-height:1.3;";
+b.style.cssText = "font:inherit;font-size:11px;padding:2px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.16);background:transparent;cursor:pointer;line-height:1.3;";
 b.addEventListener("click", function () {
 try { global.localStorage.setItem(storageKey, st[0]); } catch (_) { /* ignore */ }
 document.querySelectorAll(".wave-style-switch").forEach(function (el) { if (el.__paintActive) el.__paintActive(); });
@@ -296,12 +317,12 @@ const totalBars = twoDance ? twoDance.totalBars : Math.floor(dur / barSec);
 // 🆕 (Style 4): ใช้ knownDanceSec สำหรับ computeSections (style "section") เหมือนเดิม
 const danceT = o.dance && o.dance.time != null ? Number(o.dance.time)
 : (o.marker && o.marker.time != null ? Number(o.marker.time) : null);
-const segs = style === "section" && dur ? computeSections(peaks, dur, danceT, barSec, (d1 || d2) ? [d1, d2].filter(Boolean) : null) : null;
+const segs = style === "section" && dur ? (manualSegs(o.sections, dur) || computeSections(peaks, dur, danceT, barSec, (d1 || d2) ? [d1, d2].filter(Boolean) : null)) : null;
 
 // 🆕 (Style 4): ใช้ bigBarPad ขนาดใหญ่ขึ้น (32px แทน 11px) เมื่อ grid/bpm มีอยู่
 const useBigBar = o.bigBar !== false && o.grid && o.bpm && dur;
 const gridPad = useBigBar ? BIG_BAR_PAD : ((o.grid && o.bpm && dur) ? 11 : 0);
-const top0 = segs ? 18 : 6;
+const top0 = segs ? 18 : 3;
 const halfH = Math.max(4, (h - top0 - gridPad) / 2), cy = top0 + halfH;
 if (region && o.tint && style !== "rgb") {
 g.fillStyle = withAlpha(accent, 0.14);
@@ -354,7 +375,7 @@ return "normal";
 };
 if (segs) {
 grads = {};
-["intro", "normal", "hook", "brk", "outro", "dance"].forEach(function (k) {
+["intro", "normal", "hook", "verse", "chorus", "brk", "outro", "dance"].forEach(function (k) {
 const gr = g.createLinearGradient(0, cy - halfH, 0, cy + halfH);
 gr.addColorStop(0, SEC[k].c0); gr.addColorStop(0.5, SEC[k].c1); gr.addColorStop(1, SEC[k].c0);
 grads[k] = gr;
@@ -420,7 +441,7 @@ const pxPerBar = w / totalBars;
 let majorStep = 8;
 while (majorStep < 64 && pxPerBar * majorStep < 34) majorStep *= 2;
 const showMinor = majorStep === 8 && pxPerBar * 4 >= 26;
-const labelY = stripTop + stripH - 7;
+const labelY = stripTop + stripH - 5;
 g.textAlign = "left";
 const putLabel = function (txt, x, font, color) {
 g.font = font; g.fillStyle = color;
@@ -432,15 +453,15 @@ for (let bb = 0; bb <= totalBars; bb++) {
 const x = Math.round(bb * pxPerBar) + 0.5;
 if (bb % majorStep === 0) {
 g.strokeStyle = "#ffffff"; g.lineWidth = 1.5;
-g.beginPath(); g.moveTo(x, stripTop + 1); g.lineTo(x, stripTop + 8); g.stroke();
-putLabel(String(bb), x, "bold 14px sans-serif", "#ffffff");
+g.beginPath(); g.moveTo(x, stripTop + 1); g.lineTo(x, stripTop + 6); g.stroke();
+putLabel(String(bb), x, "bold 13px sans-serif", "#ffffff");
 } else if (bb % 4 === 0) {
 g.strokeStyle = "rgba(255,255,255,.55)"; g.lineWidth = 1;
-g.beginPath(); g.moveTo(x, stripTop + 1); g.lineTo(x, stripTop + 5); g.stroke();
-if (showMinor) putLabel(String(bb), x, "bold 11px sans-serif", "#94a3b8");
+g.beginPath(); g.moveTo(x, stripTop + 1); g.lineTo(x, stripTop + 4); g.stroke();
+if (showMinor) putLabel(String(bb), x, "bold 10px sans-serif", "#94a3b8");
 } else if (pxPerBar >= 5) {
 g.strokeStyle = "rgba(255,255,255,.25)"; g.lineWidth = 1;
-g.beginPath(); g.moveTo(x, stripTop + 1); g.lineTo(x, stripTop + 3); g.stroke();
+g.beginPath(); g.moveTo(x, stripTop + 1); g.lineTo(x, stripTop + 2.5); g.stroke();
 }
 }
 } else if (o.grid && o.bpm && dur) {
@@ -514,6 +535,7 @@ timeAt: timeAt,
 sanitize: sanitize,
 sanitizeBands: sanitizeBands,
 computeSections: computeSections,
+manualSections: manualSegs,
 mountSwitch: mountSwitch,
 getStyle: getStyle,
 // 🆕 (2 Dance): export ฟังก์ชันใหม่ให้เรียกใช้ได้ (optional — ไม่บังคับ)
