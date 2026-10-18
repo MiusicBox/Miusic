@@ -340,9 +340,10 @@ const f = Math.max(0, Math.min(1, u - i0));
 const lp = function (arr) { return arr[i0] + (arr[i1] - arr[i0]) * f; };
 const v = lp(peaks) / 100;
 const col = djColor(lp(bands[0]) / 100, lp(bands[1]) / 100, lp(bands[2]) / 100, v);
-const amp = Math.max(1.2, v * halfH * 0.94), amp2 = amp * 0.6;
+// 🆕 (2026-10-18): ลดขอบสีเทา/มืดด้านบน-ล่างของคลื่น RGB — แกนสีใหญ่ขึ้นเกือบเต็มความสูง (0.6 → 0.92) เหลือแค่ขอบบาง ๆ
+const amp = Math.max(1.2, v * halfH * 0.94), amp2 = amp * 0.92;
 const x = c * cw, bwid = cw + 0.6;
-ctx.fillStyle = "rgb(" + Math.round(col[0] * 0.55) + "," + Math.round(col[1] * 0.55) + "," + Math.round(col[2] * 0.55) + ")";
+ctx.fillStyle = "rgb(" + Math.round(col[0] * 0.8) + "," + Math.round(col[1] * 0.8) + "," + Math.round(col[2] * 0.8) + ")"; // ขอบนอกสว่างขึ้น (เดิม ×0.55 มืดจนดูเป็นสีเทา)
 ctx.fillRect(x, cy - amp, bwid, amp * 2);
 ctx.fillStyle = "rgb(" + Math.min(255, col[0] + 28) + "," + Math.min(255, col[1] + 28) + "," + Math.min(255, col[2] + 28) + ")";
 ctx.fillRect(x, cy - amp2, bwid, amp2 * 2);
