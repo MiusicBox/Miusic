@@ -3534,7 +3534,7 @@ function drawAdminWave(key, wrapId, capId, data, bpm, time) {
   const waveStyle = window.MiusicWave.mountSwitch(cv, "miusic_wave_style_admin", "rgb",
     () => (key === "songDetailWave" ? refreshDetailWave() : refreshFormWave()));
   const paint = (tries) => {
-    const ok = window.MiusicWave.draw(cv, { peaks, bands: data.waveform_rgb, style: waveStyle, duration: dur, region, tint: true, bpm, grid: true, gridLabels: true, marker, time, outside: "rgba(148,163,184,.45)" });
+    const ok = window.MiusicWave.draw(cv, { peaks, bands: data.waveform_rgb, style: waveStyle, duration: dur, region, tint: true, bpm, grid: true, gridLabels: true, marker, time, outside: "rgba(148,163,184,.45)", sections: (key === "songDetailWave" ? detailSectionsForDraw() : null) });
     if (!ok && tries > 0) requestAnimationFrame(() => paint(tries - 1)); // popup เพิ่งเปิด ขนาด canvas ยังเป็น 0 → ลองใหม่
   };
   paint(6);
@@ -3561,6 +3561,8 @@ function bindAdminWaveTap(key, getData, getBpm, inputId, btnId, redraw) {
     return Math.max(0, Math.round(t / barSecondsFor(getBpm())));
   };
   cv.addEventListener("pointerdown", (ev) => {
+    // 🆕 (2026-10-18): โหมดแตะตั้งท่อนเพลง — แตะ = ตั้งจุดเริ่มท่อน (ไม่ตั้ง Dance) · ปิดโหมดแล้วทำงานเหมือนเดิมทุกอย่าง
+    if (key === "songDetailWave" && detailSecTapMode) { detailSecHandleTap(ev); return; }
     const bar = barAt(ev); if (bar == null) return;
     dragging = true; cv.setPointerCapture(ev.pointerId);
     _waveBarOverride[key] = bar; redraw();
@@ -7272,6 +7274,7 @@ function openSongDetailPopup(songId) {
   if (!s) { showToast("ไม่พบข้อมูลเพลงนี้", "error"); return; }
 
   detailPopupSong = s;
+  detailSectionsInit(); // 🆕 (2026-10-18): โหลดท่อนเพลงที่บันทึกไว้
   // เตรียมช่วง preview ถ้ามี — เหมือนฝั่ง user
   detailPopupPreview =
     s.preview_status === "ok" && s.preview_start_sec != null && s.preview_end_sec != null
@@ -7377,6 +7380,7 @@ function closeSongDetailPopup() {
   // ===== เพิ่มใหม่: reset Auto Preview Editor state =====
   detailPendingPreviewData = null;
   detailPreviewEditorOpen = false;
+  detailSectionsReset(); // 🆕 (2026-10-18)
   const editorBody = document.getElementById("songDetailPreviewBody");
   if (editorBody) editorBody.style.display = "none";
   const chevron = document.getElementById("songDetailPreviewChevron");
@@ -7761,6 +7765,189 @@ document.getElementById("songDetailBpmKeyToggle")?.addEventListener("click", () 
   body.style.display = open ? "block" : "none";
   if (chevron) chevron.style.transform = open ? "rotate(180deg)" : "rotate(0deg)";
   if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+});
+
+// ===== 🆕 (2026-10-18): แก้ท่อนเพลงเอง (Intro / Verse / Chorus / Break / Dance / Outro) =====
+//   แตะบนกราฟ (สไตล์ "ส่วนเพลง") เพื่อตั้งจุดเริ่มของแต่ละท่อน · ท่อนจบที่จุดเริ่มของท่อนถัดไป
+//   เก็บที่ songs/{id}.song_sections = [{ type, start (วินาที), bar }] · ว่าง = ใช้ค่าอัตโนมัติ
+//   แยกจากการตั้ง Dance Start Bar / Preview เดิม — ไม่แตะค่าเหล่านั้น
+const SEC_TYPES = [["intro", "INTRO"], ["verse", "VERSE"], ["chorus", "CHORUS"], ["break", "BREAK"], ["dance", "DANCE"], ["outro", "OUTRO"]];
+const SEC_COLORS = { intro: "#22c55e", verse: "#38bdf8", chorus: "#e879f9", "break": "#fbbf24", dance: "#f97316", outro: "#94a3b8" };
+let detailSections = null;   // ฉบับร่าง (null = ยังไม่ได้แก้ → ใช้ที่บันทึกไว้)
+let detailSecType = "verse"; // ชนิดท่อนที่จะใช้ตอนแตะ
+let detailSecTapMode = false;
+let detailSecDirty = false;
+
+function detailSecSaved() {
+  const s = detailPopupSong && detailPopupSong.song_sections;
+  return Array.isArray(s) ? s : [];
+}
+function detailSecCurrent() { return detailSections || detailSecSaved(); }
+function detailSectionsForDraw() { const a = detailSecCurrent(); return a.length ? a : null; }
+function detailSecBarSec() { return barSecondsFor(clampBpm(Number(document.getElementById("songDetailBpm")?.value))); }
+function detailSecDur() {
+  const d = detailPendingPreviewData;
+  return d ? (Number(d.waveform_duration || d.duration_sec) || 0) : 0;
+}
+function detailSecSetOpenUi(open) {
+  const body = document.getElementById("songDetailSectionsBody");
+  const chevron = document.getElementById("songDetailSectionsChevron");
+  const btn = document.getElementById("songDetailSectionsToggle");
+  if (body) body.style.display = open ? "block" : "none";
+  if (chevron) chevron.style.transform = open ? "rotate(180deg)" : "rotate(0deg)";
+  if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+function detailSecRender() {
+  const list = document.getElementById("songDetailSecList");
+  if (!list) return;
+  const bs = detailSecBarSec(), dur = detailSecDur();
+  const arr = detailSecCurrent().slice().sort((a, b) => a.start - b.start);
+  list.textContent = "";
+  if (!arr.length) {
+    const e = document.createElement("div");
+    e.style.cssText = "font-size:12px;color:var(--text-dim);padding:6px 0;";
+    e.textContent = "ยังไม่ได้ตั้งท่อนเอง — กราฟใช้ค่าอัตโนมัติ";
+    list.appendChild(e);
+  }
+  arr.forEach((s, i) => {
+    const row = document.createElement("div");
+    row.style.cssText = "display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:6px 8px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(255,255,255,.03);";
+    const dot = document.createElement("i");
+    dot.style.cssText = "width:10px;height:10px;border-radius:50%;display:inline-block;background:" + (SEC_COLORS[s.type] || "#94a3b8") + ";";
+    const sel = document.createElement("select");
+    sel.style.cssText = "padding:6px 8px;font-size:12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:var(--text);min-width:0;";
+    SEC_TYPES.forEach(([k, label]) => {
+      const o = document.createElement("option"); o.value = k; o.textContent = label; o.style.color = "#000";
+      if (k === s.type) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", () => detailSecMutate((list2) => {
+      const t = list2.find(x => Math.abs(x.start - s.start) < 0.05); if (t) t.type = sel.value;
+    }));
+    const next = arr[i + 1];
+    const fromBar = Math.round(s.start / bs);
+    const toBar = next ? Math.round(next.start / bs) : (dur ? Math.floor(dur / bs) : null);
+    const range = document.createElement("span");
+    range.style.cssText = "font-size:12px;color:var(--text-dim);white-space:nowrap;";
+    range.textContent = "ห้อง " + fromBar + " → " + (toBar != null ? toBar : "จบ");
+    const del = document.createElement("button");
+    del.type = "button"; del.textContent = "✕"; del.setAttribute("aria-label", "ลบท่อนนี้");
+    del.style.cssText = "background:transparent;border:1px solid rgba(255,255,255,.14);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer;";
+    del.addEventListener("click", () => detailSecMutate((list2) => {
+      const idx = list2.findIndex(x => Math.abs(x.start - s.start) < 0.05); if (idx >= 0) list2.splice(idx, 1);
+    }));
+    row.appendChild(dot); row.appendChild(sel); row.appendChild(range); row.appendChild(del);
+    list.appendChild(row);
+  });
+  document.querySelectorAll("#songDetailSecChips [data-sec-type]").forEach((b) => {
+    const on = b.dataset.secType === detailSecType;
+    const c = SEC_COLORS[b.dataset.secType] || "#8b5cf6";
+    b.style.borderColor = on ? c : "";
+    b.style.background = on ? c + "40" : "";
+    b.style.color = on ? "#fff" : "";
+  });
+  const tapBtn = document.getElementById("songDetailSecTapBtn");
+  if (tapBtn) {
+    tapBtn.textContent = detailSecTapMode ? "✅ โหมดแตะเปิดอยู่ — แตะกราฟเพื่อตั้งจุดเริ่ม " + (SEC_TYPES.find(x => x[0] === detailSecType) || [0, ""])[1] + " (กดอีกครั้งเพื่อปิด)" : "👆 เปิดโหมดแตะตั้งท่อน";
+    tapBtn.style.boxShadow = detailSecTapMode ? "0 0 0 2px " + (SEC_COLORS[detailSecType] || "#8b5cf6") : "";
+  }
+  const saveBtn = document.getElementById("songDetailSecSaveBtn");
+  if (saveBtn && !saveBtn.disabled) {
+    saveBtn.textContent = detailSecDirty ? "💾 บันทึกท่อนเพลงนี้ (มีการแก้ไขที่ยังไม่บันทึก)" : "💾 บันทึกท่อนเพลงนี้";
+    saveBtn.style.boxShadow = detailSecDirty ? "0 0 0 2px #ff9f43" : "";
+  }
+}
+function detailSecMutate(fn) {
+  const arr = detailSecCurrent().map(x => ({ type: x.type, start: Number(x.start) }));
+  fn(arr);
+  arr.sort((a, b) => a.start - b.start);
+  detailSections = arr;
+  detailSecDirty = true;
+  detailSecRender();
+  refreshDetailWave();
+}
+function detailSecHandleTap(ev) {
+  const cv = document.getElementById("songDetailWave"), dur = detailSecDur();
+  if (!cv || !dur || !window.MiusicWave) return;
+  const bs = detailSecBarSec();
+  const t = window.MiusicWave.timeAt(cv, ev.clientX, dur);
+  const startSec = Math.max(0, Math.round(t / bs)) * bs; // ปัดเข้าหาห้องที่ใกล้ที่สุด
+  if (startSec >= dur) return;
+  detailSecMutate((arr) => {
+    const i = arr.findIndex(x => Math.abs(x.start - startSec) < 0.05);
+    if (i >= 0) arr[i].type = detailSecType; else arr.push({ type: detailSecType, start: startSec });
+  });
+}
+function detailSectionsInit() {
+  detailSections = null; detailSecDirty = false; detailSecTapMode = false; detailSecType = "verse";
+  detailSecSetOpenUi(false);
+  detailSecRender();
+}
+function detailSectionsReset() { detailSectionsInit(); }
+
+document.getElementById("songDetailSectionsToggle")?.addEventListener("click", () => {
+  const body = document.getElementById("songDetailSectionsBody");
+  if (!body) return;
+  const open = body.style.display === "none";
+  detailSecSetOpenUi(open);
+  if (open) detailSecRender();
+  else { detailSecTapMode = false; detailSecRender(); }
+});
+document.querySelectorAll("#songDetailSecChips [data-sec-type]").forEach((b) => {
+  b.addEventListener("click", () => { detailSecType = b.dataset.secType; detailSecRender(); });
+});
+document.getElementById("songDetailSecTapBtn")?.addEventListener("click", () => {
+  detailSecTapMode = !detailSecTapMode;
+  if (detailSecTapMode) {
+    // สลับกราฟเป็นสไตล์ "ส่วนเพลง" ให้เห็นแถบท่อนขณะตั้ง
+    const secBtn = document.querySelector('#songDetailWaveWrap .wave-style-switch button[data-wave-style="section"]');
+    if (secBtn) secBtn.click();
+  }
+  detailSecRender();
+});
+document.getElementById("songDetailSecAutoBtn")?.addEventListener("click", () => {
+  const MW = window.MiusicWave, data = detailPendingPreviewData;
+  const peaks = data && MW && MW.sanitize(data.waveform), dur = detailSecDur();
+  if (!peaks || !dur) { showToast("ยังไม่มีกราฟเพลงให้ดึงค่าอัตโนมัติ", "error"); return; }
+  const bpm = clampBpm(Number(document.getElementById("songDetailBpm")?.value)), bs = barSecondsFor(bpm);
+  const known = (data.dance_start_bar != null && data.dance_start_bar !== "") ? Number(data.dance_start_bar) * bs : null;
+  const two = MW.findTwoDanceSections(peaks, dur, bpm, known);
+  const dances = [two.d1, two.d2].filter(Boolean);
+  const segs = MW.computeSections(peaks, dur, known, bs, dances.length ? dances : null);
+  const map = { intro: "intro", normal: "verse", verse: "verse", hook: "verse", brk: "break", dance: "dance", outro: "outro" };
+  const out = [];
+  segs.forEach((s) => {
+    const start = Math.round(s.start / bs) * bs;
+    if (!out.some(x => Math.abs(x.start - start) < 0.05)) out.push({ type: map[s.type] || "verse", start });
+  });
+  detailSections = out; detailSecDirty = true;
+  detailSecRender(); refreshDetailWave();
+  showToast("ดึงค่าอัตโนมัติแล้ว — แก้ต่อได้แล้วกดบันทึก", "info");
+});
+document.getElementById("songDetailSecClearBtn")?.addEventListener("click", () => {
+  detailSections = []; detailSecDirty = true; detailSecTapMode = false;
+  detailSecRender(); refreshDetailWave();
+});
+document.getElementById("songDetailSecSaveBtn")?.addEventListener("click", async function () {
+  if (!detailPopupSong) { showToast("ไม่พบข้อมูลเพลง", "error"); return; }
+  const btn = this, bs = detailSecBarSec();
+  const payloadArr = detailSecCurrent().slice().sort((a, b) => a.start - b.start)
+    .map(x => ({ type: x.type, start: Number(Number(x.start).toFixed(3)), bar: Math.round(x.start / bs) }));
+  btn.disabled = true; btn.textContent = "กำลังบันทึกท่อนเพลง...";
+  try {
+    const updated_at = new Date().toISOString();
+    await updateDoc(doc(db, "songs", detailPopupSong.id), { song_sections: payloadArr, updated_at });
+    detailPopupSong.song_sections = payloadArr; detailPopupSong.updated_at = updated_at;
+    const cached = CACHE.songs.find(x => x.id === detailPopupSong.id);
+    if (cached) { cached.song_sections = payloadArr; cached.updated_at = updated_at; }
+    detailSections = null; detailSecDirty = false; detailSecTapMode = false;
+    invalidateAdminCache("songs");
+    showToast(payloadArr.length ? "✅ บันทึกท่อนเพลงของ \"" + detailPopupSong.song_name + "\" แล้ว" : "✅ ล้างท่อนที่ตั้งเอง — กลับไปใช้ค่าอัตโนมัติ", "success");
+  } catch (err) {
+    showToast("บันทึกท่อนเพลงไม่สำเร็จ: " + (err.message || err), "error");
+  } finally {
+    btn.disabled = false; detailSecRender(); refreshDetailWave();
+  }
 });
 
 // ปุ่ม "วิเคราะห์เสียงใหม่ทั้งหมด (AI)"
