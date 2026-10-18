@@ -5547,14 +5547,15 @@ html.admin-page body {
    ใช้ !important เพื่อ override สไตล์เดิมทั้งหมดในไฟล์นี้
    ============================================================ */
 
-/* ===== ปุ่ม "เพิ่มเข้าตะกร้า" บน song card — FOREST GREEN DEEP ===== */
+/* ===== ปุ่ม "เพิ่มเข้าตะกร้า" บน song card — FOREST GREEN DEEP (pro-style: ตัวอักษรขาวเด่น) ===== */
 .song-card-row .cart-add-btn-row,
 .playlist-song-row.song-card-row .cart-add-btn-row {
-  background: linear-gradient(145deg, #4ade80 0%, #16a34a 50%, #14532d 100%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.25) !important;
-  color: #fff !important;
+  background: linear-gradient(145deg, #14532d 0%, #16a34a 45%, #22c55e 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.28) !important;
+  color: #ffffff !important;
   box-shadow: 0 6px 16px rgba(22, 163, 74, 0.45), 0 2px 4px rgba(0, 0, 0, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.30) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65), 0 0 6px rgba(0, 0, 0, 0.45), 0 0 1px rgba(0, 0, 0, 0.9) !important;
+  letter-spacing: 0.3px !important;
   border-radius: 12px !important;
   position: relative !important;
   overflow: hidden !important;
@@ -5563,8 +5564,8 @@ html.admin-page body {
 .song-card-row .cart-add-btn-row:hover,
 .playlist-song-row.song-card-row .cart-add-btn-row:hover {
   transform: translateY(-1px) !important;
-  background: linear-gradient(145deg, #6ee7a3 0%, #22c55e 50%, #166534 100%) !important;
-  box-shadow: 0 8px 22px rgba(22, 163, 74, 0.60), 0 2px 4px rgba(0, 0, 0, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+  background: linear-gradient(145deg, #166534 0%, #22c55e 45%, #4ade80 100%) !important;
+  box-shadow: 0 8px 22px rgba(22, 163, 74, 0.60), 0 2px 4px rgba(0, 0, 0, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.30) !important;
 }
 .song-card-row .cart-add-btn-row:active,
 .playlist-song-row.song-card-row .cart-add-btn-row:active {
@@ -5573,18 +5574,19 @@ html.admin-page body {
 }
 .song-card-row .cart-add-btn-row::after,
 .playlist-song-row.song-card-row .cart-add-btn-row::after {
-  color: #fff !important;
+  color: #ffffff !important;
   font-weight: 800 !important;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.30) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65), 0 0 6px rgba(0, 0, 0, 0.45), 0 0 1px rgba(0, 0, 0, 0.9) !important;
 }
 
-/* ===== ปุ่ม "ซื้อทั้งเพลย์ลิสต์" บน playlist card — CYAN (ฟ้าไฟเหมือนป้ายโปรโมชั่น) ===== */
+/* ===== ปุ่ม "ซื้อทั้งเพลย์ลิสต์" บน playlist card — CYAN DEEP (pro-style: ตัวอักษรขาวเด่น) ===== */
 .playlist-folder-btn .playlist-folder-buy-btn {
-  background: linear-gradient(145deg, #22d3ee 0%, #06b6d4 50%, #0891b2 100%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.25) !important;
-  color: #fff !important;
+  background: linear-gradient(145deg, #0e7490 0%, #0891b2 45%, #06b6d4 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.28) !important;
+  color: #ffffff !important;
   box-shadow: 0 6px 16px rgba(6, 182, 212, 0.50), 0 2px 4px rgba(0, 0, 0, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.30) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65), 0 0 6px rgba(0, 0, 0, 0.45), 0 0 1px rgba(0, 0, 0, 0.9) !important;
+  letter-spacing: 0.3px !important;
   border-radius: 12px !important;
   position: relative !important;
   overflow: hidden !important;
@@ -5592,17 +5594,17 @@ html.admin-page body {
 }
 .playlist-folder-btn .playlist-folder-buy-btn:hover {
   transform: translateY(-1px) !important;
-  background: linear-gradient(145deg, #67e8f9 0%, #22d3ee 50%, #0e7490 100%) !important;
-  box-shadow: 0 8px 22px rgba(6, 182, 212, 0.65), 0 2px 4px rgba(0, 0, 0, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+  background: linear-gradient(145deg, #0891b2 0%, #06b6d4 45%, #22d3ee 100%) !important;
+  box-shadow: 0 8px 22px rgba(6, 182, 212, 0.65), 0 2px 4px rgba(0, 0, 0, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.30) !important;
 }
 .playlist-folder-btn .playlist-folder-buy-btn:active {
   transform: translateY(1px) scale(0.99) !important;
   box-shadow: 0 3px 8px rgba(6, 182, 212, 0.45), inset 0 2px 6px rgba(0, 0, 0, 0.30) !important;
 }
 .playlist-folder-btn .playlist-folder-buy-btn::after {
-  color: #fff !important;
+  color: #ffffff !important;
   font-weight: 800 !important;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.30) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65), 0 0 6px rgba(0, 0, 0, 0.45), 0 0 1px rgba(0, 0, 0, 0.9) !important;
 }
 
 /* ===== Mobile responsive — ปรับ padding/font ให้เหมาะกับจอมือถือ (touch target ≥44px) ===== */
@@ -5619,8 +5621,8 @@ html.admin-page body {
   .song-card-row .cart-add-btn-row::after,
   .playlist-song-row.song-card-row .cart-add-btn-row::after,
   .playlist-folder-btn .playlist-folder-buy-btn::after {
-    color: #fff !important;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.30) !important;
+    color: #ffffff !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65), 0 0 6px rgba(0, 0, 0, 0.45), 0 0 1px rgba(0, 0, 0, 0.9) !important;
   }
 }
 

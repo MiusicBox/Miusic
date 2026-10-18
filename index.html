@@ -231,33 +231,32 @@
   #modalPlayBtn.loading #modalPlayIconWrap,
   #modalPlayBtn.loading #modalPlayLabel { display:none; }
 
-  /* 🔧 (2026-09-22 fix Bug #2 UI v5): Forest-style buttons — สไตล์ Forest Green Deep
-     ใช้ทั้งปุ่ม modal + ปุ่ม song card + ปุ่ม playlist
-     - ปุ่มฟังเพลง/สั่งซื้อทั้งเพลง = ฟ้าไฟ (เดียวกับป้ายโปรโมชั่น cyan #06b6d4)
-     - ปุ่มเพิ่มเข้าตะกร้า/ซื้อทั้งเพลย์ลิสต์ = เขียวเข้ม Forest Green Deep (#16a34a)
-     Style: 145deg gradient 3 stops + drop shadow 2 ชั้น + border ขาว + text shadow + press effect
+  /* 🔧 (2026-10-18 pro-style): ปุ่มฟังเพลง + เพิ่มตะกร้า — สไตล์มืออาชีพ
+     ตัวอักษรขาวเด่นชัด (text-shadow 3 ชั้น) + letter-spacing + gradient เข้มขึ้น
+     - ปุ่มฟังเพลง = ฟ้าไล่เข้ม (Cyan Deep)
+     - ปุ่มเพิ่มเข้าตะกร้า = เขียวเข้ม Forest Green Deep
   */
   #songModalBackdrop #modalPlayBtn {
     width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
-    padding:16px 14px; font-size:14px; font-weight:800; border-radius:14px;
-    border:0; cursor:pointer; color:#fff; position:relative; overflow:hidden;
-    background:linear-gradient(145deg,#22d3ee 0%,#06b6d4 50%,#0891b2 100%);
+    padding:16px 14px; font-size:15px; font-weight:800; letter-spacing:0.4px; border-radius:14px;
+    border:0; cursor:pointer; color:#ffffff; position:relative; overflow:hidden;
+    background:linear-gradient(145deg,#0e7490 0%,#0891b2 45%,#06b6d4 100%);
     box-shadow:0 8px 22px rgba(6,182,212,0.50), 0 2px 6px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.22);
-    text-shadow:0 1px 2px rgba(0,0,0,0.30);
+    text-shadow:0 1px 2px rgba(0,0,0,0.65), 0 0 6px rgba(0,0,0,0.45), 0 0 1px rgba(0,0,0,0.9);
     transition:transform 0.2s ease, box-shadow 0.2s ease;
   }
   #songModalBackdrop #modalPlayBtn::before {
     content:''; position:absolute; top:0; left:0; right:0; height:50%;
-    background:linear-gradient(180deg, rgba(255,255,255,0.22) 0%, transparent 100%);
+    background:linear-gradient(180deg, rgba(255,255,255,0.18) 0%, transparent 100%);
     border-radius:14px 14px 0 0; pointer-events:none;
   }
   #songModalBackdrop #modalPlayBtn::after {
     content:''; position:absolute; inset:0; border-radius:14px;
-    border:1px solid rgba(255,255,255,0.18); pointer-events:none;
+    border:1px solid rgba(255,255,255,0.28); pointer-events:none;
   }
   #songModalBackdrop #modalPlayBtn:hover:not(:disabled) {
     transform:translateY(-1px);
-    box-shadow:0 10px 26px rgba(6,182,212,0.60), 0 2px 6px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.22);
+    box-shadow:0 10px 26px rgba(6,182,212,0.65), 0 2px 6px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.30);
   }
   #songModalBackdrop #modalPlayBtn:active:not(:disabled) {
     transform:translateY(1px) scale(0.99);
@@ -269,25 +268,25 @@
 
   #songModalBackdrop #modalBuyBtn {
     width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
-    padding:16px 14px; font-size:14px; font-weight:800; border-radius:14px;
-    border:0; cursor:pointer; color:#fff; position:relative; overflow:hidden; margin-top:8px;
-    background:linear-gradient(145deg,#4ade80 0%,#16a34a 50%,#14532d 100%);
+    padding:16px 14px; font-size:15px; font-weight:800; letter-spacing:0.4px; border-radius:14px;
+    border:0; cursor:pointer; color:#ffffff; position:relative; overflow:hidden; margin-top:8px;
+    background:linear-gradient(145deg,#14532d 0%,#16a34a 45%,#22c55e 100%);
     box-shadow:0 8px 22px rgba(22,163,74,0.50), 0 2px 6px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.22);
-    text-shadow:0 1px 2px rgba(0,0,0,0.30);
+    text-shadow:0 1px 2px rgba(0,0,0,0.65), 0 0 6px rgba(0,0,0,0.45), 0 0 1px rgba(0,0,0,0.9);
     transition:transform 0.2s ease, box-shadow 0.2s ease;
   }
   #songModalBackdrop #modalBuyBtn::before {
     content:''; position:absolute; top:0; left:0; right:0; height:50%;
-    background:linear-gradient(180deg, rgba(255,255,255,0.22) 0%, transparent 100%);
+    background:linear-gradient(180deg, rgba(255,255,255,0.18) 0%, transparent 100%);
     border-radius:14px 14px 0 0; pointer-events:none;
   }
   #songModalBackdrop #modalBuyBtn::after {
     content:''; position:absolute; inset:0; border-radius:14px;
-    border:1px solid rgba(255,255,255,0.18); pointer-events:none;
+    border:1px solid rgba(255,255,255,0.28); pointer-events:none;
   }
   #songModalBackdrop #modalBuyBtn:hover {
     transform:translateY(-1px);
-    box-shadow:0 10px 26px rgba(22,163,74,0.60), 0 2px 6px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.22);
+    box-shadow:0 10px 26px rgba(22,163,74,0.65), 0 2px 6px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.30);
   }
   #songModalBackdrop #modalBuyBtn:active {
     transform:translateY(1px) scale(0.99);
