@@ -14,7 +14,7 @@ import { sortSongsByThaiName } from "./thai-sort.js?v=20261012-launch";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่) — import มาจาก app-promotion.js กลาง (รวมไฟล์เดียว) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, computeCartPricing
-} from "./app-promotion.js?v=20261012-launch";
+} from "./app-promotion.js?v=20261018-pro2";
 
 // 🚀 (2026-09-29 STACK): helper อ่าน promotions ที่ apply จาก order snapshot
 //   รองรับทั้ง:
@@ -2106,7 +2106,7 @@ function buildAdminHistoryDiscountBadge(order) {
     parts.push(`🏷️ ลดราคาปกติ`);
   }
   const label = parts.join(" + ") || "ส่วนลด";
-  return `<div class="n2" style="color:var(--accent-2,#ec4899);">⚡ ${label} · ลด ${formatLAK(totalDiscount)} · ยอดชำระ ${formatLAK(finalTotal)}</div>`;
+  return `<div class="n2" style="color:var(--accent-2,#c6ff3d);">⚡ ${label} · ลด ${formatLAK(totalDiscount)} · ยอดชำระ ${formatLAK(finalTotal)}</div>`;
 }
 
 // 🆕 (T013-P4): event delegation สำหรับ ordHistoryList — ลดการ re-attach listeners ทุก render
@@ -2273,7 +2273,7 @@ function renderHistory() {
           ${/* v5: ปุ่ม "ยกเลิก" แสดงตอนกำลังสร้าง ZIP */""}
           ${zipJobs.has(o.id) ? `<button class="icon-btn danger" type="button" data-abort-zip-order="${o.id}" title="ยกเลิกการสร้าง ZIP ระหว่างทำ (cleanup R2 multipart + D1 row)" aria-label="ยกเลิกการสร้าง ZIP">✕</button>` : ""}
           ${/* 🔒 (Audit Fix H-31): persistent progress indicator ตอนกำลังสร้าง ZIP */""}
-          ${zipJobs.has(o.id) ? `<span class="zip-progress-badge" style="font-size:11px;color:var(--accent-2,#ec4899);margin-left:4px;">กำลังสร้าง ZIP...</span>` : ""}
+          ${zipJobs.has(o.id) ? `<span class="zip-progress-badge" style="font-size:11px;color:var(--accent-2,#c6ff3d);margin-left:4px;">กำลังสร้าง ZIP...</span>` : ""}
           <button class="icon-btn" type="button" data-edit-order="${o.id}" title="แก้ไขออเดอร์" aria-label="แก้ไขออเดอร์">✏️</button>
           ${isMainAdmin() ? `<button class="icon-btn danger" type="button" data-delete-order="${o.id}" title="ลบออเดอร์" aria-label="ลบออเดอร์">🗑</button>` : ""}
         </div>
