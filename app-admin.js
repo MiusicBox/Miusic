@@ -10,7 +10,7 @@ import {
   reauthenticateWithCredential, EmailAuthProvider, updatePassword,
   checkHasAdmin, bootstrapFirstAdmin
 } from "./auth-client.js";
-import { initOrdersView } from "./orders.js?v=20261012-launch";
+import { initOrdersView } from "./orders.js?v=20261018-pro2";
 import { resolveCurrentAdminRole, initAdminsView } from "./admin-roles.js?v=20261012-launch";
 import {
   analyzeSongFile, analyzeSongUrl, recalculateFromManualBar, manualPreviewWindow, rescalePreviewForBpm, BAR_SECONDS,
@@ -18,7 +18,7 @@ import {
   barSecondsFor, clampBpm, beatMsFor, bpmStepPct, bpmVsBasePct
 } from "./song-analyzer.js?v=20261017-rgbwave";
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
-import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261012-launch";
+import { initDiscountsView, initPromotionsView } from "./app-promotion.js?v=20261018-pro2";
 // 🔧 (ใหม่) ระบบจัดเรียงหมวดหมู่/DJ/เพลย์ลิสต์ ตามพยัญชนะไทย ก-ฮ + A-Z + ตัวเลข
 import { sortByThaiName, sortSongsByThaiName } from "./thai-sort.js?v=20261012-launch";
 
@@ -1115,7 +1115,7 @@ async function loadCustomers(search = "") {
       const initials = (c.display_name || c.email || c.whatsapp || "?").charAt(0).toUpperCase();
       return `
         <div class="list-row" data-customer-id="${escapeHtml(c.id)}" style="cursor:pointer;">
-          <div style="width:40px;height:40px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0;">${escapeHtml(initials)}</div>
+          <div style="width:40px;height:40px;border-radius:50%;background:var(--accent);color:var(--accent-ink,#0c0d0e);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0;">${escapeHtml(initials)}</div>
           <div class="info">
             <div class="n1">${escapeHtml(c.display_name || "ไม่มีชื่อ")}</div>
             <div class="n2">${escapeHtml(c.email || "")}${c.whatsapp ? (c.email ? " · " : "") + "📱 " + escapeHtml(c.whatsapp) : ""} · ${c.order_count || 0} ออเดอร์</div>
@@ -1206,7 +1206,7 @@ async function openCustomerDetail(customerId) {
       </div>
       <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px;margin-bottom:14px;">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
-          <div style="width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;">${escapeHtml(initials)}</div>
+          <div style="width:48px;height:48px;border-radius:50%;background:var(--accent);color:var(--accent-ink,#0c0d0e);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;">${escapeHtml(initials)}</div>
           <div style="flex:1;">
             <div style="font-weight:700;font-size:16px;">${escapeHtml(c.display_name || "ไม่มีชื่อ")}</div>
             <div style="font-size:13px;color:var(--text-dim);">${escapeHtml(c.email || c.whatsapp || "")}</div>
@@ -1294,7 +1294,7 @@ async function loadPasswordResetRequests(status = "pending") {
           ${r.note ? `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;padding:4px 6px;background:rgba(255,255,255,.04);border-radius:4px;">📝 ${escapeHtml(r.note)}</div>` : ""}
           ${r.status === "pending" ? `
             <div style="display:flex;gap:6px;margin-top:8px;">
-              ${r.customer_id ? `<button class="btn" data-pw-reset="${escapeHtml(r.id)}" style="padding:6px 12px;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;">🔑 รีเซ็ตรหัสผ่าน</button>` : ""}
+              ${r.customer_id ? `<button class="btn" data-pw-reset="${escapeHtml(r.id)}" style="padding:6px 12px;font-size:12px;background:var(--accent);color:var(--accent-ink,#0c0d0e);border:none;border-radius:6px;cursor:pointer;">🔑 รีเซ็ตรหัสผ่าน</button>` : ""}
               <button class="btn" data-pw-dismiss="${escapeHtml(r.id)}" style="padding:6px 12px;font-size:12px;background:transparent;color:var(--text-dim);border:1px solid rgba(255,255,255,.15);border-radius:6px;cursor:pointer;">ยกเลิกคำขา</button>
             </div>
           ` : ""}
@@ -7841,7 +7841,7 @@ function detailSecRender() {
   });
   document.querySelectorAll("#songDetailSecChips [data-sec-type]").forEach((b) => {
     const on = b.dataset.secType === detailSecType;
-    const c = SEC_COLORS[b.dataset.secType] || "#8b5cf6";
+    const c = SEC_COLORS[b.dataset.secType] || "#c6ff3d";
     b.style.borderColor = on ? c : "";
     b.style.background = on ? c + "40" : "";
     b.style.color = on ? "#fff" : "";
@@ -7851,7 +7851,7 @@ function detailSecRender() {
   const tapBtn = document.getElementById("songDetailSecTapBtn");
   if (tapBtn) {
     tapBtn.textContent = detailSecTapMode ? "✅ โหมดแตะเปิดอยู่ — แตะกราฟเพื่อตั้งจุดเริ่ม " + (SEC_TYPES.find(x => x[0] === detailSecType) || [0, ""])[1] + " (กดอีกครั้งเพื่อปิด)" : "👆 เปิดโหมดแตะตั้งท่อน";
-    tapBtn.style.boxShadow = detailSecTapMode ? "0 0 0 2px " + (SEC_COLORS[detailSecType] || "#8b5cf6") : "";
+    tapBtn.style.boxShadow = detailSecTapMode ? "0 0 0 2px " + (SEC_COLORS[detailSecType] || "#c6ff3d") : "";
   }
   const saveBtn = document.getElementById("songDetailSecSaveBtn");
   if (saveBtn && !saveBtn.disabled) {
@@ -8697,7 +8697,7 @@ async function loadDeletedCustomers() {
     section.style.cssText = "margin-top: 24px; padding-top: 20px; border-top: 1px dashed var(--border, rgba(255,255,255,0.1));";
     section.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-        <h3 style="margin:0;font-size:15px;color:var(--accent,#8b5cf6);">🗑️ คำขอลบบัญชี (PDPA Section 33)</h3>
+        <h3 style="margin:0;font-size:15px;color:var(--accent,#c6ff3d);">🗑️ คำขอลบบัญชี (PDPA Section 33)</h3>
         <button type="button" id="deletedCustomersRefreshBtn" class="icon-btn" title="รีเฟรช" style="font-size:14px;">🔄</button>
       </div>
       <div id="deletedCustomersList" style="display:flex;flex-direction:column;gap:8px;"></div>
