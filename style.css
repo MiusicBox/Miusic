@@ -13,14 +13,14 @@
   --surface-2: #1c2234;
   --surface-hover: #262e45;
   --border: rgba(255, 255, 255, 0.08);
-  --border-focus: rgba(139, 92, 246, 0.5);
+  --border-focus: rgba(198, 255, 61, 0.5);
   
   --text: #f8fafc;
   --text-dim: #94a3b8;
-  --accent: #8b5cf6;
-  --accent-glow: rgba(139, 92, 246, 0.35);
-  --accent-2: #ec4899;
-  --accent-2-glow: rgba(236, 72, 153, 0.35);
+  --accent: #c6ff3d;
+  --accent-glow: rgba(198, 255, 61, 0.35);
+  --accent-2: #c6ff3d;
+  --accent-2-glow: rgba(198, 255, 61, 0.35);
   
   --success: #10b981;
   --danger: #ef4444;
@@ -49,8 +49,8 @@ html, body {
   padding: 0;
   background: var(--bg);
   background-image: 
-    radial-gradient(circle at 50% 0%, rgba(139, 92, 246, 0.12) 0%, transparent 60%),
-    radial-gradient(circle at 100% 50%, rgba(236, 72, 153, 0.08) 0%, transparent 50%);
+    radial-gradient(circle at 50% 0%, rgba(198, 255, 61, 0.12) 0%, transparent 60%),
+    radial-gradient(circle at 100% 50%, rgba(198, 255, 61, 0.08) 0%, transparent 50%);
   background-attachment: fixed;
   color: var(--text);
   font-family: 'Plus Jakarta Sans', 'IBM Plex Sans Thai', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -261,8 +261,8 @@ button:active {
   padding: 8px 18px;
   border-radius: var(--radius-full);
   background: rgba(15, 17, 24, 0.6);
-  border: 1px solid rgba(168, 85, 247, 0.2);
-  color: #c084fc;
+  border: 1px solid rgba(198, 255, 61, 0.2);
+  color: #c6ff3d;
   font-size: 13.5px;
   font-weight: 600;
   white-space: nowrap;
@@ -272,19 +272,19 @@ button:active {
 }
 
 .chip:hover {
-  background: rgba(168, 85, 247, 0.15);
-  border-color: rgba(168, 85, 247, 0.5);
+  background: rgba(198, 255, 61, 0.15);
+  border-color: rgba(198, 255, 61, 0.5);
   color: #fff;
-  box-shadow: 0 2px 12px rgba(168, 85, 247, 0.25);
+  box-shadow: 0 2px 12px rgba(198, 255, 61, 0.25);
 }
 
 /* 🔧 (2026-09-19): Active = gradient ม่วง + ตัวขาว + เงา */
 .chip.active {
-  background: linear-gradient(135deg, #8b5cf6, #a855f7);
+  background: linear-gradient(135deg, #c6ff3d, #c6ff3d);
   border-color: transparent;
   color: #fff;
   font-weight: 700;
-  box-shadow: 0 4px 16px rgba(168, 85, 247, 0.4), 0 2px 8px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 4px 16px rgba(198, 255, 61, 0.4), 0 2px 8px rgba(198, 255, 61, 0.3);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
@@ -543,7 +543,7 @@ button:active {
   flex-shrink: 0;
   font-size: 14px;
   font-weight: 800;
-  color: #ec4899;
+  color: #c6ff3d;
   white-space: nowrap;
   background: transparent;
   padding: 0;
@@ -632,7 +632,7 @@ button:active {
   height: 80px !important;
   border-radius: 12px !important;
   background: var(--surface-2) !important;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(139, 92, 246, 0.1) !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(198, 255, 61, 0.1) !important;
 }
 
 .playlist-item-name {
@@ -1153,7 +1153,7 @@ button:active {
 /* 🔧 คงเดิม (2026-09-12 รอบ 6): ปุ่ม play/pause เอาขนาดเดิม 36px ตามที่ขอ ไม่เปลี่ยน
    เพราะต้องการให้กดง่ายบนมือถือ */
 .player-bar .ctrl {
-  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  background: linear-gradient(135deg, var(--accent), #9ad600);
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -1391,7 +1391,7 @@ button:active {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  background: linear-gradient(135deg, var(--accent), #9ad600);
   color: #fff;
   border: none;
   border-radius: var(--radius-sm);
@@ -1495,7 +1495,7 @@ button:active {
 
 .field input:hover, .field select:hover, .field textarea:hover {
   background: var(--surface-hover);
-  border-color: rgba(139, 92, 246, 0.4);
+  border-color: rgba(198, 255, 61, 0.4);
 }
 
 .field input:focus, .field select:focus, .field textarea:focus {
@@ -1526,7 +1526,7 @@ button:active {
 .file-picker:hover {
   border-color: var(--accent);
   color: var(--text);
-  background: rgba(139, 92, 246, 0.06);
+  background: rgba(198, 255, 61, 0.06);
   transform: translateY(-1px);
 }
 
@@ -1684,7 +1684,7 @@ button:active {
 
 /* Alert modal — ปุ่มตกลงใช้สีม่วงเหมือนปุ่มหลัก */
 #alertBackdrop .btn {
-  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  background: linear-gradient(135deg, var(--accent), #9ad600);
   box-shadow:
     0 4px 16px var(--accent-glow),
     inset 0 1px 0 rgba(255,255,255,.15);
@@ -1799,7 +1799,7 @@ button:active {
 }
 #qrFilePickerLabel:hover {
   border-color: var(--accent) !important;
-  background: rgba(139, 92, 246, 0.06) !important;
+  background: rgba(198, 255, 61, 0.06) !important;
   transform: translateY(-1px);
 }
 /* progress bar อัปโหลด */
@@ -1807,7 +1807,7 @@ button:active {
   display: none;
   margin-top: 8px;
   padding: 10px 12px !important;
-  background: linear-gradient(135deg, rgba(139,92,246,.12), rgba(236,72,153,.08)) !important;
+  background: linear-gradient(135deg, rgba(198, 255, 61,.12), rgba(198, 255, 61,.08)) !important;
   border: 1px solid var(--accent) !important;
   border-radius: 8px !important;
   font-size: 13px !important;
@@ -2059,7 +2059,7 @@ button:active {
 
 /* ============================================================
    🆕 (2026-10-01): ปุ่ม customer login/register + account สไตล์ธีมม่วง
-   เข้ากับ dark theme + accent color (#8b5cf6) + accent-2 (#ec4899)
+   เข้ากับ dark theme + accent color (#c6ff3d) + accent-2 (#c6ff3d)
    ผลกระทบระบบเดิม: 0% — เพิ่ม CSS ใหม่ ไม่แตะ .icon-btn เดิม
    ============================================================ */
 
@@ -2548,8 +2548,8 @@ button:active {
 /* ---- badge ส่วนลดขนาดเล็ก ---- */
 .discount-badge {
   display: inline-block;
-  background: rgba(236, 72, 153, .15);
-  color: var(--accent-2, #ec4899);
+  background: rgba(198, 255, 61, .15);
+  color: var(--accent-2, #c6ff3d);
   border-radius: var(--radius-full, 9999px);
   padding: 2px 8px;
   font-size: 10px;
@@ -2646,7 +2646,7 @@ button:active {
 }
 .my-orders-receipt-search .field input:focus {
   outline: none;
-  border-color: var(--accent, #8b5cf6);
+  border-color: var(--accent, #c6ff3d);
 }
 .my-orders-form .field {
   margin-bottom: 12px;
@@ -2669,7 +2669,7 @@ button:active {
 }
 .my-orders-form .field input:focus {
   outline: none;
-  border-color: var(--accent, #8b5cf6);
+  border-color: var(--accent, #c6ff3d);
 }
 
 .my-orders-feedback {
@@ -2701,7 +2701,7 @@ button:active {
   transition: border-color 0.2s;
 }
 .my-order-card.expanded {
-  border-color: rgba(139, 92, 246, .3);
+  border-color: rgba(198, 255, 61, .3);
 }
 .my-order-card-header {
   display: flex;
@@ -2824,7 +2824,7 @@ button:active {
   min-width: 20px !important;
   margin: 0 !important;
   cursor: pointer !important;
-  accent-color: var(--accent-2, #a855f7) !important;
+  accent-color: var(--accent-2, #c6ff3d) !important;
 }
 
 /* icon cloud ☁️: อยู่ถัดจาก checkbox ขนาดพอดี */
@@ -3185,9 +3185,9 @@ button:active {
   position: absolute;
   inset: -30%;
   background:
-    radial-gradient(circle at 20% 30%, var(--ap-1, #a855f7), transparent 50%),
+    radial-gradient(circle at 20% 30%, var(--ap-1, #c6ff3d), transparent 50%),
     radial-gradient(circle at 80% 70%, var(--ap-2, #3b82f6), transparent 50%),
-    radial-gradient(circle at 50% 50%, var(--ap-glow, rgba(168, 85, 247, 0.25)), transparent 60%);
+    radial-gradient(circle at 50% 50%, var(--ap-glow, rgba(198, 255, 61, 0.25)), transparent 60%);
   background-size: 150% 150%;
   animation: song-mesh-shift 18s ease-in-out infinite alternate;
   z-index: 0;
@@ -3207,9 +3207,9 @@ button:active {
 /* สลับ 4 โทนสีตามลำดับเพลง */
 /* 🎨 (2026-09-21): 4 โทนสี mesh gradient — ทั้งหมดอยู่ใน palette ม่วง/ฟ้า/ชมพู/ไซยาน (1.6) */
 .song-card-row:nth-child(4n+1) {
-  --ap-1: #a855f7;
+  --ap-1: #c6ff3d;
   --ap-2: #3b82f6;
-  --ap-glow: rgba(168, 85, 247, 0.22);
+  --ap-glow: rgba(198, 255, 61, 0.22);
 }
 .song-card-row:nth-child(4n+2) {
   --ap-1: #3b82f6;
@@ -3217,13 +3217,13 @@ button:active {
   --ap-glow: rgba(59, 130, 246, 0.22);
 }
 .song-card-row:nth-child(4n+3) {
-  --ap-1: #ec4899;
-  --ap-2: #a855f7;
-  --ap-glow: rgba(236, 72, 153, 0.22);
+  --ap-1: #c6ff3d;
+  --ap-2: #c6ff3d;
+  --ap-glow: rgba(198, 255, 61, 0.22);
 }
 .song-card-row:nth-child(4n+4) {
   --ap-1: #06b6d4;
-  --ap-2: #8b5cf6;
+  --ap-2: #c6ff3d;
   --ap-glow: rgba(6, 182, 212, 0.22);
 }
 
@@ -3233,7 +3233,7 @@ button:active {
   position: absolute;
   inset: 1.5px;
   background:
-    radial-gradient(circle at 30% 50%, var(--ap-glow, rgba(168, 85, 247, 0.18)), transparent 60%),
+    radial-gradient(circle at 30% 50%, var(--ap-glow, rgba(198, 255, 61, 0.18)), transparent 60%),
     linear-gradient(135deg, rgba(11, 11, 20, 0.85), rgba(19, 19, 31, 0.90));
   border-radius: 13px;
   z-index: 1;
@@ -3253,7 +3253,7 @@ button:active {
 
 .song-card-row:hover {
   transform: translateY(-3px) !important;
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5), 0 0 24px var(--ap-glow, rgba(168, 85, 247, 0.3)) !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5), 0 0 24px var(--ap-glow, rgba(198, 255, 61, 0.3)) !important;
 }
 
 .song-card-row:hover::before {
@@ -3267,7 +3267,7 @@ button:active {
   height: 80px !important;
   border-radius: 12px !important;
   background: var(--surface-2) !important;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(139, 92, 246, 0.1) !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(198, 255, 61, 0.1) !important;
 }
 
 /* รูปปกเพลง — แสดงเต็มกรอบ ไม่ใช่สีม่วงทึบ */
@@ -3363,13 +3363,13 @@ button:active {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  background: rgba(139, 92, 246, 0.15);
+  background: rgba(198, 255, 61, 0.15);
   color: var(--accent) !important;
   padding: 3px 9px;
   border-radius: 999px;
   font-size: 10.5px;
   font-weight: 700;
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  border: 1px solid rgba(198, 255, 61, 0.3);
   white-space: nowrap;
 }
 
@@ -3502,7 +3502,7 @@ button:active {
   width: 48px;
   min-width: 48px;
   height: 100%;
-  background: rgba(139, 92, 246, 0.15);
+  background: rgba(198, 255, 61, 0.15);
   color: var(--accent);
   border: none;
   font-size: 24px;
@@ -3514,12 +3514,12 @@ button:active {
 }
 
 .bpm-stepper .bpm-step-btn:hover {
-  background: rgba(139, 92, 246, 0.3);
+  background: rgba(198, 255, 61, 0.3);
 }
 
 .bpm-stepper .bpm-step-btn:active {
   transform: scale(0.95);
-  background: rgba(139, 92, 246, 0.4);
+  background: rgba(198, 255, 61, 0.4);
 }
 
 .bpm-stepper .bpm-step-btn:disabled {
@@ -3552,8 +3552,8 @@ button:active {
 }
 
 .bpm-stepper .bpm-step-input:focus {
-  background: rgba(139, 92, 246, 0.08);
-  box-shadow: inset 0 0 0 2px rgba(139, 92, 246, 0.4);
+  background: rgba(198, 255, 61, 0.08);
+  box-shadow: inset 0 0 0 2px rgba(198, 255, 61, 0.4);
 }
 
 /* Mobile responsive */
@@ -3785,8 +3785,8 @@ button:active {
 
 /* 🆕 (T039): ปุ่ม cart กระทัดรัดขึ้น — ลด padding + font-size */
 .song-card-row .cart-add-btn-row {
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(59, 130, 246, 0.15)) !important;
-  border: 1px solid rgba(139, 92, 246, 0.4) !important;
+  background: linear-gradient(135deg, rgba(198, 255, 61, 0.25), rgba(59, 130, 246, 0.15)) !important;
+  border: 1px solid rgba(198, 255, 61, 0.4) !important;
   color: #c4b5fd !important;
   font-size: 10px !important;
   font-weight: 700;
@@ -3796,7 +3796,7 @@ button:active {
   align-items: center;
   gap: 4px !important;
   white-space: nowrap;
-  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.2);
+  box-shadow: 0 2px 8px rgba(198, 255, 61, 0.2);
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
@@ -3807,8 +3807,8 @@ button:active {
 
 .song-card-row .cart-add-btn-row:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(139, 92, 246, 0.45);
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.35), rgba(59, 130, 246, 0.25)) !important;
+  box-shadow: 0 6px 18px rgba(198, 255, 61, 0.45);
+  background: linear-gradient(135deg, rgba(198, 255, 61, 0.35), rgba(59, 130, 246, 0.25)) !important;
 }
 
 .song-card-row .cart-add-btn-row:active {
@@ -3841,8 +3841,8 @@ button:active {
   .song-card-row .cart-add-btn-row {
     padding: 8px 14px !important;
     font-size: 12px !important;
-    background: rgba(139, 92, 246, 0.15) !important;
-    border: 1px solid rgba(139, 92, 246, 0.4) !important;
+    background: rgba(198, 255, 61, 0.15) !important;
+    border: 1px solid rgba(198, 255, 61, 0.4) !important;
     border-radius: 8px !important;
   }
   /* 🔧 (2026-09-19): บนมือถือ แสดงตัวหนังสือสั้น "เพิ่ม" แทนที่จะซ่อนหมด */
@@ -3893,9 +3893,9 @@ button:active {
   position: absolute;
   inset: -30%;
   background:
-    radial-gradient(circle at 20% 30%, var(--ap-1, #a855f7), transparent 50%),
+    radial-gradient(circle at 20% 30%, var(--ap-1, #c6ff3d), transparent 50%),
     radial-gradient(circle at 80% 70%, var(--ap-2, #3b82f6), transparent 50%),
-    radial-gradient(circle at 50% 50%, var(--ap-glow, rgba(168, 85, 247, 0.25)), transparent 60%);
+    radial-gradient(circle at 50% 50%, var(--ap-glow, rgba(198, 255, 61, 0.25)), transparent 60%);
   background-size: 150% 150%;
   animation: song-mesh-shift 18s ease-in-out infinite alternate;
   z-index: 0;
@@ -3908,7 +3908,7 @@ button:active {
   position: absolute;
   inset: 1.5px;
   background:
-    radial-gradient(circle at 30% 50%, var(--ap-glow, rgba(168, 85, 247, 0.18)), transparent 60%),
+    radial-gradient(circle at 30% 50%, var(--ap-glow, rgba(198, 255, 61, 0.18)), transparent 60%),
     linear-gradient(135deg, rgba(11, 11, 20, 0.85), rgba(19, 19, 31, 0.90));
   border-radius: 13px;
   z-index: 1;
@@ -3929,7 +3929,7 @@ button:active {
 
 .playlist-song-row.song-card-row:hover {
   transform: translateY(-3px) !important;
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5), 0 0 24px var(--ap-glow, rgba(168, 85, 247, 0.3)) !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5), 0 0 24px var(--ap-glow, rgba(198, 255, 61, 0.3)) !important;
 }
 
 .playlist-song-row.song-card-row:hover::before {
@@ -3943,7 +3943,7 @@ button:active {
   height: 80px !important;
   border-radius: 12px !important;
   background: var(--surface-2) !important;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(139, 92, 246, 0.1) !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(198, 255, 61, 0.1) !important;
 }
 
 /* รูปปกเพลงในเพลย์ลิสต์ — แสดงเต็มกรอบ */
@@ -4050,8 +4050,8 @@ button:active {
   .playlist-song-row.song-card-row .cart-add-btn-row {
     padding: 8px 14px !important;
     font-size: 12px !important;
-    background: rgba(139, 92, 246, 0.15) !important;
-    border: 1px solid rgba(139, 92, 246, 0.4) !important;
+    background: rgba(198, 255, 61, 0.15) !important;
+    border: 1px solid rgba(198, 255, 61, 0.4) !important;
     border-radius: 8px !important;
   }
   /* 🔧 (2026-09-19): บนมือถือ แสดงตัวหนังสือสั้น "เพิ่ม" */
@@ -4077,7 +4077,7 @@ button:active {
    ========================================================================== */
 
 .playlist-block {
-  border: 1px solid rgba(139, 92, 246, 0.15) !important;
+  border: 1px solid rgba(198, 255, 61, 0.15) !important;
   border-radius: 16px !important;
   background: linear-gradient(135deg, var(--surface), var(--surface-2)) !important;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3) !important;
@@ -4087,12 +4087,12 @@ button:active {
 .playlist-folder-btn {
   border-radius: 0 !important;
   padding: 10px 12px !important;
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), transparent) !important;
+  background: linear-gradient(135deg, rgba(198, 255, 61, 0.08), transparent) !important;
   transition: all 0.2s ease;
 }
 
 .playlist-folder-btn:hover {
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(236, 72, 153, 0.08)) !important;
+  background: linear-gradient(135deg, rgba(198, 255, 61, 0.15), rgba(198, 255, 61, 0.08)) !important;
 }
 
 /* 🎨 (2026-09-20): หัวเพลย์ลิสต์สลับ 3 สี (ม่วง / teal / เขียว) — เพิ่มความชัดเจน
@@ -4101,19 +4101,19 @@ button:active {
    - มี drop-shadow ให้พรีเมียม */
 .playlist-folder-btn {
   background: linear-gradient(135deg, #3a1a6e, #1a0f3e) !important;
-  border: 2px solid rgba(139, 92, 246, 0.8) !important;
+  border: 2px solid rgba(198, 255, 61, 0.8) !important;
   border-radius: 14px !important;
   position: relative !important;
   overflow: hidden !important;
   isolation: isolate;
-  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.3) !important;
+  box-shadow: 0 4px 14px rgba(198, 255, 61, 0.3) !important;
 }
 
 /* สลับ 3 สี: ม่วง / ฟ้า-เขียวมิ้น (teal) / เขียว — เพิ่มความชัด */
 .playlist-block:nth-child(3n+1) .playlist-folder-btn {
   background: linear-gradient(135deg, #3a1a6e, #1a0f3e) !important;
-  border: 2px solid rgba(139, 92, 246, 0.8) !important;
-  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.3) !important;
+  border: 2px solid rgba(198, 255, 61, 0.8) !important;
+  box-shadow: 0 4px 14px rgba(198, 255, 61, 0.3) !important;
 }
 .playlist-block:nth-child(3n+2) .playlist-folder-btn {
   background: linear-gradient(135deg, #0c3a4a, #062a36) !important;
@@ -4134,8 +4134,8 @@ button:active {
 
 /* hover — แต่ละสี hover ขึ้นสีเข้มกว่าเล็กน้อย */
 .playlist-block:nth-child(3n+1) .playlist-folder-btn:hover {
-  border-color: rgba(167, 139, 250, 0.8) !important;
-  box-shadow: 0 6px 18px rgba(139, 92, 246, 0.35) !important;
+  border-color: rgba(198, 255, 61, 0.8) !important;
+  box-shadow: 0 6px 18px rgba(198, 255, 61, 0.35) !important;
   background: linear-gradient(135deg, #3a2a5e, #2a1f4e) !important;
 }
 .playlist-block:nth-child(3n+2) .playlist-folder-btn:hover {
@@ -4154,7 +4154,7 @@ button:active {
   width: 60px !important;
   height: 60px !important;
   border-radius: 12px !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(139, 92, 246, 0.15) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(198, 255, 61, 0.15) !important;
 }
 
 .playlist-folder-name {
@@ -4189,7 +4189,7 @@ button:active {
   width: 70px !important;
   height: 70px !important;
   border-radius: 12px !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(168, 85, 247, 0.15) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(198, 255, 61, 0.15) !important;
 }
 
 /* ปรับ .playlist-folder-info ให้รองรับบรรทัดล่าง */
@@ -4247,13 +4247,13 @@ button:active {
   justify-content: flex-end;
 }
 
-/* ราคาปกติในหัวเพลย์ลิสต์ — 🔧 (2026-09-20): เปลี่ยนสีราคาให้ตรงกับปุ่มซื้อทั้งเพลย์ลิสต์ (#ec4899) */
+/* ราคาปกติในหัวเพลย์ลิสต์ — 🔧 (2026-09-20): เปลี่ยนสีราคาให้ตรงกับปุ่มซื้อทั้งเพลย์ลิสต์ (#c6ff3d) */
 .playlist-folder-btn .playlist-folder-price-block .song-price {
   font-size: 16px !important;
   font-weight: 800 !important;
-  color: #ec4899 !important;
+  color: #c6ff3d !important;
   letter-spacing: -0.5px;
-  text-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
+  text-shadow: 0 0 10px rgba(198, 255, 61, 0.4);
   white-space: nowrap;
 }
 
@@ -4278,9 +4278,9 @@ button:active {
 
 /* ปุ่ม "ซื้อทั้งเพลย์ลิสต์" — 🔧 (2026-09-19): เปลี่ยนสีพื้นเป็นชมพู เหมือนมือถือ */
 .playlist-folder-btn .playlist-folder-buy-btn {
-  background: linear-gradient(135deg, rgba(236, 72, 153, 0.25), rgba(236, 72, 153, 0.15)) !important;
-  border: 1px solid rgba(236, 72, 153, 0.4) !important;
-  color: #ec4899 !important;
+  background: linear-gradient(135deg, rgba(198, 255, 61, 0.25), rgba(198, 255, 61, 0.15)) !important;
+  border: 1px solid rgba(198, 255, 61, 0.4) !important;
+  color: #c6ff3d !important;
   font-size: 12px !important;
   font-weight: 700;
   padding: 10px 16px !important;
@@ -4289,7 +4289,7 @@ button:active {
   align-items: center;
   gap: 5px !important;
   white-space: nowrap;
-  box-shadow: 0 4px 14px rgba(236, 72, 153, 0.3);
+  box-shadow: 0 4px 14px rgba(198, 255, 61, 0.3);
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
@@ -4300,8 +4300,8 @@ button:active {
 
 .playlist-folder-btn .playlist-folder-buy-btn:hover {
   transform: translateY(-1px);
-  background: linear-gradient(135deg, rgba(236, 72, 153, 0.35), rgba(236, 72, 153, 0.25)) !important;
-  box-shadow: 0 6px 18px rgba(236, 72, 153, 0.45);
+  background: linear-gradient(135deg, rgba(198, 255, 61, 0.35), rgba(198, 255, 61, 0.25)) !important;
+  box-shadow: 0 6px 18px rgba(198, 255, 61, 0.45);
 }
 
 .playlist-folder-btn .playlist-folder-buy-btn svg {
@@ -4342,8 +4342,8 @@ button:active {
   .playlist-folder-btn .playlist-folder-buy-btn {
     padding: 8px 14px !important;
     font-size: 12px !important;
-    background: rgba(236, 72, 153, 0.15) !important;
-    border: 1px solid rgba(236, 72, 153, 0.4) !important;
+    background: rgba(198, 255, 61, 0.15) !important;
+    border: 1px solid rgba(198, 255, 61, 0.4) !important;
     border-radius: 8px !important;
   }
   /* 🔧 (2026-09-19): บนมือถือ แสดงตัวหนังสือสั้น "ซื้อ" แทนที่จะซ่อนหมด */
@@ -4354,7 +4354,7 @@ button:active {
     content: "ซื้อ";
     font-size: 12px;
     font-weight: 700;
-    color: #ec4899;
+    color: #c6ff3d;
   }
 }
 
@@ -4363,7 +4363,7 @@ button:active {
   flex-shrink: 0;
   font-size: 16px;
   font-weight: 800;
-  color: #ec4899;
+  color: #c6ff3d;
   white-space: nowrap;
   background: transparent;
   padding: 0;
@@ -4371,7 +4371,7 @@ button:active {
   cursor: pointer;
   margin-left: 8px;
   letter-spacing: -0.2px;
-  text-shadow: 0 0 12px rgba(236, 72, 153, 0.4);
+  text-shadow: 0 0 12px rgba(198, 255, 61, 0.4);
 }
 
 /* ==========================================================================
@@ -4399,12 +4399,12 @@ button:active {
    ========================================================================== */
 .playlist-folder-btn .playlist-folder-arrow {
   align-self: flex-start;
-  color: #a78bfa;
+  color: #c6ff3d;
   width: 20px;
   height: 20px;
 }
 .playlist-header-btn .dropdown-icon {
-  color: #a78bfa;
+  color: #c6ff3d;
   width: 18px;
   height: 18px;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -4956,7 +4956,7 @@ button:active {
 .playlist-song-row.song-card-row:hover {
   transform: none !important;
   background: #181d2b !important;
-  border-color: rgba(167, 139, 250, 0.45) !important;
+  border-color: rgba(198, 255, 61, 0.45) !important;
   box-shadow: none !important;
 }
 
@@ -5013,8 +5013,8 @@ button:active {
   font-weight: 800 !important;
   letter-spacing: 0;
   color: #ddd6fe !important;
-  background: rgba(139, 92, 246, 0.16);
-  border: 1px solid rgba(139, 92, 246, 0.40);
+  background: rgba(198, 255, 61, 0.16);
+  border: 1px solid rgba(198, 255, 61, 0.40);
   padding: 3px 10px;
   border-radius: 8px;
   text-shadow: none !important;
@@ -5056,18 +5056,18 @@ button:active {
 .playlist-block:nth-child(3n+1) .playlist-folder-btn,
 .playlist-block:nth-child(3n+2) .playlist-folder-btn,
 .playlist-block:nth-child(3n+3) .playlist-folder-btn {
-  background: linear-gradient(90deg, rgba(139, 92, 246, 0.10), #141824 60%) !important;
+  background: linear-gradient(90deg, rgba(198, 255, 61, 0.10), #141824 60%) !important;
   border: 1px solid rgba(255, 255, 255, 0.10) !important;
-  border-left: 4px solid #a78bfa !important;
+  border-left: 4px solid #c6ff3d !important;
   border-radius: 10px !important;
   box-shadow: none !important;
 }
 .playlist-block:nth-child(3n+1) .playlist-folder-btn:hover,
 .playlist-block:nth-child(3n+2) .playlist-folder-btn:hover,
 .playlist-block:nth-child(3n+3) .playlist-folder-btn:hover {
-  background: linear-gradient(90deg, rgba(139, 92, 246, 0.16), #181d2b 60%) !important;
-  border-color: rgba(167, 139, 250, 0.45) !important;
-  border-left-color: #a78bfa !important;
+  background: linear-gradient(90deg, rgba(198, 255, 61, 0.16), #181d2b 60%) !important;
+  border-color: rgba(198, 255, 61, 0.45) !important;
+  border-left-color: #c6ff3d !important;
   box-shadow: none !important;
 }
 .playlist-folder-btn .playlist-folder-cover {
@@ -5089,8 +5089,8 @@ button:active {
   font-weight: 800 !important;
   letter-spacing: 0;
   color: #ddd6fe !important;
-  background: rgba(139, 92, 246, 0.16);
-  border: 1px solid rgba(139, 92, 246, 0.40);
+  background: rgba(198, 255, 61, 0.16);
+  border: 1px solid rgba(198, 255, 61, 0.40);
   padding: 3px 10px;
   border-radius: 8px;
   text-shadow: none !important;
@@ -5805,22 +5805,22 @@ html.admin-page body {
 }
 /* ปุ่ม 📌 รายการโปรด (favorites) — สีม่วง/น้ำเงิน แยกจาก ❤️ ถูกใจ (แดง) */
 .btn-icon-mini[data-favorite-btn] {
-  background: linear-gradient(145deg, rgba(139, 92, 246, 0.30) 0%, rgba(124, 58, 237, 0.25) 50%, rgba(91, 33, 182, 0.25) 100%);
+  background: linear-gradient(145deg, rgba(198, 255, 61, 0.30) 0%, rgba(198, 255, 61, 0.25) 50%, rgba(91, 33, 182, 0.25) 100%);
   color: #c4b5fd;
-  border: 1px solid rgba(139, 92, 246, 0.4);
-  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(198, 255, 61, 0.4);
+  box-shadow: 0 2px 8px rgba(198, 255, 61, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
 .btn-icon-mini[data-favorite-btn]:hover {
   transform: translateY(-1px);
-  background: linear-gradient(145deg, rgba(139, 92, 246, 0.50) 0%, rgba(124, 58, 237, 0.45) 50%, rgba(91, 33, 182, 0.45) 100%);
+  background: linear-gradient(145deg, rgba(198, 255, 61, 0.50) 0%, rgba(198, 255, 61, 0.45) 50%, rgba(91, 33, 182, 0.45) 100%);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 12px rgba(198, 255, 61, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 .btn-icon-mini[data-favorite-btn].is-favorite {
-  background: linear-gradient(145deg, #a78bfa 0%, #7c3aed 50%, #5b21b6 100%) !important;
+  background: linear-gradient(145deg, #c6ff3d 0%, #9ad600 50%, #5d8a00 100%) !important;
   color: #fff !important;
   border: 1px solid rgba(255, 255, 255, 0.35) !important;
-  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.65), 0 0 0 2px rgba(167, 139, 250, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+  box-shadow: 0 4px 14px rgba(198, 255, 61, 0.65), 0 0 0 2px rgba(198, 255, 61, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
 }
 /* 🆕 (T039): บนมือถือ — ปุ่ม ❤️ ถูกใจเล็กลง 28×28 */
 @media (max-width: 640px) {
@@ -5999,10 +5999,10 @@ html.admin-page body {
   gap: 12px;
   padding: 14px 16px;
   margin-bottom: 16px;
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(236, 72, 153, 0.10) 100%);
-  border: 1px solid rgba(139, 92, 246, 0.35);
+  background: linear-gradient(135deg, rgba(198, 255, 61, 0.15) 0%, rgba(198, 255, 61, 0.10) 100%);
+  border: 1px solid rgba(198, 255, 61, 0.35);
   border-radius: 14px;
-  box-shadow: 0 2px 12px rgba(139, 92, 246, 0.15);
+  box-shadow: 0 2px 12px rgba(198, 255, 61, 0.15);
 }
 
 .guest-orders-login-banner-icon {
@@ -6013,7 +6013,7 @@ html.admin-page body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(145deg, rgba(139, 92, 246, 0.3) 0%, rgba(236, 72, 153, 0.2) 100%);
+  background: linear-gradient(145deg, rgba(198, 255, 61, 0.3) 0%, rgba(198, 255, 61, 0.2) 100%);
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
@@ -6233,7 +6233,7 @@ html.admin-page body {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: var(--accent, #8b5cf6);
+  background: var(--accent, #c6ff3d);
   color: #fff;
   border: none;
   font-size: 22px;
@@ -6244,7 +6244,7 @@ html.admin-page body {
   align-items: center;
   justify-content: center;
   box-shadow:
-    0 4px 14px rgba(139, 92, 246, 0.45),
+    0 4px 14px rgba(198, 255, 61, 0.45),
     0 2px 6px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.18);
   transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
@@ -6260,7 +6260,7 @@ html.admin-page body {
 #scrollTopBtn:hover {
   transform: scale(1.1) translateY(-1px);
   box-shadow:
-    0 6px 20px rgba(139, 92, 246, 0.55),
+    0 6px 20px rgba(198, 255, 61, 0.55),
     0 3px 8px rgba(0, 0, 0, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
@@ -6590,11 +6590,11 @@ html.admin-page body {
   overflow: hidden;
 }
 .slip-upload-zone:hover {
-  border-color: var(--accent, #ec4899);
+  border-color: var(--accent, #c6ff3d);
 }
 .slip-upload-zone.drag-over {
-  border-color: var(--accent, #ec4899);
-  background: rgba(236, 72, 153, 0.08);
+  border-color: var(--accent, #c6ff3d);
+  background: rgba(198, 255, 61, 0.08);
 }
 .slip-upload-zone .upload-icon {
   font-size: 32px;
@@ -7062,7 +7062,7 @@ html.admin-page body {
   color: var(--text);
 }
 .auto-refresh-btn:focus-visible {
-  outline: 2px solid var(--accent, #a78bfa);
+  outline: 2px solid var(--accent, #c6ff3d);
   outline-offset: 1px;
   border-radius: 4px;
 }
@@ -7587,8 +7587,8 @@ html.admin-page body {
   overflow: hidden;
   /* 🎨 (T114): gradient หลายชั้น — dark base + 3 radial tints (purple, pink, blue) */
   background:
-    radial-gradient(circle at 15% 20%, rgba(139, 92, 246, 0.18) 0%, transparent 45%),
-    radial-gradient(circle at 85% 80%, rgba(236, 72, 153, 0.16) 0%, transparent 45%),
+    radial-gradient(circle at 15% 20%, rgba(198, 255, 61, 0.18) 0%, transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(198, 255, 61, 0.16) 0%, transparent 45%),
     radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 60%),
     linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
   /* 🎨 (T114): gradient border ด้วย mask technique — สีขอบไล่จาก accent → accent-2 */
@@ -7596,7 +7596,7 @@ html.admin-page body {
   background-clip: padding-box;
   box-shadow:
     0 4px 20px rgba(0, 0, 0, 0.25),
-    0 0 0 1px rgba(139, 92, 246, 0.3),
+    0 0 0 1px rgba(198, 255, 61, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 /* 🎨 (T114): slow rotation on background gradients (60s รอบ) — subtle movement ไม่ฉีกตา */
@@ -7637,7 +7637,7 @@ html.admin-page body {
   pointer-events: none;
   z-index: 0;
   animation: hero-eq 1.2s ease-in-out infinite alternate;
-  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.5));
+  filter: drop-shadow(0 0 6px rgba(198, 255, 61, 0.5));
 }
 @keyframes hero-eq {
   0% { transform: scaleY(0.6); }
@@ -7678,7 +7678,7 @@ html.admin-page body {
   letter-spacing: -0.3px;
   line-height: 1.3;
   animation: hero-title-shimmer 4s ease-in-out infinite;
-  filter: drop-shadow(0 2px 12px rgba(139, 92, 246, 0.35));
+  filter: drop-shadow(0 2px 12px rgba(198, 255, 61, 0.35));
 }
 @keyframes hero-title-shimmer {
   0%, 100% { background-position: 0% 50%; }
@@ -7732,13 +7732,13 @@ html.admin-page body {
   0%, 100% {
     box-shadow:
       0 4px 16px var(--accent-glow),
-      0 0 0 0 rgba(139, 92, 246, 0.35),
+      0 0 0 0 rgba(198, 255, 61, 0.35),
       inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
   50% {
     box-shadow:
       0 6px 24px var(--accent-glow),
-      0 0 0 12px rgba(139, 92, 246, 0),
+      0 0 0 12px rgba(198, 255, 61, 0),
       inset 0 1px 0 rgba(255, 255, 255, 0.25);
   }
 }
@@ -7746,7 +7746,7 @@ html.admin-page body {
   transform: scale(1.06) translateY(-2px);
   box-shadow:
     0 8px 28px var(--accent-glow),
-    0 0 24px rgba(236, 72, 153, 0.5),
+    0 0 24px rgba(198, 255, 61, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.25);
   animation: none;  /* pause pulse ตอน hover เพื่อไม่ให้ conflict */
 }
@@ -7827,9 +7827,9 @@ html.admin-page body {
   scroll-snap-align: start;
   /* 🎨 (T113): gradient สดขึ้น — เพิ่ม accent-glow tint ที่มุมบนขวา (เหมือน spotlight) */
   background:
-    radial-gradient(circle at 100% 0%, rgba(139, 92, 246, 0.12) 0%, transparent 55%),
+    radial-gradient(circle at 100% 0%, rgba(198, 255, 61, 0.12) 0%, transparent 55%),
     linear-gradient(155deg, var(--surface) 0%, var(--surface-2) 100%);
-  border: 1px solid rgba(139, 92, 246, 0.25);
+  border: 1px solid rgba(198, 255, 61, 0.25);
   border-radius: 14px;
   padding: 12px 10px 10px;
   text-align: center;
@@ -7869,7 +7869,7 @@ html.admin-page body {
   box-shadow:
     0 12px 28px rgba(0, 0, 0, 0.35),
     0 0 0 1px var(--accent),
-    0 0 24px rgba(139, 92, 246, 0.35);
+    0 0 24px rgba(198, 255, 61, 0.35);
   border-color: transparent;
   outline: none;
 }
@@ -7890,19 +7890,19 @@ html.admin-page body {
 .category-card.selected {
   border: 2px solid var(--accent) !important;
   background:
-    radial-gradient(circle at 100% 0%, rgba(139, 92, 246, 0.25) 0%, transparent 55%),
+    radial-gradient(circle at 100% 0%, rgba(198, 255, 61, 0.25) 0%, transparent 55%),
     linear-gradient(155deg, var(--accent-glow) 0%, var(--surface-2) 100%) !important;
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.2),
     0 0 0 1px var(--accent),
-    0 0 20px rgba(139, 92, 246, 0.45) !important;
+    0 0 20px rgba(198, 255, 61, 0.45) !important;
   transform: translateY(-2px);
 }
 .category-card.selected .cat-icon {
   transform: scale(1.08);
   box-shadow:
     inset 0 1px 2px rgba(255, 255, 255, 0.3),
-    0 0 14px rgba(236, 72, 153, 0.5),
+    0 0 14px rgba(198, 255, 61, 0.5),
     0 4px 12px rgba(0, 0, 0, 0.3) !important;
 }
 .category-card.selected .cat-name {
@@ -7914,12 +7914,12 @@ html.admin-page body {
   transform: translateY(-2px) scale(1.02);
   border: 2px solid var(--accent) !important;
   background:
-    radial-gradient(circle at 100% 0%, rgba(139, 92, 246, 0.25) 0%, transparent 55%),
+    radial-gradient(circle at 100% 0%, rgba(198, 255, 61, 0.25) 0%, transparent 55%),
     linear-gradient(155deg, var(--accent-glow) 0%, var(--surface-2) 100%) !important;
   box-shadow:
     0 8px 24px rgba(0, 0, 0, 0.3),
     0 0 0 1px var(--accent),
-    0 0 28px rgba(139, 92, 246, 0.55) !important;
+    0 0 28px rgba(198, 255, 61, 0.55) !important;
 }
 
 /* 🆕 (T034): Icon — ใหญ่ขึ้น + มีวงกลมพื้นหลัง + glow
@@ -7951,7 +7951,7 @@ html.admin-page body {
   transform: scale(1.15) rotate(-5deg);
   box-shadow:
     inset 0 1px 2px rgba(255, 255, 255, 0.3),
-    0 0 18px rgba(236, 72, 153, 0.55),
+    0 0 18px rgba(198, 255, 61, 0.55),
     0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
@@ -8339,7 +8339,7 @@ html.admin-page body {
 
 #songModalBackdrop .review-item-mine {
   border-color: var(--accent);
-  background: var(--accent-glow, rgba(168, 85, 247, 0.05));
+  background: var(--accent-glow, rgba(198, 255, 61, 0.05));
 }
 
 #songModalBackdrop .review-item-head {
@@ -8638,11 +8638,11 @@ html.admin-page body {
   transition: border-color 0.2s ease, transform 0.2s ease;
 }
 #songModalBackdrop .review-item:hover {
-  border-color: rgba(139, 92, 246, 0.3);
+  border-color: rgba(198, 255, 61, 0.3);
 }
 #songModalBackdrop .review-item-mine {
-  border-color: rgba(139, 92, 246, 0.4);
-  background: rgba(139, 92, 246, 0.05);
+  border-color: rgba(198, 255, 61, 0.4);
+  background: rgba(198, 255, 61, 0.05);
 }
 
 /* Avatar — gradient + ตัวอักษร */
@@ -8709,8 +8709,8 @@ html.admin-page body {
 
 /* Form — พื้นหลัง + border สวยขึ้น */
 #songModalBackdrop .modal-review-form {
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(236, 72, 153, 0.03));
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  background: linear-gradient(135deg, rgba(198, 255, 61, 0.05), rgba(198, 255, 61, 0.03));
+  border: 1px solid rgba(198, 255, 61, 0.2);
   border-radius: 12px;
   padding: 14px;
   margin-bottom: 12px;
@@ -9377,7 +9377,7 @@ html.admin-page body {
   outline-offset: 2px;
 }
 .advanced-search-toggle:active {
-  background: rgba(139, 92, 246, 0.15);
+  background: rgba(198, 255, 61, 0.15);
   transform: scale(0.97);
 }
 .adv-btn-label {
@@ -9699,8 +9699,8 @@ html.admin-page body {
   gap: 8px;
   padding: 10px 14px;
   margin: 8px 12px 0;
-  background: rgba(139, 92, 246, 0.08);
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  background: rgba(198, 255, 61, 0.08);
+  border: 1px solid rgba(198, 255, 61, 0.2);
   border-radius: 8px;
   font-size: 13px;
 }
@@ -9725,7 +9725,7 @@ html.admin-page body {
   -webkit-tap-highlight-color: transparent;
 }
 .adv-clear-btn:hover {
-  background: rgba(139, 92, 246, 0.1);
+  background: rgba(198, 255, 61, 0.1);
 }
 
 /* ============================================================
@@ -10804,8 +10804,8 @@ html.admin-page body {
   display: flex; flex-direction: column; gap: 2px;
   margin: 0 0 14px; padding: 10px 14px;
   border-radius: 12px;
-  background: rgba(139, 92, 246, .10);
-  border: 1px solid rgba(139, 92, 246, .28);
+  background: rgba(198, 255, 61, .10);
+  border: 1px solid rgba(198, 255, 61, .28);
   font-size: 12px; color: var(--text-dim);
 }
 .track-account-chip strong { font-size: 14px; color: var(--text); font-weight: 600; word-break: break-all; }
@@ -10845,7 +10845,7 @@ html.admin-page body {
   max-width: 420px;
   min-height: 44px;
   padding: 0 14px;
-  border: 1px solid rgba(139, 92, 246, 0.5);
+  border: 1px solid rgba(198, 255, 61, 0.5);
   border-radius: 999px;
   background: rgba(20, 22, 34, 0.96);
   color: var(--text);
@@ -10859,7 +10859,7 @@ html.admin-page body {
   position: absolute;
   left: 0; top: 0; bottom: 0;
   width: 0;
-  background: rgba(139, 92, 246, 0.28);
+  background: rgba(198, 255, 61, 0.28);
   transition: width 0.35s ease;
 }
 .bg-job-chip .bg-job-text {
