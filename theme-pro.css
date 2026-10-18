@@ -393,3 +393,37 @@ button:active { transform: none; }
 .player-bar .ctrl .spinner, .btn .spinner { border-color: rgba(12, 13, 14, 0.25); border-top-color: var(--accent-ink); }
 /* ปุ่มไอคอนสีเขียวจาง ๆ → ขอบ lime ตัวหนังสือสว่าง ไม่ต้องดำ */
 .btn.secondary, .btn.danger { text-shadow: none; }
+
+/* ==========================================================================
+   WAVEFORM — กราฟเพลงกระชับ + ขนาดเท่ากัน 100% (แอดมิน 2 จุด + ลูกค้า 1 จุด, ทั้ง 3 โหมด)
+   ปรับความสูงได้ที่ตัวแปรเดียว: --wave-h
+   ========================================================================== */
+:root { --wave-h: 72px; }
+
+.wave-wrap { margin: 2px 0 6px; }
+.wave-box { height: auto; }
+.wave-box canvas {
+  height: var(--wave-h) !important;
+  min-height: var(--wave-h);
+  max-height: var(--wave-h);
+}
+/* แถวปุ่มสไตล์ + legend: ความสูงคงที่ ไม่ตัดบรรทัด → กรอบกราฟสูงเท่ากันทุกโหมด */
+.wave-style-switch {
+  flex-wrap: nowrap !important;
+  height: 24px;
+  margin: 0 !important;
+  padding: 0 4px;
+  overflow: hidden;
+  gap: 4px !important;
+}
+.wave-style-switch button {
+  font-size: 10.5px !important;
+  padding: 1px 8px !important;
+  border-radius: 3px !important;
+  line-height: 1.3 !important;
+  white-space: nowrap;
+}
+.wave-style-switch > span { flex-wrap: nowrap !important; flex-shrink: 1; min-width: 0; overflow: hidden; }
+.wave-style-switch > span > span { margin-left: 6px !important; font-size: 10px !important; }
+.wave-style-switch > span > span > i { width: 7px !important; height: 7px !important; border-radius: 1px !important; }
+.wave-cap { font-size: 11px; margin-top: 4px; line-height: 1.4; }
