@@ -6,8 +6,8 @@
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): noindex meta — กัน Google index หน้า admin -->
 <meta name="robots" content="noindex, nofollow">
 <title>Admin - Music Store</title>
-<link rel="stylesheet" href="style.css?v=20261018-pro1">
-<link rel="stylesheet" href="theme-pro.css?v=20261018-pro3">
+<link rel="stylesheet" href="style.css?v=20261018-pro4b">
+<link rel="stylesheet" href="theme-pro.css?v=20261018-pro4">
 <!-- 🎨 (2026-10-11) ระบบแจ้งเตือนใหม่ (toast + dialog) — ต้องโหลดก่อน app-*.js -->
 <link rel="stylesheet" href="notify.css?v=20261018-pro2">
 <script src="notify.js?v=20261015-waveback"></script>
@@ -719,7 +719,7 @@
           <label style="font-size:12px;color:var(--text-dim);margin-bottom:6px;display:block;">ข้อความที่จะส่ง (สามารถแก้ไขก่อนส่งได้):</label>
           <textarea id="whatsappNotifyMessage" rows="8" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border,#ccc);font-size:13px;font-family:inherit;resize:vertical;"></textarea>
           <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
-            <button class="btn" id="whatsappNotifyOpenBtn" type="button" style="flex:1;min-width:140px;background:#25D366;color:#fff;">💬 เปิด WhatsApp ส่ง</button>
+            <button class="btn" id="whatsappNotifyOpenBtn" type="button" style="flex:1;min-width:140px;background:#25D366;color:var(--accent-ink,#0c0d0e);">💬 เปิด WhatsApp ส่ง</button>
             <button class="btn secondary" id="whatsappNotifyCopyBtn" type="button" style="flex:1;min-width:140px;">📋 คัดลอกข้อความ</button>
             <button class="btn secondary" id="whatsappNotifyCancelBtn" type="button" style="flex:1;min-width:100px;">ปิด</button>
           </div>
@@ -1936,6 +1936,6 @@
 
   <script src="phone-input.js?v=20261015-waveback" defer></script>
   <script src="waveform.js?v=20261018-pro1" defer></script>
-  <script type="module" src="app-admin.js?v=20261018-pro2"></script>
+  <script type="module" src="app-admin.js?v=20261018-pro4"></script>
 </body>
 </html>
