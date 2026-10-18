@@ -35,7 +35,7 @@ import {
 // ===== ลดราคา + โปรโมชั่น (ระบบใหม่) — import มาจาก app-promotion.js กลาง (รวมไฟล์เดียว) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, computeCartPricing, clearPricingCache
-} from "./app-promotion.js?v=20261012-launch";
+} from "./app-promotion.js?v=20261018-pro2";
 
 const CART_STORAGE_KEY = "music_store_cart_v1";
 const CHECKOUT_ORDER_KEY = "music_store_checkout_order_v1";
@@ -347,8 +347,8 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         if (itemDiscount > 0) {
           rows += `
             <div class="cart-summary-row">
-              <span style="color:var(--accent-2,#ec4899);">🏷️ ส่วนลดจากราคาปกติ</span>
-              <strong style="color:var(--accent-2,#ec4899);">-${formatPrice(itemDiscount)}</strong>
+              <span style="color:var(--accent-2,#c6ff3d);">🏷️ ส่วนลดจากราคาปกติ</span>
+              <strong style="color:var(--accent-2,#c6ff3d);">-${formatPrice(itemDiscount)}</strong>
             </div>`;
         }
         // 🚀 (STACK): แสดงแต่ละ promo แยกบรรทัด
@@ -415,8 +415,8 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       if (itemDiscount > 0) {
         rows += `
           <div class="cart-summary-row">
-            <span style="color:var(--accent-2,#ec4899);">🏷️ ส่วนลดจากราคาปกติ</span>
-            <strong style="color:var(--accent-2,#ec4899);">-${formatPrice(itemDiscount)}</strong>
+            <span style="color:var(--accent-2,#c6ff3d);">🏷️ ส่วนลดจากราคาปกติ</span>
+            <strong style="color:var(--accent-2,#c6ff3d);">-${formatPrice(itemDiscount)}</strong>
           </div>`;
       }
       // 🚀 (STACK): แสดงแต่ละ promo แยกบรรทัด
@@ -522,7 +522,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
       // แสดงข้อความแจ้งลูกค้าว่าใช้ข้อมูลจากบัญชี
       if (feedback) {
         feedback.innerHTML = `
-          <div style="background:rgba(139,92,246,.1);border:1px solid var(--accent);border-radius:8px;padding:12px;margin-bottom:8px;">
+          <div style="background:rgba(198, 255, 61,.1);border:1px solid var(--accent);border-radius:8px;padding:12px;margin-bottom:8px;">
             <div style="font-size:14px;font-weight:600;color:var(--accent);">👤 ใช้ข้อมูลจากบัญชี</div>
             <div style="font-size:13px;margin-top:4px;">ชื่อ: <strong>${escapeHtml(customer.display_name || "")}</strong></div>
             <div style="font-size:13px;">เบอร์: <strong>${escapeHtml(customer.whatsapp || customer.email || "")}</strong></div>
@@ -1728,7 +1728,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         ${settings.payment_instructions ? `<div style="font-size:13.5px;color:#334155;background:var(--bg-soft, #f7f7f7);padding:12px 14px;border-radius:8px;margin:8px 0;line-height:1.65;font-weight:500;">
           ${escapeHtml(settings.payment_instructions).replace(/\n/g, "<br>")}
         </div>` : ""}
-        <button class="btn" id="paymentUploadSlipBtn" type="button" style="width:100%;margin-top:14px;background:var(--accent);color:#fff;font-size:15px;padding:12px;">
+        <button class="btn" id="paymentUploadSlipBtn" type="button" style="width:100%;margin-top:14px;background:var(--accent);color:var(--accent-ink,#0c0d0e);font-size:15px;padding:12px;">
           📸 แจ้งชำระเงิน (อัปโหลดสลิป)
         </button>
         <button class="btn secondary" id="paymentCloseBtn2" type="button" style="width:100%;margin-top:6px;">ปิด</button>
@@ -1813,7 +1813,7 @@ export function initCart({ state, showToast, escapeHtml, formatPrice, buildWhats
         <div style="font-size:12px;color:var(--text-dim);margin-top:4px;display:flex;justify-content:space-between;">
           <span>เบอร์ WhatsApp</span><strong>${escapeHtml(order?.whatsapp || "")}</strong>
         </div>
-        <button class="btn" id="uploadSlipConfirmBtn" type="button" disabled style="width:100%;margin-top:14px;background:var(--accent);color:#fff;font-size:15px;padding:12px;opacity:0.5;">
+        <button class="btn" id="uploadSlipConfirmBtn" type="button" disabled style="width:100%;margin-top:14px;background:var(--accent);color:var(--accent-ink,#0c0d0e);font-size:15px;padding:12px;opacity:0.5;">
           ✅ ยืนยันการชำระเงิน
         </button>
         <button class="btn secondary" id="uploadSlipCancelBtn" type="button" style="width:100%;margin-top:6px;">ยกเลิก</button>
