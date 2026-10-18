@@ -1007,7 +1007,7 @@ function openAccountSettingsModal() {
           </div>
           <button type="button" id="accountSettingsSaveBtn" style="
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-            color: white; border: none; padding: 8px 16px; border-radius: 9999px;
+            color:var(--accent-ink,#0c0d0e); border: none; padding: 8px 16px; border-radius: 9999px;
             font-weight: 600; font-size: 13px; cursor: pointer; width: 100%;
           ">บันทึกการแก้ไข</button>
           <div id="accountSettingsEditFeedback" style="font-size:12px;margin-top:6px;display:none;"></div>
