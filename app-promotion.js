@@ -2098,7 +2098,7 @@ function renderOneOrderCard(order) {
     }
     const itemDiscount = discountAmount - totalPromoDiscount;
     if (itemDiscount > 0) parts.push(`🏷️ ลดราคาปกติ`);
-    discountBadge = `<div class="my-order-discount-badge" style="color:var(--accent-2,#ec4899);font-size:12px;margin-top:4px;">⚡ ${parts.join(" + ")} · ลด ${myOrders_formatPrice(discountAmount)}</div>`;
+    discountBadge = `<div class="my-order-discount-badge" style="color:var(--accent-2,#c6ff3d);font-size:12px;margin-top:4px;">⚡ ${parts.join(" + ")} · ลด ${myOrders_formatPrice(discountAmount)}</div>`;
   }
 
   let expandedHtml = "";
@@ -2137,7 +2137,7 @@ function renderOneOrderCard(order) {
     if (discountAmount > 0) {
       const itemDiscount = discountAmount - totalPromoDiscount;
       if (itemDiscount > 0) {
-        discountRows += `<div class="my-order-item-row" style="color:var(--accent-2,#ec4899);"><span>🏷️ ส่วนลดจากราคาปกติ</span><span>-${myOrders_formatPrice(itemDiscount)}</span></div>`;
+        discountRows += `<div class="my-order-item-row" style="color:var(--accent-2,#c6ff3d);"><span>🏷️ ส่วนลดจากราคาปกติ</span><span>-${myOrders_formatPrice(itemDiscount)}</span></div>`;
       }
     }
 
@@ -2162,7 +2162,7 @@ function renderOneOrderCard(order) {
     // ปุ่มชำระเงิน — แสดงถ้ายังไม่ชำระ (pending_verify และยังไม่มี payment_proof_status='pending')
     const showPayBtn = (order.status === "pending_verify" && (!order.payment_proof_status || order.payment_proof_status === "rejected"));
     if (showPayBtn) {
-      actionButtons += `<button type="button" class="btn" data-order-pay="${myOrders_escapeHtml(orderId)}" style="display:inline-block;padding:8px 14px;font-size:13px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;margin-top:8px;margin-right:6px;">💳 ชำระเงิน</button>`;
+      actionButtons += `<button type="button" class="btn" data-order-pay="${myOrders_escapeHtml(orderId)}" style="display:inline-block;padding:8px 14px;font-size:13px;background:var(--accent);color:var(--accent-ink,#0c0d0e);border:none;border-radius:8px;cursor:pointer;margin-top:8px;margin-right:6px;">💳 ชำระเงิน</button>`;
     }
     // ปุ่มลบออเดอร์ — แสดงถ้ายังไม่ยืนยัน (pending_verify)
     if (order.status === "pending_verify") {
@@ -2171,7 +2171,7 @@ function renderOneOrderCard(order) {
     // 🎨 (2026-10-11): เปลี่ยนจากปุ่ม "ฟังเพลง" → ปุ่ม "รายละเอียดออเดอร์"
     //   กดแล้วเปิดหน้าใบเสร็จ (showReceipt) ของออเดอร์นั้นทันที — ไม่ต้องกรอกเลขออเดอร์/ชื่อ/เบอร์ซ้ำ
     //   ใช้ร่วมกันทั้งลูกค้าที่ล็อกอิน (หน้าบัญชี) และไม่ล็อกอิน (แท็บออเดอร์)
-    actionButtons += `<button type="button" class="btn" data-order-detail="${myOrders_escapeHtml(orderId)}" style="display:inline-block;padding:8px 14px;font-size:13px;background:rgba(139,92,246,.12);color:var(--accent);border:1px solid var(--accent);border-radius:8px;cursor:pointer;margin-top:8px;">📄 รายละเอียดออเดอร์</button>`;
+    actionButtons += `<button type="button" class="btn" data-order-detail="${myOrders_escapeHtml(orderId)}" style="display:inline-block;padding:8px 14px;font-size:13px;background:rgba(198, 255, 61,.12);color:var(--accent);border:1px solid var(--accent);border-radius:8px;cursor:pointer;margin-top:8px;">📄 รายละเอียดออเดอร์</button>`;
   
     expandedHtml = `
       <div class="my-order-detail" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
