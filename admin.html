@@ -6,9 +6,10 @@
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1): noindex meta — กัน Google index หน้า admin -->
 <meta name="robots" content="noindex, nofollow">
 <title>Admin - Music Store</title>
-<link rel="stylesheet" href="style.css?v=20261018-slim">
+<link rel="stylesheet" href="style.css?v=20261018-pro1">
+<link rel="stylesheet" href="theme-pro.css?v=20261018-pro3">
 <!-- 🎨 (2026-10-11) ระบบแจ้งเตือนใหม่ (toast + dialog) — ต้องโหลดก่อน app-*.js -->
-<link rel="stylesheet" href="notify.css?v=20261015-waveback">
+<link rel="stylesheet" href="notify.css?v=20261018-pro2">
 <script src="notify.js?v=20261015-waveback"></script>
 
 <!-- 🔧 (2026-09-22 Batch 7 fix Bug #1) + 🔒 (Audit Fix H-13): Self-host html2canvas
@@ -85,7 +86,7 @@
           </div>
           <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">
             <!-- ปุ่มเพิ่มเพลง (รวมเดี่ยว+Bulk) — กดแล้ว popup เลือก -->
-            <button id="qaAddSongNew" style="padding:12px 8px;font-size:13px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;">➕ เพิ่มเพลง</button>
+            <button id="qaAddSongNew" style="padding:12px 8px;font-size:13px;font-weight:600;background:var(--accent);color:var(--accent-ink,#0c0d0e);border:none;border-radius:8px;cursor:pointer;">➕ เพิ่มเพลง</button>
             <button id="qaManageSongsNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">🎵 จัดการเพลง</button>
             <button id="qaManagePlaylistsNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">🎶 เพลย์ลิสต์</button>
             <button id="qaManageCatsNew" style="padding:12px 8px;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);border-radius:8px;cursor:pointer;">🗂️ หมวดหมู่</button>
@@ -101,7 +102,7 @@
           </div>
           <div style="display:grid;grid-template-columns:1fr;gap:8px;">
             <!-- ปุ่มเดียวที่รวมออเดอร์+สลิป — กดแล้ว popup เลือก หรือกดตรงๆเข้าจัดออเดอร์ -->
-            <button id="qaOrdersPayments" style="position:relative;padding:14px 10px;font-size:14px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;">
+            <button id="qaOrdersPayments" style="position:relative;padding:14px 10px;font-size:14px;font-weight:600;background:var(--accent);color:var(--accent-ink,#0c0d0e);border:none;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;">
               <span>🧾 จัดการออเดอร์</span>
               <span class="badge" id="ordersBadgeNew" style="position:relative;top:auto;right:auto;display:inline-block;margin:0 2px;">0</span>
               <span style="font-size:11px;opacity:.8;">สลิป</span>
@@ -147,7 +148,7 @@
         <div class="modal" style="max-width:360px;">
           <div class="modal-header"><h3>เพิ่มเพลง</h3><button class="modal-close" id="addSongChoiceClose" type="button" aria-label="ปิด">✕</button></div>
           <div style="padding:14px;display:grid;gap:10px;">
-            <button id="addSongChoiceSingle" style="padding:14px;font-size:14px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;">🎵 เพิ่มเพลงเดี่ยว</button>
+            <button id="addSongChoiceSingle" style="padding:14px;font-size:14px;font-weight:600;background:var(--accent);color:var(--accent-ink,#0c0d0e);border:none;border-radius:8px;cursor:pointer;">🎵 เพิ่มเพลงเดี่ยว</button>
             <button id="addSongChoiceBulk" style="padding:14px;font-size:14px;font-weight:600;border:1px solid var(--accent);background:rgba(122,92,255,.08);color:var(--accent);border-radius:8px;cursor:pointer;">📦 เพิ่มเพลงหลายไฟล์ (Bulk)</button>
           </div>
         </div>
@@ -158,7 +159,7 @@
         <div class="modal" style="max-width:360px;">
           <div class="modal-header"><h3>ออเดอร์ & การเงิน</h3><button class="modal-close" id="ordersChoiceClose" type="button" aria-label="ปิด">✕</button></div>
           <div style="padding:14px;display:grid;gap:10px;">
-            <button id="ordersChoiceList" style="position:relative;padding:14px;font-size:14px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;">📋 จัดการออเดอร์ <span class="badge" id="ordersBadgeChoice" style="position:relative;top:auto;right:auto;display:inline-block;margin-left:6px;">0</span></button>
+            <button id="ordersChoiceList" style="position:relative;padding:14px;font-size:14px;font-weight:600;background:var(--accent);color:var(--accent-ink,#0c0d0e);border:none;border-radius:8px;cursor:pointer;">📋 จัดการออเดอร์ <span class="badge" id="ordersBadgeChoice" style="position:relative;top:auto;right:auto;display:inline-block;margin-left:6px;">0</span></button>
             <button id="ordersChoiceSlip" style="position:relative;padding:14px;font-size:14px;font-weight:600;border:1px solid var(--accent);background:rgba(122,92,255,.08);color:var(--accent);border-radius:8px;cursor:pointer;">🧾 ตรวจสลิป <span class="badge" id="paymentsBadgeChoice" style="position:relative;top:auto;right:auto;display:inline-block;margin-left:6px;">0</span></button>
           </div>
         </div>
@@ -188,8 +189,8 @@
         <div class="search-box" style="flex:1;"><input id="songSearch" placeholder="ค้นหาเพลง..."></div>
         <button class="icon-btn" id="songSelectModeBtn" title="เลือกหลายเพลง">☑️</button>
         <!-- 🆕 (WAVEFORM-BACKFILL): ปุ่มคำนวณ waveform ให้เพลงเก่าที่ยังไม่มี — กดแล้วรันเป็น background -->
-        <button class="icon-btn" id="songBackfillWaveBtn" title="คำนวณกราฟคลื่นเสียงให้เพลงเก่าที่ยังไม่มี" style="background:rgba(139,92,246,0.18);color:var(--accent);font-size:16px;">🌊</button>
-        <button class="icon-btn" id="addSongBtn" style="background:var(--accent);color:#fff;">＋</button>
+        <button class="icon-btn" id="songBackfillWaveBtn" title="คำนวณกราฟคลื่นเสียงให้เพลงเก่าที่ยังไม่มี" style="background:rgba(198, 255, 61,0.18);color:var(--accent);font-size:16px;">🌊</button>
+        <button class="icon-btn" id="addSongBtn" style="background:var(--accent);color:var(--accent-ink,#0c0d0e);">＋</button>
       </div>
       <!-- 🆕 (2026-10-01 date filter): ตัวกรองวันที่แบบ dropdown — กดที่ปุ่มจึงเปิดตัวเลือก
            ปุ่มเดียวที่แสดงตลอด: "📅 กรองตามวันที่" + สถานะปัจจุบัน (เช่น "วันนี้" หรือ "5 → 7")
@@ -240,7 +241,7 @@
         <div class="search-box" style="flex:1;"><input id="catSearch" placeholder="ค้นหาหมวดหมู่..."></div>
         <!-- 🆕 (2026-10-01 bulk): ปุ่มเลือกหลายรายการ — ลอก pattern จาก songSelectModeBtn -->
         <button class="icon-btn" id="catSelectModeBtn" title="เลือกหลายหมวดหมู่">☑️</button>
-        <button class="icon-btn" id="addCatBtn" style="background:var(--accent);color:#fff;">＋</button>
+        <button class="icon-btn" id="addCatBtn" style="background:var(--accent);color:var(--accent-ink,#0c0d0e);">＋</button>
       </div>
       <!-- 🆕 (2026-10-01 date filter): dropdown ตัวกรองวันที่สำหรับหมวดหมู่ — เหมือน view-songs -->
       <div style="padding:8px 16px;position:relative;">
@@ -284,7 +285,7 @@
         <div class="search-box" style="flex:1;"><input id="djSearch" placeholder="ค้นหา DJ..."></div>
         <!-- 🆕 (2026-10-01 bulk): ปุ่มเลือกหลายรายการ — ลอก pattern จาก songSelectModeBtn -->
         <button class="icon-btn" id="djSelectModeBtn" title="เลือกหลาย DJ">☑️</button>
-        <button class="icon-btn" id="addDjBtn" style="background:var(--accent);color:#fff;">＋</button>
+        <button class="icon-btn" id="addDjBtn" style="background:var(--accent);color:var(--accent-ink,#0c0d0e);">＋</button>
       </div>
       <!-- 🆕 (2026-10-01 date filter): dropdown ตัวกรองวันที่สำหรับ DJ — เหมือน view-songs -->
       <div style="padding:8px 16px;position:relative;">
@@ -328,7 +329,7 @@
         <div class="search-box" style="flex:1;"><input id="playlistSearch" placeholder="ค้นหาเพลย์ลิสต์..."></div>
         <!-- 🆕 (2026-10-01 bulk): ปุ่มเลือกหลายรายการ — ลอก pattern จาก songSelectModeBtn -->
         <button class="icon-btn" id="playlistSelectModeBtn" title="เลือกหลายเพลย์ลิสต์">☑️</button>
-        <button class="icon-btn" id="addPlaylistBtn" style="background:var(--accent);color:#fff;">＋</button>
+        <button class="icon-btn" id="addPlaylistBtn" style="background:var(--accent);color:var(--accent-ink,#0c0d0e);">＋</button>
       </div>
       <!-- 🆕 (2026-10-01 date filter): dropdown ตัวกรองวันที่สำหรับเพลย์ลิสต์ — เหมือน view-songs -->
       <div style="padding:8px 16px;position:relative;">
@@ -496,11 +497,11 @@
         <!-- 🔧 (2026-09-19 stats fix): แยกการ์ดสถิติเพลงเดี่ยว vs เพลงในเพลย์ลิสต์ -->
         <!--   นับเป็นจำนวนเพลงเดี่ยวที่ขายได้ vs จำนวนเพลงในเพลย์ลิสต์ที่ขายได้ -->
         <div class="stat-grid" style="margin-bottom:16px;">
-          <div class="stat-card"><div class="num" id="ordStatSingleSongs" style="color:var(--accent-2,#ec4899);">0</div><div class="label">🎵 เพลงเดี่ยวที่ขายได้</div></div>
-          <div class="stat-card"><div class="num" id="ordStatPlaylistSongs" style="color:var(--accent-2,#ec4899);">0</div><div class="label">🎶 เพลงในเพลย์ลิสต์ที่ขายได้</div></div>
+          <div class="stat-card"><div class="num" id="ordStatSingleSongs" style="color:var(--accent-2,#c6ff3d);">0</div><div class="label">🎵 เพลงเดี่ยวที่ขายได้</div></div>
+          <div class="stat-card"><div class="num" id="ordStatPlaylistSongs" style="color:var(--accent-2,#c6ff3d);">0</div><div class="label">🎶 เพลงในเพลย์ลิสต์ที่ขายได้</div></div>
         </div>
         <div class="stat-grid" style="margin-bottom:16px;">
-          <div class="stat-card" style="grid-column:span 2;"><div class="num" id="ordStatDiscount" style="color:var(--accent-2,#ec4899);">0</div><div class="label">ส่วนลด/โปรโมชั่นรวม (LAK) — เฉพาะสำเร็จ</div></div>
+          <div class="stat-card" style="grid-column:span 2;"><div class="num" id="ordStatDiscount" style="color:var(--accent-2,#c6ff3d);">0</div><div class="label">ส่วนลด/โปรโมชั่นรวม (LAK) — เฉพาะสำเร็จ</div></div>
         </div>
 
         <!-- 🔧 (2026-09-19 layout fix): ย้ายฟอร์ม "สร้างออเดอร์ใหม่" ไปเป็น collapsible -->
@@ -649,7 +650,7 @@
             </div>
           </label>
           <!-- สถานะกำลังอัปโหลด -->
-          <div id="logoUploadProgress" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(139,92,246,.08);border:1px solid var(--accent);border-radius:8px;font-size:13px;color:var(--accent);">
+          <div id="logoUploadProgress" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(198, 255, 61,.08);border:1px solid var(--accent);border-radius:8px;font-size:13px;color:var(--accent);">
             กำลังอัปโหลดรูปโลโก้... <span id="logoUploadPercent">0%</span>
           </div>
         </div>
@@ -689,7 +690,7 @@
             </div>
           </label>
           <!-- สถานะกำลังอัปโหลด -->
-          <div id="qrUploadProgress" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(139,92,246,.08);border:1px solid var(--accent);border-radius:8px;font-size:13px;color:var(--accent);">
+          <div id="qrUploadProgress" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(198, 255, 61,.08);border:1px solid var(--accent);border-radius:8px;font-size:13px;color:var(--accent);">
             กำลังอัปโหลดรูป QR... <span id="qrUploadPercent">0%</span>
           </div>
         </div>
@@ -744,7 +745,7 @@
       <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
         <button class="icon-btn back-btn">←</button>
         <div style="flex:1;font-weight:800;">จัดการแอดมิน</div>
-        <button class="icon-btn" id="addAdminBtn" style="background:var(--accent);color:#fff;">＋</button>
+        <button class="icon-btn" id="addAdminBtn" style="background:var(--accent);color:var(--accent-ink,#0c0d0e);">＋</button>
       </div>
       <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">แอดมินหลักเพิ่ม/ลบ/แก้ไขแอดมินคนอื่นได้ทั้งหมด ส่วนแอดมินย่อยจะเข้าหน้านี้ไม่ได้และไม่เห็นเมนูนี้</p>
       <div id="adminList" class="container" style="padding:10px 16px 24px;"></div>
@@ -792,7 +793,7 @@
       <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
         <button class="icon-btn back-btn">←</button>
         <div style="flex:1;font-weight:800;">ลดราคา</div>
-        <button class="icon-btn" id="addDiscountBtn" style="background:var(--accent);color:#fff;">＋</button>
+        <button class="icon-btn" id="addDiscountBtn" style="background:var(--accent);color:var(--accent-ink,#0c0d0e);">＋</button>
       </div>
       <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">ลดราคาเฉพาะเพลง/เพลย์ลิสต์ — ตั้งวันเริ่ม/สิ้นสุดและเปิด/ปิดได้ เมื่อหมดเวลาระบบกลับไปใช้ราคาปกติอัตโนมัติ</p>
       <div id="discountList" class="container" style="padding:10px 16px 24px;"></div>
@@ -803,7 +804,7 @@
       <div class="container" style="padding:14px 16px 6px;display:flex;gap:8px;align-items:center;">
         <button class="icon-btn back-btn">←</button>
         <div style="flex:1;font-weight:800;">โปรโมชั่น</div>
-        <button class="icon-btn" id="addPromotionBtn" style="background:var(--accent);color:#fff;">＋</button>
+        <button class="icon-btn" id="addPromotionBtn" style="background:var(--accent);color:var(--accent-ink,#0c0d0e);">＋</button>
       </div>
       <p style="color:var(--text-dim);font-size:13px;padding:0 16px;margin-top:-4px;">โปรโมชั่นคำนวณอัตโนมัติในตะกร้า — ไม่ต้องกรอกรหัส ตัวอย่าง: ซื้อครบ 3 เพลง ลด 10% / ครบ 5 ลด 20% / ครบ 10 ลด 30%</p>
       <div id="promotionList" class="container" style="padding:10px 16px 24px;"></div>
@@ -893,7 +894,7 @@
       <!-- 🆕 (T041): Period selector — รวมในกล่องเดียวกัน -->
       <div style="padding:0 16px;margin:12px 0;">
         <div style="display:inline-flex;gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface);">
-          <button type="button" class="reports-period-btn" data-period="daily" id="reportsPeriodDaily" style="padding:7px 14px;font-size:12px;font-weight:600;border:none;background:var(--accent);color:#fff;cursor:pointer;">30 วัน</button>
+          <button type="button" class="reports-period-btn" data-period="daily" id="reportsPeriodDaily" style="padding:7px 14px;font-size:12px;font-weight:600;border:none;background:var(--accent);color:var(--accent-ink,#0c0d0e);cursor:pointer;">30 วัน</button>
           <button type="button" class="reports-period-btn" data-period="weekly" id="reportsPeriodWeekly" style="padding:7px 14px;font-size:12px;font-weight:600;border:none;background:transparent;color:var(--text-dim);cursor:pointer;border-left:1px solid var(--border);">90 วัน</button>
           <button type="button" class="reports-period-btn" data-period="monthly" id="reportsPeriodMonthly" style="padding:7px 14px;font-size:12px;font-weight:600;border:none;background:transparent;color:var(--text-dim);cursor:pointer;border-left:1px solid var(--border);">1 ปี</button>
         </div>
@@ -910,7 +911,7 @@
           <div style="font-size:10px;color:var(--text-dim);margin-top:2px;">💰 ยอดขาย (LAK)</div>
         </div>
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 10px;text-align:center;">
-          <div style="font-size:20px;font-weight:800;color:#ec4899;" id="rptAvgOrder">0</div>
+          <div style="font-size:20px;font-weight:800;color:#c6ff3d;" id="rptAvgOrder">0</div>
           <div style="font-size:10px;color:var(--text-dim);margin-top:2px;">🧮 เฉลี่ย (LAK)</div>
         </div>
       </div>
@@ -1887,7 +1888,7 @@
           <input id="customerPwResetNote" type="text" placeholder="หมายเหตุ..." style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:13px;">
         </div>
         <div style="display:flex;gap:8px;">
-          <button class="btn" id="customerPwResetConfirm" type="button" style="flex:1;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">✅ รีเซ็ตรหัสผ่าน</button>
+          <button class="btn" id="customerPwResetConfirm" type="button" style="flex:1;padding:10px;background:var(--accent);color:var(--accent-ink,#0c0d0e);border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">✅ รีเซ็ตรหัสผ่าน</button>
           <button class="btn" id="customerPwResetCancel" type="button" style="flex:1;padding:10px;background:transparent;color:var(--text);border:1px solid rgba(255,255,255,.15);border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">ยกเลิก</button>
         </div>
         <div id="customerPwResetResult" style="font-size:12px;margin-top:8px;min-height:14px;"></div>
@@ -1934,7 +1935,7 @@
   </div>
 
   <script src="phone-input.js?v=20261015-waveback" defer></script>
-  <script src="waveform.js?v=20261018-rgbwide" defer></script>
-  <script type="module" src="app-admin.js?v=20261018-secnum"></script>
+  <script src="waveform.js?v=20261018-pro1" defer></script>
+  <script type="module" src="app-admin.js?v=20261018-pro2"></script>
 </body>
 </html>
