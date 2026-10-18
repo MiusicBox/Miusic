@@ -1560,9 +1560,15 @@
           <span id="songDetailSectionsChevron" style="transition:transform .2s;">▼</span>
         </button>
         <div id="songDetailSectionsBody" style="display:none;margin-top:10px;">
-          <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">1) เลือกชนิดท่อน · 2) กด "เปิดโหมดแตะ" · 3) แตะบนกราฟตรงที่ท่อนนั้นเริ่ม (ระบบปัดเข้าหาห้องที่ใกล้ที่สุด) · ท่อนจะจบที่จุดเริ่มของท่อนถัดไป</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">1) เลือกชนิดท่อน · 2) กด "เปิดโหมดแตะ" · 3) แตะบนกราฟตรงที่ท่อนนั้นเริ่ม (ระบบปัดเข้าหาห้องที่ใกล้ที่สุด) · ท่อนจะจบที่จุดเริ่มของท่อนถัดไป · ถ้าเพลงไม่มีกราฟ ใช้ช่อง "กรอกเลขห้อง" ด้านล่างแทนได้</div>
           <div id="songDetailSecChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"><button type="button" class="btn secondary" data-sec-type="intro" style="font-size:12px;padding:7px 10px;">INTRO</button><button type="button" class="btn secondary" data-sec-type="verse" style="font-size:12px;padding:7px 10px;">VERSE</button><button type="button" class="btn secondary" data-sec-type="chorus" style="font-size:12px;padding:7px 10px;">CHORUS</button><button type="button" class="btn secondary" data-sec-type="break" style="font-size:12px;padding:7px 10px;">BREAK</button><button type="button" class="btn secondary" data-sec-type="dance" style="font-size:12px;padding:7px 10px;">DANCE</button><button type="button" class="btn secondary" data-sec-type="outro" style="font-size:12px;padding:7px 10px;">OUTRO</button></div>
           <button type="button" id="songDetailSecTapBtn" class="btn secondary" style="width:100%;font-size:13px;padding:10px;margin-bottom:8px;">👆 เปิดโหมดแตะตั้งท่อน</button>
+          <div style="font-size:11px;color:var(--text-dim);margin:2px 0 4px;">หรือกรอกเลขห้องเอง (ใช้ได้แม้ไม่มีกราฟ)</div>
+          <div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) auto;gap:6px;margin-bottom:8px;">
+            <select id="songDetailSecAddType" aria-label="ชนิดท่อน" style="padding:8px;font-size:13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--text);min-width:0;"><option value="intro">INTRO</option><option value="verse">VERSE</option><option value="chorus">CHORUS</option><option value="break">BREAK</option><option value="dance">DANCE</option><option value="outro">OUTRO</option></select>
+            <input type="number" id="songDetailSecAddBar" min="0" step="1" inputmode="numeric" placeholder="ห้องที่เริ่ม" aria-label="ห้องที่ท่อนเริ่ม" style="padding:8px;font-size:13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--text);min-width:0;">
+            <button type="button" id="songDetailSecAddBtn" class="btn secondary" style="font-size:13px;padding:8px 14px;">➕ เพิ่ม</button>
+          </div>
           <div id="songDetailSecList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;"></div>
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-bottom:8px;">
             <button type="button" id="songDetailSecAutoBtn" class="btn secondary" style="font-size:12px;padding:8px 4px;">📋 ดึงค่าอัตโนมัติมาแก้</button>
@@ -1929,6 +1935,6 @@
 
   <script src="phone-input.js?v=20261015-waveback" defer></script>
   <script src="waveform.js?v=20261018-rgbwide" defer></script>
-  <script type="module" src="app-admin.js?v=20261018-secedit"></script>
+  <script type="module" src="app-admin.js?v=20261018-secnum"></script>
 </body>
 </html>
