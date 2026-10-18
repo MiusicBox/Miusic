@@ -1,0 +1,356 @@
+/* ==========================================================================
+   theme-pro.css — Pro DJ Marketplace skin (FRONTEND ONLY)
+   โหลดต่อจาก style.css ทุกหน้า — ไม่แตะ HTML logic / JS / API
+   ย้อนกลับ: ลบ <link> theme-pro.css ออกจาก index.html + admin.html
+   ========================================================================== */
+
+/* ---------- 1) Tokens ---------- */
+:root {
+  --bg: #0c0d0e;
+  --surface: #141618;
+  --surface-2: #1a1d20;
+  --surface-hover: #22262a;
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --border-focus: rgba(198, 255, 61, 0.6);
+
+  --text: #eef0f1;
+  --text-dim: #8d959b;
+
+  --accent: #c6ff3d;            /* acid lime */
+  --accent-ink: #0c0d0e;        /* ตัวอักษรบนพื้น lime */
+  --accent-dim: #8fb82a;
+  --accent-glow: rgba(198, 255, 61, 0.14);
+  --accent-2: #c6ff3d;
+  --accent-2-glow: rgba(198, 255, 61, 0.14);
+
+  --success: #4ade80;
+  --danger: #ff5a4f;
+
+  --radius: 6px;
+  --radius-sm: 4px;
+
+  --shadow-sm: none;
+  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.55);
+  --shadow-accent: none;
+
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  /* ชุดสี Cyberpunk เดิม → ผูกกับ accent เดียว */
+  --cp-bg: #0c0d0e;
+  --cp-pink: #c6ff3d;
+  --cp-cyan: #c6ff3d;
+  --cp-yellow: #c6ff3d;
+  --cp-pink-glow: rgba(198, 255, 61, 0.18);
+  --cp-cyan-glow: rgba(198, 255, 61, 0.12);
+}
+
+html, body { background: var(--bg); }
+
+/* ---------- 2) Topbar / Logo ---------- */
+.topbar {
+  background: rgba(12, 13, 14, 0.97);
+  box-shadow: none;
+  border-bottom: 1px solid var(--border);
+}
+.topbar-inner { padding: 10px 14px; }
+.logo { font-family: 'Plus Jakarta Sans', 'IBM Plex Sans Thai', sans-serif; font-size: 19px; letter-spacing: -0.02em; }
+.logo #siteName {
+  background: none !important;
+  -webkit-background-clip: border-box !important;
+  background-clip: border-box !important;
+  -webkit-text-fill-color: currentColor !important;
+  color: var(--text) !important;
+  filter: none !important;
+  animation: none !important;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+/* ---------- 3) Chips (หมวด / filter) ---------- */
+.chip {
+  border-radius: 3px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 6px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.chip:hover { background: var(--surface-hover); border-color: var(--border-strong); color: var(--text); box-shadow: none; }
+.chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+/* ---------- 4) Buttons ---------- */
+.btn {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  min-height: 44px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.btn:hover { filter: none; transform: none; background: #d6ff6b; box-shadow: none; }
+.btn:active { transform: none; background: var(--accent-dim); box-shadow: none; }
+.btn.secondary { background: transparent; color: var(--text); border: 1px solid var(--border-strong); }
+.btn.secondary:hover { background: var(--surface-hover); border-color: var(--text-dim); }
+.btn.danger { background: transparent; color: var(--danger); border: 1px solid rgba(255, 90, 79, 0.5); }
+.btn.danger:hover { background: rgba(255, 90, 79, 0.12); }
+.btn:disabled { background: var(--surface-2); color: var(--text-dim); border-color: transparent; opacity: 1; }
+button:active { transform: none; }
+
+/* ---------- 5) Forms / Modals ---------- */
+.field input, .field select, .field textarea {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.field input:hover, .field select:hover, .field textarea:hover { border-color: var(--border-strong); }
+.field input:focus, .field select:focus, .field textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+  outline: none;
+}
+.modal { border-radius: var(--radius); border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg); background: var(--surface); }
+.modal-close { border-radius: var(--radius-sm); }
+
+/* ---------- 6) Song row — แถวหนาแน่นแบบ catalog ---------- */
+.song-card-row {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: none !important;
+  overflow: visible;
+  transition: background .12s ease, border-color .12s ease !important;
+}
+.song-card-row::before,
+.song-card-row::after { content: none !important; display: none !important; animation: none !important; }
+.song-card-row:hover {
+  transform: none !important;
+  background: var(--surface-2) !important;
+  border-color: var(--border-strong) !important;
+  box-shadow: none !important;
+}
+.song-card-row:first-child, .song-card-row:last-child { border-radius: var(--radius-sm) !important; }
+.song-card-row.playing, .song-card-row.is-playing, .song-card-row.active {
+  border-color: var(--accent) !important;
+  box-shadow: inset 3px 0 0 var(--accent) !important;
+}
+
+.song-cover { border-radius: 3px; border: 1px solid var(--border); }
+.song-cover img { border-radius: 2px; }
+.song-card-row .song-name,
+.playlist-song-row.song-card-row .playlist-item-name {
+  font-family: 'Plus Jakarta Sans', 'IBM Plex Sans Thai', sans-serif !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em;
+  text-shadow: none !important;
+  color: var(--text) !important;
+}
+.song-meta-text { color: var(--text-dim); }
+.song-dj-tag {
+  background: transparent !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: 2px !important;
+  box-shadow: none !important;
+  color: var(--text) !important;
+  text-shadow: none !important;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+}
+
+/* BPM / Key — ตัวเลขแบบ mono เหมือนเครื่องมือ DJ */
+.bpm-badge .bpm-num, .music-key-badge .mk-key, .player-seek-row .time { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.bpm-badge .bpm-dot { box-shadow: none !important; width: 5px; height: 5px; border-radius: 1px; }
+.bpm-badge.bpm-150 .bpm-dot { background: #5eead4 !important; }
+.bpm-badge.bpm-155 .bpm-dot { background: var(--accent) !important; }
+.bpm-badge.bpm-160 .bpm-dot { background: #ffb020 !important; }
+.music-key-badge { border-radius: 2px; box-shadow: none; }
+.music-key-badge .mk-symbol, .music-key-badge .mk-key { text-shadow: none !important; }
+.music-key-badge .mk-symbol { display: none; }          /* ตัด emoji 🎹 ออก เหลือเลข Camelot (สีตามวงล้อเดิม) */
+
+.song-price, .song-price-block { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.song-price { color: var(--accent) !important; font-weight: 700; text-shadow: none !important; }
+
+/* ปุ่ม play บนปก */
+.song-cover .play-btn { background: rgba(12, 13, 14, 0.55); border-radius: 2px; }
+.song-card:hover .play-btn svg { transform: none; }
+
+/* ---------- 7) Bottom nav ---------- */
+.bottom-nav { box-shadow: none; border-top: 1px solid var(--border); }
+.bottom-nav::before { background: rgba(12, 13, 14, 0.97); }
+.bottom-nav button { font-size: 10px; letter-spacing: 0.04em; }
+.bottom-nav button.active { color: var(--accent); box-shadow: inset 0 2px 0 var(--accent); }
+
+/* ---------- 8) Player ---------- */
+.player-bar {
+  background: rgba(20, 22, 24, 0.98);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+.player-bar img { border-radius: 2px; }
+.player-bar .ctrl { border-radius: var(--radius-sm); }
+.player-seek-row input[type="range"] { accent-color: var(--accent); }
+.player-seek-row input[type="range"]::-webkit-slider-thumb { background: var(--accent); border-radius: 1px; box-shadow: none; }
+.wave-box { border-radius: var(--radius-sm); border: 1px solid var(--border); background: #0c0d0e; }
+.wave-box canvas:focus-visible { outline: 2px solid var(--accent); }
+
+/* ---------- 9) Misc ---------- */
+.section-title { letter-spacing: 0.02em; }
+::selection { background: var(--accent); color: var(--accent-ink); }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ==========================================================================
+   PHASE 3 — หน้าลูกค้าที่เหลือ (ตะกร้า / login / โปรไฟล์ / ออเดอร์ / แบนเนอร์ / เพลย์ลิสต์)
+   ========================================================================== */
+
+/* --- ตัวหนังสือบนพื้น lime ต้องเป็นสีเข้ม --- */
+.hero-cta, .category-card .cat-count, #scrollTopBtn, .adv-chip.active,
+#songModalBackdrop .review-avatar, #songModalBackdrop .review-mine-badge,
+.btn-icon-mini[data-favorite-btn].is-favorite {
+  color: var(--accent-ink) !important;
+  text-shadow: none !important;
+}
+.hero-cta, .category-card .cat-count { background: var(--accent) !important; box-shadow: none !important; border-radius: var(--radius-sm); }
+.btn-icon-mini[data-favorite-btn].is-favorite { background: var(--accent) !important; }
+.adv-chip { border-radius: 3px; }
+
+/* --- Hero banner หน้าแรก: เรียบ ไม่มี mesh/eq animation --- */
+.hero-banner {
+  background: var(--surface) !important;
+  border: 1px solid var(--border);
+  border-radius: var(--radius) !important;
+  box-shadow: none !important;
+}
+.hero-banner::before, .hero-banner::after { display: none !important; animation: none !important; }
+.hero-banner-content { text-align: left; }
+
+/* --- แบนเนอร์โปรโมชัน: ตัดมุมตัด/นีออน --- */
+.promo-home-banner {
+  clip-path: none !important;
+  border-radius: var(--radius-sm) !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--border-strong) !important;
+  border-left: 3px solid var(--accent) !important;
+  box-shadow: none !important;
+  font-family: inherit !important;
+}
+.promo-home-banner:hover { transform: none !important; box-shadow: none !important; border-color: var(--accent) !important; }
+.promo-home-banner-icon svg, .promo-home-banner:hover .promo-home-banner-arrow { filter: none !important; text-shadow: none !important; }
+.promo-home-banner-countdown.urgent { box-shadow: none !important; color: var(--accent-ink); }
+
+/* --- หัวเพลย์ลิสต์ (เดิม 3 สีไล่เฉด) → แถบเรียบเดียว --- */
+.playlist-block:nth-child(n) .playlist-folder-btn,
+.playlist-block:nth-child(n) .playlist-folder-btn:hover {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: none !important;
+}
+.playlist-block:nth-child(n) .playlist-folder-btn:hover { background: var(--surface-2) !important; border-color: var(--border-strong) !important; }
+.playlist-block .playlist-song-row.song-card-row .playlist-cover,
+.playlist-block .playlist-song-row.song-card-row .playlist-cover img { border-radius: 3px !important; }
+.song-card-row .cart-add-btn-row, .playlist-song-row.song-card-row .cart-add-btn-row,
+.playlist-block .playlist-folder-btn .btn-like-tiktok,
+.playlist-block .playlist-folder-btn .playlist-folder-buy-btn { border-radius: var(--radius-sm) !important; }
+
+/* --- หัวข้อ section: แท่ง lime ทึบ --- */
+.section-title-row .section-title::before { background: var(--accent) !important; width: 3px; border-radius: 0; }
+
+/* --- ตะกร้า / ชำระเงิน --- */
+.cart-item, .cart-summary, .cart-item-cover {
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+}
+.cart-item { background: var(--surface); border: 1px solid var(--border); }
+.cart-summary { background: var(--surface); border: 1px solid var(--border-strong); }
+.cart-summary-row.total, .cart-item-total { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.slip-upload-zone { border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); }
+.slip-upload-zone:hover, .slip-upload-zone.drag-over { border-color: var(--accent); background: var(--accent-glow); }
+.empty-state-cute { box-shadow: none; }
+
+/* --- Login / สมัครสมาชิก / โปรไฟล์ --- */
+.login-card { background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius) !important; box-shadow: none !important; }
+.dashboard-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.dashboard-card:hover { transform: none; border-color: var(--accent); }
+.dashboard-card-value { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* --- ติดตามออเดอร์ / ประวัติการซื้อ --- */
+.my-orders-receipt-search, .my-order-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm) !important; box-shadow: none; }
+.my-orders-form .field input, .my-orders-receipt-search .field input { border-radius: var(--radius-sm); }
+.my-order-card.expanded { border-color: var(--accent); }
+.my-order-status-badge { border-radius: 2px; letter-spacing: 0.03em; text-transform: none; font-family: var(--mono); font-size: 10.5px; }
+.my-order-item-row, .receipt-line { font-variant-numeric: tabular-nums; }
+.track-order-modal, .cart-modal { border-radius: var(--radius); }
+
+/* --- ค้นหาขั้นสูง --- */
+.adv-modal-panel { border-radius: var(--radius) var(--radius) 0 0; background: var(--surface); border-top: 1px solid var(--border-strong); }
+
+/* --- แถบเตือนออเดอร์ค้างชำระ --- */
+.pending-order-banner { border-radius: var(--radius-sm); box-shadow: none; }
+
+/* --- Toast / Dialog (notify.css) --- */
+.nf-toast, .nf-dialog { border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); }
+
+/* ==========================================================================
+   PHASE 4 — แอดมิน (หน้าตาเท่านั้น — ไม่แตะ logic)
+   ========================================================================== */
+.admin-page .admin-shell { background: var(--bg); }
+.admin-page .stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  text-align: left;
+}
+.admin-page .stat-card .num { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--text); }
+.admin-page .stat-card .label { color: var(--text-dim); font-size: 11px; letter-spacing: 0.04em; }
+
+.admin-page .quick-actions button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  transition: background .12s ease, border-color .12s ease;
+}
+.admin-page .quick-actions button:hover { background: var(--surface-2); border-color: var(--accent); transform: none; box-shadow: none; }
+
+.admin-page .icon-btn, .admin-page .back-btn { border-radius: var(--radius-sm); box-shadow: none; }
+.admin-page .icon-btn:hover, .admin-page .back-btn:hover { border-color: var(--accent); }
+
+.admin-page .search-box input, .admin-page .filter-input, .admin-page .history-search input {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.admin-page .search-box input:focus, .admin-page .filter-input:focus, .admin-page .history-search input:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); outline: none;
+}
+.admin-page .advanced-search-panel, .admin-page .reports-table-wrap, .admin-page .qr-preview-wrap {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: none;
+}
+.admin-page .reports-table-wrap table { font-variant-numeric: tabular-nums; }
+.admin-page .reports-table-wrap th { font-size: 11px; letter-spacing: 0.05em; color: var(--text-dim); }
+.admin-page .reports-period-btn { border-radius: 3px; }
+.admin-page .reports-period-btn.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+.admin-page .file-picker { border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); }
+.admin-page .file-picker:hover { border-color: var(--accent); }
+.admin-page .progress-outer { background: var(--surface-2); border-radius: 2px; height: 6px; overflow: hidden; }
+.admin-page .progress-inner { background: var(--accent) !important; border-radius: 0; box-shadow: none; }
+
+.admin-page .bpm-stepper, .admin-page .jump-btn { border-radius: var(--radius-sm); }
+.admin-page .bpm-readout, .admin-page .bpm-step-input { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.admin-page .bar-chart { border-radius: var(--radius-sm); }
+.admin-page .badge { border-radius: 2px; box-shadow: none; }
+.admin-page .login-card { border-radius: var(--radius) !important; }
