@@ -7846,6 +7846,8 @@ function detailSecRender() {
     b.style.background = on ? c + "40" : "";
     b.style.color = on ? "#fff" : "";
   });
+  const addType = document.getElementById("songDetailSecAddType");
+  if (addType) addType.value = detailSecType;
   const tapBtn = document.getElementById("songDetailSecTapBtn");
   if (tapBtn) {
     tapBtn.textContent = detailSecTapMode ? "✅ โหมดแตะเปิดอยู่ — แตะกราฟเพื่อตั้งจุดเริ่ม " + (SEC_TYPES.find(x => x[0] === detailSecType) || [0, ""])[1] + " (กดอีกครั้งเพื่อปิด)" : "👆 เปิดโหมดแตะตั้งท่อน";
@@ -7897,6 +7899,7 @@ document.querySelectorAll("#songDetailSecChips [data-sec-type]").forEach((b) => 
   b.addEventListener("click", () => { detailSecType = b.dataset.secType; detailSecRender(); });
 });
 document.getElementById("songDetailSecTapBtn")?.addEventListener("click", () => {
+  if (!detailSecTapMode && !(detailSecDur() && detailPendingPreviewData && Array.isArray(detailPendingPreviewData.waveform) && detailPendingPreviewData.waveform.length)) { showToast("เพลงนี้ยังไม่มีกราฟ — ใช้ช่อง \"กรอกเลขห้อง\" ด้านล่างแทน", "info"); return; }
   detailSecTapMode = !detailSecTapMode;
   if (detailSecTapMode) {
     // สลับกราฟเป็นสไตล์ "ส่วนเพลง" ให้เห็นแถบท่อนขณะตั้ง
@@ -7904,6 +7907,24 @@ document.getElementById("songDetailSecTapBtn")?.addEventListener("click", () => 
     if (secBtn) secBtn.click();
   }
   detailSecRender();
+});
+// 🆕 (2026-10-18): เพิ่มท่อนด้วยการกรอกเลขห้อง (ใช้ได้แม้เพลงไม่มีกราฟ) — ห้องที่ซ้ำกับท่อนเดิม = เปลี่ยนชนิดท่อนนั้น
+document.getElementById("songDetailSecAddType")?.addEventListener("change", (e) => { detailSecType = e.target.value; detailSecRender(); });
+document.getElementById("songDetailSecAddBtn")?.addEventListener("click", () => {
+  const typeEl = document.getElementById("songDetailSecAddType"), barEl = document.getElementById("songDetailSecAddBar");
+  if (!typeEl || !barEl) return;
+  const bar = Number(String(barEl.value).trim());
+  if (barEl.value === "" || !Number.isInteger(bar) || bar < 0) { showToast("กรอกเลขห้องเป็นจำนวนเต็ม 0 ขึ้นไป", "error"); return; }
+  const bs = detailSecBarSec(), dur = detailSecDur();
+  if (dur && bar * bs >= dur) { showToast("ห้องนี้เกินความยาวเพลง (ห้องสูงสุด " + Math.max(0, Math.floor(dur / bs) - 1) + ")", "error"); return; }
+  const type = typeEl.value;
+  detailSecType = type;
+  detailSecMutate((arr) => {
+    const start = bar * bs;
+    const i = arr.findIndex(x => Math.abs(x.start - start) < 0.05);
+    if (i >= 0) arr[i].type = type; else arr.push({ type, start });
+  });
+  barEl.value = "";
 });
 document.getElementById("songDetailSecAutoBtn")?.addEventListener("click", () => {
   const MW = window.MiusicWave, data = detailPendingPreviewData;
