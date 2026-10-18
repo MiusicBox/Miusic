@@ -6621,8 +6621,8 @@ async function renderPaymentsList() {
             </a>
           </div>
           <div style="display:flex;gap:8px;margin-top:10px;">
-            <button class="btn" data-verify="${escapeHtml(p.id)}" data-order="${escapeHtml(p.order_id)}" style="flex:1;background:var(--success);color:#fff;">✓ ยืนยันสลิปถูกต้อง</button>
-            <button class="btn" data-reject="${escapeHtml(p.id)}" data-order="${escapeHtml(p.order_id)}" style="flex:1;background:var(--danger);color:#fff;">✗ ปฏิเสธ</button>
+            <button class="btn" data-verify="${escapeHtml(p.id)}" data-order="${escapeHtml(p.order_id)}" style="flex:1;background:var(--success);color:var(--accent-ink,#0c0d0e);">✓ ยืนยันสลิปถูกต้อง</button>
+            <button class="btn" data-reject="${escapeHtml(p.id)}" data-order="${escapeHtml(p.order_id)}" style="flex:1;background:var(--danger);color:var(--accent-ink,#0c0d0e);">✗ ปฏิเสธ</button>
           </div>
         </div>
       `;
