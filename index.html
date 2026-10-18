@@ -78,7 +78,7 @@
      สาเหตุ: เทคนิค media="print"+onload ทำให้หน้าเว็บวาดแบบ "ไม่มีสไตล์" ก่อน แล้วสไตล์มาทีหลัง → ทุกอย่างกระโดด
      (CLS 0.649 = ตัวที่ทำให้คะแนนตก 76) ไฟล์/เวอร์ชันเดิมทุกอย่าง แค่เอาการโหลดแบบหน่วงออก -->
 <link rel="stylesheet" href="style.css?v=20261018-pro4b">
-<link rel="stylesheet" href="theme-pro.css?v=20261018-pro4">
+<link rel="stylesheet" href="theme-pro.css?v=20261018-compact">
 <!-- 🎨 (2026-10-11) ระบบแจ้งเตือนใหม่ (toast + dialog) — ต้องโหลดก่อน app-*.js -->
 <link rel="stylesheet" href="notify.css?v=20261018-pro2">
 <script src="notify.js?v=20261015-waveback"></script>
@@ -1414,7 +1414,7 @@
   <!-- เปลี่ยนเลข v ทุกครั้งที่อัปโหลดไฟล์ใหม่ เพื่อไม่ให้มือถือใช้ไฟล์ JS จาก cache -->
   <!-- 🔧 v=20260917-p0: P0 แก้ Bug 1 (ลูกค้าตั้ง status เองไม่ได้) + Sec 1 (change-password ต้อง verify เดิม) -->
   <!-- 🔧 v=20260917-polling-fix: Phase 0 ยกเลิก polling ทุก 4 วิ + Phase 1 จุด 5 (admin view cache) + Phase 2 จุด 1 (state ฝั่ง client) -->
-  <script src="waveform.js?v=20261018-pro1" defer></script>
+  <script src="waveform.js?v=20261018-compact" defer></script>
 <script type="module" src="app-user.js?v=20261018-pro4"></script>
   <!-- 🆕 (T045): PhoneInput country selector — โหลดก่อน customer-auth.js เพราะ customer-auth.js ใช้ PhoneInput.mount() -->
   <!--   ผลกระทบระบบเดิม: 0% — ไฟล์ใหม่ ไม่แตะ app-user.js/app-cart.js -->
