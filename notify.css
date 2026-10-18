@@ -10,8 +10,8 @@
   --nf-ok: #34d399;
   --nf-err: #f87171;
   --nf-warn: #fbbf24;
-  --nf-info: var(--accent, #8b5cf6);
-  --nf-panel: rgba(21, 25, 40, .94);
+  --nf-info: var(--accent, #c6ff3d);
+  --nf-panel: rgba(20, 22, 24, .97);
   --nf-line: rgba(255, 255, 255, .09);
   --nf-text: var(--text, #f8fafc);
   --nf-dim: var(--text-dim, #94a3b8);
@@ -125,7 +125,7 @@
 .nf-toast.progress .nf-bar {
   width: 40%;
   right: auto;
-  background: linear-gradient(90deg, transparent, var(--accent, #8b5cf6), var(--accent-2, #ec4899), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent, #c6ff3d), var(--accent-2, #c6ff3d), transparent);
   opacity: 1;
   animation: nfSlide 1.2s ease-in-out infinite;
 }
@@ -207,8 +207,8 @@
   transition: border-color .15s, box-shadow .15s;
 }
 .nf-input:focus {
-  border-color: var(--border-focus, rgba(139, 92, 246, .55));
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, .18);
+  border-color: var(--border-focus, rgba(198, 255, 61, .55));
+  box-shadow: 0 0 0 3px rgba(198, 255, 61, .18);
 }
 
 .nf-actions { display: flex; gap: 10px; margin-top: 20px; }
@@ -230,8 +230,8 @@
 .nf-btn:active { transform: scale(.97); }
 .nf-btn.primary {
   border-color: transparent; color: #fff;
-  background: linear-gradient(135deg, var(--accent, #8b5cf6), #7c3aed);
-  box-shadow: 0 6px 18px rgba(139, 92, 246, .35);
+  background: linear-gradient(135deg, var(--accent, #c6ff3d), #7c3aed);
+  box-shadow: 0 6px 18px rgba(198, 255, 61, .35);
 }
 .nf-dialog.success .nf-btn.primary { background: linear-gradient(135deg, #10b981, #059669); box-shadow: 0 6px 18px rgba(16, 185, 129, .32); }
 .nf-dialog.danger .nf-btn.primary,
