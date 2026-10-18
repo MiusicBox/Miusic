@@ -56,8 +56,8 @@ return out;
 //   mono    = สีเดียวแบบเดิม
 const SEC = {
 intro:  { c0: "#15803d", c1: "#22c55e", tag: "INTRO", dot: "#22c55e", name: "อินโทร" },
-normal: { c0: "#3730a3", c1: "#818cf8", tag: "",      dot: "#818cf8", name: "ปกติ" },
-hook:   { c0: "#3730a3", c1: "#818cf8", tag: "HOOK",  dot: "#818cf8", name: "Hook" },
+normal: { c0: "#374151", c1: "#9ca3af", tag: "",      dot: "#9ca3af", name: "ปกติ" },
+hook:   { c0: "#4d7c0f", c1: "#bef264", tag: "HOOK",  dot: "#bef264", name: "Hook" },
 verse:  { c0: "#0369a1", c1: "#38bdf8", tag: "VERSE",  dot: "#38bdf8", name: "Verse" },
 chorus: { c0: "#a21caf", c1: "#e879f9", tag: "CHORUS", dot: "#e879f9", name: "Chorus" },
 brk:    { c0: "#b45309", c1: "#fbbf24", tag: "BREAK", dot: "#fbbf24", name: "Break" },
@@ -215,7 +215,7 @@ if (canvas.__waveSwitch) return getStyle(storageKey, def);
 const box = document.createElement("div");
 box.className = "wave-style-switch";
 box.style.cssText = "display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 2px;";
-const accent = cssVar("--accent", "#8b5cf6");
+const accent = cssVar("--accent", "#c6ff3d");
 const btns = [];
 const legend = document.createElement("span");
 legend.style.cssText = "margin-left:auto;display:inline-flex;flex-wrap:wrap;";
@@ -295,8 +295,8 @@ const g = canvas.getContext("2d");
 g.setTransform(dpr, 0, 0, dpr, 0, 0);
 g.clearRect(0, 0, w, h);
 const dur = Number(o.duration) > 0 ? Number(o.duration) : 0;
-const accent = cssVar("--accent", "#8b5cf6");
-const accent2 = cssVar("--accent-2", "#ec4899");
+const accent = cssVar("--accent", "#c6ff3d");
+const accent2 = withAlpha(accent, 0.38);
 const region = o.region && dur && o.region.end > o.region.start ? o.region : null;
 const time = o.time != null && dur ? Number(o.time) : null;
 const n = peaks.length, bw = w / n, gap = bw > 3 ? 1.5 : 0.6;
@@ -365,7 +365,7 @@ else { layer = null; canvas.__djLayer = null; }
 }
 if (layer) g.drawImage(layer.cv, 0, 0, w, h); else paintDj(g);
 if (time != null && dur) {
-g.fillStyle = "rgba(6,8,18,.38)";
+g.fillStyle = "rgba(8,9,10,.5)";
 g.fillRect(0, 0, Math.max(0, Math.min(w, (time / dur) * w)), h);
 }
 }
@@ -427,7 +427,7 @@ g.restore();
 if (useBigBar) {
 const stripTop = h - gridPad;
 const stripH = gridPad;
-g.fillStyle = "#0b0e1a";
+g.fillStyle = "#0c0d0e";
 g.fillRect(0, stripTop, w, stripH);
 g.fillStyle = "rgba(255,255,255,.14)";
 g.fillRect(0, stripTop, w, 1);
