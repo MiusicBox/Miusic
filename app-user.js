@@ -37,14 +37,14 @@ import {
   scopedStorageKey
 // 🔧 (2026-09-17 v2): เพิ่ม ?v=20260917-polling-fix บังคับ browser โหลด db-client.js ใหม่ (กัน cache เก่า)
 } from "./db-client.js?v=20261012-launch";
-import { initCart } from "./app-cart.js?v=20261012-launch";
+import { initCart } from "./app-cart.js?v=20261018-pro2";
 // ===== ลดราคา + โปรโมชั่น + ออเดอร์ของฉัน (ระบบใหม่ — รวมในไฟล์เดียว app-promotion.js) =====
 import {
   fetchActiveDiscounts, fetchActivePromotions, applyDiscountToPrice, findActiveDiscountFor,
   initMyOrdersView, cleanupMyOrdersView,
   // 🎁 (2026-09-20) เพิ่มใหม่: formatDateTime ใช้สำหรับแสดงวันที่ในหน้าโปรโมชั่นพรีวิว (เรียกจาก app-promotion.js ที่มีอยู่แล้ว)
   formatDateTime
-} from "./app-promotion.js?v=20261012-launch";
+} from "./app-promotion.js?v=20261018-pro2";
 // 🔧 (T116 2026-10-07 fix): ปรับ version จาก v10 → v11 ให้ตรงกับ app-cart.js + orders.js
 //   - Bug: cache-bust version ต่างกัน → ES module ถือว่าเป็น 2 instances คนละตัว
 //     app-user.js (v10) init() populate _discountsCache ใน v10 instance
@@ -2126,7 +2126,8 @@ function renderSongGrid() {
                 // 🆕 (T137 2026-10-13): เปลี่ยนดีไซน์ BPM badge เป็นแบบ #5 Minimal Text + Dot
                 //   <span class="bpm-badge bpm-XXX"><span class="bpm-dot"></span><span class="bpm-num">XXX</span><span class="bpm-unit">BPM</span></span>
                 const rawBpm = Number(s.bpm);
-                const bpmInt = (!Number.isFinite(rawBpm) || rawBpm < 150 || rawBpm > 165) ? 150 : Math.round(rawBpm);
+                if (!Number.isFinite(rawBpm) || rawBpm <= 0) return ""; /* ไม่มี BPM จริง → ซ่อน badge (ไม่แสดงค่าปลอม) */
+                const bpmInt = Math.round(rawBpm);
                 let cls = "bpm-150";
                 if (bpmInt >= 160) cls = "bpm-160";
                 else if (bpmInt >= 155) cls = "bpm-155";
@@ -2523,7 +2524,8 @@ function renderPlaylists() {
                     ${(() => {
                       // 🆕 (T137 2026-10-13): เพิ่ม BPM badge ใน playlist song row — ใช้โครงสร้าง #5 เดียวกับ song grid หลัก
                       const rawBpm = Number(s.bpm);
-                      const bpmInt = (!Number.isFinite(rawBpm) || rawBpm < 150 || rawBpm > 165) ? 150 : Math.round(rawBpm);
+                      if (!Number.isFinite(rawBpm) || rawBpm <= 0) return ""; /* ไม่มี BPM จริง → ซ่อน badge (ไม่แสดงค่าปลอม) */
+                const bpmInt = Math.round(rawBpm);
                       let cls = "bpm-150";
                       if (bpmInt >= 160) cls = "bpm-160";
                       else if (bpmInt >= 155) cls = "bpm-155";
@@ -3243,11 +3245,13 @@ function openSongModal(songId) {
     //   เหมือนกับ song grid + playlist rows (consistent UI ทุกที่)
     {
       const rawBpm = Number(song.bpm);
-      const bpmInt = (!Number.isFinite(rawBpm) || rawBpm < 150 || rawBpm > 165) ? 150 : Math.round(rawBpm);
-      let cls = "bpm-150";
-      if (bpmInt >= 160) cls = "bpm-160";
-      else if (bpmInt >= 155) cls = "bpm-155";
-      badges.push(`<span class="bpm-badge ${cls}" title="BPM ${bpmInt}"><span class="bpm-dot"></span><span class="bpm-num">${bpmInt}</span><span class="bpm-unit">BPM</span></span>`);
+      if (Number.isFinite(rawBpm) && rawBpm > 0) { /* ไม่มี BPM จริง → ซ่อน badge (ไม่แสดงค่าปลอม) */
+        const bpmInt = Math.round(rawBpm);
+        let cls = "bpm-150";
+        if (bpmInt >= 160) cls = "bpm-160";
+        else if (bpmInt >= 155) cls = "bpm-155";
+        badges.push(`<span class="bpm-badge ${cls}" title="BPM ${bpmInt}"><span class="bpm-dot"></span><span class="bpm-num">${bpmInt}</span><span class="bpm-unit">BPM</span></span>`);
+      }
     }
     // 🆕 (T139 2026-10-13): เพิ่ม Music Key badge ใน user song modal — เหมือนกับ song grid + playlist
     //   🆕 (T140): ใช้สีตาม Camelot wheel — class k-{N}{L}
@@ -4652,7 +4656,7 @@ async function loadCustomerDownloads() {
               <div style="font-size:13px;font-weight:700;color:var(--text);">ใบเสร็จ #${escapeHtml(receipt)}</div>
               <div style="font-size:11px;color:var(--text-dim);">${date} · ${songCount} เพลง · ${formatPrice(total)}</div>
             </div>
-            ${canDownload ? `<button type="button" class="btn-download" data-download-url="/api/track-download/${escapeHtml(orderId)}" data-download-id="${escapeHtml(orderId)}" style="background:var(--accent);color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">⬇️ ดาวน์โหลด ZIP</button>` : `<span style="font-size:11px;color:var(--text-dim);padding:6px 12px;">รอเตรียมไฟล์</span>`}
+            ${canDownload ? `<button type="button" class="btn-download" data-download-url="/api/track-download/${escapeHtml(orderId)}" data-download-id="${escapeHtml(orderId)}" style="background:var(--accent);color:var(--accent-ink,#0c0d0e);border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">⬇️ ดาวน์โหลด ZIP</button>` : `<span style="font-size:11px;color:var(--text-dim);padding:6px 12px;">รอเตรียมไฟล์</span>`}
           </div>
           <div style="font-size:11px;color:var(--text-dim);line-height:1.4;">${songNames}${moreText}</div>
         </div>
@@ -4804,7 +4808,7 @@ function renderDashboardTopSongs(orders, container) {
   }
   container.innerHTML = top5.map(([id, info], idx) => `
     <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);">
-      <div style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${idx + 1}</div>
+      <div style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--accent-ink,#0c0d0e);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${idx + 1}</div>
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(info.title)}</div>
         <div style="font-size:11px;color:var(--text-dim);">${info.count} ครั้ง · ${formatPrice(info.total)}</div>
@@ -4847,7 +4851,7 @@ function renderDashboardTopDjs(orders, container) {
   }
   container.innerHTML = top3.map(([djName, info], idx) => `
     <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);">
-      <div style="width:24px;height:24px;border-radius:50%;background:var(--accent-2,#f59e0b);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${idx + 1}</div>
+      <div style="width:24px;height:24px;border-radius:50%;background:var(--accent-2,#f59e0b);color:var(--accent-ink,#0c0d0e);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${idx + 1}</div>
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(djName)}</div>
         <div style="font-size:11px;color:var(--text-dim);">${info.count} เพลง · ${formatPrice(info.total)}</div>
@@ -4895,7 +4899,7 @@ async function loadCustomerAccountData() {
     // แสดง profile
     profileEl.innerHTML = `
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
-        <div style="width:40px;height:40px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;">${escapeHtml((customer.display_name || customer.email || "?").charAt(0).toUpperCase())}</div>
+        <div style="width:40px;height:40px;border-radius:50%;background:var(--accent);color:var(--accent-ink,#0c0d0e);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;">${escapeHtml((customer.display_name || customer.email || "?").charAt(0).toUpperCase())}</div>
         <div style="flex:1;min-width:0;">
           <div style="font-weight:700;font-size:15px;">${escapeHtml(customer.display_name || "ลูกค้า")}</div>
           <div style="font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(customer.email || customer.whatsapp || "")}</div>
@@ -5672,7 +5676,7 @@ function renderTrackOrderResult(order) {
       <button class="btn" type="button" id="trackOrderReceiptBtn" style="background:linear-gradient(145deg, #38bdf8 0%, #2563eb 50%, #4338ca 100%);color:#fff;border:1px solid rgba(255,255,255,.25);box-shadow:0 4px 12px rgba(37,99,235,.45),inset 0 1px 0 rgba(255,255,255,.22);text-shadow:0 1px 2px rgba(0,0,0,.30);">📄 ดูรายละเอียดออเดอร์</button>
       ${/* 🛡️ (added 2026-09-26): ซ่อนปุ่ม "ชำระเงิน" เมื่อ state เป็น paid / pending_review / verified_awaiting_zip */ ""}
       ${/*   ปุ่มยังแสดงเมื่อ state เป็น unpaid / rejected / cancelled (ลูกค้ายังชำระ/ส่งสลิปใหม่ได้) */ ""}
-      ${paymentState.showPayButton ? `<button class="btn" type="button" id="trackOrderPayBtn" style="background:var(--accent);color:#fff;">💳 ชำระเงิน</button>` : ""}
+      ${paymentState.showPayButton ? `<button class="btn" type="button" id="trackOrderPayBtn" style="background:var(--accent);color:var(--accent-ink,#0c0d0e);">💳 ชำระเงิน</button>` : ""}
       <button class="btn" type="button" id="trackOrderWhatsappBtn">ติดต่อแอดมินผ่าน WhatsApp</button>
       ${canCustomerDeleteOrder(order) ? `<button class="btn danger" type="button" id="trackOrderDeleteBtn">ลบออเดอร์นี้</button>` : ""}
     </div>
@@ -6068,7 +6072,7 @@ function openTrackOrderAllDetail(order) {
     <div class="track-order-actions">
       <button class="btn" type="button" id="trackOrderAllReceiptBtn" style="background:linear-gradient(145deg, #38bdf8 0%, #2563eb 50%, #4338ca 100%);color:#fff;border:1px solid rgba(255,255,255,.25);box-shadow:0 4px 12px rgba(37,99,235,.45),inset 0 1px 0 rgba(255,255,255,.22);text-shadow:0 1px 2px rgba(0,0,0,.30);">📄 ดูรายละเอียดออเดอร์</button>
       ${/* 🛡️ (added 2026-09-26): ซ่อนปุ่ม "ชำระเงิน" เมื่อ state เป็น paid/pending_review/verified_awaiting_zip */ ""}
-      ${paymentState.showPayButton ? `<button class="btn" type="button" id="trackOrderAllPayBtn" style="background:var(--accent);color:#fff;">💳 ชำระเงิน</button>` : ""}
+      ${paymentState.showPayButton ? `<button class="btn" type="button" id="trackOrderAllPayBtn" style="background:var(--accent);color:var(--accent-ink,#0c0d0e);">💳 ชำระเงิน</button>` : ""}
       <button class="btn" type="button" id="trackOrderAllWhatsappBtn">ติดต่อแอดมินผ่าน WhatsApp</button>
       ${canCustomerDeleteOrder(order) ? `<button class="btn danger" type="button" id="trackOrderAllDeleteBtn">ลบออเดอร์นี้</button>` : ""}
     </div>
